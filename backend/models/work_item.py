@@ -1,0 +1,93 @@
+"""WorkItem model - Jira-style work items (stories, tasks, bugs, epics)"""
+from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, JSON, Enum, Index
+from sqlalchemy.orm import relationship
+from datetime import datetime
+import enum
+
+import sys
+sys.path.append('..')
+from database import Base
+
+
+class WorkItemType(str, enum.Enum):
+    EPIC = "epic"
+    USER_STORY = "user_story"
+    TASK = "task"
+    BUG = "bug"
+
+
+class WorkItemStatus(str, enum.Enum):
+    BACKLOG = "backlog"
+    TODO = "todo"
+    IN_PROGRESS = "in_progress"
+    IN_REVIEW = "in_review"
+    DONE = "done"
+
+
+class WorkItemPriority(str, enum.Enum):
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    CRITICAL = "critical"
+
+
+class WorkItem(Base):
+    __tablename__ = "work_items"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    project_id = Column(Integer, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True)
+    sprint_id = Column(Integer, ForeignKey("sprints.id", ondelete="SET NULL"), index=True)
+    
+    # Core fields
+    key = Column(String(50), unique=True, nullable=False, index=True)  # e.g., "PROJ-123"
+    type = Column(String(20), default=WorkItemType.TASK.value, nullable=False)  # epic, user_story, task, bug
+    title = Column(String(255), nullable=False)
+    description = Column(Text)
+    
+    # Status & Priority
+    status = Column(String(50), default=WorkItemStatus.TODO.value, nullable=False, index=True)
+    priority = Column(String(20), default=WorkItemPriority.MEDIUM.value, nullable=False)
+    
+    # Estimation
+    story_points = Column(Integer, default=0)
+    estimated_hours = Column(Integer)
+    remaining_hours = Column(Integer)
+    
+    # Assignment - linked to Developer model
+    assignee_id = Column(Integer, ForeignKey("developers.id", ondelete="SET NULL"), index=True)
+    reporter_id = Column(Integer, ForeignKey("developers.id", ondelete="SET NULL"))
+    
+    # Hierarchy
+    parent_id = Column(Integer, ForeignKey("work_items.id", ondelete="CASCADE"), index=True)  # For subtasks
+    epic_id = Column(Integer, ForeignKey("work_items.id", ondelete="SET NULL"), index=True)
+    
+    # Additional data
+    acceptance_criteria = Column(JSON, default=list)
+    tags = Column(JSON, default=list)
+    attachments = Column(JSON, default=list)
+    
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    started_at = Column(DateTime)
+    completed_at = Column(DateTime)
+    due_date = Column(DateTime)
+    
+    # Relationships
+    project = relationship("Project", back_populates="work_items")
+    sprint = relationship("Sprint", back_populates="work_items")
+    assignee = relationship("Developer", foreign_keys=[assignee_id], back_populates="assigned_work_items")
+    reporter = relationship("Developer", foreign_keys=[reporter_id])
+    parent = relationship("WorkItem", remote_side=[id], foreign_keys=[parent_id], back_populates="subtasks")
+    subtasks = relationship("WorkItem", foreign_keys=[parent_id], back_populates="parent")
+    epic = relationship("WorkItem", remote_side=[id], foreign_keys=[epic_id], back_populates="stories")
+    stories = relationship("WorkItem", foreign_keys=[epic_id], back_populates="epic")
+    comments = relationship("Comment", back_populates="work_item", cascade="all, delete-orphan")
+    
+    # Indexes for common queries
+    __table_args__ = (
+        Index('idx_workitem_project_status', 'project_id', 'status'),
+        Index('idx_workitem_project_type', 'project_id', 'type'),
+        Index('idx_workitem_assignee', 'assignee_id', 'status'),
+        Index('idx_workitem_sprint', 'sprint_id', 'status'),
+    )

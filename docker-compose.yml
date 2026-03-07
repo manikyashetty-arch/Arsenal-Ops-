@@ -1,0 +1,67 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: arsenal-ops-db
+    environment:
+      POSTGRES_USER: arsenalops
+      POSTGRES_PASSWORD: arsenal_ops_secret
+      POSTGRES_DB: arsenal_ops
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5435:5432"
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U arsenalops" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # FastAPI Backend
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: arsenal-ops-api
+    environment:
+      - DATABASE_URL=postgresql://arsenalops:arsenal_ops_secret@postgres:5432/arsenal_ops
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - AZURE_OPENAI_ENDPOINT=${AZURE_OPENAI_ENDPOINT}
+      - AZURE_OPENAI_API_KEY=${AZURE_OPENAI_API_KEY}
+      - AZURE_OPENAI_DEPLOYMENT=${AZURE_OPENAI_DEPLOYMENT}
+      - AZURE_OPENAI_API_VERSION=${AZURE_OPENAI_API_VERSION}
+      - GITHUB_TOKEN=${GITHUB_TOKEN}
+      - PYTHONUNBUFFERED=1
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8000/api/health" ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # React Frontend
+  frontend:
+    build:
+      context: ./app
+      dockerfile: Dockerfile
+    container_name: arsenal-ops-ui
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./app:/app
+      - /app/node_modules
+    environment:
+      - VITE_API_URL=http://localhost:8000
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
