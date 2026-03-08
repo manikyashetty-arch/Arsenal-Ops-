@@ -44,7 +44,16 @@ if cors_origins_env:
 else:
     cors_origins = ["http://localhost:5173", "http://127.0.0.1:5173"]
 
-# Always allow all origins in development, or if CORS_ORIGINS is not set
+# Always add common production frontend URLs
+production_frontends = [
+    "https://arsenal-ops.vercel.app",
+    "https://arsenal-ops-git-main-manikyashetty-archs-projects.vercel.app"
+]
+for fe in production_frontends:
+    if fe not in cors_origins:
+        cors_origins.append(fe)
+
+# Allow wildcard in development
 if os.getenv("ENVIRONMENT") != "production":
     cors_origins.append("*")
 
