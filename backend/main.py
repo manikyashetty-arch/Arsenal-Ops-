@@ -38,10 +38,17 @@ app = FastAPI(
 
 # CORS middleware - MUST be added before other middleware/routes
 # Get allowed origins from environment variable (comma-separated)
-cors_origins = os.getenv("CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173").split(",")
-# Add wildcard for development
-if os.getenv("ENVIRONMENT", "development") == "development":
+cors_origins_env = os.getenv("CORS_ORIGINS", "")
+if cors_origins_env:
+    cors_origins = [origin.strip() for origin in cors_origins_env.split(",") if origin.strip()]
+else:
+    cors_origins = ["http://localhost:5173", "http://127.0.0.1:5173"]
+
+# Always allow all origins in development, or if CORS_ORIGINS is not set
+if os.getenv("ENVIRONMENT") != "production":
     cors_origins.append("*")
+
+print(f"DEBUG CORS Origins: {cors_origins}")  # Debug logging
 
 app.add_middleware(
     CORSMiddleware,
