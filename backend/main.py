@@ -70,8 +70,13 @@ app.add_middleware(
 )
 
 # Initialize database tables on startup
-from database import init_db
-init_db()
+try:
+    from database import init_db
+    init_db()
+    print("DEBUG: Database initialized successfully")
+except Exception as e:
+    print(f"DEBUG: Database initialization error: {e}")
+    # Continue anyway - tables might already exist
 
 # Include routers
 app.include_router(projects_router)
