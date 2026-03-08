@@ -12,16 +12,12 @@ import {
     Save,
     ArrowLeft,
     BarChart3,
-    AlertCircle,
-    CheckCircle2,
-    Clock,
     Github,
     Settings,
     ExternalLink,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
 import { toast, Toaster } from 'sonner';
 
 import { API_BASE_URL } from '@/config/api';
@@ -212,16 +208,6 @@ const AdminDashboard = () => {
             }
         } catch {
             toast.error('Failed to update GitHub settings');
-        }
-    };
-
-    const getStatusColor = (status: string) => {
-        switch (status) {
-            case 'done': return 'text-green-400';
-            case 'in_progress': return 'text-blue-400';
-            case 'in_review': return 'text-purple-400';
-            case 'todo': return 'text-yellow-400';
-            default: return 'text-gray-400';
         }
     };
 

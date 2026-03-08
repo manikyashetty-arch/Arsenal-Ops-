@@ -5,7 +5,6 @@ import {
     FolderKanban,
     BarChart3,
     CheckCircle2,
-    Clock,
     ArrowRight,
     Sparkles,
     Search,
@@ -19,11 +18,9 @@ import {
     Settings,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
-import { Progress } from '@/components/ui/progress';
 import { toast, Toaster } from 'sonner';
 import {
     Select,
