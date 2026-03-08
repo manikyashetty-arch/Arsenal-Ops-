@@ -378,6 +378,20 @@ async def commit_architecture(
     if not architecture:
         raise HTTPException(status_code=404, detail="Architecture not found")
     
+    # Delete existing sprints and their work items for this project to avoid duplicates
+    existing_sprints = db.query(Sprint).filter(Sprint.project_id == project_id).all()
+    for sprint in existing_sprints:
+        # Delete work items in this sprint
+        db.query(WorkItem).filter(WorkItem.sprint_id == sprint.id).delete()
+    # Delete all sprints for this project
+    db.query(Sprint).filter(Sprint.project_id == project_id).delete()
+    # Delete work items not in any sprint (backlog items)
+    db.query(WorkItem).filter(
+        WorkItem.project_id == project_id,
+        WorkItem.sprint_id == None
+    ).delete()
+    db.commit()
+    
     # Get project developers with their roles
     developers = []
     result = db.execute(
