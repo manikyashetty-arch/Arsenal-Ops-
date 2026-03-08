@@ -71,7 +71,7 @@ const ArchitectureCard = ({ architecture, onSelect, onViewFullScreen, isSelected
 
             {/* Mermaid Diagram Preview */}
             <div className="p-4 bg-[#0B0D14] border-b border-[rgba(244,246,255,0.06)] min-h-[200px] max-h-[300px] overflow-hidden relative">
-                <MermaidRenderer code={architecture.mermaid_code} className="scale-75 origin-top-left" />
+                <MermaidRenderer code={architecture.mermaid_code} className="scale-75 origin-top-left" showControls={false} />
                 <button
                     onClick={() => onViewFullScreen(architecture)}
                     className="absolute top-2 right-2 p-2 rounded-lg bg-[rgba(244,246,255,0.1)] hover:bg-[rgba(244,246,255,0.2)] text-[#94A3B8] hover:text-white transition-colors"

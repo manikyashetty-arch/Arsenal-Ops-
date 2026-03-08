@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import Editor from '@monaco-editor/react';
-import { X, Save, RotateCcw, Maximize2, Minimize2, Sparkles, Send, CheckCircle2 } from 'lucide-react';
+import { X, Save, RotateCcw, Sparkles, Send, CheckCircle2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -34,7 +34,6 @@ const ArchitectureEditor = ({ architecture, onSave, onClose }: ArchitectureEdito
     const [name, setName] = useState(architecture.name);
     const [description, setDescription] = useState(architecture.description);
     const [originalCode] = useState(architecture.mermaid_code);
-    const [isFullScreen, setIsFullScreen] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
     
     // AI Refine state
@@ -278,16 +277,11 @@ const ArchitectureEditor = ({ architecture, onSave, onClose }: ArchitectureEdito
 
                 {/* Preview */}
                 <div className="w-1/2 flex flex-col bg-[#0B0D14]">
-                    <div className="h-10 border-b border-[rgba(244,246,255,0.06)] bg-[rgba(244,246,255,0.02)] flex items-center justify-between px-4">
+                    <div className="h-10 border-b border-[rgba(244,246,255,0.06)] bg-[rgba(244,246,255,0.02)] flex items-center px-4">
                         <span className="text-xs font-medium text-[#64748B]">Preview</span>
-                        <button
-                            onClick={() => setIsFullScreen(!isFullScreen)}
-                            className="p-1 rounded hover:bg-[rgba(244,246,255,0.1)] text-[#64748B] hover:text-white"
-                        >
-                            {isFullScreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
-                        </button>
+                        <span className="text-xs text-[#475569] ml-auto">Drag to pan • Scroll to zoom</span>
                     </div>
-                    <div className="flex-1 p-6 overflow-auto">
+                    <div className="flex-1 overflow-hidden">
                         <MermaidRenderer code={code} className="w-full h-full" />
                     </div>
                 </div>

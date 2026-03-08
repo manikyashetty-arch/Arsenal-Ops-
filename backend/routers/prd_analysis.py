@@ -378,18 +378,11 @@ async def commit_architecture(
     if not architecture:
         raise HTTPException(status_code=404, detail="Architecture not found")
     
-    # Delete existing sprints and their work items for this project to avoid duplicates
-    existing_sprints = db.query(Sprint).filter(Sprint.project_id == project_id).all()
-    for sprint in existing_sprints:
-        # Delete work items in this sprint
-        db.query(WorkItem).filter(WorkItem.sprint_id == sprint.id).delete()
-    # Delete all sprints for this project
-    db.query(Sprint).filter(Sprint.project_id == project_id).delete()
-    # Delete work items not in any sprint (backlog items)
-    db.query(WorkItem).filter(
-        WorkItem.project_id == project_id,
-        WorkItem.sprint_id == None
-    ).delete()
+    # Delete existing work items and sprints for this project to avoid duplicates
+    # First delete all work items (they have foreign key to sprints)
+    db.query(WorkItem).filter(WorkItem.project_id == project_id).delete(synchronize_session=False)
+    # Then delete all sprints
+    db.query(Sprint).filter(Sprint.project_id == project_id).delete(synchronize_session=False)
     db.commit()
     
     # Get project developers with their roles
@@ -462,12 +455,22 @@ async def commit_architecture(
     
     # Create work items in database
     created_tickets = []
-    for ticket_data in ticket_result.get("tickets", []):
+    # Get the max key number for this project's key prefix to avoid duplicates
+    key_prefix = project.status[:4].upper() if project.status else "PROJ"
+    # Find max existing number for this prefix across ALL projects
+    existing_keys = db.query(WorkItem.key).filter(WorkItem.key.like(f"{key_prefix}-%")).all()
+    max_number = 0
+    for (k,) in existing_keys:
+        try:
+            num = int(k.split("-")[-1])
+            if num > max_number:
+                max_number = num
+        except:
+            pass
+    
+    for idx, ticket_data in enumerate(ticket_result.get("tickets", [])):
         # Get next item number
-        from sqlalchemy import func
-        count = db.query(func.count(WorkItem.id)).filter(WorkItem.project_id == project_id).scalar()
-        item_number = (count or 0) + 1
-        key_prefix = project.status[:4].upper() if project.status else "PROJ"
+        item_number = max_number + idx + 1
         key = f"{key_prefix}-{item_number}"
         
         # Determine sprint_id
