@@ -578,10 +578,9 @@ const ProjectsPage = () => {
                                     
                                     <Button
                                         type="button"
-                                        variant="outline"
                                         onClick={handleAddDeveloper}
                                         disabled={!selectedDeveloperId || !newRole.trim()}
-                                        className="w-full border-[rgba(99,102,241,0.3)] text-[#6366F1] hover:bg-[rgba(99,102,241,0.1)] hover:text-[#6366F1] rounded-xl"
+                                        className="w-full bg-gradient-to-r from-[#6366F1] to-[#4F46E5] hover:from-[#5558E6] hover:to-[#4338CA] text-white rounded-xl font-medium shadow-lg shadow-[#4F46E5]/20 disabled:opacity-50"
                                     >
                                         <Plus className="w-4 h-4 mr-2" />
                                         Add Developer

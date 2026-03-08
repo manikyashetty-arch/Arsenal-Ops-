@@ -129,6 +129,11 @@ def format_project(project: Project, db: Session) -> dict:
 @router.post("/")
 async def create_project(project: ProjectCreate, db: Session = Depends(get_db)):
     """Create a new project"""
+    # Check for duplicate project name
+    existing = db.query(Project).filter(Project.name == project.name).first()
+    if existing:
+        raise HTTPException(status_code=400, detail=f"Project with name '{project.name}' already exists")
+    
     # Parse GitHub repo name from URL
     github_repo_name = None
     if project.github_repo_url:

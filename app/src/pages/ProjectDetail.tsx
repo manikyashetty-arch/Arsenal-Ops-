@@ -464,7 +464,7 @@ const ProjectDetail = () => {
                             <h2 className="text-lg font-semibold text-white">Project Team</h2>
                             <Button
                                 onClick={() => setShowAddDeveloper(true)}
-                                className="bg-[#6366F1] hover:bg-[#5558E6] text-white"
+                                className="bg-gradient-to-r from-[#6366F1] to-[#4F46E5] hover:from-[#5558E6] hover:to-[#4338CA] text-white font-medium shadow-lg shadow-[#4F46E5]/20 disabled:opacity-50"
                                 disabled={availableDevelopers.length === 0}
                             >
                                 <Plus className="w-4 h-4 mr-2" />
@@ -589,7 +589,7 @@ const ProjectDetail = () => {
                                         <Button
                                             onClick={handleAddDeveloper}
                                             disabled={!newDeveloper.developer_id || !newDeveloper.role}
-                                            className="bg-[#6366F1] hover:bg-[#5558E6] text-white rounded-xl"
+                                            className="bg-gradient-to-r from-[#6366F1] to-[#4F46E5] hover:from-[#5558E6] hover:to-[#4338CA] text-white rounded-xl font-medium shadow-lg shadow-[#4F46E5]/20 disabled:opacity-50"
                                         >
                                             <Plus className="w-4 h-4 mr-2" />
                                             Add Developer

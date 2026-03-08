@@ -137,19 +137,18 @@ const ArchitectureCard = ({ architecture, onSelect, onViewFullScreen, isSelected
             {/* Actions */}
             <div className="p-4 flex gap-2">
                 <Button
-                    variant="outline"
                     onClick={() => onViewFullScreen(architecture)}
-                    className="flex-1 border-[rgba(244,246,255,0.1)] text-[#94A3B8] hover:text-white hover:bg-[rgba(244,246,255,0.05)]"
+                    className="flex-1 bg-gradient-to-r from-[#475569] to-[#334155] hover:from-[#64748B] hover:to-[#475569] text-white font-medium"
                 >
                     <Maximize2 className="w-4 h-4 mr-2" />
                     View & Edit
                 </Button>
                 <Button
                     onClick={() => onSelect(architecture.id)}
-                    className={`flex-1 ${
+                    className={`flex-1 font-medium shadow-lg ${
                         isSelected
-                            ? 'bg-[#6366F1] text-white'
-                            : 'bg-[rgba(244,246,255,0.05)] text-white hover:bg-[#6366F1]'
+                            ? 'bg-gradient-to-r from-[#6366F1] to-[#4F46E5] text-white shadow-[#4F46E5]/20'
+                            : 'bg-gradient-to-r from-[#475569] to-[#334155] text-white hover:from-[#6366F1] hover:to-[#4F46E5] shadow-black/20'
                     }`}
                 >
                     {isSelected ? (

@@ -851,8 +851,7 @@ const ProjectBoard = () => {
                         <Button
                             onClick={() => setShowCreateForm(true)}
                             size="sm"
-                            variant="outline"
-                            className="border-[rgba(244,246,255,0.1)] text-[#E2E8F0] hover:bg-[rgba(244,246,255,0.05)] rounded-lg h-9"
+                            className="bg-gradient-to-r from-[#6366F1] to-[#4F46E5] hover:from-[#5558E6] hover:to-[#4338CA] text-white rounded-lg font-medium shadow-lg shadow-[#4F46E5]/20 h-9"
                         >
                             <Plus className="w-3.5 h-3.5 mr-2" />
                             New Item
@@ -928,7 +927,8 @@ const ProjectBoard = () => {
                             </select>
                             <Button
                                 onClick={() => setShowCreateSprintModal(true)}
-                                className="h-8 px-3 text-xs bg-[rgba(99,102,241,0.1)] border border-[rgba(99,102,241,0.3)] text-[#6366F1] hover:bg-[rgba(99,102,241,0.2)] rounded-lg"
+                                size="sm"
+                                className="bg-gradient-to-r from-[#6366F1] to-[#4F46E5] hover:from-[#5558E6] hover:to-[#4338CA] text-white rounded-lg font-medium shadow-lg shadow-[#4F46E5]/20 h-8 px-3 text-xs"
                             >
                                 <Plus className="w-3 h-3 mr-1" />
                                 New Sprint
