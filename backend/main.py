@@ -89,9 +89,9 @@ try:
         # Check if admin already exists
         existing_admin = db.query(User).filter(User.role == UserRole.ADMIN.value).first()
         if not existing_admin:
-            # Generate secure password
-            alphabet = string.ascii_letters + string.digits + "!@#$%^&*"
-            temp_password = ''.join(secrets.choice(alphabet) for _ in range(12))
+            # Generate secure password (max 72 bytes for bcrypt)
+            alphabet = string.ascii_letters + string.digits
+            temp_password = ''.join(secrets.choice(alphabet) for _ in range(16))
             
             admin = User(
                 email="manikya.shetty@arsenalai.com",
