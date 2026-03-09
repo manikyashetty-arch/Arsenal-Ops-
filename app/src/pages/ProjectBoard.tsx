@@ -625,13 +625,14 @@ const ProjectBoard = () => {
                 
                 response = await fetch(`${API_BASE_URL}/api/prd/analyze-file`, {
                     method: 'POST',
+                    headers: { 'Authorization': `Bearer ${token}` },
                     body: formData,
                 });
             } else {
                 // Text input
                 response = await fetch(`${API_BASE_URL}/api/prd/analyze-text`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                     body: JSON.stringify({
                         project_id: project.id,
                         prd_content: prdText,
@@ -663,7 +664,10 @@ const ProjectBoard = () => {
     const handleSelectArchitecture = async (archId: number) => {
         setSelectedArchitectureId(archId);
         try {
-            await fetch(`${API_BASE_URL}/api/prd/architectures/${archId}/select`, { method: 'POST' });
+            await fetch(`${API_BASE_URL}/api/prd/architectures/${archId}/select`, { 
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
         } catch (err) {
             console.error('Failed to select architecture:', err);
         }
@@ -674,7 +678,7 @@ const ProjectBoard = () => {
         try {
             const response = await fetch(`${API_BASE_URL}/api/prd/architectures/${archId}`, {
                 method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                 body: JSON.stringify(updates),
             });
             if (response.ok) {
@@ -698,7 +702,7 @@ const ProjectBoard = () => {
         try {
             const response = await fetch(`${API_BASE_URL}/api/prd/projects/${project.id}/generate-tickets-preview`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                 body: JSON.stringify({ architecture_id: selectedArchitectureId }),
             });
 
@@ -732,7 +736,7 @@ const ProjectBoard = () => {
         try {
             const response = await fetch(`${API_BASE_URL}/api/prd/projects/${project.id}/commit-architecture`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                 body: JSON.stringify({
                     architecture_id: selectedArchitectureId,
                     start_date: startDate || null,
