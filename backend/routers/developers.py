@@ -11,6 +11,8 @@ import sys
 sys.path.append('..')
 from database import get_db
 from models.developer import Developer
+from models.user import User
+from routers.auth import get_current_user
 
 router = APIRouter(prefix="/api/developers", tags=["Developers"])
 
@@ -42,8 +44,12 @@ class DeveloperResponse(BaseModel):
 
 
 @router.post("/", response_model=DeveloperResponse)
-async def create_developer(developer: DeveloperCreate, db: Session = Depends(get_db)):
-    """Create a new developer"""
+async def create_developer(
+    developer: DeveloperCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Create a new developer (requires auth)"""
     # Check if email already exists
     existing = db.query(Developer).filter(Developer.email == developer.email).first()
     if existing:
@@ -62,15 +68,22 @@ async def create_developer(developer: DeveloperCreate, db: Session = Depends(get
 
 
 @router.get("/", response_model=List[DeveloperResponse])
-async def list_developers(db: Session = Depends(get_db)):
-    """List all developers"""
+async def list_developers(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """List all developers (requires auth)"""
     developers = db.query(Developer).all()
     return developers
 
 
 @router.get("/{developer_id}", response_model=DeveloperResponse)
-async def get_developer(developer_id: int, db: Session = Depends(get_db)):
-    """Get a developer by ID"""
+async def get_developer(
+    developer_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get a developer by ID (requires auth)"""
     developer = db.query(Developer).filter(Developer.id == developer_id).first()
     if not developer:
         raise HTTPException(status_code=404, detail="Developer not found")
@@ -78,8 +91,13 @@ async def get_developer(developer_id: int, db: Session = Depends(get_db)):
 
 
 @router.put("/{developer_id}", response_model=DeveloperResponse)
-async def update_developer(developer_id: int, update: DeveloperUpdate, db: Session = Depends(get_db)):
-    """Update a developer"""
+async def update_developer(
+    developer_id: int,
+    update: DeveloperUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Update a developer (requires auth)"""
     developer = db.query(Developer).filter(Developer.id == developer_id).first()
     if not developer:
         raise HTTPException(status_code=404, detail="Developer not found")
@@ -105,8 +123,12 @@ async def update_developer(developer_id: int, update: DeveloperUpdate, db: Sessi
 
 
 @router.delete("/{developer_id}")
-async def delete_developer(developer_id: int, db: Session = Depends(get_db)):
-    """Delete a developer"""
+async def delete_developer(
+    developer_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Delete a developer (requires auth)"""
     developer = db.query(Developer).filter(Developer.id == developer_id).first()
     if not developer:
         raise HTTPException(status_code=404, detail="Developer not found")
