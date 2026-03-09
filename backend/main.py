@@ -91,7 +91,10 @@ try:
         if not existing_admin:
             # Generate secure password (max 72 bytes for bcrypt)
             alphabet = string.ascii_letters + string.digits
-            temp_password = ''.join(secrets.choice(alphabet) for _ in range(16))
+            temp_password = ''.join(secrets.choice(alphabet) for _ in range(12))
+            
+            # Ensure password is within bcrypt limit
+            temp_password = temp_password[:72]
             
             admin = User(
                 email="manikya.shetty@arsenalai.com",

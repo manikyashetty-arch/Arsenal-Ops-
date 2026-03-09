@@ -265,14 +265,16 @@ const ProjectsPage = () => {
                                 <span className="text-sm text-[#94A3B8] hidden md:block">{user.name}</span>
                             </div>
                         )}
-                        <Button
-                            variant="ghost"
-                            onClick={() => navigate('/admin')}
-                            className="text-[#64748B] hover:text-white hover:bg-[rgba(244,246,255,0.05)] rounded-xl px-3"
-                        >
-                            <Settings className="w-4 h-4 mr-2" />
-                            Admin
-                        </Button>
+                        {user?.role === 'admin' && (
+                            <Button
+                                variant="ghost"
+                                onClick={() => navigate('/admin')}
+                                className="text-[#64748B] hover:text-white hover:bg-[rgba(244,246,255,0.05)] rounded-xl px-3"
+                            >
+                                <Settings className="w-4 h-4 mr-2" />
+                                Admin
+                            </Button>
+                        )}
                         <Button
                             variant="ghost"
                             onClick={logout}
@@ -323,13 +325,15 @@ const ProjectsPage = () => {
                             className="pl-10 bg-[rgba(244,246,255,0.03)] border-[rgba(244,246,255,0.08)] text-[#F4F6FF] rounded-xl h-11 focus:border-[#6366F1]/50 focus:ring-[#6366F1]/20 placeholder:text-[#334155]"
                         />
                     </div>
-                    <Button
-                        onClick={() => setShowCreateModal(true)}
-                        className="bg-gradient-to-r from-[#6366F1] to-[#4F46E5] hover:from-[#5558E6] hover:to-[#4338CA] text-white rounded-xl h-11 px-6 font-medium shadow-lg shadow-[#4F46E5]/20 transition-all duration-300 hover:shadow-[#4F46E5]/30 hover:scale-[1.02]"
-                    >
-                        <Plus className="w-4 h-4 mr-2" />
-                        New Project
-                    </Button>
+                    {user?.role === 'admin' && (
+                        <Button
+                            onClick={() => setShowCreateModal(true)}
+                            className="bg-gradient-to-r from-[#6366F1] to-[#4F46E5] hover:from-[#5558E6] hover:to-[#4338CA] text-white rounded-xl h-11 px-6 font-medium shadow-lg shadow-[#4F46E5]/20 transition-all duration-300 hover:shadow-[#4F46E5]/30 hover:scale-[1.02]"
+                        >
+                            <Plus className="w-4 h-4 mr-2" />
+                            New Project
+                        </Button>
+                    )}
                 </div>
 
                 {/* Projects Grid */}
@@ -345,15 +349,20 @@ const ProjectsPage = () => {
                         </div>
                         <h2 className="text-2xl font-bold text-white mb-2">No projects yet</h2>
                         <p className="text-[#64748B] max-w-md mb-8">
-                            Create your first project to get started with AI-powered project management.
+                            {user?.role === 'admin' 
+                                ? "Create your first project to get started with AI-powered project management."
+                                : "Contact an admin to create a project for you."
+                            }
                         </p>
-                        <Button
-                            onClick={() => setShowCreateModal(true)}
-                            className="bg-gradient-to-r from-[#6366F1] to-[#4F46E5] hover:from-[#5558E6] hover:to-[#4338CA] text-white rounded-xl h-12 px-8 font-medium shadow-lg shadow-[#4F46E5]/20"
-                        >
-                            <Plus className="w-5 h-5 mr-2" />
-                            Create First Project
-                        </Button>
+                        {user?.role === 'admin' && (
+                            <Button
+                                onClick={() => setShowCreateModal(true)}
+                                className="bg-gradient-to-r from-[#6366F1] to-[#4F46E5] hover:from-[#5558E6] hover:to-[#4338CA] text-white rounded-xl h-12 px-8 font-medium shadow-lg shadow-[#4F46E5]/20"
+                            >
+                                <Plus className="w-5 h-5 mr-2" />
+                                Create First Project
+                            </Button>
+                        )}
                     </div>
                 ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
@@ -462,20 +471,22 @@ const ProjectsPage = () => {
                             );
                         })}
 
-                        {/* Create Project Card */}
-                        <div
-                            className="group cursor-pointer"
-                            onClick={() => setShowCreateModal(true)}
-                        >
-                            <div className="border-2 border-dashed border-[rgba(244,246,255,0.08)] rounded-2xl p-6 flex flex-col items-center justify-center min-h-[260px] transition-all duration-300 group-hover:border-[#6366F1]/30 group-hover:bg-[#6366F1]/5">
-                                <div className="w-14 h-14 rounded-2xl bg-[rgba(244,246,255,0.05)] flex items-center justify-center mb-4 group-hover:bg-[#6366F1]/20 transition-all duration-300 group-hover:scale-110">
-                                    <Plus className="w-6 h-6 text-[#475569] group-hover:text-[#6366F1] transition-colors" />
+                        {/* Create Project Card - Admin only */}
+                        {user?.role === 'admin' && (
+                            <div
+                                className="group cursor-pointer"
+                                onClick={() => setShowCreateModal(true)}
+                            >
+                                <div className="border-2 border-dashed border-[rgba(244,246,255,0.08)] rounded-2xl p-6 flex flex-col items-center justify-center min-h-[260px] transition-all duration-300 group-hover:border-[#6366F1]/30 group-hover:bg-[#6366F1]/5">
+                                    <div className="w-14 h-14 rounded-2xl bg-[rgba(244,246,255,0.05)] flex items-center justify-center mb-4 group-hover:bg-[#6366F1]/20 transition-all duration-300 group-hover:scale-110">
+                                        <Plus className="w-6 h-6 text-[#475569] group-hover:text-[#6366F1] transition-colors" />
+                                    </div>
+                                    <span className="text-sm font-medium text-[#475569] group-hover:text-[#6366F1] transition-colors">
+                                        Create New Project
+                                    </span>
                                 </div>
-                                <span className="text-sm font-medium text-[#475569] group-hover:text-[#6366F1] transition-colors">
-                                    Create New Project
-                                </span>
                             </div>
-                        </div>
+                        )}
                     </div>
                 )}
             </div>
