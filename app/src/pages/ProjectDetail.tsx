@@ -18,6 +18,15 @@ import {
     Layers,
     Sparkles,
     ShieldAlert,
+    Zap,
+    Clock,
+    DollarSign,
+    Target,
+    TrendingUp,
+    AlertTriangle,
+    Wrench,
+    Calendar,
+    FileText,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -61,6 +70,39 @@ interface Architecture {
     is_selected: boolean;
     created_at: string;
     updated_at: string;
+    cost_analysis?: {
+        infrastructure?: { monthly: string; annual: string; breakdown: { item: string; cost: string }[] };
+        development?: { total: string; breakdown: { item: string; cost: string }[] };
+        total_estimated?: string;
+    };
+    tools_recommended?: {
+        frontend?: string[];
+        backend?: string[];
+        database?: string[];
+        devops?: string[];
+        [key: string]: string[] | undefined;
+    };
+}
+
+interface PRDAnalysis {
+    id: number;
+    summary: string;
+    key_features: string[];
+    technical_requirements: string[];
+    cost_analysis?: {
+        infrastructure?: { monthly: string; annual: string; breakdown: { item: string; cost: string }[] };
+        development?: { total: string; breakdown: { item: string; cost: string }[] };
+        total_estimated?: string;
+    };
+    recommended_tools?: {
+        frontend?: string[];
+        backend?: string[];
+        database?: string[];
+        devops?: string[];
+        [key: string]: string[] | undefined;
+    };
+    risks: { risk: string; impact: string; mitigation: string }[];
+    timeline: { phase: string; duration: string; tasks: string[] }[];
 }
 
 interface Project {
@@ -98,6 +140,7 @@ const ProjectDetail = () => {
     const [githubStatus, setGithubStatus] = useState<{ has_repo: boolean; developer_count: number; sent_count: number } | null>(null);
     const [isSendingInvites, setIsSendingInvites] = useState(false);
     const [accessDenied, setAccessDenied] = useState(false);
+    const [prdAnalysis, setPrdAnalysis] = useState<PRDAnalysis | null>(null);
     
     // Architecture editing state
     const [editingArchitecture, setEditingArchitecture] = useState<Architecture | null>(null);
@@ -157,11 +200,35 @@ const ProjectDetail = () => {
         }
     };
 
+    const fetchPrdAnalysis = async () => {
+        if (!id) return;
+        try {
+            const res = await fetch(`${API_BASE_URL}/api/prd/projects/${id}/analysis`, {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            });
+            if (res.ok) {
+                const data = await res.json();
+                setPrdAnalysis(data);
+            }
+        } catch (err) {
+            console.error('Failed to fetch PRD analysis:', err);
+        }
+    };
+
     useEffect(() => {
         if (activeTab === 'github') {
             fetchGithubStatus();
         }
     }, [activeTab]);
+
+    // Fetch PRD analysis when project loads
+    useEffect(() => {
+        if (project) {
+            fetchPrdAnalysis();
+        }
+    }, [project]);
 
     // Save project edits
     const handleSaveEdit = async () => {
@@ -550,22 +617,210 @@ const ProjectDetail = () => {
                             </div>
                         </div>
 
+                        {/* PRD Analysis Section */}
+                        {prdAnalysis && (
+                            <div className="bg-[rgba(244,246,255,0.02)] border border-[rgba(244,246,255,0.06)] rounded-2xl p-6">
+                                <div className="flex items-center gap-3 mb-6">
+                                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#6366F1] to-[#4F46E5] flex items-center justify-center">
+                                        <FileText className="w-5 h-5 text-white" />
+                                    </div>
+                                    <div>
+                                        <h3 className="font-semibold text-white">AI Project Analysis</h3>
+                                        <p className="text-xs text-[#64748B]">Generated from PRD</p>
+                                    </div>
+                                </div>
+
+                                {/* Summary */}
+                                <div className="mb-6">
+                                    <h4 className="text-sm font-medium text-[#94A3B8] mb-2">Summary</h4>
+                                    <p className="text-sm text-[#E2E8F0] leading-relaxed">{prdAnalysis.summary}</p>
+                                </div>
+
+                                {/* Key Features */}
+                                {prdAnalysis.key_features && prdAnalysis.key_features.length > 0 && (
+                                    <div className="mb-6">
+                                        <h4 className="text-sm font-medium text-[#94A3B8] mb-3 flex items-center gap-2">
+                                            <Target className="w-4 h-4 text-[#6366F1]" />
+                                            Key Features
+                                        </h4>
+                                        <div className="flex flex-wrap gap-2">
+                                            {prdAnalysis.key_features.map((feature, idx) => (
+                                                <Badge key={idx} className="bg-[#6366F1]/10 text-[#818CF8] border border-[#6366F1]/20 hover:bg-[#6366F1]/20">
+                                                    {feature}
+                                                </Badge>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Technical Requirements */}
+                                {prdAnalysis.technical_requirements && prdAnalysis.technical_requirements.length > 0 && (
+                                    <div className="mb-6">
+                                        <h4 className="text-sm font-medium text-[#94A3B8] mb-3 flex items-center gap-2">
+                                            <Wrench className="w-4 h-4 text-[#10B981]" />
+                                            Technical Requirements
+                                        </h4>
+                                        <ul className="space-y-2">
+                                            {prdAnalysis.technical_requirements.map((req, idx) => (
+                                                <li key={idx} className="flex items-start gap-2 text-sm text-[#E2E8F0]">
+                                                    <CheckCircle2 className="w-4 h-4 text-[#10B981] mt-0.5 flex-shrink-0" />
+                                                    {req}
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    </div>
+                                )}
+
+                                {/* Recommended Tools */}
+                                {prdAnalysis.recommended_tools && Object.keys(prdAnalysis.recommended_tools).length > 0 && (
+                                    <div className="mb-6">
+                                        <h4 className="text-sm font-medium text-[#94A3B8] mb-3 flex items-center gap-2">
+                                            <Zap className="w-4 h-4 text-[#F59E0B]" />
+                                            Recommended Tools
+                                        </h4>
+                                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                                            {Object.entries(prdAnalysis.recommended_tools).map(([category, tools]) => (
+                                                tools && Array.isArray(tools) && tools.length > 0 && (
+                                                    <div key={category} className="bg-[rgba(244,246,255,0.03)] rounded-xl p-3">
+                                                        <p className="text-xs font-medium text-[#64748B] capitalize mb-2">{category}</p>
+                                                        <div className="flex flex-wrap gap-1">
+                                                            {tools.slice(0, 3).map((tool, idx) => (
+                                                                <span key={idx} className="text-xs bg-[rgba(99,102,241,0.1)] text-[#818CF8] px-2 py-0.5 rounded">
+                                                                    {tool}
+                                                                </span>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                )
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Cost Analysis */}
+                                {prdAnalysis.cost_analysis && (
+                                    <div className="mb-6">
+                                        <h4 className="text-sm font-medium text-[#94A3B8] mb-3 flex items-center gap-2">
+                                            <DollarSign className="w-4 h-4 text-[#10B981]" />
+                                            Cost Analysis
+                                        </h4>
+                                        <div className="grid grid-cols-2 gap-4">
+                                            {prdAnalysis.cost_analysis.infrastructure && (
+                                                <div className="bg-[rgba(16,185,129,0.05)] border border-[rgba(16,185,129,0.2)] rounded-xl p-4">
+                                                    <p className="text-xs text-[#64748B] mb-1">Infrastructure (Monthly)</p>
+                                                    <p className="text-xl font-bold text-[#10B981]">{prdAnalysis.cost_analysis.infrastructure.monthly}</p>
+                                                    {prdAnalysis.cost_analysis.infrastructure.breakdown && (
+                                                        <div className="mt-2 space-y-1">
+                                                            {prdAnalysis.cost_analysis.infrastructure.breakdown.slice(0, 3).map((item, idx) => (
+                                                                <div key={idx} className="flex justify-between text-xs">
+                                                                    <span className="text-[#64748B]">{item.item}</span>
+                                                                    <span className="text-[#94A3B8]">{item.cost}</span>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
+                                            {prdAnalysis.cost_analysis.development && (
+                                                <div className="bg-[rgba(99,102,241,0.05)] border border-[rgba(99,102,241,0.2)] rounded-xl p-4">
+                                                    <p className="text-xs text-[#64748B] mb-1">Development</p>
+                                                    <p className="text-xl font-bold text-[#6366F1]">{prdAnalysis.cost_analysis.development.total}</p>
+                                                    {prdAnalysis.cost_analysis.development.breakdown && (
+                                                        <div className="mt-2 space-y-1">
+                                                            {prdAnalysis.cost_analysis.development.breakdown.slice(0, 3).map((item, idx) => (
+                                                                <div key={idx} className="flex justify-between text-xs">
+                                                                    <span className="text-[#64748B]">{item.item}</span>
+                                                                    <span className="text-[#94A3B8]">{item.cost}</span>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Risks */}
+                                {prdAnalysis.risks && prdAnalysis.risks.length > 0 && (
+                                    <div className="mb-6">
+                                        <h4 className="text-sm font-medium text-[#94A3B8] mb-3 flex items-center gap-2">
+                                            <AlertTriangle className="w-4 h-4 text-[#F59E0B]" />
+                                            Risk Assessment
+                                        </h4>
+                                        <div className="space-y-3">
+                                            {prdAnalysis.risks.map((risk, idx) => (
+                                                <div key={idx} className="bg-[rgba(245,158,11,0.05)] border border-[rgba(245,158,11,0.2)] rounded-xl p-4">
+                                                    <div className="flex items-start justify-between mb-2">
+                                                        <p className="text-sm font-medium text-[#F59E0B]">{risk.risk}</p>
+                                                        <Badge className="bg-[#F59E0B]/10 text-[#F59E0B] border-0 text-xs">
+                                                            {risk.impact}
+                                                        </Badge>
+                                                    </div>
+                                                    <p className="text-xs text-[#94A3B8]">
+                                                        <span className="text-[#64748B]">Mitigation:</span> {risk.mitigation}
+                                                    </p>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Timeline */}
+                                {prdAnalysis.timeline && prdAnalysis.timeline.length > 0 && (
+                                    <div>
+                                        <h4 className="text-sm font-medium text-[#94A3B8] mb-3 flex items-center gap-2">
+                                            <Calendar className="w-4 h-4 text-[#6366F1]" />
+                                            Project Timeline
+                                        </h4>
+                                        <div className="space-y-3">
+                                            {prdAnalysis.timeline.map((phase, idx) => (
+                                                <div key={idx} className="flex items-start gap-4">
+                                                    <div className="w-8 h-8 rounded-full bg-[#6366F1]/10 flex items-center justify-center flex-shrink-0">
+                                                        <span className="text-xs font-bold text-[#6366F1]">{idx + 1}</span>
+                                                    </div>
+                                                    <div className="flex-1">
+                                                        <div className="flex items-center justify-between mb-1">
+                                                            <p className="text-sm font-medium text-white">{phase.phase}</p>
+                                                            <span className="text-xs text-[#6366F1]">{phase.duration}</span>
+                                                        </div>
+                                                        <div className="flex flex-wrap gap-1">
+                                                            {phase.tasks.slice(0, 3).map((task, taskIdx) => (
+                                                                <span key={taskIdx} className="text-xs bg-[rgba(244,246,255,0.03)] text-[#94A3B8] px-2 py-0.5 rounded">
+                                                                    {task}
+                                                                </span>
+                                                            ))}
+                                                            {phase.tasks.length > 3 && (
+                                                                <span className="text-xs text-[#64748B]">+{phase.tasks.length - 3} more</span>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
                         {/* Architecture Section */}
-                        {project.selected_architecture && (
+                        {project.selected_architecture && (() => {
+                            const arch = project.selected_architecture!;
+                            return (
                             <div className="bg-[rgba(244,246,255,0.02)] border border-[rgba(244,246,255,0.06)] rounded-2xl overflow-hidden">
                                 <div className="p-4 border-b border-[rgba(244,246,255,0.06)] flex items-center justify-between">
                                     <div className="flex items-center gap-3">
                                         <Layers className="w-5 h-5 text-[#6366F1]" />
                                         <div>
                                             <h3 className="font-semibold text-white">Selected Architecture</h3>
-                                            <p className="text-xs text-[#64748B]">{project.selected_architecture.name}</p>
+                                            <p className="text-xs text-[#64748B]">{arch.name}</p>
                                         </div>
                                     </div>
                                     <div className="flex gap-2">
                                         <Button
                                             size="sm"
                                             variant="ghost"
-                                            onClick={() => project.selected_architecture && setEditingArchitecture(project.selected_architecture)}
+                                            onClick={() => setEditingArchitecture(arch)}
                                             className="text-[#64748B] hover:text-white"
                                         >
                                             <Pencil className="w-4 h-4 mr-2" />
@@ -583,28 +838,111 @@ const ProjectDetail = () => {
                                 </div>
                                 <div className="p-4 bg-[#0B0D14] min-h-[400px]">
                                     <MermaidRenderer 
-                                        code={project.selected_architecture.mermaid_code} 
+                                        code={arch.mermaid_code} 
                                         className="w-full h-full min-h-[350px]"
                                     />
                                 </div>
-                                <div className="p-4 border-t border-[rgba(244,246,255,0.06)] bg-[rgba(244,246,255,0.02)]">
-                                    <div className="grid grid-cols-3 gap-4 text-sm">
-                                        <div>
-                                            <span className="text-[#64748B] text-xs">Complexity</span>
-                                            <p className="text-[#F59E0B] capitalize">{project.selected_architecture.complexity}</p>
+                                
+                                {/* Architecture Details */}
+                                <div className="p-4 border-t border-[rgba(244,246,255,0.06)] space-y-4">
+                                    {/* Quick Stats Row */}
+                                    <div className="grid grid-cols-3 gap-4">
+                                        <div className="bg-[rgba(244,246,255,0.02)] rounded-xl p-3">
+                                            <div className="flex items-center gap-2 mb-1">
+                                                <TrendingUp className="w-4 h-4 text-[#F59E0B]" />
+                                                <span className="text-xs text-[#64748B]">Complexity</span>
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                                <p className="text-lg font-bold text-[#F59E0B] capitalize">{arch.complexity}</p>
+                                                <div className="flex gap-0.5">
+                                                    {[1, 2, 3].map((level) => (
+                                                        <div 
+                                                            key={level}
+                                                            className={`w-2 h-2 rounded-full ${
+                                                                arch.complexity === 'high' ? 'bg-[#F59E0B]' :
+                                                                arch.complexity === 'medium' && level <= 2 ? 'bg-[#F59E0B]' :
+                                                                arch.complexity === 'low' && level === 1 ? 'bg-[#F59E0B]' :
+                                                                'bg-[#334155]'
+                                                            }`}
+                                                        />
+                                                    ))}
+                                                </div>
+                                            </div>
                                         </div>
-                                        <div>
-                                            <span className="text-[#64748B] text-xs">Timeline</span>
-                                            <p className="text-[#6366F1]">{project.selected_architecture.time_to_implement}</p>
+                                        <div className="bg-[rgba(244,246,255,0.02)] rounded-xl p-3">
+                                            <div className="flex items-center gap-2 mb-1">
+                                                <Clock className="w-4 h-4 text-[#6366F1]" />
+                                                <span className="text-xs text-[#64748B]">Timeline</span>
+                                            </div>
+                                            <p className="text-lg font-bold text-[#6366F1]">{arch.time_to_implement}</p>
                                         </div>
-                                        <div>
-                                            <span className="text-[#64748B] text-xs">Cost</span>
-                                            <p className="text-[#10B981]">{project.selected_architecture.estimated_cost}</p>
+                                        <div className="bg-[rgba(244,246,255,0.02)] rounded-xl p-3">
+                                            <div className="flex items-center gap-2 mb-1">
+                                                <DollarSign className="w-4 h-4 text-[#10B981]" />
+                                                <span className="text-xs text-[#64748B]">Est. Cost</span>
+                                            </div>
+                                            <p className="text-lg font-bold text-[#10B981]">{arch.estimated_cost}</p>
                                         </div>
                                     </div>
+
+                                    {/* Pros & Cons */}
+                                    <div className="grid grid-cols-2 gap-4">
+                                        {arch.pros && arch.pros.length > 0 && (
+                                            <div>
+                                                <h4 className="text-xs font-medium text-[#10B981] mb-2 flex items-center gap-1">
+                                                    <CheckCircle2 className="w-3.5 h-3.5" />
+                                                    Advantages
+                                                </h4>
+                                                <ul className="space-y-1">
+                                                    {arch.pros.map((pro, idx) => (
+                                                        <li key={idx} className="text-xs text-[#94A3B8] flex items-start gap-2">
+                                                            <span className="text-[#10B981] mt-1">•</span>
+                                                            {pro}
+                                                        </li>
+                                                    ))}
+                                                </ul>
+                                            </div>
+                                        )}
+                                        {arch.cons && arch.cons.length > 0 && (
+                                            <div>
+                                                <h4 className="text-xs font-medium text-[#EF4444] mb-2 flex items-center gap-1">
+                                                    <AlertCircle className="w-3.5 h-3.5" />
+                                                    Considerations
+                                                </h4>
+                                                <ul className="space-y-1">
+                                                    {arch.cons.map((con, idx) => (
+                                                        <li key={idx} className="text-xs text-[#94A3B8] flex items-start gap-2">
+                                                            <span className="text-[#EF4444] mt-1">•</span>
+                                                            {con}
+                                                        </li>
+                                                    ))}
+                                                </ul>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {/* Tools Recommended */}
+                                    {arch.tools_recommended && Object.keys(arch.tools_recommended).length > 0 && (
+                                        <div>
+                                            <h4 className="text-xs font-medium text-[#94A3B8] mb-2 flex items-center gap-1">
+                                                <Wrench className="w-3.5 h-3.5 text-[#F59E0B]" />
+                                                Recommended Tools
+                                            </h4>
+                                            <div className="flex flex-wrap gap-2">
+                                                {Object.entries(arch.tools_recommended).map(([category, tools]) => (
+                                                    tools && Array.isArray(tools) && tools.map((tool, idx) => (
+                                                        <span key={`${category}-${idx}`} className="text-xs bg-[rgba(99,102,241,0.1)] text-[#818CF8] px-2 py-1 rounded-lg">
+                                                            {tool}
+                                                        </span>
+                                                    ))
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
-                        )}
+                            );
+                        })()}
 
                         {/* All Architectures History */}
                         {project.architectures && project.architectures.length > 0 && (
