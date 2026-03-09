@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
 import { API_BASE_URL } from '@/config/api';
 
 interface User {
@@ -18,15 +18,25 @@ interface AuthContextType {
   logout: () => void;
   changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
   checkAuth: () => Promise<void>;
+  idleTime: number;
+  showWarning: boolean;
+  dismissWarning: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+// 30 minutes in milliseconds
+const IDLE_TIMEOUT = 30 * 60 * 1000;
+const WARNING_TIME = 25 * 60 * 1000;
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(localStorage.getItem('token'));
   const [isLoading, setIsLoading] = useState(true);
-
+  const [idleTime, setIdleTime] = useState(0);
+  const [showWarning, setShowWarning] = useState(false);
+  
+  const lastActivityRef = useRef(Date.now());
   const isAuthenticated = !!user && !!token;
 
   useEffect(() => {
@@ -36,6 +46,51 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setIsLoading(false);
     }
   }, [token]);
+
+  // Activity tracking
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    const updateActivity = () => {
+      lastActivityRef.current = Date.now();
+      setIdleTime(0);
+      setShowWarning(false);
+    };
+
+    // Track user activity
+    const events = ['mousedown', 'keydown', 'touchstart', 'scroll', 'mousemove'];
+    events.forEach(event => {
+      document.addEventListener(event, updateActivity, true);
+    });
+
+    // Check idle time every minute
+    const interval = setInterval(() => {
+      const now = Date.now();
+      const idle = now - lastActivityRef.current;
+      setIdleTime(idle);
+
+      if (idle >= IDLE_TIMEOUT) {
+        // Auto logout after 30 minutes
+        logout();
+      } else if (idle >= WARNING_TIME) {
+        // Show warning at 25 minutes
+        setShowWarning(true);
+      }
+    }, 60000); // Check every minute
+
+    return () => {
+      events.forEach(event => {
+        document.removeEventListener(event, updateActivity, true);
+      });
+      clearInterval(interval);
+    };
+  }, [isAuthenticated]);
+
+  const dismissWarning = () => {
+    setShowWarning(false);
+    lastActivityRef.current = Date.now();
+    setIdleTime(0);
+  };
 
   const checkAuth = async () => {
     try {
@@ -82,11 +137,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setToken(data.access_token);
     setUser(data.user);
     localStorage.setItem('token', data.access_token);
+    lastActivityRef.current = Date.now();
+    setIdleTime(0);
   };
 
   const logout = () => {
     setUser(null);
     setToken(null);
+    setIdleTime(0);
+    setShowWarning(false);
     localStorage.removeItem('token');
   };
 
@@ -118,7 +177,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       login,
       logout,
       changePassword,
-      checkAuth
+      checkAuth,
+      idleTime,
+      showWarning,
+      dismissWarning
     }}>
       {children}
     </AuthContext.Provider>

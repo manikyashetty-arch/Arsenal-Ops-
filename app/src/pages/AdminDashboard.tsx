@@ -320,6 +320,29 @@ const AdminDashboard = () => {
         }
     };
 
+    const handleDeleteUser = async (user: User) => {
+        if (!confirm(`Are you sure you want to deactivate ${user.name}? They will no longer be able to login.`)) return;
+
+        try {
+            const response = await fetch(`${API_BASE_URL}/api/auth/admin/users/${user.id}`, {
+                method: 'DELETE',
+                headers: { 
+                    'Authorization': `Bearer ${token}`
+                },
+            });
+
+            if (response.ok) {
+                toast.success(`User ${user.name} has been deactivated`);
+                fetchData();
+            } else {
+                const error = await response.json();
+                toast.error(error.detail || 'Failed to delete user');
+            }
+        } catch {
+            toast.error('Failed to delete user');
+        }
+    };
+
     return (
         <div className="min-h-screen bg-[#0B0D14] text-white">
             <Toaster position="top-right" theme="dark" />
@@ -688,6 +711,15 @@ const AdminDashboard = () => {
                                                             >
                                                                 <Key className="w-3.5 h-3.5 mr-1" />
                                                                 Reset
+                                                            </Button>
+                                                            <Button
+                                                                variant="ghost"
+                                                                size="sm"
+                                                                onClick={() => handleDeleteUser(user)}
+                                                                className="text-[#64748B] hover:text-red-400 h-8"
+                                                            >
+                                                                <Trash2 className="w-3.5 h-3.5 mr-1" />
+                                                                Delete
                                                             </Button>
                                                         </div>
                                                     </td>

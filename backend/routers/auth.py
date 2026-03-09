@@ -299,6 +299,46 @@ async def update_user_role(
     }
 
 
+@router.delete("/admin/users/{user_id}")
+async def delete_user(
+    user_id: int,
+    admin: User = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """Admin: Delete a user (soft delete - set inactive)"""
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+    
+    # Prevent deleting yourself
+    if user.id == admin.id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot delete your own account"
+        )
+    
+    # Prevent deleting the last admin
+    if user.role == UserRole.ADMIN.value:
+        admin_count = db.query(User).filter(User.role == UserRole.ADMIN.value).count()
+        if admin_count <= 1:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Cannot delete the last admin"
+            )
+    
+    # Soft delete - set inactive instead of hard delete
+    user.is_active = False
+    db.commit()
+    
+    return {
+        "status": "success",
+        "message": f"User {user.email} has been deactivated"
+    }
+
+
 @router.get("/me", response_model=UserResponse)
 async def get_current_user_info(current_user: User = Depends(get_current_user)):
     """Get current user info"""
