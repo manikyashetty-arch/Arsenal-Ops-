@@ -179,7 +179,11 @@ const ProjectDetail = () => {
 
     const fetchAllDevelopers = async () => {
         try {
-            const res = await fetch(`${API_BASE_URL}/api/developers/`);
+            const res = await fetch(`${API_BASE_URL}/api/developers/`, {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            });
             if (res.ok) {
                 setAllDevelopers(await res.json());
             }
@@ -785,12 +789,12 @@ const ProjectDetail = () => {
                                                             <span className="text-xs text-[#6366F1]">{phase.duration}</span>
                                                         </div>
                                                         <div className="flex flex-wrap gap-1">
-                                                            {phase.tasks.slice(0, 3).map((task, taskIdx) => (
+                                                            {phase.tasks && phase.tasks.slice(0, 3).map((task, taskIdx) => (
                                                                 <span key={taskIdx} className="text-xs bg-[rgba(244,246,255,0.03)] text-[#94A3B8] px-2 py-0.5 rounded">
                                                                     {task}
                                                                 </span>
                                                             ))}
-                                                            {phase.tasks.length > 3 && (
+                                                            {phase.tasks && phase.tasks.length > 3 && (
                                                                 <span className="text-xs text-[#64748B]">+{phase.tasks.length - 3} more</span>
                                                             )}
                                                         </div>
