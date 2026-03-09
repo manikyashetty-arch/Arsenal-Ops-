@@ -118,7 +118,9 @@ const ProjectsPage = () => {
     // Fetch available developers
     const fetchDevelopers = async () => {
         try {
-            const response = await fetch(`${API_BASE_URL}/api/developers/`);
+            const response = await fetch(`${API_BASE_URL}/api/developers/`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
             if (response.ok) {
                 const data = await response.json();
                 setAvailableDevelopers(data);
