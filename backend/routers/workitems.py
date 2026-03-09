@@ -15,7 +15,9 @@ from database import get_db
 from models.work_item import WorkItem, WorkItemType, WorkItemStatus, WorkItemPriority
 from models.sprint import Sprint, SprintStatus
 from models.project import Project
+from models.user import User
 from services.llm_agent import llm_agent
+from routers.auth import get_current_user
 
 router = APIRouter(prefix="/api/workitems", tags=["Work Items"])
 
@@ -90,9 +92,10 @@ async def list_work_items(
     type: str = None, 
     sprint_id: int = None,
     assignee_id: int = None,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
-    """List all work items with optional filters"""
+    """List all work items with optional filters (requires auth)"""
     query = db.query(WorkItem)
     
     if project_id:
@@ -146,8 +149,12 @@ async def list_work_items(
 
 
 @router.get("/{item_id}")
-async def get_work_item(item_id: int, db: Session = Depends(get_db)):
-    """Get a specific work item"""
+async def get_work_item(
+    item_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get a specific work item (requires auth)"""
     item = db.query(WorkItem).filter(WorkItem.id == item_id).first()
     if not item:
         raise HTTPException(status_code=404, detail="Work item not found")
@@ -155,7 +162,11 @@ async def get_work_item(item_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/")
-async def create_work_item(item: WorkItemCreate, db: Session = Depends(get_db)):
+async def create_work_item(
+    item: WorkItemCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
     """Create a new work item"""
     # Get project for key prefix
     project = db.query(Project).filter(Project.id == item.project_id).first()
@@ -217,8 +228,13 @@ async def create_work_item(item: WorkItemCreate, db: Session = Depends(get_db)):
 
 
 @router.put("/{item_id}")
-async def update_work_item(item_id: int, update: WorkItemUpdate, db: Session = Depends(get_db)):
-    """Update an existing work item"""
+async def update_work_item(
+    item_id: int,
+    update: WorkItemUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Update an existing work item (requires auth)"""
     item = db.query(WorkItem).filter(WorkItem.id == item_id).first()
     if not item:
         raise HTTPException(status_code=404, detail="Work item not found")
@@ -271,8 +287,12 @@ async def update_work_item(item_id: int, update: WorkItemUpdate, db: Session = D
 
 
 @router.put("/batch/status")
-async def batch_update_status(update: BatchStatusUpdate, db: Session = Depends(get_db)):
-    """Batch update status for multiple work items"""
+async def batch_update_status(
+    update: BatchStatusUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Batch update status for multiple work items (requires auth)"""
     items = db.query(WorkItem).filter(WorkItem.id.in_(update.item_ids)).all()
     
     for item in items:
@@ -288,8 +308,12 @@ async def batch_update_status(update: BatchStatusUpdate, db: Session = Depends(g
 
 
 @router.delete("/{item_id}")
-async def delete_work_item(item_id: int, db: Session = Depends(get_db)):
-    """Delete a work item"""
+async def delete_work_item(
+    item_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Delete a work item (requires auth)"""
     item = db.query(WorkItem).filter(WorkItem.id == item_id).first()
     if not item:
         raise HTTPException(status_code=404, detail="Work item not found")
@@ -300,8 +324,11 @@ async def delete_work_item(item_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/generate")
-async def generate_work_items(request: GenerateStoriesRequest):
-    """Generate work items using LLM agent"""
+async def generate_work_items(
+    request: GenerateStoriesRequest,
+    current_user: User = Depends(get_current_user)
+):
+    """Generate work items using LLM agent (requires auth)"""
     global item_counter
 
     # Get project key prefix
@@ -414,8 +441,12 @@ async def generate_work_items(request: GenerateStoriesRequest):
 
 # Sprint endpoints
 @router.post("/sprints")
-async def create_sprint(sprint: SprintCreate, db: Session = Depends(get_db)):
-    """Create a new sprint"""
+async def create_sprint(
+    sprint: SprintCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Create a new sprint (requires auth)"""
     # Verify project exists
     project = db.query(Project).filter(Project.id == sprint.project_id).first()
     if not project:
@@ -437,8 +468,13 @@ async def create_sprint(sprint: SprintCreate, db: Session = Depends(get_db)):
 
 
 @router.get("/sprints/list")
-async def list_sprints(project_id: int = None, status: str = None, db: Session = Depends(get_db)):
-    """List sprints, optionally filtered by project"""
+async def list_sprints(
+    project_id: int = None,
+    status: str = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """List sprints, optionally filtered by project (requires auth)"""
     query = db.query(Sprint)
     if project_id:
         query = query.filter(Sprint.project_id == project_id)
@@ -448,8 +484,12 @@ async def list_sprints(project_id: int = None, status: str = None, db: Session =
 
 
 @router.get("/sprints/{sprint_id}")
-async def get_sprint(sprint_id: int, db: Session = Depends(get_db)):
-    """Get a specific sprint with its work items"""
+async def get_sprint(
+    sprint_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get a specific sprint with its work items (requires auth)"""
     sprint = db.query(Sprint).filter(Sprint.id == sprint_id).first()
     if not sprint:
         raise HTTPException(status_code=404, detail="Sprint not found")
@@ -457,8 +497,12 @@ async def get_sprint(sprint_id: int, db: Session = Depends(get_db)):
 
 
 @router.put("/sprints/{sprint_id}/activate")
-async def activate_sprint(sprint_id: int, db: Session = Depends(get_db)):
-    """Activate a sprint"""
+async def activate_sprint(
+    sprint_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Activate a sprint (requires auth)"""
     sprint = db.query(Sprint).filter(Sprint.id == sprint_id).first()
     if not sprint:
         raise HTTPException(status_code=404, detail="Sprint not found")
@@ -471,8 +515,12 @@ async def activate_sprint(sprint_id: int, db: Session = Depends(get_db)):
 
 
 @router.put("/sprints/{sprint_id}/complete")
-async def complete_sprint(sprint_id: int, db: Session = Depends(get_db)):
-    """Complete a sprint"""
+async def complete_sprint(
+    sprint_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Complete a sprint (requires auth)"""
     sprint = db.query(Sprint).filter(Sprint.id == sprint_id).first()
     if not sprint:
         raise HTTPException(status_code=404, detail="Sprint not found")
@@ -500,9 +548,10 @@ class MoveTicketRequest(BaseModel):
 async def move_ticket_to_sprint(
     item_id: int,
     request: MoveTicketRequest,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
-    """Move a ticket to a different sprint or to backlog"""
+    """Move a ticket to a different sprint or to backlog (requires auth)"""
     item = db.query(WorkItem).filter(WorkItem.id == item_id).first()
     if not item:
         raise HTTPException(status_code=404, detail="Work item not found")
@@ -561,8 +610,12 @@ async def move_ticket_to_sprint(
 
 
 @router.get("/projects/{project_id}/sprints")
-async def list_project_sprints(project_id: int, db: Session = Depends(get_db)):
-    """List all sprints for a project with work item counts"""
+async def list_project_sprints(
+    project_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """List all sprints for a project with work item counts (requires auth)"""
     sprints = db.query(Sprint).filter(Sprint.project_id == project_id).order_by(Sprint.start_date).all()
     
     result = []
