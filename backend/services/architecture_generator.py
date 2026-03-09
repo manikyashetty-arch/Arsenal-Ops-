@@ -40,33 +40,46 @@ ADDITIONAL CONTEXT:
 
 Perform a comprehensive analysis including:
 
-1. PROJECT SUMMARY: Brief overview of what the project is about
-2. KEY FEATURES: List of main features to be built
-3. TECHNICAL REQUIREMENTS: Technologies and tools needed
-4. COST ANALYSIS:
-   - Development cost estimate (team size, timeline)
-   - Infrastructure cost estimate (monthly)
-   - Third-party services cost
-   - Total estimated budget range
-5. RECOMMENDED TOOLS & TECHNOLOGIES:
-   - Frontend framework
-   - Backend framework
-   - Database
-   - Cloud provider
-   - CI/CD tools
-   - Monitoring tools
-   - Other services needed
-6. RISK ASSESSMENT: Key risks and mitigations
-7. TIMELINE ESTIMATE: Phases with durations
+1. PROJECT SUMMARY: Brief overview of what the project is about (2-3 sentences)
 
-Return as JSON with keys: 
-- summary
-- key_features (list)
-- technical_requirements (list)
-- cost_analysis (object with development_cost, infrastructure_cost, third_party_cost, total_range)
-- recommended_tools (object with categories)
-- risks (list of objects with risk and mitigation)
-- timeline (list of phases with name and duration_weeks)
+2. KEY FEATURES: List of 5-10 main features to be built
+
+3. TECHNICAL REQUIREMENTS: List of 5-10 technologies and technical requirements
+
+4. COST ANALYSIS (provide realistic estimates):
+   - infrastructure: object with:
+     - monthly: string like "$500-1000/month"
+     - annual: string like "$6000-12000/year"
+     - breakdown: array of {{item: string, cost: string}} for cloud, database, CDN, etc.
+   - development: object with:
+     - total: string like "$50,000-80,000"
+     - breakdown: array of {{item: string, cost: string}} for frontend, backend, testing, etc.
+   - total_estimated: string like "$56,000-92,000 total"
+
+5. RECOMMENDED TOOLS (provide specific tool names):
+   - frontend: list of 2-4 tools (e.g., ["React", "TypeScript", "Tailwind CSS"])
+   - backend: list of 2-4 tools (e.g., ["FastAPI", "PostgreSQL", "Redis"])
+   - database: list of 1-2 tools
+   - devops: list of 2-4 tools (e.g., ["Docker", "GitHub Actions", "AWS"])
+
+6. RISK ASSESSMENT: 3-5 risks with:
+   - risk: description of the risk
+   - impact: High/Medium/Low
+   - mitigation: how to address it
+
+7. TIMELINE: 4-6 phases with:
+   - phase: name of the phase (e.g., "Planning & Design")
+   - duration: string like "2-3 weeks"
+   - tasks: list of 3-5 specific tasks for this phase
+
+Return as valid JSON with these exact keys: 
+- summary (string)
+- key_features (array of strings)
+- technical_requirements (array of strings)
+- cost_analysis (object with infrastructure, development, total_estimated)
+- recommended_tools (object with frontend, backend, database, devops arrays)
+- risks (array of objects with risk, impact, mitigation)
+- timeline (array of objects with phase, duration, tasks)
 """
 
         try:

@@ -683,12 +683,12 @@ const ProjectDetail = () => {
                                 )}
 
                                 {/* Recommended Tools */}
-                                {prdAnalysis.recommended_tools && Object.keys(prdAnalysis.recommended_tools).length > 0 && (
-                                    <div className="mb-6">
-                                        <h4 className="text-sm font-medium text-[#94A3B8] mb-3 flex items-center gap-2">
-                                            <Zap className="w-4 h-4 text-[#F59E0B]" />
-                                            Recommended Tools
-                                        </h4>
+                                <div className="mb-6">
+                                    <h4 className="text-sm font-medium text-[#94A3B8] mb-3 flex items-center gap-2">
+                                        <Zap className="w-4 h-4 text-[#F59E0B]" />
+                                        Recommended Tools
+                                    </h4>
+                                    {prdAnalysis.recommended_tools && Object.keys(prdAnalysis.recommended_tools).length > 0 ? (
                                         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                                             {Object.entries(prdAnalysis.recommended_tools).map(([category, tools]) => (
                                                 tools && Array.isArray(tools) && tools.length > 0 && (
@@ -705,22 +705,26 @@ const ProjectDetail = () => {
                                                 )
                                             ))}
                                         </div>
-                                    </div>
-                                )}
+                                    ) : (
+                                        <div className="bg-[rgba(244,246,255,0.02)] border border-[rgba(244,246,255,0.06)] rounded-xl p-4 text-center">
+                                            <p className="text-sm text-[#64748B]">No recommended tools data available. Re-analyze PRD to generate.</p>
+                                        </div>
+                                    )}
+                                </div>
 
                                 {/* Cost Analysis */}
-                                {prdAnalysis.cost_analysis && (
-                                    <div className="mb-6">
-                                        <h4 className="text-sm font-medium text-[#94A3B8] mb-3 flex items-center gap-2">
-                                            <DollarSign className="w-4 h-4 text-[#10B981]" />
-                                            Cost Analysis
-                                        </h4>
+                                <div className="mb-6">
+                                    <h4 className="text-sm font-medium text-[#94A3B8] mb-3 flex items-center gap-2">
+                                        <DollarSign className="w-4 h-4 text-[#10B981]" />
+                                        Cost Analysis
+                                    </h4>
+                                    {prdAnalysis.cost_analysis && (prdAnalysis.cost_analysis.infrastructure || prdAnalysis.cost_analysis.development) ? (
                                         <div className="grid grid-cols-2 gap-4">
                                             {prdAnalysis.cost_analysis.infrastructure && (
                                                 <div className="bg-[rgba(16,185,129,0.05)] border border-[rgba(16,185,129,0.2)] rounded-xl p-4">
                                                     <p className="text-xs text-[#64748B] mb-1">Infrastructure (Monthly)</p>
-                                                    <p className="text-xl font-bold text-[#10B981]">{prdAnalysis.cost_analysis.infrastructure.monthly}</p>
-                                                    {prdAnalysis.cost_analysis.infrastructure.breakdown && (
+                                                    <p className="text-xl font-bold text-[#10B981]">{prdAnalysis.cost_analysis.infrastructure.monthly || 'N/A'}</p>
+                                                    {prdAnalysis.cost_analysis.infrastructure.breakdown && prdAnalysis.cost_analysis.infrastructure.breakdown.length > 0 && (
                                                         <div className="mt-2 space-y-1">
                                                             {prdAnalysis.cost_analysis.infrastructure.breakdown.slice(0, 3).map((item, idx) => (
                                                                 <div key={idx} className="flex justify-between text-xs">
@@ -735,8 +739,8 @@ const ProjectDetail = () => {
                                             {prdAnalysis.cost_analysis.development && (
                                                 <div className="bg-[rgba(99,102,241,0.05)] border border-[rgba(99,102,241,0.2)] rounded-xl p-4">
                                                     <p className="text-xs text-[#64748B] mb-1">Development</p>
-                                                    <p className="text-xl font-bold text-[#6366F1]">{prdAnalysis.cost_analysis.development.total}</p>
-                                                    {prdAnalysis.cost_analysis.development.breakdown && (
+                                                    <p className="text-xl font-bold text-[#6366F1]">{prdAnalysis.cost_analysis.development.total || 'N/A'}</p>
+                                                    {prdAnalysis.cost_analysis.development.breakdown && prdAnalysis.cost_analysis.development.breakdown.length > 0 && (
                                                         <div className="mt-2 space-y-1">
                                                             {prdAnalysis.cost_analysis.development.breakdown.slice(0, 3).map((item, idx) => (
                                                                 <div key={idx} className="flex justify-between text-xs">
@@ -748,9 +752,18 @@ const ProjectDetail = () => {
                                                     )}
                                                 </div>
                                             )}
+                                            {prdAnalysis.cost_analysis.total_estimated && (
+                                                <div className="col-span-2 bg-[rgba(99,102,241,0.05)] border border-[rgba(99,102,241,0.2)] rounded-xl p-3 text-center">
+                                                    <p className="text-sm text-[#64748B]">Total Estimated: <span className="text-lg font-bold text-[#6366F1]">{prdAnalysis.cost_analysis.total_estimated}</span></p>
+                                                </div>
+                                            )}
                                         </div>
-                                    </div>
-                                )}
+                                    ) : (
+                                        <div className="bg-[rgba(244,246,255,0.02)] border border-[rgba(244,246,255,0.06)] rounded-xl p-4 text-center">
+                                            <p className="text-sm text-[#64748B]">No cost analysis data available. Re-analyze PRD to generate.</p>
+                                        </div>
+                                    )}
+                                </div>
 
                                 {/* Risks */}
                                 {prdAnalysis.risks && prdAnalysis.risks.length > 0 && (
@@ -778,12 +791,12 @@ const ProjectDetail = () => {
                                 )}
 
                                 {/* Timeline */}
-                                {prdAnalysis.timeline && prdAnalysis.timeline.length > 0 && (
-                                    <div>
-                                        <h4 className="text-sm font-medium text-[#94A3B8] mb-3 flex items-center gap-2">
-                                            <Calendar className="w-4 h-4 text-[#6366F1]" />
-                                            Project Timeline
-                                        </h4>
+                                <div>
+                                    <h4 className="text-sm font-medium text-[#94A3B8] mb-3 flex items-center gap-2">
+                                        <Calendar className="w-4 h-4 text-[#6366F1]" />
+                                        Project Timeline
+                                    </h4>
+                                    {prdAnalysis.timeline && prdAnalysis.timeline.length > 0 ? (
                                         <div className="space-y-3">
                                             {prdAnalysis.timeline.map((phase, idx) => (
                                                 <div key={idx} className="flex items-start gap-4">
@@ -809,8 +822,12 @@ const ProjectDetail = () => {
                                                 </div>
                                             ))}
                                         </div>
-                                    </div>
-                                )}
+                                    ) : (
+                                        <div className="bg-[rgba(244,246,255,0.02)] border border-[rgba(244,246,255,0.06)] rounded-xl p-4 text-center">
+                                            <p className="text-sm text-[#64748B]">No timeline data available. Provide a PRD with timeline details to generate phases.</p>
+                                        </div>
+                                    )}
+                                </div>
                             </div>
                         )}
 
