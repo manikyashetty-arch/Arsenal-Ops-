@@ -20,6 +20,7 @@ from routers.developers import router as developers_router
 from routers.prd_analysis import router as prd_router
 from routers.comments import router as comments_router
 from routers.admin import router as admin_router
+from routers.auth import router as auth_router
 
 # Create FastAPI app
 app = FastAPI(
@@ -79,6 +80,7 @@ except Exception as e:
     # Continue anyway - tables might already exist
 
 # Include routers
+app.include_router(auth_router)
 app.include_router(projects_router)
 app.include_router(workitems_router)
 app.include_router(developers_router)

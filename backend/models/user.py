@@ -1,0 +1,49 @@
+"""
+User Model - Authentication and user management
+"""
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, Enum
+from sqlalchemy.orm import relationship
+from datetime import datetime
+import enum
+
+import sys
+sys.path.append('..')
+from database import Base
+
+
+class UserRole(str, enum.Enum):
+    ADMIN = "admin"
+    DEVELOPER = "developer"
+
+
+class User(Base):
+    """User account for authentication"""
+    __tablename__ = "users"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    email = Column(String(255), unique=True, nullable=False, index=True)
+    name = Column(String(255), nullable=False)
+    hashed_password = Column(String(255), nullable=False)
+    role = Column(String(20), default=UserRole.DEVELOPER.value)
+    
+    # Account status
+    is_active = Column(Boolean, default=True)
+    is_first_login = Column(Boolean, default=True)  # Must change password on first login
+    
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    last_login_at = Column(DateTime, nullable=True)
+    password_changed_at = Column(DateTime, nullable=True)
+    
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "email": self.email,
+            "name": self.name,
+            "role": self.role,
+            "is_active": self.is_active,
+            "is_first_login": self.is_first_login,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "last_login_at": self.last_login_at.isoformat() if self.last_login_at else None,
+        }

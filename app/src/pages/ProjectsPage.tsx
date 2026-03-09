@@ -16,6 +16,7 @@ import {
     Trash2,
     Github,
     Settings,
+    LogOut,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -29,6 +30,7 @@ import {
     SelectTrigger,
     SelectValue,
 } from '@/components/ui/select';
+import { useAuth } from '@/contexts/AuthContext';
 
 import { API_BASE_URL } from '@/config/api';
 
@@ -71,6 +73,7 @@ interface Project {
 
 const ProjectsPage = () => {
     const navigate = useNavigate();
+    const { user, logout } = useAuth();
     const [projects, setProjects] = useState<Project[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [showCreateModal, setShowCreateModal] = useState(false);
@@ -254,6 +257,14 @@ const ProjectsPage = () => {
                         </div>
                     </div>
                     <div className="flex items-center gap-3">
+                        {user && (
+                            <div className="flex items-center gap-2 mr-2">
+                                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#6366F1] to-[#4F46E5] flex items-center justify-center text-white text-sm font-medium">
+                                    {user.name.charAt(0).toUpperCase()}
+                                </div>
+                                <span className="text-sm text-[#94A3B8] hidden md:block">{user.name}</span>
+                            </div>
+                        )}
                         <Button
                             variant="ghost"
                             onClick={() => navigate('/admin')}
@@ -261,6 +272,14 @@ const ProjectsPage = () => {
                         >
                             <Settings className="w-4 h-4 mr-2" />
                             Admin
+                        </Button>
+                        <Button
+                            variant="ghost"
+                            onClick={logout}
+                            className="text-[#64748B] hover:text-red-400 hover:bg-red-500/10 rounded-xl px-3"
+                        >
+                            <LogOut className="w-4 h-4 mr-2" />
+                            Logout
                         </Button>
                         <Badge variant="outline" className="border-emerald-500/30 text-emerald-400 bg-emerald-500/10 px-3 py-1">
                             <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 mr-2 animate-pulse" />
