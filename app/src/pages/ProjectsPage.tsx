@@ -73,7 +73,7 @@ interface Project {
 
 const ProjectsPage = () => {
     const navigate = useNavigate();
-    const { user, logout } = useAuth();
+    const { user, token, logout } = useAuth();
     const [projects, setProjects] = useState<Project[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [showCreateModal, setShowCreateModal] = useState(false);
@@ -99,7 +99,11 @@ const ProjectsPage = () => {
 
     const fetchProjects = async () => {
         try {
-            const response = await fetch(`${API_BASE_URL}/api/projects/`);
+            const response = await fetch(`${API_BASE_URL}/api/projects/`, {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            });
             if (response.ok) {
                 const data = await response.json();
                 setProjects(data);
@@ -168,7 +172,10 @@ const ProjectsPage = () => {
         try {
             const response = await fetch(`${API_BASE_URL}/api/projects/`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
                 body: JSON.stringify({
                     name: createForm.name,
                     description: createForm.description,
@@ -195,7 +202,12 @@ const ProjectsPage = () => {
         e.stopPropagation();
         if (!confirm('Delete this project and all its work items?')) return;
         try {
-            await fetch(`${API_BASE_URL}/api/projects/${projectId}/`, { method: 'DELETE' });
+            await fetch(`${API_BASE_URL}/api/projects/${projectId}/`, {
+                method: 'DELETE',
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            });
             setProjects(prev => prev.filter(p => p.id !== projectId));
             toast.success('Project deleted');
         } catch (err) {
@@ -213,7 +225,10 @@ const ProjectsPage = () => {
         try {
             const response = await fetch(`${API_BASE_URL}/api/projects/${project.id}/github-invite`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
             });
             
             const data = await response.json();
