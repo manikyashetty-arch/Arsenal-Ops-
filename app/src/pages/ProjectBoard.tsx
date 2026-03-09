@@ -245,7 +245,7 @@ const ProjectBoard = () => {
                 const headers = { 'Authorization': `Bearer ${token}` };
                 const [projRes, itemsRes, sprintsRes] = await Promise.all([
                     fetch(`${API_BASE_URL}/api/projects/${id}`, { headers }),
-                    fetch(`${API_BASE_URL}/api/workitems?project_id=${id}`, { headers }),
+                    fetch(`${API_BASE_URL}/api/workitems/?project_id=${id}`, { headers }),
                     fetch(`${API_BASE_URL}/api/workitems/projects/${id}/sprints`, { headers }),
                 ]);
                 if (projRes.ok) setProject(await projRes.json());
@@ -327,7 +327,7 @@ const ProjectBoard = () => {
             return;
         }
         try {
-            const response = await fetch(`${API_BASE_URL}/api/workitems`, {
+            const response = await fetch(`${API_BASE_URL}/api/workitems/`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                 body: JSON.stringify({
@@ -397,7 +397,7 @@ const ProjectBoard = () => {
             return;
         }
         try {
-            const response = await fetch(`${API_BASE_URL}/api/workitems/sprints`, {
+            const response = await fetch(`${API_BASE_URL}/api/workitems/sprints/`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                 body: JSON.stringify({
@@ -751,7 +751,7 @@ const ProjectBoard = () => {
                 
                 // Refresh work items and sprints
                 const [itemsRes, sprintsRes] = await Promise.all([
-                    fetch(`${API_BASE_URL}/api/workitems?project_id=${project.id}`),
+                    fetch(`${API_BASE_URL}/api/workitems/?project_id=${project.id}`),
                     fetch(`${API_BASE_URL}/api/workitems/projects/${project.id}/sprints`),
                 ]);
                 if (itemsRes.ok) {
