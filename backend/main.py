@@ -72,9 +72,48 @@ app.add_middleware(
 
 # Initialize database tables on startup
 try:
-    from database import init_db
+    from database import init_db, SessionLocal
     init_db()
     print("DEBUG: Database initialized successfully")
+    
+    # Create default admin user if none exists
+    from models.user import User, UserRole
+    from passlib.context import CryptContext
+    import secrets
+    import string
+    
+    pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+    db = SessionLocal()
+    
+    try:
+        # Check if admin already exists
+        existing_admin = db.query(User).filter(User.role == UserRole.ADMIN.value).first()
+        if not existing_admin:
+            # Generate secure password
+            alphabet = string.ascii_letters + string.digits + "!@#$%^&*"
+            temp_password = ''.join(secrets.choice(alphabet) for _ in range(12))
+            
+            admin = User(
+                email="manikya.shetty@arsenalai.com",
+                name="manikya rathna",
+                hashed_password=pwd_context.hash(temp_password),
+                role=UserRole.ADMIN.value,
+                is_active=True,
+                is_first_login=True
+            )
+            db.add(admin)
+            db.commit()
+            print("=" * 60)
+            print("DEFAULT ADMIN CREATED!")
+            print("=" * 60)
+            print(f"Email: {admin.email}")
+            print(f"Temporary Password: {temp_password}")
+            print("=" * 60)
+    except Exception as e:
+        print(f"Admin creation error: {e}")
+    finally:
+        db.close()
+        
 except Exception as e:
     print(f"DEBUG: Database initialization error: {e}")
     # Continue anyway - tables might already exist
