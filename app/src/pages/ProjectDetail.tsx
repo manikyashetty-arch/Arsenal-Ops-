@@ -15,12 +15,18 @@ import {
     CheckCircle2,
     AlertCircle,
     LayoutGrid,
+    Layers,
+    Sparkles,
+    RotateCcw,
+    Maximize2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { toast, Toaster } from 'sonner';
+import MermaidRenderer from '@/components/MermaidRenderer';
+import ArchitectureEditor from '@/components/ArchitectureEditor';
 
 import { API_BASE_URL } from '@/config/api';
 
@@ -41,6 +47,22 @@ interface ProjectDeveloper {
     responsibilities: string;
 }
 
+interface Architecture {
+    id: number;
+    name: string;
+    description: string;
+    architecture_type: string;
+    mermaid_code: string;
+    pros: string[];
+    cons: string[];
+    estimated_cost: string;
+    complexity: string;
+    time_to_implement: string;
+    is_selected: boolean;
+    created_at: string;
+    updated_at: string;
+}
+
 interface Project {
     id: number;
     name: string;
@@ -51,6 +73,8 @@ interface Project {
     github_repo_name?: string;
     created_at: string;
     developers: ProjectDeveloper[];
+    selected_architecture?: Architecture;
+    architectures: Architecture[];
 }
 
 type TabType = 'overview' | 'developers' | 'github';
@@ -72,6 +96,10 @@ const ProjectDetail = () => {
     });
     const [githubStatus, setGithubStatus] = useState<{ has_repo: boolean; developer_count: number; sent_count: number } | null>(null);
     const [isSendingInvites, setIsSendingInvites] = useState(false);
+    
+    // Architecture editing state
+    const [editingArchitecture, setEditingArchitecture] = useState<Architecture | null>(null);
+    const [regeneratingArchitectureId, setRegeneratingArchitectureId] = useState<number | null>(null);
 
     // Fetch project data
     useEffect(() => {
@@ -182,6 +210,44 @@ const ProjectDetail = () => {
             }
         } catch {
             toast.error('Failed to remove developer');
+        }
+    };
+
+    // Select architecture
+    const handleSelectArchitecture = async (architectureId: number) => {
+        if (!project) return;
+        try {
+            const res = await fetch(`${API_BASE_URL}/api/prd/architectures/${architectureId}/select`, {
+                method: 'POST',
+            });
+            if (res.ok) {
+                toast.success('Architecture selected!');
+                fetchProject();
+            } else {
+                toast.error('Failed to select architecture');
+            }
+        } catch {
+            toast.error('Failed to select architecture');
+        }
+    };
+
+    // Save architecture changes
+    const handleSaveArchitecture = async (id: number, updates: { mermaid_code?: string; name?: string; description?: string }) => {
+        try {
+            const res = await fetch(`${API_BASE_URL}/api/prd/architectures/${id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(updates),
+            });
+            if (res.ok) {
+                toast.success('Architecture updated!');
+                setEditingArchitecture(null);
+                fetchProject();
+            } else {
+                toast.error('Failed to update architecture');
+            }
+        } catch {
+            toast.error('Failed to update architecture');
         }
     };
 
@@ -454,6 +520,113 @@ const ProjectDetail = () => {
                                 </div>
                             </div>
                         </div>
+
+                        {/* Architecture Section */}
+                        {project.selected_architecture && (
+                            <div className="bg-[rgba(244,246,255,0.02)] border border-[rgba(244,246,255,0.06)] rounded-2xl overflow-hidden">
+                                <div className="p-4 border-b border-[rgba(244,246,255,0.06)] flex items-center justify-between">
+                                    <div className="flex items-center gap-3">
+                                        <Layers className="w-5 h-5 text-[#6366F1]" />
+                                        <div>
+                                            <h3 className="font-semibold text-white">Selected Architecture</h3>
+                                            <p className="text-xs text-[#64748B]">{project.selected_architecture.name}</p>
+                                        </div>
+                                    </div>
+                                    <div className="flex gap-2">
+                                        <Button
+                                            size="sm"
+                                            variant="ghost"
+                                            onClick={() => project.selected_architecture && setEditingArchitecture(project.selected_architecture)}
+                                            className="text-[#64748B] hover:text-white"
+                                        >
+                                            <Pencil className="w-4 h-4 mr-2" />
+                                            Edit
+                                        </Button>
+                                        <Button
+                                            size="sm"
+                                            onClick={() => navigate(`/project/${project.id}/board`)}
+                                            className="bg-gradient-to-r from-[#6366F1] to-[#4F46E5] hover:from-[#5558E6] hover:to-[#4338CA] text-white"
+                                        >
+                                            <Sparkles className="w-4 h-4 mr-2" />
+                                            AI Generate
+                                        </Button>
+                                    </div>
+                                </div>
+                                <div className="p-4 bg-[#0B0D14] min-h-[400px]">
+                                    <MermaidRenderer 
+                                        code={project.selected_architecture.mermaid_code} 
+                                        className="w-full h-full min-h-[350px]"
+                                    />
+                                </div>
+                                <div className="p-4 border-t border-[rgba(244,246,255,0.06)] bg-[rgba(244,246,255,0.02)]">
+                                    <div className="grid grid-cols-3 gap-4 text-sm">
+                                        <div>
+                                            <span className="text-[#64748B] text-xs">Complexity</span>
+                                            <p className="text-[#F59E0B] capitalize">{project.selected_architecture.complexity}</p>
+                                        </div>
+                                        <div>
+                                            <span className="text-[#64748B] text-xs">Timeline</span>
+                                            <p className="text-[#6366F1]">{project.selected_architecture.time_to_implement}</p>
+                                        </div>
+                                        <div>
+                                            <span className="text-[#64748B] text-xs">Cost</span>
+                                            <p className="text-[#10B981]">{project.selected_architecture.estimated_cost}</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* All Architectures History */}
+                        {project.architectures && project.architectures.length > 0 && (
+                            <div className="bg-[rgba(244,246,255,0.02)] border border-[rgba(244,246,255,0.06)] rounded-2xl p-6">
+                                <h3 className="font-semibold text-white mb-4">Architecture History</h3>
+                                <div className="space-y-3">
+                                    {project.architectures.map((arch) => (
+                                        <div 
+                                            key={arch.id} 
+                                            className={`p-4 rounded-xl border ${arch.is_selected ? 'border-[#6366F1] bg-[#6366F1]/10' : 'border-[rgba(244,246,255,0.06)] bg-[rgba(244,246,255,0.02)]'}`}
+                                        >
+                                            <div className="flex items-start justify-between">
+                                                <div>
+                                                    <div className="flex items-center gap-2">
+                                                        <h4 className="font-medium text-white">{arch.name}</h4>
+                                                        {arch.is_selected && (
+                                                            <Badge className="bg-[#6366F1] text-white border-0 text-[10px]">
+                                                                Selected
+                                                            </Badge>
+                                                        )}
+                                                    </div>
+                                                    <p className="text-xs text-[#64748B] mt-1">
+                                                        {new Date(arch.created_at).toLocaleDateString()}
+                                                    </p>
+                                                </div>
+                                                <div className="flex gap-2">
+                                                    <Button
+                                                        size="sm"
+                                                        variant="ghost"
+                                                        onClick={() => setEditingArchitecture(arch)}
+                                                        className="text-[#64748B] hover:text-white h-8"
+                                                    >
+                                                        <Pencil className="w-3.5 h-3.5 mr-1" />
+                                                        Edit
+                                                    </Button>
+                                                    {!arch.is_selected && (
+                                                        <Button
+                                                            size="sm"
+                                                            onClick={() => handleSelectArchitecture(arch.id)}
+                                                            className="bg-gradient-to-r from-[#475569] to-[#334155] hover:from-[#6366F1] hover:to-[#4F46E5] text-white h-8"
+                                                        >
+                                                            Select
+                                                        </Button>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
                     </div>
                 )}
 
@@ -746,6 +919,15 @@ const ProjectDetail = () => {
                     </div>
                 )}
             </main>
+
+            {/* Architecture Editor Modal */}
+            {editingArchitecture && (
+                <ArchitectureEditor
+                    architecture={editingArchitecture}
+                    onSave={handleSaveArchitecture}
+                    onClose={() => setEditingArchitecture(null)}
+                />
+            )}
         </div>
     );
 };

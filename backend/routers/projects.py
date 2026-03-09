@@ -13,6 +13,7 @@ sys.path.append('..')
 from database import get_db
 from models.project import Project
 from models.developer import Developer, project_developers
+from models.architecture import Architecture
 from services.github_service import github_service, GitHubService
 
 router = APIRouter(prefix="/api/projects", tags=["Projects"])
@@ -112,6 +113,17 @@ def format_project(project: Project, db: Session) -> dict:
     if project.github_repo_url:
         github_repo_name = github_service.parse_repo_name(project.github_repo_url)
     
+    # Get selected architecture
+    selected_architecture = db.query(Architecture).filter(
+        Architecture.project_id == project.id,
+        Architecture.is_selected == True
+    ).first()
+    
+    # Get all architectures for this project
+    all_architectures = db.query(Architecture).filter(
+        Architecture.project_id == project.id
+    ).order_by(Architecture.created_at.desc()).all()
+    
     return {
         "id": project.id,
         "name": project.name,
@@ -122,7 +134,9 @@ def format_project(project: Project, db: Session) -> dict:
         "github_repo_name": github_repo_name,
         "created_at": project.created_at.isoformat() if project.created_at else datetime.utcnow().isoformat(),
         "work_item_stats": stats,
-        "developers": developers
+        "developers": developers,
+        "selected_architecture": selected_architecture.to_dict() if selected_architecture else None,
+        "architectures": [arch.to_dict() for arch in all_architectures]
     }
 
 
