@@ -1,7 +1,7 @@
 """
 Projects Router - CRUD operations for projects with work item stats
 """
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, status
 from pydantic import BaseModel
 from typing import List, Optional
 from datetime import datetime
@@ -14,9 +14,40 @@ from database import get_db
 from models.project import Project
 from models.developer import Developer, project_developers
 from models.architecture import Architecture
+from models.user import User, UserRole
 from services.github_service import github_service, GitHubService
+from routers.auth import get_current_user
 
 router = APIRouter(prefix="/api/projects", tags=["Projects"])
+
+
+def has_project_access(project: Project, user: User) -> bool:
+    """Check if user has access to a project (admin or assigned developer)"""
+    # Admin has access to all projects
+    if user.role == UserRole.ADMIN.value:
+        return True
+    
+    # Check if user is assigned as a developer to this project
+    for dev in project.developers:
+        if dev.email == user.email:
+            return True
+    
+    return False
+
+
+def require_project_access(project_id: int, user: User, db: Session):
+    """Require project access, raise 403 if denied"""
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    if not has_project_access(project, user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You don't have access to this project"
+        )
+    
+    return project
 
 
 class DeveloperAssignment(BaseModel):
@@ -188,27 +219,43 @@ async def create_project(project: ProjectCreate, db: Session = Depends(get_db)):
 
 
 @router.get("/")
-async def list_projects(db: Session = Depends(get_db)):
-    """List all projects"""
-    projects = db.query(Project).all()
+async def list_projects(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """List all projects (admin sees all, developers see assigned only)"""
+    if current_user.role == UserRole.ADMIN.value:
+        # Admin sees all projects
+        projects = db.query(Project).all()
+    else:
+        # Developer sees only assigned projects
+        projects = db.query(Project).join(project_developers).join(Developer).filter(
+            Developer.email == current_user.email
+        ).all()
+    
     return [format_project(p, db) for p in projects]
 
 
 @router.get("/{project_id}")
-async def get_project(project_id: int, db: Session = Depends(get_db)):
-    """Get a project with work item stats"""
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+async def get_project(
+    project_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get a project with work item stats (requires access)"""
+    project = require_project_access(project_id, current_user, db)
     return format_project(project, db)
 
 
 @router.put("/{project_id}")
-async def update_project(project_id: int, update: ProjectUpdate, db: Session = Depends(get_db)):
-    """Update a project"""
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+async def update_project(
+    project_id: int,
+    update: ProjectUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Update a project (requires access)"""
+    project = require_project_access(project_id, current_user, db)
 
     if update.name is not None:
         project.name = update.name
@@ -228,8 +275,19 @@ async def update_project(project_id: int, update: ProjectUpdate, db: Session = D
 
 
 @router.delete("/{project_id}")
-async def delete_project(project_id: int, db: Session = Depends(get_db)):
-    """Delete a project and its work items"""
+async def delete_project(
+    project_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Delete a project and its work items (requires admin access)"""
+    # Only admins can delete projects
+    if current_user.role != UserRole.ADMIN.value:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only admins can delete projects"
+        )
+    
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")

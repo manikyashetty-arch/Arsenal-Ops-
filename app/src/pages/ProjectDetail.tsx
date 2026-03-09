@@ -17,6 +17,7 @@ import {
     LayoutGrid,
     Layers,
     Sparkles,
+    ShieldAlert,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -25,6 +26,7 @@ import { Badge } from '@/components/ui/badge';
 import { toast, Toaster } from 'sonner';
 import MermaidRenderer from '@/components/MermaidRenderer';
 import ArchitectureEditor from '@/components/ArchitectureEditor';
+import { useAuth } from '@/contexts/AuthContext';
 
 import { API_BASE_URL } from '@/config/api';
 
@@ -80,6 +82,7 @@ type TabType = 'overview' | 'developers' | 'github';
 const ProjectDetail = () => {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
+    const { token } = useAuth();
     const [project, setProject] = useState<Project | null>(null);
     const [activeTab, setActiveTab] = useState<TabType>('overview');
     const [isLoading, setIsLoading] = useState(true);
@@ -94,6 +97,7 @@ const ProjectDetail = () => {
     });
     const [githubStatus, setGithubStatus] = useState<{ has_repo: boolean; developer_count: number; sent_count: number } | null>(null);
     const [isSendingInvites, setIsSendingInvites] = useState(false);
+    const [accessDenied, setAccessDenied] = useState(false);
     
     // Architecture editing state
     const [editingArchitecture, setEditingArchitecture] = useState<Architecture | null>(null);
@@ -107,11 +111,21 @@ const ProjectDetail = () => {
 
     const fetchProject = async () => {
         try {
-            const res = await fetch(`${API_BASE_URL}/api/projects/${id}`);
+            const res = await fetch(`${API_BASE_URL}/api/projects/${id}`, {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            });
             if (res.ok) {
                 const data = await res.json();
                 setProject(data);
                 setEditForm(data);
+                setAccessDenied(false);
+            } else if (res.status === 403) {
+                setAccessDenied(true);
+                toast.error('You do not have access to this project');
+            } else {
+                toast.error('Failed to load project');
             }
         } catch (err) {
             toast.error('Failed to load project');
@@ -277,6 +291,24 @@ const ProjectDetail = () => {
         return (
             <div className="min-h-screen bg-[#05060B] flex items-center justify-center">
                 <div className="w-10 h-10 border-2 border-[#6366F1]/30 border-t-[#6366F1] rounded-full animate-spin" />
+            </div>
+        );
+    }
+
+    if (accessDenied) {
+        return (
+            <div className="min-h-screen bg-[#05060B] flex flex-col items-center justify-center text-center p-4">
+                <div className="w-20 h-20 rounded-2xl bg-red-500/10 border border-red-500/20 flex items-center justify-center mb-6">
+                    <ShieldAlert className="w-10 h-10 text-red-400" />
+                </div>
+                <h2 className="text-2xl font-bold text-white mb-2">Access Denied</h2>
+                <p className="text-[#64748B] max-w-md mb-6">
+                    You do not have permission to view this project. Only assigned developers and admins can access project details.
+                </p>
+                <Button onClick={() => navigate('/')} className="bg-gradient-to-r from-[#6366F1] to-[#4F46E5] text-white rounded-xl px-6">
+                    <ArrowLeft className="w-4 h-4 mr-2" />
+                    Back to Projects
+                </Button>
             </div>
         );
     }

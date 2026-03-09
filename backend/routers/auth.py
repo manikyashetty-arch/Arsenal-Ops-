@@ -306,7 +306,7 @@ async def delete_user(
     admin: User = Depends(get_current_admin),
     db: Session = Depends(get_db)
 ):
-    """Admin: Delete a user (soft delete - set inactive)"""
+    """Admin: Delete a user permanently"""
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(
@@ -330,13 +330,13 @@ async def delete_user(
                 detail="Cannot delete the last admin"
             )
     
-    # Soft delete - set inactive instead of hard delete
-    user.is_active = False
+    # Hard delete - remove from database
+    db.delete(user)
     db.commit()
     
     return {
         "status": "success",
-        "message": f"User {user.email} has been deactivated"
+        "message": f"User {user.email} has been permanently deleted"
     }
 
 
