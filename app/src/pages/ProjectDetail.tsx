@@ -17,8 +17,6 @@ import {
     LayoutGrid,
     Layers,
     Sparkles,
-    RotateCcw,
-    Maximize2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -99,7 +97,6 @@ const ProjectDetail = () => {
     
     // Architecture editing state
     const [editingArchitecture, setEditingArchitecture] = useState<Architecture | null>(null);
-    const [regeneratingArchitectureId, setRegeneratingArchitectureId] = useState<number | null>(null);
 
     // Fetch project data
     useEffect(() => {
