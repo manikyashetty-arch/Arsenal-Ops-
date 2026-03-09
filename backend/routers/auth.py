@@ -7,10 +7,10 @@ from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime, timedelta
 from jose import JWTError, jwt
-from passlib.context import CryptContext
 from sqlalchemy.orm import Session
 import secrets
 import string
+import hashlib
 
 import sys
 sys.path.append('..')
@@ -24,7 +24,6 @@ SECRET_KEY = "your-secret-key-change-in-production"  # Change this in production
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24  # 24 hours
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 
 
@@ -66,11 +65,14 @@ def generate_temp_password(length=12):
 
 
 def verify_password(plain_password, hashed_password):
-    return pwd_context.verify(plain_password, hashed_password)
+    """Verify password using SHA256 hash"""
+    hashed_input = hashlib.sha256(plain_password.encode()).hexdigest()
+    return hashed_input == hashed_password
 
 
 def get_password_hash(password):
-    return pwd_context.hash(password)
+    """Hash password using SHA256"""
+    return hashlib.sha256(password.encode()).hexdigest()
 
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):

@@ -78,24 +78,22 @@ try:
     
     # Create default admin user if none exists
     from models.user import User, UserRole
-    from passlib.context import CryptContext
-    import secrets
-    import string
+    import hashlib
     
-    pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
     db = SessionLocal()
     
     try:
         # Check if admin already exists
         existing_admin = db.query(User).filter(User.role == UserRole.ADMIN.value).first()
         if not existing_admin:
-            # Use a fixed secure password (under 72 bytes for bcrypt)
+            # Use SHA256 hashing instead of bcrypt to avoid 72-byte limit
             temp_password = "AdminPass123!"
+            hashed_password = hashlib.sha256(temp_password.encode()).hexdigest()
             
             admin = User(
                 email="manikya.shetty@arsenalai.com",
                 name="manikya rathna",
-                hashed_password=pwd_context.hash(temp_password),
+                hashed_password=hashed_password,
                 role=UserRole.ADMIN.value,
                 is_active=True,
                 is_first_login=True
