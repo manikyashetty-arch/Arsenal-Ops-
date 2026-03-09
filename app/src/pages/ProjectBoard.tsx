@@ -36,6 +36,7 @@ import { Badge } from '@/components/ui/badge';
 import { toast, Toaster } from 'sonner';
 import ArchitectureCard from '@/components/ArchitectureCard';
 import ArchitectureEditor from '@/components/ArchitectureEditor';
+import { useAuth } from '@/contexts/AuthContext';
 
 import { API_BASE_URL } from '@/config/api';
 
@@ -171,6 +172,7 @@ const PRIORITY_COLORS = {
 const ProjectBoard = () => {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
+    const { token } = useAuth();
     const [project, setProject] = useState<Project | null>(null);
     const [workItems, setWorkItems] = useState<WorkItem[]>([]);
     const [selectedItem, setSelectedItem] = useState<WorkItem | null>(null);
@@ -240,10 +242,11 @@ const ProjectBoard = () => {
         if (!id) return;
         const fetchData = async () => {
             try {
+                const headers = { 'Authorization': `Bearer ${token}` };
                 const [projRes, itemsRes, sprintsRes] = await Promise.all([
-                    fetch(`${API_BASE_URL}/api/projects/${id}`),
-                    fetch(`${API_BASE_URL}/api/workitems?project_id=${id}`),
-                    fetch(`${API_BASE_URL}/api/workitems/projects/${id}/sprints`),
+                    fetch(`${API_BASE_URL}/api/projects/${id}`, { headers }),
+                    fetch(`${API_BASE_URL}/api/workitems?project_id=${id}`, { headers }),
+                    fetch(`${API_BASE_URL}/api/workitems/projects/${id}/sprints`, { headers }),
                 ]);
                 if (projRes.ok) setProject(await projRes.json());
                 if (itemsRes.ok) setWorkItems(await itemsRes.json());
@@ -256,16 +259,18 @@ const ProjectBoard = () => {
             }
         };
         fetchData();
-    }, [id]);
+    }, [id, token]);
 
     // Refresh project stats
     const refreshProjectStats = useCallback(async () => {
         if (!id) return;
         try {
-            const res = await fetch(`${API_BASE_URL}/api/projects/${id}`);
+            const res = await fetch(`${API_BASE_URL}/api/projects/${id}`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
             if (res.ok) setProject(await res.json());
         } catch { /* ignore */ }
-    }, [id]);
+    }, [id, token]);
 
     // Filtered items
     const filteredItems = workItems.filter(item => {
@@ -305,7 +310,7 @@ const ProjectBoard = () => {
         try {
             await fetch(`${API_BASE_URL}/api/workitems/${draggedItem}`, {
                 method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                 body: JSON.stringify({ status: newStatus }),
             });
             refreshProjectStats();
@@ -324,7 +329,7 @@ const ProjectBoard = () => {
         try {
             const response = await fetch(`${API_BASE_URL}/api/workitems`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                 body: JSON.stringify({
                     ...createForm,
                     project_id: id,
@@ -352,7 +357,7 @@ const ProjectBoard = () => {
         try {
             const response = await fetch(`${API_BASE_URL}/api/workitems/${itemId}/move-sprint`, {
                 method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                 body: JSON.stringify({ target_sprint_id: targetSprintId }),
             });
             if (response.ok) {
@@ -363,7 +368,9 @@ const ProjectBoard = () => {
                 }
                 toast.success(targetSprintId ? 'Moved to sprint' : 'Moved to backlog');
                 // Refresh sprints
-                const sprintsRes = await fetch(`${API_BASE_URL}/api/workitems/projects/${id}/sprints`);
+                const sprintsRes = await fetch(`${API_BASE_URL}/api/workitems/projects/${id}/sprints`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
                 if (sprintsRes.ok) {
                     setSprints(await sprintsRes.json());
                 }
@@ -392,7 +399,7 @@ const ProjectBoard = () => {
         try {
             const response = await fetch(`${API_BASE_URL}/api/workitems/sprints`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                 body: JSON.stringify({
                     project_id: parseInt(id!),
                     name: newSprint.name,
@@ -406,7 +413,9 @@ const ProjectBoard = () => {
                 setShowCreateSprintModal(false);
                 setNewSprint({ name: '', goal: '', start_date: '', end_date: '' });
                 // Refresh sprints
-                const sprintsRes = await fetch(`${API_BASE_URL}/api/workitems/projects/${id}/sprints`);
+                const sprintsRes = await fetch(`${API_BASE_URL}/api/workitems/projects/${id}/sprints`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
                 if (sprintsRes.ok) {
                     setSprints(await sprintsRes.json());
                 }
@@ -420,7 +429,9 @@ const ProjectBoard = () => {
     useEffect(() => {
         const fetchAllDevelopers = async () => {
             try {
-                const response = await fetch(`${API_BASE_URL}/api/developers/`);
+                const response = await fetch(`${API_BASE_URL}/api/developers/`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
                 if (response.ok) {
                     setAllDevelopers(await response.json());
                 }
@@ -429,7 +440,7 @@ const ProjectBoard = () => {
             }
         };
         fetchAllDevelopers();
-    }, []);
+    }, [token]);
 
     // Fetch comments when selectedItem changes
     useEffect(() => {
@@ -439,7 +450,9 @@ const ProjectBoard = () => {
                 return;
             }
             try {
-                const response = await fetch(`${API_BASE_URL}/api/comments/workitem/${selectedItem.id}`);
+                const response = await fetch(`${API_BASE_URL}/api/comments/workitem/${selectedItem.id}`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
                 if (response.ok) {
                     setComments(await response.json());
                 }
@@ -487,7 +500,7 @@ const ProjectBoard = () => {
         try {
             const response = await fetch(`${API_BASE_URL}/api/comments/`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                 body: JSON.stringify({
                     work_item_id: parseInt(selectedItem.id),
                     content: newComment,
@@ -529,7 +542,7 @@ const ProjectBoard = () => {
         try {
             const response = await fetch(`${API_BASE_URL}/api/workitems/${selectedItem.id}`, {
                 method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                 body: JSON.stringify(editForm),
             });
             if (response.ok) {
@@ -550,7 +563,10 @@ const ProjectBoard = () => {
     const handleDeleteItem = async (itemId: string) => {
         if (!confirm('Delete this work item?')) return;
         try {
-            await fetch(`${API_BASE_URL}/api/workitems/${itemId}`, { method: 'DELETE' });
+            await fetch(`${API_BASE_URL}/api/workitems/${itemId}`, {
+                method: 'DELETE',
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
             setWorkItems(prev => prev.filter(wi => wi.id !== itemId));
             setSelectedItem(null);
             toast.success('Item deleted');
