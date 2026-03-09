@@ -16,8 +16,10 @@ from models.architecture import Architecture, PRDAnalysis
 from models.developer import Developer, project_developers
 from models.work_item import WorkItem
 from models.sprint import Sprint, SprintStatus
+from models.user import User
 from services.prd_processor import prd_processor
 from services.architecture_generator import architecture_generator
+from routers.auth import get_current_user
 
 router = APIRouter(prefix="/api/prd", tags=["PRD Analysis"])
 
@@ -52,10 +54,11 @@ async def analyze_prd_file(
     project_id: int = Form(...),
     additional_context: str = Form(""),
     file: UploadFile = File(...),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
-    Upload and analyze a PRD file (PDF or Word)
+    Upload and analyze a PRD file (PDF or Word) (requires auth)
     Returns: PRD analysis and generated architectures
     """
     # Verify project exists
@@ -137,10 +140,11 @@ async def analyze_prd_file(
 @router.post("/analyze-text")
 async def analyze_prd_text(
     request: TextAnalysisRequest,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
-    Analyze PRD from text input
+    Analyze PRD from text input (requires auth)
     Returns: PRD analysis and generated architectures
     """
     # Verify project exists
@@ -213,9 +217,10 @@ async def analyze_prd_text(
 @router.get("/projects/{project_id}/architectures")
 async def get_project_architectures(
     project_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
-    """Get all architectures for a project"""
+    """Get all architectures for a project (requires auth)"""
     architectures = db.query(Architecture).filter(
         Architecture.project_id == project_id
     ).order_by(Architecture.created_at.desc()).all()
@@ -226,9 +231,10 @@ async def get_project_architectures(
 @router.get("/projects/{project_id}/analysis")
 async def get_project_analysis(
     project_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
-    """Get the latest PRD analysis for a project"""
+    """Get the latest PRD analysis for a project (requires auth)"""
     analysis = db.query(PRDAnalysis).filter(
         PRDAnalysis.project_id == project_id
     ).order_by(PRDAnalysis.created_at.desc()).first()
@@ -242,9 +248,10 @@ async def get_project_analysis(
 @router.get("/architectures/{architecture_id}")
 async def get_architecture(
     architecture_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
-    """Get a specific architecture"""
+    """Get a specific architecture (requires auth)"""
     architecture = db.query(Architecture).filter(Architecture.id == architecture_id).first()
     if not architecture:
         raise HTTPException(status_code=404, detail="Architecture not found")
@@ -256,9 +263,10 @@ async def get_architecture(
 async def update_architecture(
     architecture_id: int,
     update: ArchitectureUpdate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
-    """Update an architecture (e.g., edit mermaid code)"""
+    """Update an architecture (e.g., edit mermaid code) (requires auth)"""
     architecture = db.query(Architecture).filter(Architecture.id == architecture_id).first()
     if not architecture:
         raise HTTPException(status_code=404, detail="Architecture not found")
@@ -281,7 +289,8 @@ async def update_architecture(
 async def ai_refine_architecture(
     architecture_id: int,
     request: AIRefineRequest,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
     Use AI to refine an architecture based on user's plain English instructions.
@@ -333,9 +342,10 @@ async def ai_refine_architecture(
 @router.post("/architectures/{architecture_id}/select")
 async def select_architecture(
     architecture_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
-    """Select an architecture for the project"""
+    """Select an architecture for the project (requires auth)"""
     architecture = db.query(Architecture).filter(Architecture.id == architecture_id).first()
     if not architecture:
         raise HTTPException(status_code=404, detail="Architecture not found")
@@ -358,10 +368,11 @@ async def select_architecture(
 async def commit_architecture(
     project_id: int,
     request: CommitArchitectureRequest,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
-    Commit selected architecture and generate Jira tickets
+    Commit selected architecture and generate Jira tickets (requires auth)
     Assigns tickets to developers based on their specialization
     Divides project into sprints if timeline is provided
     """
@@ -552,10 +563,11 @@ async def commit_architecture(
 async def preview_generated_tickets(
     project_id: int,
     request: CommitArchitectureRequest,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
-    Preview tickets that would be generated without committing
+    Preview tickets that would be generated without committing (requires auth)
     """
     # Get project
     project = db.query(Project).filter(Project.id == project_id).first()

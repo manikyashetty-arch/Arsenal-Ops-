@@ -195,7 +195,11 @@ const ProjectDetail = () => {
     const fetchGithubStatus = async () => {
         if (!id) return;
         try {
-            const res = await fetch(`${API_BASE_URL}/api/projects/${id}/github-status`);
+            const res = await fetch(`${API_BASE_URL}/api/projects/${id}/github-status`, {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            });
             if (res.ok) {
                 setGithubStatus(await res.json());
             }
@@ -240,7 +244,7 @@ const ProjectDetail = () => {
         try {
             const res = await fetch(`${API_BASE_URL}/api/projects/${project.id}`, {
                 method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                 body: JSON.stringify(editForm),
             });
             if (res.ok) {
@@ -260,7 +264,7 @@ const ProjectDetail = () => {
         try {
             const res = await fetch(`${API_BASE_URL}/api/projects/${project.id}/developers`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                 body: JSON.stringify({
                     developer_id: parseInt(newDeveloper.developer_id),
                     role: newDeveloper.role,
@@ -285,6 +289,7 @@ const ProjectDetail = () => {
         try {
             const res = await fetch(`${API_BASE_URL}/api/projects/${project.id}/developers/${developerId}`, {
                 method: 'DELETE',
+                headers: { 'Authorization': `Bearer ${token}` }
             });
             if (res.ok) {
                 toast.success('Developer removed!');
@@ -301,6 +306,7 @@ const ProjectDetail = () => {
         try {
             const res = await fetch(`${API_BASE_URL}/api/prd/architectures/${architectureId}/select`, {
                 method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}` }
             });
             if (res.ok) {
                 toast.success('Architecture selected!');
@@ -318,7 +324,7 @@ const ProjectDetail = () => {
         try {
             const res = await fetch(`${API_BASE_URL}/api/prd/architectures/${id}`, {
                 method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                 body: JSON.stringify(updates),
             });
             if (res.ok) {
@@ -343,6 +349,7 @@ const ProjectDetail = () => {
         try {
             const res = await fetch(`${API_BASE_URL}/api/projects/${project.id}/github-invite?role=push`, {
                 method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}` }
             });
             const data = await res.json();
             if (res.ok) {
