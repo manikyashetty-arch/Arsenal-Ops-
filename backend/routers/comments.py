@@ -16,6 +16,8 @@ from database import get_db
 from models.comment import Comment
 from models.work_item import WorkItem
 from models.developer import Developer
+from models.user import User
+from routers.auth import get_current_user
 
 router = APIRouter(prefix="/api/comments", tags=["comments"])
 
@@ -127,8 +129,12 @@ def send_email_notification(
 
 
 @router.get("/workitem/{work_item_id}", response_model=List[CommentResponse])
-async def get_comments(work_item_id: int, db: Session = Depends(get_db)):
-    """Get all comments for a work item"""
+async def get_comments(
+    work_item_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get all comments for a work item (requires auth)"""
     comments = db.query(Comment).filter(
         Comment.work_item_id == work_item_id
     ).order_by(Comment.created_at.desc()).all()
@@ -155,8 +161,12 @@ async def get_comments(work_item_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/", response_model=CommentResponse)
-async def create_comment(comment: CommentCreate, db: Session = Depends(get_db)):
-    """Create a new comment with @mentions"""
+async def create_comment(
+    comment: CommentCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Create a new comment with @mentions (requires auth)"""
     # Verify work item exists
     work_item = db.query(WorkItem).filter(WorkItem.id == comment.work_item_id).first()
     if not work_item:
@@ -211,8 +221,13 @@ async def create_comment(comment: CommentCreate, db: Session = Depends(get_db)):
 
 
 @router.put("/{comment_id}", response_model=CommentResponse)
-async def update_comment(comment_id: int, update: CommentUpdate, db: Session = Depends(get_db)):
-    """Update a comment"""
+async def update_comment(
+    comment_id: int,
+    update: CommentUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Update a comment (requires auth)"""
     comment = db.query(Comment).filter(Comment.id == comment_id).first()
     if not comment:
         raise HTTPException(status_code=404, detail="Comment not found")
@@ -241,8 +256,12 @@ async def update_comment(comment_id: int, update: CommentUpdate, db: Session = D
 
 
 @router.delete("/{comment_id}")
-async def delete_comment(comment_id: int, db: Session = Depends(get_db)):
-    """Delete a comment"""
+async def delete_comment(
+    comment_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Delete a comment (requires auth)"""
     comment = db.query(Comment).filter(Comment.id == comment_id).first()
     if not comment:
         raise HTTPException(status_code=404, detail="Comment not found")
