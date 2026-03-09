@@ -15,10 +15,14 @@ import {
     Github,
     Settings,
     ExternalLink,
+    Shield,
+    UserCog,
+    Key,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { toast, Toaster } from 'sonner';
+import { useAuth } from '@/contexts/AuthContext';
 
 import { API_BASE_URL } from '@/config/api';
 
@@ -33,6 +37,17 @@ interface Employee {
     updated_at: string;
     project_count: number;
     assigned_items_count: number;
+}
+
+interface User {
+    id: number;
+    email: string;
+    name: string;
+    role: 'admin' | 'developer';
+    is_active: boolean;
+    is_first_login: boolean;
+    created_at: string;
+    last_login_at: string | null;
 }
 
 interface Project {
@@ -61,11 +76,13 @@ interface DashboardStats {
 
 const AdminDashboard = () => {
     const navigate = useNavigate();
-    const [activeTab, setActiveTab] = useState<'dashboard' | 'employees' | 'projects'>('dashboard');
+    const [activeTab, setActiveTab] = useState<'dashboard' | 'employees' | 'projects' | 'users'>('dashboard');
     const [stats, setStats] = useState<DashboardStats | null>(null);
     const [employees, setEmployees] = useState<Employee[]>([]);
     const [projects, setProjects] = useState<Project[]>([]);
+    const [users, setUsers] = useState<User[]>([]);
     const [loading, setLoading] = useState(true);
+    const { token } = useAuth();
     
     // Employee form state
     const [showEmployeeModal, setShowEmployeeModal] = useState(false);
@@ -93,15 +110,19 @@ const AdminDashboard = () => {
     const fetchData = async () => {
         setLoading(true);
         try {
-            const [statsRes, employeesRes, projectsRes] = await Promise.all([
+            const [statsRes, employeesRes, projectsRes, usersRes] = await Promise.all([
                 fetch(`${API_BASE_URL}/api/admin/stats`),
                 fetch(`${API_BASE_URL}/api/admin/employees`),
                 fetch(`${API_BASE_URL}/api/admin/projects`),
+                fetch(`${API_BASE_URL}/api/auth/admin/users`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                }),
             ]);
 
             if (statsRes.ok) setStats(await statsRes.json());
             if (employeesRes.ok) setEmployees(await employeesRes.json());
             if (projectsRes.ok) setProjects(await projectsRes.json());
+            if (usersRes.ok) setUsers(await usersRes.json());
         } catch (error) {
             console.error('Failed to fetch admin data:', error);
             toast.error('Failed to load dashboard data');
@@ -211,6 +232,94 @@ const AdminDashboard = () => {
         }
     };
 
+    // User management functions
+    const [showUserModal, setShowUserModal] = useState(false);
+    const [userForm, setUserForm] = useState({ email: '', name: '', role: 'developer' });
+    const [generatedPassword, setGeneratedPassword] = useState<string | null>(null);
+
+    const handleCreateUser = () => {
+        setUserForm({ email: '', name: '', role: 'developer' });
+        setGeneratedPassword(null);
+        setShowUserModal(true);
+    };
+
+    const handleSaveUser = async () => {
+        if (!userForm.email.trim() || !userForm.name.trim()) {
+            toast.error('Email and name are required');
+            return;
+        }
+
+        try {
+            const response = await fetch(`${API_BASE_URL}/api/auth/admin/create-user`, {
+                method: 'POST',
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify(userForm),
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                toast.success('User created successfully!');
+                setGeneratedPassword(data.temporary_password);
+                fetchData();
+            } else {
+                const error = await response.json();
+                toast.error(error.detail || 'Failed to create user');
+            }
+        } catch {
+            toast.error('Failed to create user');
+        }
+    };
+
+    const handleToggleUserRole = async (user: User) => {
+        const newRole = user.role === 'admin' ? 'developer' : 'admin';
+        try {
+            const response = await fetch(`${API_BASE_URL}/api/auth/admin/users/${user.id}/role`, {
+                method: 'PUT',
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({ role: newRole }),
+            });
+
+            if (response.ok) {
+                toast.success(`User is now ${newRole}`);
+                fetchData();
+            } else {
+                toast.error('Failed to update role');
+            }
+        } catch {
+            toast.error('Failed to update role');
+        }
+    };
+
+    const handleResetPassword = async (user: User) => {
+        if (!confirm(`Reset password for ${user.name}? They will need to change it on next login.`)) return;
+
+        try {
+            const response = await fetch(`${API_BASE_URL}/api/auth/admin/reset-password`, {
+                method: 'POST',
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({ user_id: user.id, new_password: 'TempPass123!' }),
+            });
+
+            if (response.ok) {
+                toast.success('Password reset! New password: TempPass123!');
+                fetchData();
+            } else {
+                toast.error('Failed to reset password');
+            }
+        } catch {
+            toast.error('Failed to reset password');
+        }
+    };
+
     return (
         <div className="min-h-screen bg-[#0B0D14] text-white">
             <Toaster position="top-right" theme="dark" />
@@ -243,6 +352,7 @@ const AdminDashboard = () => {
                             { id: 'dashboard', label: 'Dashboard', icon: BarChart3 },
                             { id: 'employees', label: 'Employees', icon: Users },
                             { id: 'projects', label: 'Projects', icon: FolderKanban },
+                            { id: 'users', label: 'Users', icon: Shield },
                         ].map(tab => (
                             <button
                                 key={tab.id}
@@ -489,6 +599,110 @@ const AdminDashboard = () => {
                                 </div>
                             </div>
                         )}
+                        {/* Users Tab */}
+                        {activeTab === 'users' && (
+                            <div className="space-y-4">
+                                <div className="flex items-center justify-between">
+                                    <h2 className="text-lg font-semibold text-white">User Management</h2>
+                                    <Button
+                                        onClick={handleCreateUser}
+                                        className="bg-gradient-to-r from-[#6366F1] to-[#4F46E5] hover:from-[#5558E6] hover:to-[#4338CA] text-white rounded-xl h-10 px-4"
+                                    >
+                                        <Plus className="w-4 h-4 mr-2" />
+                                        Add User
+                                    </Button>
+                                </div>
+                                <div className="bg-[#0F1118] border border-[rgba(244,246,255,0.06)] rounded-xl overflow-hidden">
+                                    <table className="w-full">
+                                        <thead className="bg-[rgba(244,246,255,0.02)]">
+                                            <tr>
+                                                <th className="text-left text-xs font-medium text-[#64748B] py-3 px-4">User</th>
+                                                <th className="text-left text-xs font-medium text-[#64748B] py-3 px-4">Role</th>
+                                                <th className="text-left text-xs font-medium text-[#64748B] py-3 px-4">Status</th>
+                                                <th className="text-left text-xs font-medium text-[#64748B] py-3 px-4">Last Login</th>
+                                                <th className="text-right text-xs font-medium text-[#64748B] py-3 px-4">Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-[rgba(244,246,255,0.04)]">
+                                            {users.map(user => (
+                                                <tr key={user.id} className="hover:bg-[rgba(244,246,255,0.02)]">
+                                                    <td className="py-3 px-4">
+                                                        <div className="flex items-center gap-3">
+                                                            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#6366F1] to-[#4F46E5] flex items-center justify-center text-white text-sm font-medium">
+                                                                {user.name.charAt(0).toUpperCase()}
+                                                            </div>
+                                                            <div>
+                                                                <div className="text-sm text-white">{user.name}</div>
+                                                                <div className="text-xs text-[#64748B]">{user.email}</div>
+                                                            </div>
+                                                        </div>
+                                                    </td>
+                                                    <td className="py-3 px-4">
+                                                        <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs ${
+                                                            user.role === 'admin' 
+                                                                ? 'bg-[#6366F1]/20 text-[#818CF8] border border-[#6366F1]/30' 
+                                                                : 'bg-[rgba(244,246,255,0.06)] text-[#94A3B8]'
+                                                        }`}>
+                                                            {user.role === 'admin' ? <Shield className="w-3 h-3" /> : <UserCog className="w-3 h-3" />}
+                                                            {user.role}
+                                                        </span>
+                                                    </td>
+                                                    <td className="py-3 px-4">
+                                                        {user.is_active ? (
+                                                            <span className="inline-flex items-center gap-1 text-xs text-[#10B981]">
+                                                                <span className="w-1.5 h-1.5 rounded-full bg-[#10B981]" />
+                                                                Active
+                                                            </span>
+                                                        ) : (
+                                                            <span className="inline-flex items-center gap-1 text-xs text-[#64748B]">
+                                                                <span className="w-1.5 h-1.5 rounded-full bg-[#64748B]" />
+                                                                Inactive
+                                                            </span>
+                                                        )}
+                                                        {user.is_first_login && (
+                                                            <span className="ml-2 text-[10px] text-[#F59E0B]">(First Login)</span>
+                                                        )}
+                                                    </td>
+                                                    <td className="py-3 px-4 text-sm text-[#64748B]">
+                                                        {user.last_login_at 
+                                                            ? new Date(user.last_login_at).toLocaleDateString() 
+                                                            : 'Never'
+                                                        }
+                                                    </td>
+                                                    <td className="py-3 px-4 text-right">
+                                                        <div className="flex items-center justify-end gap-2">
+                                                            <Button
+                                                                variant="ghost"
+                                                                size="sm"
+                                                                onClick={() => handleToggleUserRole(user)}
+                                                                className="text-[#64748B] hover:text-white h-8"
+                                                            >
+                                                                <Shield className="w-3.5 h-3.5 mr-1" />
+                                                                {user.role === 'admin' ? 'Remove Admin' : 'Make Admin'}
+                                                            </Button>
+                                                            <Button
+                                                                variant="ghost"
+                                                                size="sm"
+                                                                onClick={() => handleResetPassword(user)}
+                                                                className="text-[#64748B] hover:text-[#F59E0B] h-8"
+                                                            >
+                                                                <Key className="w-3.5 h-3.5 mr-1" />
+                                                                Reset
+                                                            </Button>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                    {users.length === 0 && (
+                                        <div className="text-center py-12 text-[#64748B]">
+                                            No users yet. Click "Add User" to create one.
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
                     </>
                 )}
             </div>
@@ -564,6 +778,103 @@ const AdminDashboard = () => {
                                 <Save className="w-4 h-4 mr-2" />
                                 {editingEmployee ? 'Update' : 'Create'}
                             </Button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* User Modal */}
+            {showUserModal && (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setShowUserModal(false)}>
+                    <div className="bg-[#0F1118] border border-[rgba(244,246,255,0.08)] rounded-2xl w-full max-w-md shadow-2xl" onClick={e => e.stopPropagation()}>
+                        <div className="flex items-center justify-between p-5 border-b border-[rgba(244,246,255,0.06)]">
+                            <h2 className="text-lg font-bold text-white">Add New User</h2>
+                            <button onClick={() => setShowUserModal(false)} className="p-2 rounded-lg hover:bg-[rgba(244,246,255,0.05)] text-[#475569] hover:text-white">
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+                        <div className="p-5 space-y-4">
+                            {generatedPassword ? (
+                                <div className="space-y-4">
+                                    <div className="p-4 bg-[rgba(16,185,129,0.1)] border border-[rgba(16,185,129,0.2)] rounded-xl">
+                                        <p className="text-sm text-[#10B981] font-medium mb-2">User Created Successfully!</p>
+                                        <p className="text-xs text-[#94A3B8] mb-2">Share this temporary password with the user:</p>
+                                        <div className="flex items-center gap-2">
+                                            <code className="flex-1 bg-[rgba(244,246,255,0.05)] px-3 py-2 rounded-lg text-sm text-white font-mono">
+                                                {generatedPassword}
+                                            </code>
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                onClick={() => {
+                                                    navigator.clipboard.writeText(generatedPassword);
+                                                    toast.success('Copied to clipboard');
+                                                }}
+                                                className="text-[#64748B] hover:text-white"
+                                            >
+                                                Copy
+                                            </Button>
+                                        </div>
+                                    </div>
+                                    <p className="text-xs text-[#64748B]">
+                                        They will be required to change this password on first login.
+                                    </p>
+                                </div>
+                            ) : (
+                                <>
+                                    <div>
+                                        <label className="text-xs font-medium text-[#64748B] block mb-1.5">Name *</label>
+                                        <Input
+                                            value={userForm.name}
+                                            onChange={e => setUserForm(f => ({ ...f, name: e.target.value }))}
+                                            placeholder="John Doe"
+                                            className="bg-[rgba(244,246,255,0.03)] border-[rgba(244,246,255,0.08)] text-[#F4F6FF] rounded-xl h-10"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="text-xs font-medium text-[#64748B] block mb-1.5">Email *</label>
+                                        <Input
+                                            type="email"
+                                            value={userForm.email}
+                                            onChange={e => setUserForm(f => ({ ...f, email: e.target.value }))}
+                                            placeholder="john@company.com"
+                                            className="bg-[rgba(244,246,255,0.03)] border-[rgba(244,246,255,0.08)] text-[#F4F6FF] rounded-xl h-10"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="text-xs font-medium text-[#64748B] block mb-1.5">Role</label>
+                                        <select
+                                            value={userForm.role}
+                                            onChange={e => setUserForm(f => ({ ...f, role: e.target.value }))}
+                                            className="w-full bg-[rgba(244,246,255,0.03)] border border-[rgba(244,246,255,0.08)] text-[#F4F6FF] rounded-xl h-10 px-3 text-sm"
+                                        >
+                                            <option value="developer" className="bg-[#0F1118]">Developer</option>
+                                            <option value="admin" className="bg-[#0F1118]">Admin</option>
+                                        </select>
+                                    </div>
+                                </>
+                            )}
+                        </div>
+                        <div className="flex justify-end gap-3 p-5 border-t border-[rgba(244,246,255,0.06)]">
+                            <Button 
+                                variant="ghost" 
+                                onClick={() => {
+                                    setShowUserModal(false);
+                                    setGeneratedPassword(null);
+                                }} 
+                                className="text-[#64748B] rounded-xl px-5"
+                            >
+                                {generatedPassword ? 'Close' : 'Cancel'}
+                            </Button>
+                            {!generatedPassword && (
+                                <Button
+                                    onClick={handleSaveUser}
+                                    className="bg-gradient-to-r from-[#6366F1] to-[#4F46E5] text-white rounded-xl px-6 font-medium shadow-lg shadow-[#4F46E5]/20"
+                                >
+                                    <Plus className="w-4 h-4 mr-2" />
+                                    Create User
+                                </Button>
+                            )}
                         </div>
                     </div>
                 </div>
