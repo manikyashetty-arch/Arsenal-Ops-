@@ -12,17 +12,21 @@ export function Login() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const { login } = useAuth();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
+    setError(null);
 
     try {
       await login(email, password);
       toast.success('Login successful!');
     } catch (error: any) {
-      toast.error(error.message || 'Login failed');
+      const errorMessage = error.message || 'Login failed';
+      setError(errorMessage);
+      toast.error(errorMessage);
     } finally {
       setIsLoading(false);
     }
@@ -45,6 +49,12 @@ export function Login() {
           </CardDescription>
         </CardHeader>
         <CardContent>
+          {error && (
+            <div className="mb-4 p-3 bg-red-500/10 border border-red-500/30 rounded-lg flex items-start gap-2">
+              <AlertCircle className="w-4 h-4 text-red-400 mt-0.5 flex-shrink-0" />
+              <p className="text-sm text-red-300">{error}</p>
+            </div>
+          )}
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="email" className="text-[#94A3B8]">Email</Label>

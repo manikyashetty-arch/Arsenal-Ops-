@@ -300,6 +300,7 @@ async def update_user_role(
 
 
 @router.delete("/admin/users/{user_id}")
+@router.delete("/admin/users/{user_id}/")  # Support trailing slash
 async def delete_user(
     user_id: int,
     admin: User = Depends(get_current_admin),
