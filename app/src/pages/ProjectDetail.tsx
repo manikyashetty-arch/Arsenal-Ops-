@@ -748,55 +748,41 @@ const ProjectDetail = () => {
                                     )}
                                 </div>
 
-                                {/* Cost Analysis */}
+                                {/* Cost Analysis - Infrastructure Only */}
                                 <div className="mb-6">
                                     <h4 className="text-sm font-medium text-[#94A3B8] mb-3 flex items-center gap-2">
                                         <DollarSign className="w-4 h-4 text-[#10B981]" />
-                                        Cost Analysis
+                                        Infrastructure Cost Analysis
                                     </h4>
-                                    {prdAnalysis.cost_analysis && (prdAnalysis.cost_analysis.infrastructure || prdAnalysis.cost_analysis.development) ? (
-                                        <div className="grid grid-cols-2 gap-4">
-                                            {prdAnalysis.cost_analysis.infrastructure && (
-                                                <div className="bg-[rgba(16,185,129,0.05)] border border-[rgba(16,185,129,0.2)] rounded-xl p-4">
-                                                    <p className="text-xs text-[#64748B] mb-1">Infrastructure (Monthly)</p>
-                                                    <p className="text-xl font-bold text-[#10B981]">{prdAnalysis.cost_analysis.infrastructure.monthly || 'N/A'}</p>
-                                                    {prdAnalysis.cost_analysis.infrastructure.breakdown && prdAnalysis.cost_analysis.infrastructure.breakdown.length > 0 && (
-                                                        <div className="mt-2 space-y-1">
-                                                            {prdAnalysis.cost_analysis.infrastructure.breakdown.slice(0, 3).map((item, idx) => (
-                                                                <div key={idx} className="flex justify-between text-xs">
-                                                                    <span className="text-[#64748B]">{item.item}</span>
-                                                                    <span className="text-[#94A3B8]">{item.cost}</span>
-                                                                </div>
-                                                            ))}
-                                                        </div>
-                                                    )}
+                                    {prdAnalysis.cost_analysis?.infrastructure ? (
+                                        <div className="bg-[rgba(16,185,129,0.05)] border border-[rgba(16,185,129,0.2)] rounded-xl p-4">
+                                            <div className="flex items-center justify-between mb-4">
+                                                <div>
+                                                    <p className="text-xs text-[#64748B]">Monthly Cost</p>
+                                                    <p className="text-2xl font-bold text-[#10B981]">{prdAnalysis.cost_analysis.infrastructure.monthly || 'N/A'}</p>
                                                 </div>
-                                            )}
-                                            {prdAnalysis.cost_analysis.development && (
-                                                <div className="bg-[rgba(99,102,241,0.05)] border border-[rgba(99,102,241,0.2)] rounded-xl p-4">
-                                                    <p className="text-xs text-[#64748B] mb-1">Development</p>
-                                                    <p className="text-xl font-bold text-[#6366F1]">{prdAnalysis.cost_analysis.development.total || 'N/A'}</p>
-                                                    {prdAnalysis.cost_analysis.development.breakdown && prdAnalysis.cost_analysis.development.breakdown.length > 0 && (
-                                                        <div className="mt-2 space-y-1">
-                                                            {prdAnalysis.cost_analysis.development.breakdown.slice(0, 3).map((item, idx) => (
-                                                                <div key={idx} className="flex justify-between text-xs">
-                                                                    <span className="text-[#64748B]">{item.item}</span>
-                                                                    <span className="text-[#94A3B8]">{item.cost}</span>
-                                                                </div>
-                                                            ))}
-                                                        </div>
-                                                    )}
+                                                <div className="text-right">
+                                                    <p className="text-xs text-[#64748B]">Annual Cost</p>
+                                                    <p className="text-lg font-bold text-[#10B981]">{prdAnalysis.cost_analysis.infrastructure.annual || 'N/A'}</p>
                                                 </div>
-                                            )}
-                                            {prdAnalysis.cost_analysis.total_estimated && (
-                                                <div className="col-span-2 bg-[rgba(99,102,241,0.05)] border border-[rgba(99,102,241,0.2)] rounded-xl p-3 text-center">
-                                                    <p className="text-sm text-[#64748B]">Total Estimated: <span className="text-lg font-bold text-[#6366F1]">{prdAnalysis.cost_analysis.total_estimated}</span></p>
+                                            </div>
+                                            {prdAnalysis.cost_analysis.infrastructure.breakdown && prdAnalysis.cost_analysis.infrastructure.breakdown.length > 0 && (
+                                                <div className="border-t border-[rgba(16,185,129,0.2)] pt-3">
+                                                    <p className="text-xs font-medium text-[#64748B] mb-2">Detailed Breakdown</p>
+                                                    <div className="space-y-2">
+                                                        {prdAnalysis.cost_analysis.infrastructure.breakdown.map((item, idx) => (
+                                                            <div key={idx} className="flex items-center justify-between py-1.5 px-2 bg-[rgba(244,246,255,0.03)] rounded-lg">
+                                                                <span className="text-sm text-[#E2E8F0]">{item.item}</span>
+                                                                <span className="text-sm font-medium text-[#10B981]">{item.cost}</span>
+                                                            </div>
+                                                        ))}
+                                                    </div>
                                                 </div>
                                             )}
                                         </div>
                                     ) : (
                                         <div className="bg-[rgba(244,246,255,0.02)] border border-[rgba(244,246,255,0.06)] rounded-xl p-4 text-center">
-                                            <p className="text-sm text-[#64748B]">No cost analysis data available. Re-analyze PRD to generate.</p>
+                                            <p className="text-sm text-[#64748B]">No infrastructure cost data available. Re-analyze PRD to generate.</p>
                                         </div>
                                     )}
                                 </div>
@@ -1010,6 +996,44 @@ const ProjectDetail = () => {
                                             <p className="text-lg font-bold text-[#10B981]">{arch.estimated_cost}</p>
                                         </div>
                                     </div>
+
+                                    {/* Architecture Cost Analysis */}
+                                    {arch.cost_analysis && (
+                                        <div className="bg-[rgba(16,185,129,0.05)] border border-[rgba(16,185,129,0.2)] rounded-xl p-4">
+                                            <h4 className="text-sm font-medium text-[#10B981] mb-3 flex items-center gap-2">
+                                                <DollarSign className="w-4 h-4" />
+                                                Architecture Cost Breakdown
+                                            </h4>
+                                            {arch.cost_analysis.infrastructure?.breakdown && (
+                                                <div className="mb-3">
+                                                    <p className="text-xs text-[#64748B] mb-2">Infrastructure Components</p>
+                                                    <div className="space-y-1.5">
+                                                        {arch.cost_analysis.infrastructure.breakdown.map((item: {item: string; cost: string}, idx: number) => (
+                                                            <div key={idx} className="flex items-center justify-between py-1 px-2 bg-[rgba(244,246,255,0.03)] rounded">
+                                                                <span className="text-xs text-[#E2E8F0]">{item.item}</span>
+                                                                <span className="text-xs font-medium text-[#10B981]">{item.cost}</span>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
+                                            {arch.tools_recommended && (
+                                                <div>
+                                                    <p className="text-xs text-[#64748B] mb-2">Tools & Services Required</p>
+                                                    <div className="space-y-1.5">
+                                                        {Object.entries(arch.tools_recommended).map(([category, tools]) => (
+                                                            tools && Array.isArray(tools) && tools.length > 0 && (
+                                                                <div key={category} className="flex items-center justify-between py-1 px-2 bg-[rgba(244,246,255,0.03)] rounded">
+                                                                    <span className="text-xs text-[#E2E8F0] capitalize">{category}</span>
+                                                                    <span className="text-xs text-[#94A3B8]">{tools.slice(0, 3).join(', ')}{tools.length > 3 ? '...' : ''}</span>
+                                                                </div>
+                                                            )
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
 
                                     {/* Pros & Cons */}
                                     <div className="grid grid-cols-2 gap-4">
