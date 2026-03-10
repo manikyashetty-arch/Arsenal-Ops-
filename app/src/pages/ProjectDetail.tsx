@@ -105,6 +105,24 @@ interface PRDAnalysis {
     timeline: { phase: string; duration: string; tasks: string[] }[];
 }
 
+interface Sprint {
+    id: number;
+    name: string;
+    goal: string;
+    status: 'planned' | 'active' | 'completed';
+    start_date: string | null;
+    end_date: string | null;
+    capacity_hours: number | null;
+    velocity: number | null;
+    total_items: number;
+    todo_count: number;
+    in_progress_count: number;
+    done_count: number;
+    total_points: number;
+    completed_points: number;
+    completion_pct: number;
+}
+
 interface Project {
     id: number;
     name: string;
@@ -141,6 +159,7 @@ const ProjectDetail = () => {
     const [isSendingInvites, setIsSendingInvites] = useState(false);
     const [accessDenied, setAccessDenied] = useState(false);
     const [prdAnalysis, setPrdAnalysis] = useState<PRDAnalysis | null>(null);
+    const [sprints, setSprints] = useState<Sprint[]>([]);
     
     // Architecture editing state
     const [editingArchitecture, setEditingArchitecture] = useState<Architecture | null>(null);
@@ -150,6 +169,7 @@ const ProjectDetail = () => {
         if (!id) return;
         fetchProject();
         fetchAllDevelopers();
+        fetchSprints();
     }, [id]);
 
     const fetchProject = async () => {
@@ -205,6 +225,22 @@ const ProjectDetail = () => {
             }
         } catch (err) {
             console.error('Failed to fetch GitHub status:', err);
+        }
+    };
+
+    const fetchSprints = async () => {
+        if (!id) return;
+        try {
+            const res = await fetch(`${API_BASE_URL}/api/workitems/projects/${id}/sprints`, {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            });
+            if (res.ok) {
+                setSprints(await res.json());
+            }
+        } catch (err) {
+            console.error('Failed to fetch sprints:', err);
         }
     };
 
@@ -784,6 +820,68 @@ const ProjectDetail = () => {
                                                     <p className="text-xs text-[#94A3B8]">
                                                         <span className="text-[#64748B]">Mitigation:</span> {risk.mitigation}
                                                     </p>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Active Sprints Section */}
+                                {sprints.length > 0 && (
+                                    <div className="mb-6">
+                                        <h4 className="text-sm font-medium text-[#94A3B8] mb-3 flex items-center gap-2">
+                                            <TrendingUp className="w-4 h-4 text-[#10B981]" />
+                                            Active Sprints ({sprints.length})
+                                        </h4>
+                                        <div className="space-y-3">
+                                            {sprints.map((sprint) => (
+                                                <div key={sprint.id} className={`bg-[rgba(244,246,255,0.03)] border rounded-xl p-4 ${
+                                                    sprint.status === 'active' ? 'border-[#10B981]/30 bg-[#10B981]/5' : 
+                                                    sprint.status === 'completed' ? 'border-[#6366F1]/30' : 'border-[rgba(244,246,255,0.06)]'
+                                                }`}>
+                                                    <div className="flex items-start justify-between mb-2">
+                                                        <div className="flex items-center gap-2">
+                                                            <span className={`w-2 h-2 rounded-full ${
+                                                                sprint.status === 'active' ? 'bg-[#10B981] animate-pulse' :
+                                                                sprint.status === 'completed' ? 'bg-[#6366F1]' : 'bg-[#64748B]'
+                                                            }`} />
+                                                            <p className="text-sm font-medium text-white">{sprint.name}</p>
+                                                            <Badge className={`text-xs border-0 ${
+                                                                sprint.status === 'active' ? 'bg-[#10B981]/20 text-[#10B981]' :
+                                                                sprint.status === 'completed' ? 'bg-[#6366F1]/20 text-[#6366F1]' :
+                                                                'bg-[#64748B]/20 text-[#64748B]'
+                                                            }`}>
+                                                                {sprint.status}
+                                                            </Badge>
+                                                        </div>
+                                                        <div className="text-right">
+                                                            <p className="text-xs text-[#64748B]">
+                                                                {sprint.start_date && sprint.end_date ? (
+                                                                    `${new Date(sprint.start_date).toLocaleDateString()} - ${new Date(sprint.end_date).toLocaleDateString()}`
+                                                                ) : 'Dates not set'}
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                    {sprint.goal && (
+                                                        <p className="text-xs text-[#94A3B8] mb-3">{sprint.goal}</p>
+                                                    )}
+                                                    {/* Progress Bar */}
+                                                    <div className="flex items-center gap-3 mb-2">
+                                                        <div className="flex-1 h-2 bg-[rgba(244,246,255,0.06)] rounded-full overflow-hidden">
+                                                            <div 
+                                                                className="h-full bg-gradient-to-r from-[#6366F1] to-[#10B981] rounded-full transition-all"
+                                                                style={{ width: `${sprint.completion_pct}%` }}
+                                                            />
+                                                        </div>
+                                                        <span className="text-xs font-medium text-[#10B981]">{sprint.completion_pct}%</span>
+                                                    </div>
+                                                    {/* Stats */}
+                                                    <div className="flex items-center gap-4 text-xs">
+                                                        <span className="text-[#64748B]">{sprint.total_items} items</span>
+                                                        <span className="text-[#10B981]">{sprint.done_count} done</span>
+                                                        <span className="text-[#F59E0B]">{sprint.in_progress_count} in progress</span>
+                                                        <span className="text-[#64748B]">{sprint.total_points} pts</span>
+                                                    </div>
                                                 </div>
                                             ))}
                                         </div>
