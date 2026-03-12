@@ -53,6 +53,7 @@ class WorkItemUpdate(BaseModel):
     status: Optional[str] = None
     estimated_hours: Optional[int] = None
     remaining_hours: Optional[int] = None
+    logged_hours: Optional[int] = None  # Hours logged by developer
     story_points: Optional[int] = None
     priority: Optional[str] = None
     assignee_id: Optional[int] = None
@@ -62,6 +63,8 @@ class WorkItemUpdate(BaseModel):
     epic_id: Optional[int] = None
     parent_id: Optional[int] = None
     acceptance_criteria: Optional[List[str]] = None
+    # Frontend compatibility - assigned_hours maps to estimated_hours
+    assigned_hours: Optional[int] = None
 
 
 class BatchStatusUpdate(BaseModel):
@@ -125,6 +128,7 @@ async def list_work_items(
             "story_points": item.story_points or 0,
             "assigned_hours": item.estimated_hours or 0,
             "remaining_hours": item.remaining_hours or 0,
+            "logged_hours": item.logged_hours or 0,
             "assignee": "Unassigned",
             "assignee_id": item.assignee_id,
             "sprint": "Backlog",
@@ -217,6 +221,7 @@ async def create_work_item(
         "story_points": work_item.story_points or 0,
         "assigned_hours": work_item.estimated_hours or 0,
         "remaining_hours": work_item.remaining_hours or 0,
+        "logged_hours": work_item.logged_hours or 0,
         "assignee": assignee_name,
         "assignee_id": work_item.assignee_id,
         "sprint": "Backlog",
@@ -240,6 +245,10 @@ async def update_work_item(
         raise HTTPException(status_code=404, detail="Work item not found")
     
     update_data = update.dict(exclude_unset=True)
+    
+    # Handle frontend compatibility: assigned_hours -> estimated_hours
+    if 'assigned_hours' in update_data:
+        update_data['estimated_hours'] = update_data.pop('assigned_hours')
     
     # Handle status transitions
     if "status" in update_data:
@@ -276,6 +285,8 @@ async def update_work_item(
         "story_points": item.story_points or 0,
         "assigned_hours": item.estimated_hours or 0,
         "remaining_hours": item.remaining_hours or 0,
+        "logged_hours": item.logged_hours or 0,
+        "logged_hours": item.logged_hours or 0,
         "assignee": assignee_name,
         "assignee_id": item.assignee_id,
         "sprint": "Backlog",
@@ -388,6 +399,7 @@ async def generate_work_items(
                 "status": "todo",
                 "assigned_hours": item_data["story_points"] * 4,
                 "remaining_hours": item_data["story_points"] * 4,
+                "logged_hours": 0,
                 "story_points": item_data["story_points"],
                 "priority": item_data["priority"],
                 "assignee": "Unassigned",
@@ -419,6 +431,7 @@ async def generate_work_items(
                 "status": "todo",
                 "assigned_hours": 8,
                 "remaining_hours": 8,
+                "logged_hours": 0,
                 "story_points": [1, 2, 3, 5, 8][i % 5],
                 "priority": priorities[i % len(priorities)],
                 "assignee": "Unassigned",
@@ -598,6 +611,7 @@ async def move_ticket_to_sprint(
         "story_points": item.story_points or 0,
         "assigned_hours": item.estimated_hours or 0,
         "remaining_hours": item.remaining_hours or 0,
+        "logged_hours": item.logged_hours or 0,
         "assignee": assignee_name,
         "assignee_id": item.assignee_id,
         "sprint": sprint_name,
@@ -764,4 +778,106 @@ async def get_project_analytics(
         "velocity_data": velocity_data,
         "burndown_data": burndown_data,
         "team_performance": list(assignee_stats.values())
+    }
+
+
+@router.get("/projects/{project_id}/hours-analytics")
+async def get_hours_analytics(
+    project_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get hours analytics for project manager view (requires auth)"""
+    from models.developer import Developer
+    
+    # Verify project exists
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    # Get all work items for the project
+    items = db.query(WorkItem).filter(WorkItem.project_id == project_id).all()
+    
+    # Get all sprints
+    sprints = db.query(Sprint).filter(Sprint.project_id == project_id).order_by(Sprint.start_date).all()
+    
+    # Get all developers assigned to this project
+    developers = project.developers if hasattr(project, 'developers') else []
+    
+    # Hours per sprint
+    sprint_hours = []
+    for sprint in sprints:
+        sprint_items = [item for item in items if item.sprint_id == sprint.id]
+        allocated = sum(item.estimated_hours or 0 for item in sprint_items)
+        logged = sum(item.logged_hours or 0 for item in sprint_items)
+        remaining = sum(item.remaining_hours or 0 for item in sprint_items)
+        
+        sprint_hours.append({
+            "sprint_id": sprint.id,
+            "sprint_name": sprint.name,
+            "status": sprint.status,
+            "allocated_hours": allocated,
+            "logged_hours": logged,
+            "remaining_hours": remaining,
+            "total_items": len(sprint_items)
+        })
+    
+    # Hours per developer
+    developer_hours = []
+    for dev in developers:
+        dev_items = [item for item in items if item.assignee_id == dev.id]
+        allocated = sum(item.estimated_hours or 0 for item in dev_items)
+        logged = sum(item.logged_hours or 0 for item in dev_items)
+        remaining = sum(item.remaining_hours or 0 for item in dev_items)
+        completed_items = [item for item in dev_items if item.status == WorkItemStatus.DONE.value]
+        
+        developer_hours.append({
+            "developer_id": dev.id,
+            "developer_name": dev.name,
+            "developer_email": dev.email,
+            "role": dev.role if hasattr(dev, 'role') else "Developer",
+            "allocated_hours": allocated,
+            "logged_hours": logged,
+            "remaining_hours": remaining,
+            "total_items": len(dev_items),
+            "completed_items": len(completed_items)
+        })
+    
+    # Weekly breakdown (last 8 weeks)
+    from datetime import timedelta
+    weekly_hours = []
+    for i in range(7, -1, -1):
+        week_start = datetime.utcnow() - timedelta(weeks=i, days=datetime.utcnow().weekday())
+        week_end = week_start + timedelta(days=6)
+        
+        # Items completed this week
+        week_items = [item for item in items 
+                     if item.completed_at 
+                     and week_start <= item.completed_at <= week_end]
+        
+        week_logged = sum(item.logged_hours or 0 for item in week_items)
+        week_allocated = sum(item.estimated_hours or 0 for item in items 
+                            if item.started_at and week_start <= item.started_at <= week_end)
+        
+        weekly_hours.append({
+            "week": week_start.strftime("%Y-%m-%d"),
+            "week_label": f"Week {8-i}",
+            "allocated_hours": week_allocated,
+            "logged_hours": week_logged,
+            "items_completed": len(week_items)
+        })
+    
+    # Totals
+    total_allocated = sum(item.estimated_hours or 0 for item in items)
+    total_logged = sum(item.logged_hours or 0 for item in items)
+    total_remaining = sum(item.remaining_hours or 0 for item in items)
+    
+    return {
+        "project_name": project.name,
+        "total_allocated_hours": total_allocated,
+        "total_logged_hours": total_logged,
+        "total_remaining_hours": total_remaining,
+        "sprint_hours": sprint_hours,
+        "developer_hours": developer_hours,
+        "weekly_hours": weekly_hours
     }

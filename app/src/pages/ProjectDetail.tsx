@@ -33,6 +33,7 @@ import {
     BarChart3,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import PMView from '@/components/PMView';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
@@ -153,12 +154,13 @@ interface Project {
     architectures: Architecture[];
 }
 
-type TabType = 'overview' | 'developers' | 'github';
+type TabType = 'overview' | 'developers' | 'github' | 'pm';
 
 const ProjectDetail = () => {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
-    const { token } = useAuth();
+    const { token, user } = useAuth();
+    const userRole = user?.role;
     const [project, setProject] = useState<Project | null>(null);
     const [activeTab, setActiveTab] = useState<TabType>('overview');
     const [isLoading, setIsLoading] = useState(true);
@@ -477,6 +479,8 @@ const ProjectDetail = () => {
         { id: 'overview' as TabType, label: 'Overview', icon: Info },
         { id: 'developers' as TabType, label: 'Developers', icon: Users },
         { id: 'github' as TabType, label: 'GitHub', icon: Github },
+        // PM tab only for admins
+        ...(userRole === 'admin' ? [{ id: 'pm' as TabType, label: 'Project Manager', icon: Clock }] : []),
     ];
 
     // Filter out developers already in project
@@ -1543,6 +1547,13 @@ const ProjectDetail = () => {
                                 </div>
                             </div>
                         )}
+                    </div>
+                )}
+
+                {/* Project Manager Tab */}
+                {activeTab === 'pm' && userRole === 'admin' && (
+                    <div className="space-y-6">
+                        <PMView projectId={id!} token={token!} />
                     </div>
                 )}
             </main>

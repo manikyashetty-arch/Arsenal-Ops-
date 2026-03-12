@@ -48,6 +48,7 @@ interface WorkItem {
     status: 'todo' | 'in_progress' | 'in_review' | 'done';
     assigned_hours: number;
     remaining_hours: number;
+    logged_hours: number;
     story_points: number;
     priority: 'high' | 'medium' | 'low' | 'critical';
     assignee: string;
@@ -1257,8 +1258,20 @@ const ProjectBoard = () => {
                                                 className="bg-[rgba(244,246,255,0.03)] border-[rgba(244,246,255,0.08)] text-[#F4F6FF] rounded-xl" />
                                         </div>
                                         <div>
-                                            <label className="text-xs font-medium text-[#64748B] block mb-1.5">Assigned Hours</label>
+                                            <label className="text-xs font-medium text-[#64748B] block mb-1.5">Allocated Hours</label>
                                             <Input type="number" defaultValue={selectedItem.assigned_hours} onChange={e => setEditForm(f => ({ ...f, assigned_hours: parseInt(e.target.value) || 0 }))}
+                                                className="bg-[rgba(244,246,255,0.03)] border-[rgba(244,246,255,0.08)] text-[#F4F6FF] rounded-xl" />
+                                        </div>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <div>
+                                            <label className="text-xs font-medium text-[#64748B] block mb-1.5">Logged Hours</label>
+                                            <Input type="number" defaultValue={selectedItem.logged_hours || 0} onChange={e => setEditForm(f => ({ ...f, logged_hours: parseInt(e.target.value) || 0 }))}
+                                                className="bg-[rgba(244,246,255,0.03)] border-[rgba(244,246,255,0.08)] text-[#F4F6FF] rounded-xl" />
+                                        </div>
+                                        <div>
+                                            <label className="text-xs font-medium text-[#64748B] block mb-1.5">Remaining Hours</label>
+                                            <Input type="number" defaultValue={selectedItem.remaining_hours} onChange={e => setEditForm(f => ({ ...f, remaining_hours: parseInt(e.target.value) || 0 }))}
                                                 className="bg-[rgba(244,246,255,0.03)] border-[rgba(244,246,255,0.08)] text-[#F4F6FF] rounded-xl" />
                                         </div>
                                     </div>
