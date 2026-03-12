@@ -37,12 +37,14 @@ interface DeveloperHours {
     allocated_hours: number;
     logged_hours: number;
     remaining_hours: number;
+    current_week_logged: number;
     total_items: number;
     completed_items: number;
 }
 
 interface WeeklyHours {
     week: string;
+    week_end: string;
     week_label: string;
     allocated_hours: number;
     logged_hours: number;
@@ -167,20 +169,20 @@ export default function PMView({ projectId, token }: PMViewProps) {
                             <thead>
                                 <tr className="border-b border-[rgba(244,246,255,0.06)]">
                                     <th className="text-left py-3 px-4 text-xs font-medium text-[#64748B] uppercase">Week</th>
-                                    <th className="text-left py-3 px-4 text-xs font-medium text-[#64748B] uppercase">Date</th>
+                                    <th className="text-left py-3 px-4 text-xs font-medium text-[#64748B] uppercase">Date Range</th>
                                     <th className="text-right py-3 px-4 text-xs font-medium text-[#64748B] uppercase">Allocated</th>
                                     <th className="text-right py-3 px-4 text-xs font-medium text-[#64748B] uppercase">Logged</th>
-                                    <th className="text-right py-3 px-4 text-xs font-medium text-[#64748B] uppercase">Items Completed</th>
+                                    <th className="text-right py-3 px-4 text-xs font-medium text-[#64748B] uppercase">Completed</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {analytics.weekly_hours.map((week, idx) => (
-                                    <tr key={idx} className="border-b border-[rgba(244,246,255,0.04)] hover:bg-[rgba(244,246,255,0.02)]">
-                                        <td className="py-3 px-4 text-sm text-white">{week.week_label}</td>
-                                        <td className="py-3 px-4 text-sm text-[#94A3B8]">{week.week}</td>
+                                    <tr key={idx} className={`border-b border-[rgba(244,246,255,0.04)] hover:bg-[rgba(244,246,255,0.02)] ${week.logged_hours > 0 ? 'bg-[#10B981]/5' : ''}`}>
+                                        <td className="py-3 px-4 text-sm text-white font-medium">{week.week_label}</td>
+                                        <td className="py-3 px-4 text-sm text-[#94A3B8]">{week.week} - {week.week_end}</td>
                                         <td className="py-3 px-4 text-sm text-right text-white">{week.allocated_hours}h</td>
                                         <td className="py-3 px-4 text-sm text-right">
-                                            <span className={week.logged_hours > 0 ? 'text-[#10B981]' : 'text-[#64748B]'}>
+                                            <span className={week.logged_hours > 0 ? 'text-[#10B981] font-semibold' : 'text-[#64748B]'}>
                                                 {week.logged_hours}h
                                             </span>
                                         </td>
@@ -214,6 +216,7 @@ export default function PMView({ projectId, token }: PMViewProps) {
                                     <th className="text-left py-3 px-4 text-xs font-medium text-[#64748B] uppercase">Role</th>
                                     <th className="text-right py-3 px-4 text-xs font-medium text-[#64748B] uppercase">Allocated</th>
                                     <th className="text-right py-3 px-4 text-xs font-medium text-[#64748B] uppercase">Logged</th>
+                                    <th className="text-right py-3 px-4 text-xs font-medium text-[#8B5CF6] uppercase">This Week</th>
                                     <th className="text-right py-3 px-4 text-xs font-medium text-[#64748B] uppercase">Remaining</th>
                                     <th className="text-right py-3 px-4 text-xs font-medium text-[#64748B] uppercase">Items</th>
                                     <th className="text-right py-3 px-4 text-xs font-medium text-[#64748B] uppercase">Completed</th>
@@ -222,7 +225,7 @@ export default function PMView({ projectId, token }: PMViewProps) {
                             <tbody>
                                 {analytics.developer_hours.length === 0 ? (
                                     <tr>
-                                        <td colSpan={7} className="py-8 text-center text-[#64748B]">
+                                        <td colSpan={8} className="py-8 text-center text-[#64748B]">
                                             No developers assigned to this project
                                         </td>
                                     </tr>
@@ -250,6 +253,11 @@ export default function PMView({ projectId, token }: PMViewProps) {
                                                 <td className="py-3 px-4 text-sm text-right">
                                                     <span className={dev.logged_hours > 0 ? 'text-[#10B981]' : 'text-[#64748B]'}>
                                                         {dev.logged_hours}h
+                                                    </span>
+                                                </td>
+                                                <td className="py-3 px-4 text-sm text-right">
+                                                    <span className={dev.current_week_logged > 0 ? 'text-[#8B5CF6] font-semibold' : 'text-[#64748B]'}>
+                                                        {dev.current_week_logged}h
                                                     </span>
                                                 </td>
                                                 <td className="py-3 px-4 text-sm text-right">

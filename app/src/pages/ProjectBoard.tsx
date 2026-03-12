@@ -577,6 +577,32 @@ const ProjectBoard = () => {
         }
     };
 
+    // Log hours to a work item
+    const handleLogHours = async (item: WorkItem, hoursToLog: number) => {
+        try {
+            const newLoggedHours = (item.logged_hours || 0) + hoursToLog;
+            const newRemainingHours = Math.max(0, item.remaining_hours - hoursToLog);
+            
+            const response = await fetch(`${API_BASE_URL}/api/workitems/${item.id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({
+                    logged_hours: newLoggedHours,
+                    remaining_hours: newRemainingHours,
+                }),
+            });
+            if (response.ok) {
+                const updated = await response.json();
+                setWorkItems(prev => prev.map(wi => wi.id === item.id ? updated : wi));
+                setSelectedItem(updated);
+                toast.success(`Logged ${hoursToLog}h! Remaining: ${newRemainingHours}h`);
+                refreshProjectStats();
+            }
+        } catch {
+            toast.error('Failed to log hours');
+        }
+    };
+
     // AI Generate - Open the AI Planning Modal
     const handleAIGenerate = () => {
         setShowAIModal(true);
@@ -1049,7 +1075,10 @@ const ProjectBoard = () => {
                                                                 <Clock className="w-2.5 h-2.5" />
                                                                 {item.remaining_hours}h left
                                                             </span>
-                                                            <span>{item.assigned_hours}h total</span>
+                                                            <span className="flex items-center gap-2">
+                                                                <span className="text-[#10B981]">{item.logged_hours || 0}h logged</span>
+                                                                <span>/ {item.assigned_hours}h</span>
+                                                            </span>
                                                         </div>
                                                         <div className="h-1 bg-[rgba(244,246,255,0.06)] rounded-full overflow-hidden">
                                                             <div
@@ -1311,7 +1340,9 @@ const ProjectBoard = () => {
                                     <div className="grid grid-cols-2 gap-3">
                                         {[
                                             { label: 'Story Points', value: selectedItem.story_points, color: '#6366F1' },
-                                            { label: 'Hours', value: `${selectedItem.remaining_hours}h / ${selectedItem.assigned_hours}h`, color: '#F59E0B' },
+                                            { label: 'Allocated Hours', value: `${selectedItem.assigned_hours}h`, color: '#6366F1' },
+                                            { label: 'Logged Hours', value: `${selectedItem.logged_hours || 0}h`, color: '#10B981' },
+                                            { label: 'Remaining Hours', value: `${selectedItem.remaining_hours}h`, color: '#F59E0B' },
                                             { label: 'Status', value: (STATUS_CONFIG[selectedItem.status] || STATUS_CONFIG.todo).label, color: (STATUS_CONFIG[selectedItem.status] || STATUS_CONFIG.todo).color },
                                             { label: 'Priority', value: selectedItem.priority.charAt(0).toUpperCase() + selectedItem.priority.slice(1), color: (PRIORITY_COLORS[selectedItem.priority] || PRIORITY_COLORS.medium).text.replace('text-', '').includes('red') ? '#EF4444' : (PRIORITY_COLORS[selectedItem.priority] || PRIORITY_COLORS.medium).text.includes('orange') ? '#F97316' : (PRIORITY_COLORS[selectedItem.priority] || PRIORITY_COLORS.medium).text.includes('yellow') ? '#F59E0B' : '#10B981' },
                                         ].map(d => (
@@ -1347,6 +1378,38 @@ const ProjectBoard = () => {
                                             </div>
                                         </div>
                                     )}
+
+                                    {/* Log Hours Section */}
+                                    <div className="pt-4 border-t border-[rgba(244,246,255,0.06)]">
+                                        <div className="text-xs text-[#475569] mb-3 font-medium">Log Work Hours</div>
+                                        <div className="flex items-center gap-3">
+                                            <Input
+                                                type="number"
+                                                placeholder="Hours"
+                                                min="0"
+                                                className="w-24 h-9 bg-[rgba(244,246,255,0.03)] border-[rgba(244,246,255,0.08)] text-[#F4F6FF] rounded-xl"
+                                                id="log-hours-input"
+                                            />
+                                            <Button
+                                                size="sm"
+                                                onClick={() => {
+                                                    const input = document.getElementById('log-hours-input') as HTMLInputElement;
+                                                    const hours = parseInt(input?.value || '0');
+                                                    if (hours > 0) {
+                                                        handleLogHours(selectedItem, hours);
+                                                        input.value = '';
+                                                    }
+                                                }}
+                                                className="bg-[#10B981] hover:bg-[#059669] text-white rounded-xl h-9"
+                                            >
+                                                <Clock className="w-3.5 h-3.5 mr-1.5" />
+                                                Log Hours
+                                            </Button>
+                                        </div>
+                                        <p className="text-[10px] text-[#475569] mt-2">
+                                            Current: {selectedItem.logged_hours || 0}h logged · {selectedItem.remaining_hours}h remaining
+                                        </p>
+                                    </div>
 
                                     {/* Status Buttons */}
                                     <div className="pt-4 border-t border-[rgba(244,246,255,0.06)]">

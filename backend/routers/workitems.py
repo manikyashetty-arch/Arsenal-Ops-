@@ -831,6 +831,16 @@ async def get_hours_analytics(
         remaining = sum(item.remaining_hours or 0 for item in dev_items)
         completed_items = [item for item in dev_items if item.status == WorkItemStatus.DONE.value]
         
+        # Current week logged hours for this developer
+        from datetime import timedelta
+        current_week_start = datetime.utcnow() - timedelta(days=datetime.utcnow().weekday())
+        current_week_end = current_week_start + timedelta(days=6)
+        current_week_logged = sum(
+            item.logged_hours or 0 
+            for item in dev_items 
+            if item.updated_at and current_week_start <= item.updated_at <= current_week_end
+        )
+        
         developer_hours.append({
             "developer_id": dev.id,
             "developer_name": dev.name,
@@ -839,32 +849,58 @@ async def get_hours_analytics(
             "allocated_hours": allocated,
             "logged_hours": logged,
             "remaining_hours": remaining,
+            "current_week_logged": current_week_logged,
             "total_items": len(dev_items),
             "completed_items": len(completed_items)
         })
     
-    # Weekly breakdown (last 8 weeks)
+    # Weekly breakdown - based on project timeline
     from datetime import timedelta
     weekly_hours = []
-    for i in range(7, -1, -1):
-        week_start = datetime.utcnow() - timedelta(weeks=i, days=datetime.utcnow().weekday())
+    
+    # Calculate weeks from project start to now
+    project_start = project.created_at or datetime.utcnow()
+    today = datetime.utcnow()
+    
+    # Calculate number of weeks from project start
+    days_since_start = (today - project_start).days
+    num_weeks = max(1, (days_since_start // 7) + 1)
+    
+    # Generate weeks from project start
+    for i in range(num_weeks):
+        week_start = project_start + timedelta(weeks=i)
         week_end = week_start + timedelta(days=6)
         
-        # Items completed this week
-        week_items = [item for item in items 
-                     if item.completed_at 
-                     and week_start <= item.completed_at <= week_end]
+        # Don't show future weeks beyond today
+        if week_start > today:
+            break
         
-        week_logged = sum(item.logged_hours or 0 for item in week_items)
-        week_allocated = sum(item.estimated_hours or 0 for item in items 
-                            if item.started_at and week_start <= item.started_at <= week_end)
+        # Items updated this week (logged hours are tracked via updated_at)
+        week_items_updated = [item for item in items 
+                             if item.updated_at 
+                             and week_start <= item.updated_at <= min(week_end, today)]
+        
+        # Items completed this week
+        week_items_completed = [item for item in items 
+                               if item.completed_at 
+                               and week_start <= item.completed_at <= min(week_end, today)]
+        
+        # Sum logged hours from items updated this week
+        week_logged = sum(item.logged_hours or 0 for item in week_items_updated)
+        
+        # Sum allocated hours from items created this week
+        week_items_created = [item for item in items 
+                             if item.created_at 
+                             and week_start <= item.created_at <= min(week_end, today)]
+        week_allocated = sum(item.estimated_hours or 0 for item in week_items_created)
         
         weekly_hours.append({
             "week": week_start.strftime("%Y-%m-%d"),
-            "week_label": f"Week {8-i}",
+            "week_end": week_end.strftime("%Y-%m-%d"),
+            "week_label": f"Week {i + 1}",
             "allocated_hours": week_allocated,
             "logged_hours": week_logged,
-            "items_completed": len(week_items)
+            "items_completed": len(week_items_completed)
         })
     
     # Totals
