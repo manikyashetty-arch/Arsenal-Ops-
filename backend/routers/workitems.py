@@ -664,3 +664,104 @@ async def list_project_sprints(
         })
     
     return result
+
+
+@router.get("/projects/{project_id}/analytics")
+async def get_project_analytics(
+    project_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get project analytics for charts and graphs (requires auth)"""
+    # Verify project exists
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    # Get all work items for the project
+    items = db.query(WorkItem).filter(WorkItem.project_id == project_id).all()
+    
+    # Status distribution
+    status_counts = {}
+    for status in WorkItemStatus:
+        count = sum(1 for item in items if item.status == status.value)
+        if count > 0:
+            status_counts[status.value] = count
+    
+    # Type distribution
+    type_counts = {}
+    for item_type in WorkItemType:
+        count = sum(1 for item in items if item.type == item_type.value)
+        if count > 0:
+            type_counts[item_type.value] = count
+    
+    # Priority distribution
+    priority_counts = {}
+    for item in items:
+        priority_counts[item.priority] = priority_counts.get(item.priority, 0) + 1
+    
+    # Sprint velocity data
+    sprints = db.query(Sprint).filter(Sprint.project_id == project_id).order_by(Sprint.start_date).all()
+    velocity_data = []
+    for sprint in sprints:
+        total_points = db.query(func.sum(WorkItem.story_points)).filter(
+            WorkItem.sprint_id == sprint.id
+        ).scalar() or 0
+        completed_points = db.query(func.sum(WorkItem.story_points)).filter(
+            WorkItem.sprint_id == sprint.id,
+            WorkItem.status == WorkItemStatus.DONE.value
+        ).scalar() or 0
+        velocity_data.append({
+            "sprint_name": sprint.name,
+            "committed": total_points,
+            "completed": completed_points,
+            "start_date": sprint.start_date.isoformat() if sprint.start_date else None
+        })
+    
+    # Burndown data (last 14 days)
+    from datetime import timedelta
+    burndown_data = []
+    for i in range(14, -1, -1):
+        date = datetime.utcnow() - timedelta(days=i)
+        # Count items done by this date
+        done_count = sum(1 for item in items 
+                        if item.status == WorkItemStatus.DONE.value 
+                        and item.completed_at 
+                        and item.completed_at.date() <= date.date())
+        total_count = len(items)
+        remaining = total_count - done_count
+        burndown_data.append({
+            "date": date.strftime("%Y-%m-%d"),
+            "remaining": remaining,
+            "completed": done_count
+        })
+    
+    # Team performance (by assignee)
+    assignee_stats = {}
+    for item in items:
+        if item.assignee_id:
+            if item.assignee_id not in assignee_stats:
+                assignee_stats[item.assignee_id] = {
+                    "name": item.assignee.name if item.assignee else f"User {item.assignee_id}",
+                    "total_items": 0,
+                    "completed_items": 0,
+                    "total_points": 0,
+                    "completed_points": 0
+                }
+            assignee_stats[item.assignee_id]["total_items"] += 1
+            assignee_stats[item.assignee_id]["total_points"] += item.story_points or 0
+            if item.status == WorkItemStatus.DONE.value:
+                assignee_stats[item.assignee_id]["completed_items"] += 1
+                assignee_stats[item.assignee_id]["completed_points"] += item.story_points or 0
+    
+    return {
+        "total_items": len(items),
+        "total_story_points": sum(item.story_points or 0 for item in items),
+        "completed_points": sum(item.story_points or 0 for item in items if item.status == WorkItemStatus.DONE.value),
+        "status_distribution": status_counts,
+        "type_distribution": type_counts,
+        "priority_distribution": priority_counts,
+        "velocity_data": velocity_data,
+        "burndown_data": burndown_data,
+        "team_performance": list(assignee_stats.values())
+    }

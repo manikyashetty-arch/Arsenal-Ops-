@@ -1,6 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
+    PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line
+} from 'recharts';
+import {
     ArrowLeft,
     Users,
     Github,
@@ -27,6 +30,7 @@ import {
     Wrench,
     Calendar,
     FileText,
+    BarChart3,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -123,6 +127,18 @@ interface Sprint {
     completion_pct: number;
 }
 
+interface ProjectAnalytics {
+    total_items: number;
+    total_story_points: number;
+    completed_points: number;
+    status_distribution: Record<string, number>;
+    type_distribution: Record<string, number>;
+    priority_distribution: Record<string, number>;
+    velocity_data: { sprint_name: string; committed: number; completed: number; start_date: string }[];
+    burndown_data: { date: string; remaining: number; completed: number }[];
+    team_performance: { name: string; total_items: number; completed_items: number; total_points: number; completed_points: number }[];
+}
+
 interface Project {
     id: number;
     name: string;
@@ -160,6 +176,7 @@ const ProjectDetail = () => {
     const [accessDenied, setAccessDenied] = useState(false);
     const [prdAnalysis, setPrdAnalysis] = useState<PRDAnalysis | null>(null);
     const [sprints, setSprints] = useState<Sprint[]>([]);
+    const [analytics, setAnalytics] = useState<ProjectAnalytics | null>(null);
     
     // Architecture editing state
     const [editingArchitecture, setEditingArchitecture] = useState<Architecture | null>(null);
@@ -170,6 +187,7 @@ const ProjectDetail = () => {
         fetchProject();
         fetchAllDevelopers();
         fetchSprints();
+        fetchAnalytics();
     }, [id]);
 
     const fetchProject = async () => {
@@ -241,6 +259,22 @@ const ProjectDetail = () => {
             }
         } catch (err) {
             console.error('Failed to fetch sprints:', err);
+        }
+    };
+
+    const fetchAnalytics = async () => {
+        if (!id) return;
+        try {
+            const res = await fetch(`${API_BASE_URL}/api/workitems/projects/${id}/analytics`, {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            });
+            if (res.ok) {
+                setAnalytics(await res.json());
+            }
+        } catch (err) {
+            console.error('Failed to fetch analytics:', err);
         }
     };
 
@@ -663,6 +697,82 @@ const ProjectDetail = () => {
                                 </div>
                             </div>
                         </div>
+
+                        {/* Analytics Dashboard */}
+                        {analytics && analytics.total_items > 0 && (
+                            <div className="bg-[rgba(244,246,255,0.02)] border border-[rgba(244,246,255,0.06)] rounded-2xl p-6">
+                                <div className="flex items-center gap-3 mb-6">
+                                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#10B981] to-[#059669] flex items-center justify-center">
+                                        <BarChart3 className="w-5 h-5 text-white" />
+                                    </div>
+                                    <div>
+                                        <h3 className="font-semibold text-white">Project Analytics</h3>
+                                        <p className="text-xs text-[#64748B]">{analytics.total_items} items • {analytics.completed_points}/{analytics.total_story_points} points completed</p>
+                                    </div>
+                                </div>
+
+                                {/* Charts Grid */}
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    {/* Status Distribution Pie Chart */}
+                                    <div className="bg-[rgba(244,246,255,0.03)] rounded-xl p-4">
+                                        <h4 className="text-sm font-medium text-[#94A3B8] mb-4">Status Distribution</h4>
+                                        <ResponsiveContainer width="100%" height={200}>
+                                            <PieChart>
+                                                <Pie
+                                                    data={Object.entries(analytics.status_distribution).map(([name, value]) => ({ name, value }))}
+                                                    cx="50%"
+                                                    cy="50%"
+                                                    innerRadius={40}
+                                                    outerRadius={80}
+                                                    paddingAngle={5}
+                                                    dataKey="value"
+                                                >
+                                                    {Object.entries(analytics.status_distribution).map((_, index) => (
+                                                        <Cell key={`cell-${index}`} fill={['#6366F1', '#10B981', '#F59E0B', '#EF4444', '#64748B'][index % 5]} />
+                                                    ))}
+                                                </Pie>
+                                                <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px' }} />
+                                                <Legend />
+                                            </PieChart>
+                                        </ResponsiveContainer>
+                                    </div>
+
+                                    {/* Velocity Chart */}
+                                    {analytics.velocity_data.length > 0 && (
+                                        <div className="bg-[rgba(244,246,255,0.03)] rounded-xl p-4">
+                                            <h4 className="text-sm font-medium text-[#94A3B8] mb-4">Sprint Velocity</h4>
+                                            <ResponsiveContainer width="100%" height={200}>
+                                                <BarChart data={analytics.velocity_data}>
+                                                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" />
+                                                    <XAxis dataKey="sprint_name" tick={{ fill: '#64748B', fontSize: 10 }} angle={-45} textAnchor="end" height={60} />
+                                                    <YAxis tick={{ fill: '#64748B' }} />
+                                                    <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px' }} />
+                                                    <Legend />
+                                                    <Bar dataKey="committed" fill="#6366F1" name="Committed" />
+                                                    <Bar dataKey="completed" fill="#10B981" name="Completed" />
+                                                </BarChart>
+                                            </ResponsiveContainer>
+                                        </div>
+                                    )}
+
+                                    {/* Burndown Chart */}
+                                    <div className="bg-[rgba(244,246,255,0.03)] rounded-xl p-4 md:col-span-2">
+                                        <h4 className="text-sm font-medium text-[#94A3B8] mb-4">Burndown Chart (Last 14 Days)</h4>
+                                        <ResponsiveContainer width="100%" height={250}>
+                                            <LineChart data={analytics.burndown_data}>
+                                                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" />
+                                                <XAxis dataKey="date" tick={{ fill: '#64748B', fontSize: 10 }} />
+                                                <YAxis tick={{ fill: '#64748B' }} />
+                                                <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px' }} />
+                                                <Legend />
+                                                <Line type="monotone" dataKey="remaining" stroke="#F59E0B" name="Remaining Items" strokeWidth={2} />
+                                                <Line type="monotone" dataKey="completed" stroke="#10B981" name="Completed Items" strokeWidth={2} />
+                                            </LineChart>
+                                        </ResponsiveContainer>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
 
                         {/* PRD Analysis Section */}
                         {prdAnalysis && (

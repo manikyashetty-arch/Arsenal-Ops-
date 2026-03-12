@@ -52,6 +52,7 @@ class WorkItem(Base):
     story_points = Column(Integer, default=0)
     estimated_hours = Column(Integer)
     remaining_hours = Column(Integer)
+    logged_hours = Column(Integer, default=0)  # Total hours logged by developers
     
     # Assignment - linked to Developer model
     assignee_id = Column(Integer, ForeignKey("developers.id", ondelete="SET NULL"), index=True)
