@@ -172,8 +172,12 @@ def format_project(project: Project, db: Session) -> dict:
 
 
 @router.post("/")
-async def create_project(project: ProjectCreate, db: Session = Depends(get_db)):
-    """Create a new project"""
+async def create_project(
+    project: ProjectCreate, 
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Create a new project (requires auth)"""
     # Check for duplicate project name
     existing = db.query(Project).filter(Project.name == project.name).first()
     if existing:
@@ -302,11 +306,13 @@ async def delete_project(
 async def send_github_invitations(
     project_id: int, 
     role: str = "push",  # pull, push, admin, maintain, triage
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
     Send GitHub repository invitations to all project developers.
     Uses project-specific GitHub token if configured, otherwise uses global GITHUB_TOKEN.
+    (requires auth)
     """
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
@@ -372,8 +378,12 @@ async def send_github_invitations(
 
 
 @router.get("/{project_id}/github-status")
-async def check_github_status(project_id: int, db: Session = Depends(get_db)):
-    """Check GitHub integration status for a project"""
+async def check_github_status(
+    project_id: int, 
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Check GitHub integration status for a project (requires auth)"""
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
@@ -405,9 +415,10 @@ async def check_github_status(project_id: int, db: Session = Depends(get_db)):
 async def add_developer_to_project(
     project_id: int, 
     assignment: DeveloperAssignment, 
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
-    """Add a developer to a project"""
+    """Add a developer to a project (requires auth)"""
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
@@ -445,9 +456,10 @@ async def add_developer_to_project(
 async def remove_developer_from_project(
     project_id: int, 
     developer_id: int, 
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
-    """Remove a developer from a project"""
+    """Remove a developer from a project (requires auth)"""
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")

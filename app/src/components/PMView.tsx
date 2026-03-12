@@ -228,9 +228,6 @@ export default function PMView({ projectId, token }: PMViewProps) {
                                     </tr>
                                 ) : (
                                     analytics.developer_hours.map((dev) => {
-                                        const devProgress = dev.allocated_hours > 0 
-                                            ? Math.round((dev.logged_hours / dev.allocated_hours) * 100) 
-                                            : 0;
                                         return (
                                             <tr key={dev.developer_id} className="border-b border-[rgba(244,246,255,0.04)] hover:bg-[rgba(244,246,255,0.02)]">
                                                 <td className="py-3 px-4">

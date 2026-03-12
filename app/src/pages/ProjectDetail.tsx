@@ -40,7 +40,7 @@ import { Badge } from '@/components/ui/badge';
 import { toast, Toaster } from 'sonner';
 import MermaidRenderer from '@/components/MermaidRenderer';
 import ArchitectureEditor from '@/components/ArchitectureEditor';
-import { useAuth } from '@/contexts/AuthContext';
+import { useAuth, isProjectManager } from '@/contexts/AuthContext';
 
 import { API_BASE_URL } from '@/config/api';
 
@@ -160,7 +160,6 @@ const ProjectDetail = () => {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
     const { token, user } = useAuth();
-    const userRole = user?.role;
     const [project, setProject] = useState<Project | null>(null);
     const [activeTab, setActiveTab] = useState<TabType>('overview');
     const [isLoading, setIsLoading] = useState(true);
@@ -479,8 +478,8 @@ const ProjectDetail = () => {
         { id: 'overview' as TabType, label: 'Overview', icon: Info },
         { id: 'developers' as TabType, label: 'Developers', icon: Users },
         { id: 'github' as TabType, label: 'GitHub', icon: Github },
-        // PM tab only for admins
-        ...(userRole === 'admin' ? [{ id: 'pm' as TabType, label: 'Project Manager', icon: Clock }] : []),
+        // PM tab only for admins and project managers
+        ...(isProjectManager(user) ? [{ id: 'pm' as TabType, label: 'Project Manager', icon: Clock }] : []),
     ];
 
     // Filter out developers already in project
@@ -1551,7 +1550,7 @@ const ProjectDetail = () => {
                 )}
 
                 {/* Project Manager Tab */}
-                {activeTab === 'pm' && userRole === 'admin' && (
+                {activeTab === 'pm' && isProjectManager(user) && (
                     <div className="space-y-6">
                         <PMView projectId={id!} token={token!} />
                     </div>

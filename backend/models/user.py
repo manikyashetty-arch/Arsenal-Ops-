@@ -13,7 +13,24 @@ from database import Base
 
 class UserRole(str, enum.Enum):
     ADMIN = "admin"
+    PROJECT_MANAGER = "project_manager"
     DEVELOPER = "developer"
+
+
+def has_role(user_role: str, required_role: str) -> bool:
+    """Check if user has a specific role (supports multiple roles)"""
+    if not user_role:
+        return False
+    roles = [r.strip() for r in user_role.split(',')]
+    return required_role in roles
+
+
+def has_any_role(user_role: str, required_roles: list) -> bool:
+    """Check if user has any of the required roles"""
+    if not user_role:
+        return False
+    roles = [r.strip() for r in user_role.split(',')]
+    return any(role in roles for role in required_roles)
 
 
 class User(Base):

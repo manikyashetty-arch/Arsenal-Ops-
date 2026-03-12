@@ -43,7 +43,7 @@ interface User {
     id: number;
     email: string;
     name: string;
-    role: 'admin' | 'developer';
+    role: string;  // Comma-separated roles
     is_active: boolean;
     is_first_login: boolean;
     created_at: string;
@@ -234,13 +234,22 @@ const AdminDashboard = () => {
 
     // User management functions
     const [showUserModal, setShowUserModal] = useState(false);
-    const [userForm, setUserForm] = useState({ email: '', name: '', role: 'developer' });
+    const [userForm, setUserForm] = useState<{ email: string; name: string; roles: string[] }>({ email: '', name: '', roles: ['developer'] });
     const [generatedPassword, setGeneratedPassword] = useState<string | null>(null);
 
     const handleCreateUser = () => {
-        setUserForm({ email: '', name: '', role: 'developer' });
+        setUserForm({ email: '', name: '', roles: ['developer'] });
         setGeneratedPassword(null);
         setShowUserModal(true);
+    };
+
+    const handleRoleToggle = (role: string) => {
+        setUserForm(f => {
+            const roles = f.roles.includes(role)
+                ? f.roles.filter(r => r !== role)
+                : [...f.roles, role];
+            return { ...f, roles: roles.length > 0 ? roles : ['developer'] };
+        });
     };
 
     const handleSaveUser = async () => {
@@ -256,7 +265,10 @@ const AdminDashboard = () => {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${token}`
                 },
-                body: JSON.stringify(userForm),
+                body: JSON.stringify({
+                    ...userForm,
+                    role: userForm.roles.join(','),
+                }),
             });
 
             if (response.ok) {
@@ -273,8 +285,19 @@ const AdminDashboard = () => {
         }
     };
 
-    const handleToggleUserRole = async (user: User) => {
-        const newRole = user.role === 'admin' ? 'developer' : 'admin';
+    const handleToggleUserRole = async (user: User, roleToToggle: string) => {
+        const currentRoles = user.role.split(',').map(r => r.trim());
+        let newRoles: string[];
+        
+        if (currentRoles.includes(roleToToggle)) {
+            // Remove role, but ensure at least one role remains
+            newRoles = currentRoles.filter(r => r !== roleToToggle);
+            if (newRoles.length === 0) newRoles = ['developer'];
+        } else {
+            newRoles = [...currentRoles, roleToToggle];
+        }
+        
+        const newRole = newRoles.join(',');
         try {
             const response = await fetch(`${API_BASE_URL}/api/auth/admin/users/${user.id}/role`, {
                 method: 'PUT',
@@ -286,7 +309,7 @@ const AdminDashboard = () => {
             });
 
             if (response.ok) {
-                toast.success(`User is now ${newRole}`);
+                toast.success('User roles updated');
                 fetchData();
             } else {
                 toast.error('Failed to update role');
@@ -661,14 +684,22 @@ const AdminDashboard = () => {
                                                         </div>
                                                     </td>
                                                     <td className="py-3 px-4">
-                                                        <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs ${
-                                                            user.role === 'admin' 
-                                                                ? 'bg-[#6366F1]/20 text-[#818CF8] border border-[#6366F1]/30' 
-                                                                : 'bg-[rgba(244,246,255,0.06)] text-[#94A3B8]'
-                                                        }`}>
-                                                            {user.role === 'admin' ? <Shield className="w-3 h-3" /> : <UserCog className="w-3 h-3" />}
-                                                            {user.role}
-                                                        </span>
+                                                        <div className="flex flex-wrap gap-1">
+                                                            {user.role.split(',').map((r, i) => (
+                                                                <span key={i} className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs ${
+                                                                    r.trim() === 'admin' 
+                                                                        ? 'bg-[#6366F1]/20 text-[#818CF8] border border-[#6366F1]/30' 
+                                                                        : r.trim() === 'project_manager'
+                                                                        ? 'bg-[#8B5CF6]/20 text-[#A78BFA] border border-[#8B5CF6]/30'
+                                                                        : 'bg-[rgba(244,246,255,0.06)] text-[#94A3B8]'
+                                                                }`}>
+                                                                    {r.trim() === 'admin' && <Shield className="w-3 h-3" />}
+                                                                    {r.trim() === 'project_manager' && <UserCog className="w-3 h-3" />}
+                                                                    {r.trim() === 'developer' && <UserCog className="w-3 h-3" />}
+                                                                    {r.trim().replace('_', ' ')}
+                                                                </span>
+                                                            ))}
+                                                        </div>
                                                     </td>
                                                     <td className="py-3 px-4">
                                                         {user.is_active ? (
@@ -697,11 +728,20 @@ const AdminDashboard = () => {
                                                             <Button
                                                                 variant="ghost"
                                                                 size="sm"
-                                                                onClick={() => handleToggleUserRole(user)}
-                                                                className="text-[#64748B] hover:text-white h-8"
+                                                                onClick={() => handleToggleUserRole(user, 'admin')}
+                                                                className={`h-8 ${user.role.includes('admin') ? 'text-[#6366F1]' : 'text-[#64748B]'}`}
                                                             >
                                                                 <Shield className="w-3.5 h-3.5 mr-1" />
-                                                                {user.role === 'admin' ? 'Remove Admin' : 'Make Admin'}
+                                                                {user.role.includes('admin') ? 'Remove Admin' : 'Add Admin'}
+                                                            </Button>
+                                                            <Button
+                                                                variant="ghost"
+                                                                size="sm"
+                                                                onClick={() => handleToggleUserRole(user, 'project_manager')}
+                                                                className={`h-8 ${user.role.includes('project_manager') ? 'text-[#8B5CF6]' : 'text-[#64748B]'}`}
+                                                            >
+                                                                <UserCog className="w-3.5 h-3.5 mr-1" />
+                                                                {user.role.includes('project_manager') ? 'Remove PM' : 'Add PM'}
                                                             </Button>
                                                             <Button
                                                                 variant="ghost"
@@ -874,15 +914,39 @@ const AdminDashboard = () => {
                                         />
                                     </div>
                                     <div>
-                                        <label className="text-xs font-medium text-[#64748B] block mb-1.5">Role</label>
-                                        <select
-                                            value={userForm.role}
-                                            onChange={e => setUserForm(f => ({ ...f, role: e.target.value }))}
-                                            className="w-full bg-[rgba(244,246,255,0.03)] border border-[rgba(244,246,255,0.08)] text-[#F4F6FF] rounded-xl h-10 px-3 text-sm"
-                                        >
-                                            <option value="developer" className="bg-[#0F1118]">Developer</option>
-                                            <option value="admin" className="bg-[#0F1118]">Admin</option>
-                                        </select>
+                                        <label className="text-xs font-medium text-[#64748B] block mb-2">Roles</label>
+                                        <div className="space-y-2">
+                                            <label className="flex items-center gap-2 cursor-pointer">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={userForm.roles.includes('admin')}
+                                                    onChange={() => handleRoleToggle('admin')}
+                                                    className="w-4 h-4 rounded border-[rgba(244,246,255,0.2)] bg-[rgba(244,246,255,0.03)] text-[#6366F1] focus:ring-[#6366F1]"
+                                                />
+                                                <span className="text-sm text-[#E2E8F0]">Admin</span>
+                                                <span className="text-xs text-[#64748B]">(Full access)</span>
+                                            </label>
+                                            <label className="flex items-center gap-2 cursor-pointer">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={userForm.roles.includes('project_manager')}
+                                                    onChange={() => handleRoleToggle('project_manager')}
+                                                    className="w-4 h-4 rounded border-[rgba(244,246,255,0.2)] bg-[rgba(244,246,255,0.03)] text-[#8B5CF6] focus:ring-[#8B5CF6]"
+                                                />
+                                                <span className="text-sm text-[#E2E8F0]">Project Manager</span>
+                                                <span className="text-xs text-[#64748B]">(PM tab access)</span>
+                                            </label>
+                                            <label className="flex items-center gap-2 cursor-pointer">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={userForm.roles.includes('developer')}
+                                                    onChange={() => handleRoleToggle('developer')}
+                                                    className="w-4 h-4 rounded border-[rgba(244,246,255,0.2)] bg-[rgba(244,246,255,0.03)] text-[#10B981] focus:ring-[#10B981]"
+                                                />
+                                                <span className="text-sm text-[#E2E8F0]">Developer</span>
+                                                <span className="text-xs text-[#64748B]">(Project access)</span>
+                                            </label>
+                                        </div>
                                     </div>
                                 </>
                             )}

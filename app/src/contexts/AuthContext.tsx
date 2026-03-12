@@ -5,9 +5,26 @@ interface User {
   id: number;
   email: string;
   name: string;
-  role: 'admin' | 'developer';
+  role: string;  // Comma-separated roles: 'admin', 'project_manager', 'developer', or 'admin,project_manager'
   is_first_login: boolean;
 }
+
+// Helper functions for role checking
+export const hasRole = (userRole: string | undefined, requiredRole: string): boolean => {
+  if (!userRole) return false;
+  const roles = userRole.split(',').map(r => r.trim());
+  return roles.includes(requiredRole);
+};
+
+export const hasAnyRole = (userRole: string | undefined, requiredRoles: string[]): boolean => {
+  if (!userRole) return false;
+  const roles = userRole.split(',').map(r => r.trim());
+  return requiredRoles.some(role => roles.includes(role));
+};
+
+export const isAdmin = (user: User | null): boolean => hasRole(user?.role, 'admin');
+export const isProjectManager = (user: User | null): boolean => hasAnyRole(user?.role, ['admin', 'project_manager']);
+export const isDeveloper = (user: User | null): boolean => hasRole(user?.role, 'developer');
 
 interface AuthContextType {
   user: User | null;
