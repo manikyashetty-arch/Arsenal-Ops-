@@ -34,6 +34,31 @@ def get_db():
     finally:
         db.close()
 
+def run_migrations():
+    """Run database migrations for schema updates"""
+    from sqlalchemy import text
+    
+    with engine.connect() as conn:
+        # Migration: Add logged_hours column to work_items
+        try:
+            result = conn.execute(text("""
+                SELECT column_name 
+                FROM information_schema.columns 
+                WHERE table_name = 'work_items' AND column_name = 'logged_hours'
+            """))
+            
+            if not result.fetchone():
+                print("[MIGRATION] Adding logged_hours column to work_items...")
+                conn.execute(text("""
+                    ALTER TABLE work_items 
+                    ADD COLUMN logged_hours INTEGER DEFAULT 0
+                """))
+                conn.commit()
+                print("[MIGRATION] logged_hours column added successfully!")
+        except Exception as e:
+            print(f"[MIGRATION ERROR] {e}")
+            # Continue even if migration fails (column might already exist)
+
 def init_db():
     """Initialize database tables"""
     from models import (
@@ -42,3 +67,6 @@ def init_db():
         architecture, user
     )
     Base.metadata.create_all(bind=engine)
+    
+    # Run migrations for existing databases
+    run_migrations()
