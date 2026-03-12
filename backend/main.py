@@ -48,7 +48,8 @@ else:
 # Always add common production frontend URLs
 production_frontends = [
     "https://arsenal-ops.vercel.app",
-    "https://arsenal-ops-git-main-manikyashetty-archs-projects.vercel.app"
+    "https://arsenal-ops-git-main-manikyashetty-archs-projects.vercel.app",
+    "https://www.arsenal-ops.vercel.app"
 ]
 for fe in production_frontends:
     if fe not in cors_origins:
