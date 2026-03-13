@@ -45,6 +45,8 @@ class WorkItemCreate(BaseModel):
     epic_id: Optional[int] = None
     parent_id: Optional[int] = None
     acceptance_criteria: List[str] = []
+    start_date: Optional[str] = None  # ISO date string
+    due_date: Optional[str] = None  # ISO date string
 
 
 class WorkItemUpdate(BaseModel):
@@ -206,7 +208,9 @@ async def create_work_item(
         epic_id=item.epic_id,
         parent_id=item.parent_id,
         tags=item.tags,
-        acceptance_criteria=item.acceptance_criteria
+        acceptance_criteria=item.acceptance_criteria,
+        start_date=datetime.fromisoformat(item.start_date) if item.start_date else None,
+        due_date=datetime.fromisoformat(item.due_date) if item.due_date else None
     )
     
     db.add(work_item)
@@ -249,6 +253,8 @@ async def create_work_item(
         "sprint": "Backlog",
         "epic": "",
         "tags": work_item.tags or [],
+        "start_date": work_item.start_date.isoformat() if work_item.start_date else None,
+        "due_date": work_item.due_date.isoformat() if work_item.due_date else None,
         "created_at": work_item.created_at.isoformat() if work_item.created_at else None,
         "updated_at": work_item.updated_at.isoformat() if work_item.updated_at else None,
     }
