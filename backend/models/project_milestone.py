@@ -22,7 +22,7 @@ class ProjectMilestone(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     
     # Relationships
-    project = relationship("Project", back_populates="milestones")
+    project = relationship("Project", back_populates="project_milestones")
     
     __table_args__ = (
         Index('idx_project_milestone_project', 'project_id'),

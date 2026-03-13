@@ -302,11 +302,15 @@ async def update_work_item(
                 if new_dev:
                     new_assignee_name = new_dev.name
             
+            # Find developer associated with current user for comment author
+            author_dev = db.query(Developer).filter(Developer.email == current_user.email).first()
+            author_id = author_dev.id if author_dev else None
+            
             # Create automatic transfer comment
             from models.comment import Comment
             transfer_comment = Comment(
                 work_item_id=item.id,
-                author_id=current_user.id,
+                author_id=author_id,
                 content=f"Ticket transferred from {old_assignee_name} to {new_assignee_name}."
             )
             db.add(transfer_comment)
