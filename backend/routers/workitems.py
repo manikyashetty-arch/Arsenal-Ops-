@@ -65,6 +65,8 @@ class WorkItemUpdate(BaseModel):
     epic_id: Optional[int] = None
     parent_id: Optional[int] = None
     acceptance_criteria: Optional[List[str]] = None
+    start_date: Optional[str] = None  # ISO date string
+    due_date: Optional[str] = None  # ISO date string
     # Frontend compatibility - assigned_hours maps to estimated_hours
     assigned_hours: Optional[int] = None
 
@@ -283,6 +285,12 @@ async def update_work_item(
     # Handle frontend compatibility: assigned_hours -> estimated_hours
     if 'assigned_hours' in update_data:
         update_data['estimated_hours'] = update_data.pop('assigned_hours')
+    
+    # Handle date fields - parse ISO strings to datetime
+    if 'start_date' in update_data and update_data['start_date']:
+        update_data['start_date'] = datetime.fromisoformat(update_data['start_date'].replace('Z', '+00:00'))
+    if 'due_date' in update_data and update_data['due_date']:
+        update_data['due_date'] = datetime.fromisoformat(update_data['due_date'].replace('Z', '+00:00'))
     
     # Handle status transitions
     if "status" in update_data:

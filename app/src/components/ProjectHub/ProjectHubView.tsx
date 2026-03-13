@@ -310,9 +310,14 @@ const ProjectHubView: React.FC<ProjectHubViewProps> = ({ projectId, token, proje
                 setWorkItems(prev => prev.map(item => 
                     item.id === itemId ? { ...item, ...updates } : item
                 ));
+                toast.success('Task dates updated');
+            } else {
+                const error = await res.json();
+                toast.error(error.detail || 'Failed to update dates');
             }
         } catch (err) {
             console.error('Failed to update task dates:', err);
+            toast.error('Failed to update dates');
         }
     };
 
