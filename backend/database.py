@@ -201,6 +201,33 @@ def run_migrations():
                 print("[MIGRATION] activity_logs table created!")
         except Exception as e:
             print(f"[MIGRATION ERROR] {e}")
+        
+        # Migration: Create time_entries table if not exists
+        try:
+            result = conn.execute(text("""
+                SELECT table_name 
+                FROM information_schema.tables 
+                WHERE table_name = 'time_entries'
+            """))
+            
+            if not result.fetchone():
+                print("[MIGRATION] Creating time_entries table...")
+                conn.execute(text("""
+                    CREATE TABLE time_entries (
+                        id SERIAL PRIMARY KEY,
+                        work_item_id INTEGER REFERENCES work_items(id) ON DELETE CASCADE NOT NULL,
+                        developer_id INTEGER REFERENCES developers(id) ON DELETE SET NULL,
+                        hours INTEGER NOT NULL,
+                        description TEXT,
+                        logged_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """))
+                conn.execute(text("CREATE INDEX idx_time_entry_work_item ON time_entries(work_item_id)"))
+                conn.execute(text("CREATE INDEX idx_time_entry_developer ON time_entries(developer_id)"))
+                conn.commit()
+                print("[MIGRATION] time_entries table created!")
+        except Exception as e:
+            print(f"[MIGRATION ERROR] {e}")
 
 def init_db():
     """Initialize database tables"""

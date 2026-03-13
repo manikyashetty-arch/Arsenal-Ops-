@@ -445,6 +445,7 @@ async def log_hours(
     
     # Find developer associated with current user
     developer = db.query(Developer).filter(Developer.email == current_user.email).first()
+    print(f"DEBUG log-hours: current_user.email={current_user.email}, developer={developer.id if developer else 'NOT FOUND'}")
     
     # Create time entry
     time_entry = TimeEntry(
@@ -454,6 +455,7 @@ async def log_hours(
         description=request.description
     )
     db.add(time_entry)
+    print(f"DEBUG log-hours: Created TimeEntry developer_id={developer.id if developer else None}, hours={request.hours}")
     
     # Update work item totals
     item.logged_hours = (item.logged_hours or 0) + request.hours
@@ -974,12 +976,20 @@ async def get_hours_analytics(
     # Hours per developer - track both current assignments AND past contributions
     developer_hours = []
     from models.time_entry import TimeEntry
-    all_time_entries = db.query(TimeEntry).join(WorkItem).filter(WorkItem.project_id == project_id).all()
+    
+    # Get all time entries for this project's work items
+    work_item_ids = [item.id for item in items]
+    all_time_entries = db.query(TimeEntry).filter(TimeEntry.work_item_id.in_(work_item_ids)).all() if work_item_ids else []
+    
+    print(f"DEBUG: Found {len(all_time_entries)} time entries for project {project_id}")
+    for te in all_time_entries:
+        print(f"DEBUG: TimeEntry id={te.id}, developer_id={te.developer_id}, hours={te.hours}")
     
     for dev in developers:
         # Hours logged BY this developer (their time entries)
         dev_time_entries = [te for te in all_time_entries if te.developer_id == dev.id]
         logged = sum(te.hours for te in dev_time_entries)
+        print(f"DEBUG: Developer {dev.name} (id={dev.id}) logged {logged}h from {len(dev_time_entries)} entries")
         
         # Tickets currently assigned to this developer
         dev_items = [item for item in items if item.assignee_id == dev.id]
@@ -1002,9 +1012,12 @@ async def get_hours_analytics(
         
         completed_items = [item for item in dev_items if item.status == WorkItemStatus.DONE.value]
         
-        # Current week logged hours for this developer
+        # Current week logged hours for this developer (Sunday to Saturday)
         from datetime import timedelta
-        current_week_start = datetime.utcnow() - timedelta(days=datetime.utcnow().weekday())
+        # Find Sunday of current week
+        days_to_sunday = (datetime.utcnow().weekday() + 1) % 7
+        current_week_start = datetime.utcnow() - timedelta(days=days_to_sunday)
+        current_week_start = current_week_start.replace(hour=0, minute=0, second=0, microsecond=0)
         current_week_end = current_week_start + timedelta(days=6)
         current_week_logged = sum(
             te.hours for te in dev_time_entries
@@ -1024,7 +1037,7 @@ async def get_hours_analytics(
             "completed_items": len(completed_items)
         })
     
-    # Weekly breakdown - based on project timeline using TimeEntry
+    # Weekly breakdown - based on calendar weeks (Sunday to Saturday)
     from datetime import timedelta
     from models.time_entry import TimeEntry
     weekly_hours = []
@@ -1033,27 +1046,26 @@ async def get_hours_analytics(
     work_item_ids = [item.id for item in items]
     time_entries = db.query(TimeEntry).filter(TimeEntry.work_item_id.in_(work_item_ids)).all()
     
-    # Calculate weeks from project start to now
+    # Calculate weeks from project start to now using Sunday-Saturday weeks
     project_start = project.created_at or datetime.utcnow()
     today = datetime.utcnow()
     
-    # Calculate number of weeks from project start
-    days_since_start = (today - project_start).days
-    num_weeks = max(1, (days_since_start // 7) + 1)
+    # Find the Sunday of the week containing project_start
+    # weekday() returns 0=Monday, 6=Sunday. We want Sunday as start (6 or -1)
+    days_to_sunday = (project_start.weekday() + 1) % 7  # Days to previous Sunday
+    first_sunday = project_start - timedelta(days=days_to_sunday)
     
-    # Generate weeks from project start
-    for i in range(num_weeks):
-        week_start = project_start + timedelta(weeks=i)
-        week_end = project_start + timedelta(weeks=i, days=6)
-        
-        # Don't show future weeks beyond today
-        if week_start > today:
-            break
+    # Generate weeks from first Sunday to now
+    week_num = 1
+    current_week_start = first_sunday
+    
+    while current_week_start <= today:
+        week_end = current_week_start + timedelta(days=6)  # Saturday
         
         # Time entries logged this week
         week_entries = [te for te in time_entries 
                        if te.logged_at 
-                       and week_start <= te.logged_at <= min(week_end, today)]
+                       and current_week_start <= te.logged_at <= min(week_end, today)]
         
         # Sum hours from time entries this week
         week_logged = sum(te.hours for te in week_entries)
@@ -1061,23 +1073,26 @@ async def get_hours_analytics(
         # Items completed this week
         week_items_completed = [item for item in items 
                                if item.completed_at 
-                               and week_start <= item.completed_at <= min(week_end, today)]
+                               and current_week_start <= item.completed_at <= min(week_end, today)]
         
-        # Allocated hours = estimated hours of items created or active during this week
-        # This shows the work that was planned/added during this week
+        # Allocated hours = estimated hours of items created this week
         week_items_allocated = [item for item in items
                                if item.created_at 
-                               and week_start <= item.created_at <= min(week_end, today)]
+                               and current_week_start <= item.created_at <= min(week_end, today)]
         week_allocated = sum(item.estimated_hours or 0 for item in week_items_allocated)
         
         weekly_hours.append({
-            "week": week_start.strftime("%Y-%m-%d"),
+            "week": current_week_start.strftime("%Y-%m-%d"),
             "week_end": min(week_end, today).strftime("%Y-%m-%d"),
-            "week_label": f"Week {i + 1}",
+            "week_label": f"Week {week_num}",
+            "date_range": f"{current_week_start.strftime('%Y-%m-%d')} - {min(week_end, today).strftime('%Y-%m-%d')}",
             "allocated_hours": week_allocated,
             "logged_hours": week_logged,
             "items_completed": len(week_items_completed)
         })
+        
+        week_num += 1
+        current_week_start = current_week_start + timedelta(weeks=1)
     
     # Totals - calculate remaining as estimated - logged if not set
     total_allocated = sum(item.estimated_hours or 0 for item in items)
