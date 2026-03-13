@@ -57,7 +57,150 @@ def run_migrations():
                 print("[MIGRATION] logged_hours column added successfully!")
         except Exception as e:
             print(f"[MIGRATION ERROR] {e}")
-            # Continue even if migration fails (column might already exist)
+        
+        # Migration: Add goal_id column to work_items
+        try:
+            result = conn.execute(text("""
+                SELECT column_name 
+                FROM information_schema.columns 
+                WHERE table_name = 'work_items' AND column_name = 'goal_id'
+            """))
+            
+            if not result.fetchone():
+                print("[MIGRATION] Adding goal_id column to work_items...")
+                conn.execute(text("""
+                    ALTER TABLE work_items 
+                    ADD COLUMN goal_id INTEGER REFERENCES project_goals(id) ON DELETE SET NULL
+                """))
+                conn.commit()
+                print("[MIGRATION] goal_id column added successfully!")
+        except Exception as e:
+            print(f"[MIGRATION ERROR] {e}")
+        
+        # Migration: Add start_date column to work_items
+        try:
+            result = conn.execute(text("""
+                SELECT column_name 
+                FROM information_schema.columns 
+                WHERE table_name = 'work_items' AND column_name = 'start_date'
+            """))
+            
+            if not result.fetchone():
+                print("[MIGRATION] Adding start_date column to work_items...")
+                conn.execute(text("""
+                    ALTER TABLE work_items 
+                    ADD COLUMN start_date TIMESTAMP
+                """))
+                conn.commit()
+                print("[MIGRATION] start_date column added successfully!")
+        except Exception as e:
+            print(f"[MIGRATION ERROR] {e}")
+        
+        # Migration: Create task_dependencies table if not exists
+        try:
+            result = conn.execute(text("""
+                SELECT table_name 
+                FROM information_schema.tables 
+                WHERE table_name = 'task_dependencies'
+            """))
+            
+            if not result.fetchone():
+                print("[MIGRATION] Creating task_dependencies table...")
+                conn.execute(text("""
+                    CREATE TABLE task_dependencies (
+                        id SERIAL PRIMARY KEY,
+                        work_item_id INTEGER REFERENCES work_items(id) ON DELETE CASCADE,
+                        depends_on_id INTEGER REFERENCES work_items(id) ON DELETE CASCADE,
+                        dependency_type VARCHAR(20) DEFAULT 'blocks',
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """))
+                conn.commit()
+                print("[MIGRATION] task_dependencies table created!")
+        except Exception as e:
+            print(f"[MIGRATION ERROR] {e}")
+        
+        # Migration: Create project_goals table if not exists
+        try:
+            result = conn.execute(text("""
+                SELECT table_name 
+                FROM information_schema.tables 
+                WHERE table_name = 'project_goals'
+            """))
+            
+            if not result.fetchone():
+                print("[MIGRATION] Creating project_goals table...")
+                conn.execute(text("""
+                    CREATE TABLE project_goals (
+                        id SERIAL PRIMARY KEY,
+                        project_id INTEGER REFERENCES projects(id) ON DELETE CASCADE NOT NULL,
+                        title VARCHAR(255) NOT NULL,
+                        description TEXT,
+                        status VARCHAR(20) DEFAULT 'active',
+                        progress INTEGER DEFAULT 0,
+                        due_date TIMESTAMP,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """))
+                conn.commit()
+                print("[MIGRATION] project_goals table created!")
+        except Exception as e:
+            print(f"[MIGRATION ERROR] {e}")
+        
+        # Migration: Create project_milestones table if not exists
+        try:
+            result = conn.execute(text("""
+                SELECT table_name 
+                FROM information_schema.tables 
+                WHERE table_name = 'project_milestones'
+            """))
+            
+            if not result.fetchone():
+                print("[MIGRATION] Creating project_milestones table...")
+                conn.execute(text("""
+                    CREATE TABLE project_milestones (
+                        id SERIAL PRIMARY KEY,
+                        project_id INTEGER REFERENCES projects(id) ON DELETE CASCADE NOT NULL,
+                        title VARCHAR(255) NOT NULL,
+                        description VARCHAR(500),
+                        due_date TIMESTAMP,
+                        completed_at TIMESTAMP,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """))
+                conn.commit()
+                print("[MIGRATION] project_milestones table created!")
+        except Exception as e:
+            print(f"[MIGRATION ERROR] {e}")
+        
+        # Migration: Create activity_logs table if not exists
+        try:
+            result = conn.execute(text("""
+                SELECT table_name 
+                FROM information_schema.tables 
+                WHERE table_name = 'activity_logs'
+            """))
+            
+            if not result.fetchone():
+                print("[MIGRATION] Creating activity_logs table...")
+                conn.execute(text("""
+                    CREATE TABLE activity_logs (
+                        id SERIAL PRIMARY KEY,
+                        project_id INTEGER REFERENCES projects(id) ON DELETE CASCADE NOT NULL,
+                        user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                        action VARCHAR(50) NOT NULL,
+                        entity_type VARCHAR(50),
+                        entity_id INTEGER,
+                        title VARCHAR(255),
+                        description TEXT,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """))
+                conn.commit()
+                print("[MIGRATION] activity_logs table created!")
+        except Exception as e:
+            print(f"[MIGRATION ERROR] {e}")
 
 def init_db():
     """Initialize database tables"""
