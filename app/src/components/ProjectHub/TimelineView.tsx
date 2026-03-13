@@ -143,6 +143,45 @@ const TimelineView: React.FC<TimelineViewProps> = ({ workItems, onTaskClick }) =
                 </div>
             </CardHeader>
             <CardContent>
+                <style>{`
+                    .gantt-task-react-root {
+                        font-family: inherit;
+                    }
+                    .gantt-task-react-root svg {
+                        background: #0A0A14;
+                    }
+                    .gantt-task-react-root .gantt-task-list-wrapper {
+                        background: #0A0A14;
+                    }
+                    .gantt-task-react-root .gantt-task-list-header {
+                        background: #1A1A2E;
+                        border-color: rgba(244,246,255,0.1);
+                    }
+                    .gantt-task-react-root .gantt-task-list-cell {
+                        color: white;
+                        background: #0A0A14;
+                        border-color: rgba(244,246,255,0.1);
+                    }
+                    .gantt-task-react-root .gantt-task-list-header-cell {
+                        color: #9CA3AF;
+                        border-color: rgba(244,246,255,0.1);
+                    }
+                    .gantt-task-react-root .grid-row-line {
+                        stroke: rgba(244,246,255,0.1);
+                    }
+                    .gantt-task-react-root .grid-tick-line {
+                        stroke: rgba(244,246,255,0.1);
+                    }
+                    .gantt-task-react-root .calendar-top {
+                        fill: #9CA3AF;
+                    }
+                    .gantt-task-react-root .calendar-bottom {
+                        fill: #9CA3AF;
+                    }
+                    .gantt-task-react-root .today-highlight {
+                        fill: rgba(99, 102, 241, 0.2);
+                    }
+                `}</style>
                 <div className="rounded-lg overflow-hidden bg-[#0A0A14]">
                     <Gantt
                         tasks={tasks}

@@ -187,25 +187,70 @@ const CalendarView: React.FC<CalendarViewProps> = ({ workItems, milestones = [],
                         .rbc-header {
                             background-color: #1A1A2E;
                             color: white;
-                            border-color: rgba(244,246,255,0.1);
+                            border-color: rgba(244,246,255,0.1) !important;
+                            padding: 8px;
                         }
                         .rbc-month-view, .rbc-time-view {
-                            border-color: rgba(244,246,255,0.1);
+                            border-color: rgba(244,246,255,0.1) !important;
+                            background-color: #0F0F1A;
+                        }
+                        .rbc-month-row {
+                            border-color: rgba(244,246,255,0.1) !important;
                         }
                         .rbc-day-bg {
                             background-color: #0F0F1A;
+                            border-color: rgba(244,246,255,0.1) !important;
+                        }
+                        .rbc-day-bg + .rbc-day-bg {
+                            border-left: 1px solid rgba(244,246,255,0.1);
                         }
                         .rbc-off-range-bg {
                             background-color: #0A0A14;
                         }
                         .rbc-today {
-                            background-color: rgba(99, 102, 241, 0.2);
+                            background-color: rgba(99, 102, 241, 0.2) !important;
                         }
                         .rbc-button-link {
                             color: white;
                         }
                         .rbc-show-more {
                             color: #6366F1;
+                            background: transparent;
+                        }
+                        .rbc-date-cell {
+                            color: white;
+                            padding: 4px 8px;
+                        }
+                        .rbc-date-cell.rbc-off-range {
+                            color: #4B5563;
+                        }
+                        .rbc-row-segment {
+                            padding: 0 2px;
+                        }
+                        .rbc-event {
+                            border: none !important;
+                        }
+                        .rbc-row-content {
+                            z-index: 1;
+                        }
+                        .rbc-time-header-content {
+                            border-color: rgba(244,246,255,0.1) !important;
+                        }
+                        .rbc-time-content {
+                            background-color: #0F0F1A;
+                            border-color: rgba(244,246,255,0.1) !important;
+                        }
+                        .rbc-time-slot {
+                            border-color: rgba(244,246,255,0.1) !important;
+                        }
+                        .rbc-timeslot-group {
+                            border-color: rgba(244,246,255,0.1) !important;
+                        }
+                        .rbc-label {
+                            color: #9CA3AF;
+                        }
+                        .rbc-allday-cell {
+                            background-color: #0F0F1A;
                         }
                     `}</style>
                     <Calendar

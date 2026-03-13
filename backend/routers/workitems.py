@@ -450,19 +450,28 @@ async def log_hours(
     if request.hours <= 0:
         raise HTTPException(status_code=400, detail="Hours must be greater than 0")
     
-    # Find developer associated with current user
+    # Find developer - prefer assignee if current user is a PM, or find by email
+    developer = None
+    
+    # First try to find developer by current user's email
     developer = db.query(Developer).filter(Developer.email == current_user.email).first()
-    print(f"DEBUG log-hours: current_user.email={current_user.email}, developer={developer.id if developer else 'NOT FOUND'}")
+    
+    # If no developer found and the work item has an assignee, use that
+    # This handles the case where a PM logs time on behalf of a developer
+    if not developer and item.assignee_id:
+        developer = db.query(Developer).filter(Developer.id == item.assignee_id).first()
+    
+    print(f"DEBUG log-hours: current_user.email={current_user.email}, assignee_id={item.assignee_id}, developer={developer.id if developer else 'NOT FOUND'}")
     
     # Create time entry
     time_entry = TimeEntry(
         work_item_id=item_id,
-        developer_id=developer.id if developer else None,
+        developer_id=developer.id if developer else item.assignee_id,  # Fallback to assignee_id
         hours=request.hours,
         description=request.description
     )
     db.add(time_entry)
-    print(f"DEBUG log-hours: Created TimeEntry developer_id={developer.id if developer else None}, hours={request.hours}")
+    print(f"DEBUG log-hours: Created TimeEntry developer_id={time_entry.developer_id}, hours={request.hours}")
     
     # Update work item totals
     item.logged_hours = (item.logged_hours or 0) + request.hours
@@ -1082,11 +1091,11 @@ async def get_hours_analytics(
                                if item.completed_at 
                                and current_week_start <= item.completed_at <= min(week_end, today)]
         
-        # Allocated hours = estimated hours of items created this week
+        # Allocated hours = estimated hours of items DUE this week (work to be done)
         week_items_allocated = [item for item in items
-                               if item.created_at 
-                               and current_week_start <= item.created_at <= min(week_end, today)
-                               and item.assignee_id]  # Only count if assigned to someone
+                               if item.due_date 
+                               and current_week_start <= item.due_date <= week_end
+                               and item.status != WorkItemStatus.DONE.value]  # Only non-completed items
         week_allocated = sum(item.estimated_hours or 0 for item in week_items_allocated)
         
         weekly_hours.append({
