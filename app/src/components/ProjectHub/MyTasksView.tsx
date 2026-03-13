@@ -203,7 +203,7 @@ const MyTasksView: React.FC<MyTasksViewProps> = ({ tasks, onTaskClick }) => {
                                                     )}
                                                     {task.logged_hours !== undefined && task.estimated_hours !== undefined && (
                                                         <div className="text-[#64748B] text-sm">
-                                                            {task.logged_hours}h / {task.estimated_hours}h
+                                                            {task.estimated_hours}h / {task.logged_hours}h
                                                         </div>
                                                     )}
                                                 </div>

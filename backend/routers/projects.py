@@ -69,6 +69,7 @@ class ProjectUpdate(BaseModel):
     description: Optional[str] = None
     status: Optional[str] = None
     github_repo_url: Optional[str] = None
+    end_date: Optional[str] = None
 
 
 class ProjectDeveloperResponse(BaseModel):
@@ -271,6 +272,8 @@ async def update_project(
         project.github_repo_url = update.github_repo_url
         # Update github_repo_name
         project.github_repo_name = github_service.parse_repo_name(update.github_repo_url)
+    if update.end_date is not None:
+        project.end_date = datetime.fromisoformat(update.end_date.replace('Z', '+00:00')) if update.end_date else None
 
     project.updated_at = datetime.utcnow()
     db.commit()
@@ -804,6 +807,13 @@ async def get_project_workload(
     from models.work_item import WorkItem
     from datetime import timedelta
     
+    # Calculate this week's boundaries (Sunday to Saturday)
+    today = datetime.utcnow()
+    days_since_sunday = (today.weekday() + 1) % 7
+    week_start = today - timedelta(days=days_since_sunday)
+    week_start = week_start.replace(hour=0, minute=0, second=0, microsecond=0)
+    week_end = week_start + timedelta(days=6, hours=23, minutes=59, seconds=59)
+    
     # Get all work items for this project
     items = db.query(WorkItem).filter(WorkItem.project_id == project_id).all()
     
@@ -830,6 +840,7 @@ async def get_project_workload(
                 "estimated_hours": 0,
                 "logged_hours": 0,
                 "remaining_hours": 0,
+                "this_week_remaining_hours": 0,  # Only tasks due this week
                 "items": []
             }
         
@@ -838,6 +849,10 @@ async def get_project_workload(
         workload_data[assignee_id]["estimated_hours"] += item.estimated_hours or 0
         workload_data[assignee_id]["logged_hours"] += item.logged_hours or 0
         workload_data[assignee_id]["remaining_hours"] += item.remaining_hours or 0
+        
+        # Count this week's remaining hours (tasks due this week that aren't done)
+        if item.due_date and week_start <= item.due_date <= week_end and item.status != "done":
+            workload_data[assignee_id]["this_week_remaining_hours"] += item.remaining_hours or 0
         
         if item.status == "done":
             workload_data[assignee_id]["completed_items"] += 1

@@ -8,6 +8,7 @@ interface ProjectHubViewProps {
     projectId: string;
     token: string;
     project: any;
+    developers?: { id: number; name: string; email: string }[];
 }
 
 interface WorkItem {
@@ -71,7 +72,7 @@ interface WorkloadData {
     remaining_hours: number;
 }
 
-const ProjectHubView: React.FC<ProjectHubViewProps> = ({ projectId, token, project }) => {
+const ProjectHubView: React.FC<ProjectHubViewProps> = ({ projectId, token, project, developers = [] }) => {
     const [activeView, setActiveView] = useState('timeline');
     const [workItems, setWorkItems] = useState<WorkItem[]>([]);
     const [goals, setGoals] = useState<Goal[]>([]);
@@ -292,6 +293,70 @@ const ProjectHubView: React.FC<ProjectHubViewProps> = ({ projectId, token, proje
         }
     };
 
+    // Handler for updating task dates (drag to resize on timeline)
+    const handleTaskUpdate = async (itemId: string, updates: { start_date?: string; due_date?: string }) => {
+        try {
+            const res = await fetch(`${API_BASE_URL}/api/workitems/${itemId}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify(updates)
+            });
+            if (res.ok) {
+                // Update local state
+                setWorkItems(prev => prev.map(item => 
+                    item.id === itemId ? { ...item, ...updates } : item
+                ));
+            }
+        } catch (err) {
+            console.error('Failed to update task dates:', err);
+        }
+    };
+
+    // Handler for creating new tasks from timeline
+    const handleTaskCreate = async (task: { title: string; start_date: string; due_date: string; estimated_hours: number; assignee_id?: number }) => {
+        try {
+            const res = await fetch(`${API_BASE_URL}/api/workitems/`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({
+                    project_id: parseInt(projectId),
+                    title: task.title,
+                    type: 'task',
+                    status: 'todo',
+                    priority: 'medium',
+                    start_date: task.start_date,
+                    due_date: task.due_date,
+                    estimated_hours: task.estimated_hours,
+                    assignee_id: task.assignee_id
+                })
+            });
+            if (res.ok) {
+                const newItem = await res.json();
+                setWorkItems(prev => [...prev, {
+                    id: newItem.id,
+                    key: newItem.key,
+                    title: newItem.title,
+                    type: newItem.type,
+                    status: newItem.status,
+                    priority: newItem.priority,
+                    assignee: newItem.assignee,
+                    assignee_id: newItem.assignee_id,
+                    due_date: newItem.due_date,
+                    start_date: newItem.start_date,
+                    estimated_hours: newItem.estimated_hours,
+                }]);
+            }
+        } catch (err) {
+            console.error('Failed to create task:', err);
+        }
+    };
+
     const views = [
         { id: 'timeline', label: 'Timeline', icon: LayoutGrid },
         { id: 'calendar', label: 'Calendar', icon: Calendar },
@@ -334,6 +399,10 @@ const ProjectHubView: React.FC<ProjectHubViewProps> = ({ projectId, token, proje
                         <TimelineView
                             workItems={workItems}
                             projectStartDate={project?.created_at}
+                            projectId={parseInt(projectId)}
+                            developers={developers}
+                            onTaskUpdate={handleTaskUpdate}
+                            onTaskCreate={handleTaskCreate}
                         />
                     </TabsContent>
 

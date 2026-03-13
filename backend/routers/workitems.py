@@ -127,6 +127,7 @@ async def list_work_items(
             "priority": item.priority,
             "story_points": item.story_points or 0,
             "assigned_hours": item.estimated_hours or 0,
+            "estimated_hours": item.estimated_hours or 0,  # Also return as estimated_hours for frontend
             "remaining_hours": item.remaining_hours or 0,
             "logged_hours": item.logged_hours or 0,
             "assignee": "Unassigned",
@@ -240,6 +241,7 @@ async def create_work_item(
         "priority": work_item.priority,
         "story_points": work_item.story_points or 0,
         "assigned_hours": work_item.estimated_hours or 0,
+        "estimated_hours": work_item.estimated_hours or 0,  # Also return as estimated_hours for frontend
         "remaining_hours": work_item.remaining_hours or 0,
         "logged_hours": work_item.logged_hours or 0,
         "assignee": assignee_name,

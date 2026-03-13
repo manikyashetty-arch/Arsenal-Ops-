@@ -233,7 +233,7 @@ const ListView: React.FC<ListViewProps> = ({ workItems, onTaskClick }) => {
                                         <SortHeader field="priority" label="Priority" />
                                         <SortHeader field="assignee" label="Assignee" />
                                         <SortHeader field="due_date" label="Due Date" />
-                                        <th className="text-left py-3 px-4 text-xs font-medium text-[#64748B] uppercase">Hours</th>
+                                        <th className="text-left py-3 px-4 text-xs font-medium text-[#64748B] uppercase">Est / Logged</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -265,7 +265,7 @@ const ListView: React.FC<ListViewProps> = ({ workItems, onTaskClick }) => {
                                                 {item.due_date ? new Date(item.due_date).toLocaleDateString() : '-'}
                                             </td>
                                             <td className="py-3 px-4 text-[#94A3B8]">
-                                                {item.logged_hours || 0}h / {item.estimated_hours || 0}h
+                                                {item.estimated_hours || 0}h / {item.logged_hours || 0}h
                                             </td>
                                         </tr>
                                     ))}

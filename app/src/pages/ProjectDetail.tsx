@@ -150,6 +150,7 @@ interface Project {
     github_repo_url: string;
     github_repo_name?: string;
     created_at: string;
+    end_date?: string;
     developers: ProjectDeveloper[];
     selected_architecture?: Architecture;
     architectures: Architecture[];
@@ -372,25 +373,6 @@ const ProjectDetail = () => {
         }
     };
 
-    // Select architecture
-    const handleSelectArchitecture = async (architectureId: number) => {
-        if (!project) return;
-        try {
-            const res = await fetch(`${API_BASE_URL}/api/prd/architectures/${architectureId}/select`, {
-                method: 'POST',
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            if (res.ok) {
-                toast.success('Architecture selected!');
-                fetchProject();
-            } else {
-                toast.error('Failed to select architecture');
-            }
-        } catch {
-            toast.error('Failed to select architecture');
-        }
-    };
-
     // Save architecture changes
     const handleSaveArchitecture = async (id: number, updates: { mermaid_code?: string; name?: string; description?: string }) => {
         try {
@@ -562,7 +544,7 @@ const ProjectDetail = () => {
                                     <Button
                                         variant="ghost"
                                         size="sm"
-                                        onClick={() => setIsEditing(true)}
+                                        onClick={() => { setEditForm(project); setIsEditing(true); }}
                                         className="text-[#64748B] hover:text-white"
                                     >
                                         <Pencil className="w-4 h-4 mr-2" />
@@ -618,6 +600,26 @@ const ProjectDetail = () => {
                                             className="bg-[rgba(244,246,255,0.03)] border-[rgba(244,246,255,0.08)] text-[#F4F6FF] rounded-xl"
                                         />
                                     </div>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <label className="text-xs font-medium text-[#64748B] block mb-1.5">Start Date</label>
+                                            <Input
+                                                type="date"
+                                                value={editForm.created_at ? new Date(editForm.created_at).toISOString().split('T')[0] : ''}
+                                                onChange={(e) => setEditForm(f => ({ ...f, created_at: e.target.value }))}
+                                                className="bg-[rgba(244,246,255,0.03)] border-[rgba(244,246,255,0.08)] text-[#F4F6FF] rounded-xl"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="text-xs font-medium text-[#64748B] block mb-1.5">End Date</label>
+                                            <Input
+                                                type="date"
+                                                value={editForm.end_date ? new Date(editForm.end_date).toISOString().split('T')[0] : ''}
+                                                onChange={(e) => setEditForm(f => ({ ...f, end_date: e.target.value }))}
+                                                className="bg-[rgba(244,246,255,0.03)] border-[rgba(244,246,255,0.08)] text-[#F4F6FF] rounded-xl"
+                                            />
+                                        </div>
+                                    </div>
                                 </div>
                             ) : (
                                 <div className="space-y-4">
@@ -646,8 +648,14 @@ const ProjectDetail = () => {
                                     </div>
                                     <div className="flex items-center gap-6 pt-4 border-t border-[rgba(244,246,255,0.06)]">
                                         <div>
-                                            <span className="text-xs text-[#64748B]">Created</span>
+                                            <span className="text-xs text-[#64748B]">Start Date</span>
                                             <p className="text-sm text-[#E2E8F0]">{new Date(project.created_at).toLocaleDateString()}</p>
+                                        </div>
+                                        <div>
+                                            <span className="text-xs text-[#64748B]">End Date</span>
+                                            <p className="text-sm text-[#E2E8F0]">
+                                                {project.end_date ? new Date(project.end_date).toLocaleDateString() : 'Not set'}
+                                            </p>
                                         </div>
                                         <div>
                                             <span className="text-xs text-[#64748B]">Status</span>
@@ -1208,57 +1216,6 @@ const ProjectDetail = () => {
                             </div>
                             );
                         })()}
-
-                        {/* All Architectures History */}
-                        {project.architectures && project.architectures.length > 0 && (
-                            <div className="bg-[rgba(244,246,255,0.02)] border border-[rgba(244,246,255,0.06)] rounded-2xl p-6">
-                                <h3 className="font-semibold text-white mb-4">Architecture History</h3>
-                                <div className="space-y-3">
-                                    {project.architectures.map((arch) => (
-                                        <div 
-                                            key={arch.id} 
-                                            className={`p-4 rounded-xl border ${arch.is_selected ? 'border-[#6366F1] bg-[#6366F1]/10' : 'border-[rgba(244,246,255,0.06)] bg-[rgba(244,246,255,0.02)]'}`}
-                                        >
-                                            <div className="flex items-start justify-between">
-                                                <div>
-                                                    <div className="flex items-center gap-2">
-                                                        <h4 className="font-medium text-white">{arch.name}</h4>
-                                                        {arch.is_selected && (
-                                                            <Badge className="bg-[#6366F1] text-white border-0 text-[10px]">
-                                                                Selected
-                                                            </Badge>
-                                                        )}
-                                                    </div>
-                                                    <p className="text-xs text-[#64748B] mt-1">
-                                                        {new Date(arch.created_at).toLocaleDateString()}
-                                                    </p>
-                                                </div>
-                                                <div className="flex gap-2">
-                                                    <Button
-                                                        size="sm"
-                                                        variant="ghost"
-                                                        onClick={() => setEditingArchitecture(arch)}
-                                                        className="text-[#64748B] hover:text-white h-8"
-                                                    >
-                                                        <Pencil className="w-3.5 h-3.5 mr-1" />
-                                                        Edit
-                                                    </Button>
-                                                    {!arch.is_selected && (
-                                                        <Button
-                                                            size="sm"
-                                                            onClick={() => handleSelectArchitecture(arch.id)}
-                                                            className="bg-gradient-to-r from-[#475569] to-[#334155] hover:from-[#6366F1] hover:to-[#4F46E5] text-white h-8"
-                                                        >
-                                                            Select
-                                                        </Button>
-                                                    )}
-                                                </div>
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        )}
                     </div>
                 )}
 
@@ -1553,7 +1510,12 @@ const ProjectDetail = () => {
 
                 {/* Project Hub Tab */}
                 {activeTab === 'hub' && (
-                    <ProjectHubView projectId={id!} token={token!} project={project} />
+                    <ProjectHubView 
+                        projectId={id!} 
+                        token={token!} 
+                        project={project} 
+                        developers={project.developers.map(d => ({ id: d.id, name: d.name, email: d.email }))}
+                    />
                 )}
 
                 {/* Project Manager Tab */}

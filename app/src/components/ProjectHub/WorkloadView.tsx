@@ -15,6 +15,7 @@ interface WorkloadData {
     estimated_hours: number;
     logged_hours: number;
     remaining_hours: number;
+    this_week_remaining_hours?: number;  // Tasks due this week only
 }
 
 interface WorkloadViewProps {
@@ -44,8 +45,10 @@ const WorkloadView: React.FC<WorkloadViewProps> = ({ workloadData, onDeveloperCl
             .slice(0, 2);
     };
 
-    // Sort by workload (highest remaining hours first)
-    const sortedData = [...workloadData].sort((a, b) => b.remaining_hours - a.remaining_hours);
+    // Sort by this week's workload (highest first)
+    const sortedData = [...workloadData].sort((a, b) => 
+        (b.this_week_remaining_hours ?? 0) - (a.this_week_remaining_hours ?? 0)
+    );
 
     return (
         <Card className="bg-[#0F0F1A] border-[rgba(244,246,255,0.1)]">
@@ -65,7 +68,9 @@ const WorkloadView: React.FC<WorkloadViewProps> = ({ workloadData, onDeveloperCl
                         {sortedData.map((developer) => {
                             // Assume 40 hours/week capacity
                             const weeklyCapacity = 40;
-                            const capacityPercentage = Math.round((developer.remaining_hours / weeklyCapacity) * 100);
+                            // Use this week's remaining hours for capacity calculation
+                            const thisWeekHours = developer.this_week_remaining_hours ?? 0;
+                            const capacityPercentage = Math.round((thisWeekHours / weeklyCapacity) * 100);
                             
                             return (
                                 <div
@@ -105,7 +110,7 @@ const WorkloadView: React.FC<WorkloadViewProps> = ({ workloadData, onDeveloperCl
                                             />
                                         </div>
                                         <p className="text-[#64748B] text-xs mt-1">
-                                            {developer.remaining_hours}h remaining / {weeklyCapacity}h weekly
+                                            {thisWeekHours}h this week / {weeklyCapacity}h capacity
                                         </p>
                                     </div>
 
@@ -141,8 +146,8 @@ const WorkloadView: React.FC<WorkloadViewProps> = ({ workloadData, onDeveloperCl
                                             <span className="text-white">{developer.logged_hours}h</span>
                                         </div>
                                         <div>
-                                            <span className="text-[#64748B]">Est: </span>
-                                            <span className="text-white">{developer.estimated_hours}h</span>
+                                            <span className="text-[#64748B]">Total Rem: </span>
+                                            <span className="text-white">{developer.remaining_hours}h</span>
                                         </div>
                                     </div>
                                 </div>
