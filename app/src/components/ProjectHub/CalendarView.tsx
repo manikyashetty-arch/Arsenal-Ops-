@@ -179,6 +179,35 @@ const CalendarView: React.FC<CalendarViewProps> = ({ workItems, milestones = [],
             </CardHeader>
             <CardContent>
                 <div className="calendar-container" style={{ height: '500px' }}>
+                    <style>{`
+                        .rbc-calendar {
+                            background-color: #0F0F1A;
+                            color: white;
+                        }
+                        .rbc-header {
+                            background-color: #1A1A2E;
+                            color: white;
+                            border-color: rgba(244,246,255,0.1);
+                        }
+                        .rbc-month-view, .rbc-time-view {
+                            border-color: rgba(244,246,255,0.1);
+                        }
+                        .rbc-day-bg {
+                            background-color: #0F0F1A;
+                        }
+                        .rbc-off-range-bg {
+                            background-color: #0A0A14;
+                        }
+                        .rbc-today {
+                            background-color: rgba(99, 102, 241, 0.2);
+                        }
+                        .rbc-button-link {
+                            color: white;
+                        }
+                        .rbc-show-more {
+                            color: #6366F1;
+                        }
+                    `}</style>
                     <Calendar
                         localizer={localizer}
                         events={events}
