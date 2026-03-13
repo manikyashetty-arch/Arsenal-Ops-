@@ -997,13 +997,21 @@ async def get_hours_analytics(
     work_item_ids = [item.id for item in items]
     all_time_entries = db.query(TimeEntry).filter(TimeEntry.work_item_id.in_(work_item_ids)).all() if work_item_ids else []
     
+    # Build a map of work_item_id to assignee_id for entries with NULL developer_id
+    work_item_assignee_map = {item.id: item.assignee_id for item in items}
+    
     print(f"DEBUG: Found {len(all_time_entries)} time entries for project {project_id}")
     for te in all_time_entries:
-        print(f"DEBUG: TimeEntry id={te.id}, developer_id={te.developer_id}, hours={te.hours}")
+        effective_dev_id = te.developer_id or work_item_assignee_map.get(te.work_item_id)
+        print(f"DEBUG: TimeEntry id={te.id}, developer_id={te.developer_id}, effective={effective_dev_id}, hours={te.hours}")
     
     for dev in developers:
-        # Hours logged BY this developer (their time entries)
-        dev_time_entries = [te for te in all_time_entries if te.developer_id == dev.id]
+        # Hours logged BY this developer (their time entries OR entries on their assigned items with NULL developer_id)
+        dev_time_entries = [
+            te for te in all_time_entries 
+            if te.developer_id == dev.id or 
+               (te.developer_id is None and work_item_assignee_map.get(te.work_item_id) == dev.id)
+        ]
         logged = sum(te.hours for te in dev_time_entries)
         print(f"DEBUG: Developer {dev.name} (id={dev.id}) logged {logged}h from {len(dev_time_entries)} entries")
         
@@ -1034,7 +1042,7 @@ async def get_hours_analytics(
         days_to_sunday = (datetime.utcnow().weekday() + 1) % 7
         current_week_start = datetime.utcnow() - timedelta(days=days_to_sunday)
         current_week_start = current_week_start.replace(hour=0, minute=0, second=0, microsecond=0)
-        current_week_end = current_week_start + timedelta(days=6)
+        current_week_end = current_week_start + timedelta(days=6, hours=23, minutes=59, seconds=59)
         current_week_logged = sum(
             te.hours for te in dev_time_entries
             if te.logged_at and current_week_start <= te.logged_at <= current_week_end

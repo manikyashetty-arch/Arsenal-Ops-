@@ -140,13 +140,28 @@ const CalendarView: React.FC<CalendarViewProps> = ({ workItems, milestones = [],
     const CustomToolbar = ({ onNavigate, label }: { onNavigate: (action: typeof Navigate.PREVIOUS | typeof Navigate.NEXT | typeof Navigate.TODAY) => void; label: string }) => (
         <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
-                <Button variant="outline" size="sm" onClick={() => onNavigate(Navigate.PREVIOUS as any)}>
+                <Button 
+                    variant="outline" 
+                    size="sm" 
+                    className="border-[rgba(244,246,255,0.2)] text-white hover:bg-[rgba(244,246,255,0.1)] hover:text-white"
+                    onClick={() => onNavigate(Navigate.PREVIOUS as any)}
+                >
                     <ChevronLeft className="w-4 h-4" />
                 </Button>
-                <Button variant="outline" size="sm" onClick={() => onNavigate(Navigate.TODAY as any)}>
+                <Button 
+                    variant="outline" 
+                    size="sm" 
+                    className="border-[rgba(244,246,255,0.2)] text-white hover:bg-[rgba(244,246,255,0.1)] hover:text-white"
+                    onClick={() => onNavigate(Navigate.TODAY as any)}
+                >
                     Today
                 </Button>
-                <Button variant="outline" size="sm" onClick={() => onNavigate(Navigate.NEXT as any)}>
+                <Button 
+                    variant="outline" 
+                    size="sm" 
+                    className="border-[rgba(244,246,255,0.2)] text-white hover:bg-[rgba(244,246,255,0.1)] hover:text-white"
+                    onClick={() => onNavigate(Navigate.NEXT as any)}
+                >
                     <ChevronRight className="w-4 h-4" />
                 </Button>
             </div>
@@ -155,6 +170,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({ workItems, milestones = [],
                 <Button
                     variant={view === Views.MONTH ? 'default' : 'outline'}
                     size="sm"
+                    className={view === Views.MONTH ? 'bg-indigo-600 text-white hover:bg-indigo-700' : 'border-[rgba(244,246,255,0.2)] text-white hover:bg-[rgba(244,246,255,0.1)] hover:text-white'}
                     onClick={() => setView(Views.MONTH)}
                 >
                     Month
@@ -162,6 +178,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({ workItems, milestones = [],
                 <Button
                     variant={view === Views.WEEK ? 'default' : 'outline'}
                     size="sm"
+                    className={view === Views.WEEK ? 'bg-indigo-600 text-white hover:bg-indigo-700' : 'border-[rgba(244,246,255,0.2)] text-white hover:bg-[rgba(244,246,255,0.1)] hover:text-white'}
                     onClick={() => setView(Views.WEEK)}
                 >
                     Week
