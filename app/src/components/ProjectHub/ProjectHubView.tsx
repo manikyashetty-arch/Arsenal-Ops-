@@ -86,6 +86,18 @@ const ProjectHubView: React.FC<ProjectHubViewProps> = ({ projectId, token, proje
         }
     }, [projectId, token]);
 
+    // Refresh data when tab becomes visible
+    useEffect(() => {
+        const handleVisibilityChange = () => {
+            if (document.visibilityState === 'visible' && projectId && token) {
+                fetchAllData();
+            }
+        };
+        
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+        return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+    }, [projectId, token]);
+
     const fetchAllData = async () => {
         setIsLoading(true);
         await Promise.all([
@@ -326,7 +338,7 @@ const ProjectHubView: React.FC<ProjectHubViewProps> = ({ projectId, token, proje
                     </TabsContent>
 
                     <TabsContent value="calendar">
-                        <CalendarView workItems={workItems} />
+                        <CalendarView workItems={workItems} milestones={milestones} />
                     </TabsContent>
 
                     <TabsContent value="list">

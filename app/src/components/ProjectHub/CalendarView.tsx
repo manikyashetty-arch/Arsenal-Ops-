@@ -14,12 +14,23 @@ interface WorkItem {
     status: string;
     priority: string;
     due_date?: string;
+    start_date?: string;
     assignee?: string;
+}
+
+interface Milestone {
+    id: number;
+    title: string;
+    due_date?: string;
+    completed_at?: string;
+    is_completed?: boolean;
 }
 
 interface CalendarViewProps {
     workItems: WorkItem[];
+    milestones?: Milestone[];
     onTaskClick?: (item: WorkItem) => void;
+    onMilestoneClick?: (milestone: Milestone) => void;
 }
 
 interface CalendarEvent {
@@ -27,7 +38,7 @@ interface CalendarEvent {
     title: string;
     start: Date;
     end: Date;
-    resource: WorkItem;
+    resource: any;
 }
 
 const locales = {
@@ -42,24 +53,40 @@ const localizer = dateFnsLocalizer({
     locales,
 });
 
-const CalendarView: React.FC<CalendarViewProps> = ({ workItems, onTaskClick }) => {
+const CalendarView: React.FC<CalendarViewProps> = ({ workItems, milestones = [], onTaskClick, onMilestoneClick }) => {
     const [currentDate, setCurrentDate] = useState(new Date());
     const [view, setView] = useState<typeof Views[keyof typeof Views]>(Views.MONTH);
 
     const events: CalendarEvent[] = useMemo(() => {
-        return workItems
-            .filter(item => item.due_date)
+        const taskEvents = workItems
+            .filter(item => item.due_date || item.start_date)
             .map(item => {
-                const dueDate = new Date(item.due_date!);
+                const startDate = item.start_date ? new Date(item.start_date) : new Date(item.due_date!);
+                const endDate = item.due_date ? new Date(item.due_date) : startDate;
                 return {
                     id: item.id,
                     title: `${item.key}: ${item.title}`,
-                    start: dueDate,
-                    end: dueDate,
-                    resource: item,
+                    start: startDate,
+                    end: endDate,
+                    resource: { ...item, type: 'task' },
                 };
             });
-    }, [workItems]);
+        
+        const milestoneEvents = milestones
+            .filter(m => m.due_date)
+            .map(m => {
+                const dueDate = new Date(m.due_date!);
+                return {
+                    id: `milestone-${m.id}`,
+                    title: `🎯 ${m.title}`,
+                    start: dueDate,
+                    end: dueDate,
+                    resource: { ...m, type: 'milestone' },
+                };
+            });
+        
+        return [...taskEvents, ...milestoneEvents];
+    }, [workItems, milestones]);
 
     const handleNavigate = (newDate: Date) => {
         setCurrentDate(newDate);

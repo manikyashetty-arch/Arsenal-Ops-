@@ -135,6 +135,8 @@ async def list_work_items(
             "sprint_id": item.sprint_id,
             "epic": "",
             "tags": item.tags or [],
+            "due_date": item.due_date.isoformat() if item.due_date else None,
+            "start_date": item.start_date.isoformat() if item.start_date else None,
             "created_at": item.created_at.isoformat() if item.created_at else None,
             "updated_at": item.updated_at.isoformat() if item.updated_at else None,
         }
@@ -143,9 +145,14 @@ async def list_work_items(
         if item.assignee_id and item.assignee:
             item_dict["assignee"] = item.assignee.name
         
-        # Get sprint name
+        # Get sprint name and dates
         if item.sprint_id and item.sprint:
             item_dict["sprint"] = item.sprint.name
+            # Use sprint dates if work item doesn't have its own dates
+            if not item_dict["start_date"] and item.sprint.start_date:
+                item_dict["start_date"] = item.sprint.start_date.isoformat()
+            if not item_dict["due_date"] and item.sprint.end_date:
+                item_dict["due_date"] = item.sprint.end_date.isoformat()
         
         result.append(item_dict)
     
@@ -1078,7 +1085,8 @@ async def get_hours_analytics(
         # Allocated hours = estimated hours of items created this week
         week_items_allocated = [item for item in items
                                if item.created_at 
-                               and current_week_start <= item.created_at <= min(week_end, today)]
+                               and current_week_start <= item.created_at <= min(week_end, today)
+                               and item.assignee_id]  # Only count if assigned to someone
         week_allocated = sum(item.estimated_hours or 0 for item in week_items_allocated)
         
         weekly_hours.append({
@@ -1295,5 +1303,7 @@ async def get_my_tasks(
             "remaining_hours": item.remaining_hours,
             "is_overdue": item.due_date and item.due_date < datetime.utcnow() and item.status != "done"
         })
+    
+    return result
     
     return result
