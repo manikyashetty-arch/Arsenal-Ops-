@@ -477,3 +477,388 @@ async def remove_developer_from_project(
     
     db.commit()
     return {"status": "success", "message": "Developer removed from project"}
+
+
+# ============== PROJECT HUB ENDPOINTS ==============
+
+# --- Goals ---
+
+class GoalCreate(BaseModel):
+    title: str
+    description: Optional[str] = None
+    due_date: Optional[datetime] = None
+
+class GoalUpdate(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    status: Optional[str] = None
+    progress: Optional[int] = None
+    due_date: Optional[datetime] = None
+
+@router.get("/{project_id}/goals")
+async def get_project_goals(
+    project_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get all goals for a project"""
+    project = require_project_access(project_id, current_user, db)
+    
+    from models.project_goal import ProjectGoal
+    goals = db.query(ProjectGoal).filter(ProjectGoal.project_id == project_id).order_by(ProjectGoal.created_at.desc()).all()
+    return [g.to_dict() for g in goals]
+
+
+@router.post("/{project_id}/goals")
+async def create_project_goal(
+    project_id: int,
+    goal: GoalCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Create a new project goal"""
+    project = require_project_access(project_id, current_user, db)
+    
+    from models.project_goal import ProjectGoal
+    from models.activity_log import ActivityLog
+    
+    new_goal = ProjectGoal(
+        project_id=project_id,
+        title=goal.title,
+        description=goal.description,
+        due_date=goal.due_date
+    )
+    db.add(new_goal)
+    
+    # Log activity
+    activity = ActivityLog(
+        project_id=project_id,
+        user_id=current_user.id,
+        action="created",
+        entity_type="goal",
+        entity_id=new_goal.id,
+        title=f"Created goal: {goal.title}"
+    )
+    db.add(activity)
+    
+    db.commit()
+    db.refresh(new_goal)
+    return new_goal.to_dict()
+
+
+@router.put("/goals/{goal_id}")
+async def update_project_goal(
+    goal_id: int,
+    goal_update: GoalUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Update a project goal"""
+    from models.project_goal import ProjectGoal
+    from models.activity_log import ActivityLog
+    
+    goal = db.query(ProjectGoal).filter(ProjectGoal.id == goal_id).first()
+    if not goal:
+        raise HTTPException(status_code=404, detail="Goal not found")
+    
+    require_project_access(goal.project_id, current_user, db)
+    
+    if goal_update.title is not None:
+        goal.title = goal_update.title
+    if goal_update.description is not None:
+        goal.description = goal_update.description
+    if goal_update.status is not None:
+        goal.status = goal_update.status
+        if goal_update.status == "completed":
+            goal.completed_at = datetime.utcnow()
+    if goal_update.progress is not None:
+        goal.progress = goal_update.progress
+    if goal_update.due_date is not None:
+        goal.due_date = goal_update.due_date
+    
+    goal.updated_at = datetime.utcnow()
+    
+    # Log activity
+    activity = ActivityLog(
+        project_id=goal.project_id,
+        user_id=current_user.id,
+        action="updated",
+        entity_type="goal",
+        entity_id=goal.id,
+        title=f"Updated goal: {goal.title}"
+    )
+    db.add(activity)
+    
+    db.commit()
+    return goal.to_dict()
+
+
+@router.delete("/goals/{goal_id}")
+async def delete_project_goal(
+    goal_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Delete a project goal"""
+    from models.project_goal import ProjectGoal
+    from models.activity_log import ActivityLog
+    
+    goal = db.query(ProjectGoal).filter(ProjectGoal.id == goal_id).first()
+    if not goal:
+        raise HTTPException(status_code=404, detail="Goal not found")
+    
+    project = require_project_access(goal.project_id, current_user, db)
+    
+    # Log activity before deletion
+    activity = ActivityLog(
+        project_id=goal.project_id,
+        user_id=current_user.id,
+        action="deleted",
+        entity_type="goal",
+        title=f"Deleted goal: {goal.title}"
+    )
+    db.add(activity)
+    
+    db.delete(goal)
+    db.commit()
+    return {"status": "deleted", "id": goal_id}
+
+
+# --- Milestones ---
+
+class MilestoneCreate(BaseModel):
+    title: str
+    description: Optional[str] = None
+    due_date: Optional[datetime] = None
+
+@router.get("/{project_id}/milestones")
+async def get_project_milestones(
+    project_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get all milestones for a project"""
+    project = require_project_access(project_id, current_user, db)
+    
+    from models.project_milestone import ProjectMilestone
+    milestones = db.query(ProjectMilestone).filter(ProjectMilestone.project_id == project_id).order_by(ProjectMilestone.due_date).all()
+    return [m.to_dict() for m in milestones]
+
+
+@router.post("/{project_id}/milestones")
+async def create_project_milestone(
+    project_id: int,
+    milestone: MilestoneCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Create a new project milestone"""
+    project = require_project_access(project_id, current_user, db)
+    
+    from models.project_milestone import ProjectMilestone
+    from models.activity_log import ActivityLog
+    
+    new_milestone = ProjectMilestone(
+        project_id=project_id,
+        title=milestone.title,
+        description=milestone.description,
+        due_date=milestone.due_date
+    )
+    db.add(new_milestone)
+    
+    # Log activity
+    activity = ActivityLog(
+        project_id=project_id,
+        user_id=current_user.id,
+        action="created",
+        entity_type="milestone",
+        entity_id=new_milestone.id,
+        title=f"Created milestone: {milestone.title}"
+    )
+    db.add(activity)
+    
+    db.commit()
+    db.refresh(new_milestone)
+    return new_milestone.to_dict()
+
+
+@router.put("/milestones/{milestone_id}")
+async def update_project_milestone(
+    milestone_id: int,
+    milestone_update: MilestoneCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Update a project milestone"""
+    from models.project_milestone import ProjectMilestone
+    
+    milestone = db.query(ProjectMilestone).filter(ProjectMilestone.id == milestone_id).first()
+    if not milestone:
+        raise HTTPException(status_code=404, detail="Milestone not found")
+    
+    require_project_access(milestone.project_id, current_user, db)
+    
+    milestone.title = milestone_update.title
+    milestone.description = milestone_update.description
+    milestone.due_date = milestone_update.due_date
+    
+    db.commit()
+    return milestone.to_dict()
+
+
+@router.post("/milestones/{milestone_id}/complete")
+async def complete_project_milestone(
+    milestone_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Mark a milestone as completed"""
+    from models.project_milestone import ProjectMilestone
+    from models.activity_log import ActivityLog
+    
+    milestone = db.query(ProjectMilestone).filter(ProjectMilestone.id == milestone_id).first()
+    if not milestone:
+        raise HTTPException(status_code=404, detail="Milestone not found")
+    
+    require_project_access(milestone.project_id, current_user, db)
+    
+    milestone.completed_at = datetime.utcnow()
+    
+    # Log activity
+    activity = ActivityLog(
+        project_id=milestone.project_id,
+        user_id=current_user.id,
+        action="completed",
+        entity_type="milestone",
+        entity_id=milestone.id,
+        title=f"Completed milestone: {milestone.title}"
+    )
+    db.add(activity)
+    
+    db.commit()
+    return milestone.to_dict()
+
+
+@router.delete("/milestones/{milestone_id}")
+async def delete_project_milestone(
+    milestone_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Delete a project milestone"""
+    from models.project_milestone import ProjectMilestone
+    from models.activity_log import ActivityLog
+    
+    milestone = db.query(ProjectMilestone).filter(ProjectMilestone.id == milestone_id).first()
+    if not milestone:
+        raise HTTPException(status_code=404, detail="Milestone not found")
+    
+    project = require_project_access(milestone.project_id, current_user, db)
+    
+    # Log activity before deletion
+    activity = ActivityLog(
+        project_id=milestone.project_id,
+        user_id=current_user.id,
+        action="deleted",
+        entity_type="milestone",
+        title=f"Deleted milestone: {milestone.title}"
+    )
+    db.add(activity)
+    
+    db.delete(milestone)
+    db.commit()
+    return {"status": "deleted", "id": milestone_id}
+
+
+# --- Activity Feed ---
+
+@router.get("/{project_id}/activity")
+async def get_project_activity(
+    project_id: int,
+    limit: int = 50,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get activity feed for a project"""
+    project = require_project_access(project_id, current_user, db)
+    
+    from models.activity_log import ActivityLog
+    activities = db.query(ActivityLog).filter(
+        ActivityLog.project_id == project_id
+    ).order_by(ActivityLog.created_at.desc()).limit(limit).all()
+    
+    return [a.to_dict() for a in activities]
+
+
+# --- Workload ---
+
+@router.get("/{project_id}/workload")
+async def get_project_workload(
+    project_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get workload data for all developers in a project"""
+    project = require_project_access(project_id, current_user, db)
+    
+    from models.work_item import WorkItem
+    from datetime import timedelta
+    
+    # Get all work items for this project
+    items = db.query(WorkItem).filter(WorkItem.project_id == project_id).all()
+    
+    # Group by assignee
+    workload_data = {}
+    
+    for item in items:
+        assignee_id = item.assignee_id
+        if not assignee_id:
+            assignee_id = "unassigned"
+        
+        if assignee_id not in workload_data:
+            assignee_name = "Unassigned"
+            if item.assignee:
+                assignee_name = item.assignee.name
+            workload_data[assignee_id] = {
+                "developer_id": assignee_id,
+                "developer_name": assignee_name,
+                "total_items": 0,
+                "completed_items": 0,
+                "in_progress_items": 0,
+                "todo_items": 0,
+                "overdue_items": 0,
+                "estimated_hours": 0,
+                "logged_hours": 0,
+                "remaining_hours": 0,
+                "items": []
+            }
+        
+        
+        workload_data[assignee_id]["total_items"] += 1
+        workload_data[assignee_id]["estimated_hours"] += item.estimated_hours or 0
+        workload_data[assignee_id]["logged_hours"] += item.logged_hours or 0
+        workload_data[assignee_id]["remaining_hours"] += item.remaining_hours or 0
+        
+        if item.status == "done":
+            workload_data[assignee_id]["completed_items"] += 1
+        elif item.status == "in_progress":
+            workload_data[assignee_id]["in_progress_items"] += 1
+        else:
+            workload_data[assignee_id]["todo_items"] += 1
+        
+        # Check if overdue
+        if item.due_date and item.due_date < datetime.utcnow() and item.status != "done":
+            workload_data[assignee_id]["overdue_items"] += 1
+        
+        workload_data[assignee_id]["items"].append({
+            "id": item.id,
+            "key": item.key,
+            "title": item.title,
+            "status": item.status,
+            "priority": item.priority,
+            "due_date": item.due_date.isoformat() if item.due_date else None,
+            "estimated_hours": item.estimated_hours,
+            "logged_hours": item.logged_hours
+        })
+    
+    return list(workload_data.values())

@@ -34,6 +34,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import PMView from '@/components/PMView';
+import { ProjectHubView } from '@/components/ProjectHub';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
@@ -154,7 +155,7 @@ interface Project {
     architectures: Architecture[];
 }
 
-type TabType = 'overview' | 'developers' | 'github' | 'pm';
+type TabType = 'overview' | 'developers' | 'github' | 'pm' | 'hub';
 
 const ProjectDetail = () => {
     const { id } = useParams<{ id: string }>();
@@ -478,6 +479,7 @@ const ProjectDetail = () => {
         { id: 'overview' as TabType, label: 'Overview', icon: Info },
         { id: 'developers' as TabType, label: 'Developers', icon: Users },
         { id: 'github' as TabType, label: 'GitHub', icon: Github },
+        { id: 'hub' as TabType, label: 'Project Hub', icon: BarChart3 },
         // PM tab only for admins and project managers
         ...(isProjectManager(user) ? [{ id: 'pm' as TabType, label: 'Project Manager', icon: Clock }] : []),
     ];
@@ -1547,6 +1549,11 @@ const ProjectDetail = () => {
                             </div>
                         )}
                     </div>
+                )}
+
+                {/* Project Hub Tab */}
+                {activeTab === 'hub' && (
+                    <ProjectHubView projectId={id!} token={token!} project={project} />
                 )}
 
                 {/* Project Manager Tab */}

@@ -190,7 +190,7 @@ async def create_work_item(
         description=item.description,
         status=item.status,
         estimated_hours=item.estimated_hours,
-        remaining_hours=item.remaining_hours,
+        remaining_hours=item.estimated_hours,  # Initialize remaining as estimated
         story_points=item.story_points,
         priority=item.priority,
         assignee_id=item.assignee_id,
@@ -202,6 +202,19 @@ async def create_work_item(
     )
     
     db.add(work_item)
+    
+    # Log activity
+    from models.activity_log import ActivityLog
+    activity = ActivityLog(
+        project_id=item.project_id,
+        user_id=current_user.id,
+        action="created",
+        entity_type="work_item",
+        entity_id=work_item.id,
+        title=f"Created {key}: {item.title}"
+    )
+    db.add(activity)
+    
     db.commit()
     db.refresh(work_item)
     
@@ -265,7 +278,26 @@ async def update_work_item(
         elif value is not None:
             setattr(item, key, value)
     
+    # Recalculate remaining_hours if estimated_hours or logged_hours changed
+    if 'estimated_hours' in update_data or 'logged_hours' in update_data:
+        item.remaining_hours = max(0, (item.estimated_hours or 0) - (item.logged_hours or 0))
+    
     item.updated_at = datetime.utcnow()
+    
+    # Log activity for status changes
+    if 'status' in update_data:
+        from models.activity_log import ActivityLog
+        action = "completed" if update_data['status'] == 'done' else "updated"
+        activity = ActivityLog(
+            project_id=item.project_id,
+            user_id=current_user.id,
+            action=action,
+            entity_type="work_item",
+            entity_id=item.id,
+            title=f"{action.capitalize()} {item.key}: {item.title}"
+        )
+        db.add(activity)
+    
     db.commit()
     db.refresh(item)
     
@@ -329,6 +361,17 @@ async def delete_work_item(
     if not item:
         raise HTTPException(status_code=404, detail="Work item not found")
     
+    # Log activity before deletion
+    from models.activity_log import ActivityLog
+    activity = ActivityLog(
+        project_id=item.project_id,
+        user_id=current_user.id,
+        action="deleted",
+        entity_type="work_item",
+        title=f"Deleted {item.key}: {item.title}"
+    )
+    db.add(activity)
+    
     db.delete(item)
     db.commit()
     return {"status": "deleted", "id": item_id}
@@ -371,7 +414,8 @@ async def log_hours(
     
     # Update work item totals
     item.logged_hours = (item.logged_hours or 0) + request.hours
-    item.remaining_hours = max(0, (item.remaining_hours or 0) - request.hours)
+    # Calculate remaining as estimated - logged
+    item.remaining_hours = max(0, (item.estimated_hours or 0) - (item.logged_hours or 0))
     item.updated_at = datetime.utcnow()
     
     db.commit()
@@ -868,7 +912,11 @@ async def get_hours_analytics(
         sprint_items = [item for item in items if item.sprint_id == sprint.id]
         allocated = sum(item.estimated_hours or 0 for item in sprint_items)
         logged = sum(item.logged_hours or 0 for item in sprint_items)
-        remaining = sum(item.remaining_hours or 0 for item in sprint_items)
+        # Calculate remaining properly: estimated - logged for incomplete items
+        remaining = sum(
+            max(0, (item.estimated_hours or 0) - (item.logged_hours or 0))
+            for item in sprint_items if item.status != WorkItemStatus.DONE.value
+        )
         
         sprint_hours.append({
             "sprint_id": sprint.id,
@@ -886,7 +934,11 @@ async def get_hours_analytics(
         dev_items = [item for item in items if item.assignee_id == dev.id]
         allocated = sum(item.estimated_hours or 0 for item in dev_items)
         logged = sum(item.logged_hours or 0 for item in dev_items)
-        remaining = sum(item.remaining_hours or 0 for item in dev_items)
+        # Calculate remaining properly: estimated - logged for incomplete items
+        remaining = sum(
+            max(0, (item.estimated_hours or 0) - (item.logged_hours or 0))
+            for item in dev_items if item.status != WorkItemStatus.DONE.value
+        )
         completed_items = [item for item in dev_items if item.status == WorkItemStatus.DONE.value]
         
         # Current week logged hours for this developer
@@ -951,13 +1003,12 @@ async def get_hours_analytics(
                                if item.completed_at 
                                and week_start <= item.completed_at <= min(week_end, today)]
         
-        # Items in progress this week (based on sprint or started_at)
-        week_items_in_progress = [item for item in items
-                                  if item.started_at and item.started_at <= min(week_end, today)
-                                  and (not item.completed_at or item.completed_at >= week_start)]
-        
-        # Allocated hours = estimated hours of items being worked on this week
-        week_allocated = sum(item.estimated_hours or 0 for item in week_items_in_progress)
+        # Allocated hours = estimated hours of items created or active during this week
+        # This shows the work that was planned/added during this week
+        week_items_allocated = [item for item in items
+                               if item.created_at 
+                               and week_start <= item.created_at <= min(week_end, today)]
+        week_allocated = sum(item.estimated_hours or 0 for item in week_items_allocated)
         
         weekly_hours.append({
             "week": week_start.strftime("%Y-%m-%d"),
@@ -968,10 +1019,14 @@ async def get_hours_analytics(
             "items_completed": len(week_items_completed)
         })
     
-    # Totals
+    # Totals - calculate remaining as estimated - logged if not set
     total_allocated = sum(item.estimated_hours or 0 for item in items)
     total_logged = sum(item.logged_hours or 0 for item in items)
-    total_remaining = sum(item.remaining_hours or 0 for item in items)
+    # Calculate remaining properly: estimated - logged for each item
+    total_remaining = sum(
+        max(0, (item.estimated_hours or 0) - (item.logged_hours or 0)) 
+        for item in items if item.status != WorkItemStatus.DONE.value
+    )
     
     return {
         "project_name": project.name,
@@ -982,3 +1037,165 @@ async def get_hours_analytics(
         "developer_hours": developer_hours,
         "weekly_hours": weekly_hours
     }
+
+
+# ============== TASK DEPENDENCIES ==============
+
+class DependencyCreate(BaseModel):
+    depends_on_id: int
+    dependency_type: str = "blocks"  # blocks, blocked_by
+
+
+@router.get("/{item_id}/dependencies")
+async def get_item_dependencies(
+    item_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get all dependencies for a work item"""
+    from models.task_dependency import TaskDependency
+    
+    item = db.query(WorkItem).filter(WorkItem.id == item_id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Work item not found")
+    
+    dependencies = db.query(TaskDependency).filter(
+        (TaskDependency.work_item_id == item_id) | (TaskDependency.depends_on_id == item_id)
+    ).all()
+    
+    return [d.to_dict() for d in dependencies]
+
+
+@router.post("/{item_id}/dependencies")
+async def add_item_dependency(
+    item_id: int,
+    dependency: DependencyCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Add a dependency to a work item"""
+    from models.task_dependency import TaskDependency
+    from models.activity_log import ActivityLog
+    
+    item = db.query(WorkItem).filter(WorkItem.id == item_id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Work item not found")
+    
+    depends_on = db.query(WorkItem).filter(WorkItem.id == dependency.depends_on_id).first()
+    if not depends_on:
+        raise HTTPException(status_code=404, detail="Dependent work item not found")
+    
+    # Check for circular dependency
+    if item_id == dependency.depends_on_id:
+        raise HTTPException(status_code=400, detail="Cannot create self-dependency")
+    
+    # Check if dependency already exists
+    existing = db.query(TaskDependency).filter(
+        TaskDependency.work_item_id == item_id,
+        TaskDependency.depends_on_id == dependency.depends_on_id
+    ).first()
+    
+    if existing:
+        raise HTTPException(status_code=400, detail="Dependency already exists")
+    
+    new_dependency = TaskDependency(
+        work_item_id=item_id,
+        depends_on_id=dependency.depends_on_id,
+        dependency_type=dependency.dependency_type
+    )
+    db.add(new_dependency)
+    
+    # Log activity
+    activity = ActivityLog(
+        project_id=item.project_id,
+        user_id=current_user.id,
+        action="updated",
+        entity_type="work_item",
+        entity_id=item_id,
+        title=f"Added dependency: {item.key} depends on {depends_on.key}"
+    )
+    db.add(activity)
+    
+    db.commit()
+    db.refresh(new_dependency)
+    return new_dependency.to_dict()
+
+
+@router.delete("/{item_id}/dependencies/{dep_id}")
+async def remove_item_dependency(
+    item_id: int,
+    dep_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Remove a dependency from a work item"""
+    from models.task_dependency import TaskDependency
+    from models.activity_log import ActivityLog
+    
+    dependency = db.query(TaskDependency).filter(
+        TaskDependency.id == dep_id,
+        TaskDependency.work_item_id == item_id
+    ).first()
+    
+    if not dependency:
+        raise HTTPException(status_code=404, detail="Dependency not found")
+    
+    item = db.query(WorkItem).filter(WorkItem.id == item_id).first()
+    
+    # Log activity
+    activity = ActivityLog(
+        project_id=item.project_id if item else None,
+        user_id=current_user.id,
+        action="updated",
+        entity_type="work_item",
+        entity_id=item_id,
+        title=f"Removed dependency from {item.key if item else item_id}"
+    )
+    db.add(activity)
+    
+    db.delete(dependency)
+    db.commit()
+    return {"status": "deleted", "id": dep_id}
+
+
+# ============== MY TASKS ==============
+
+@router.get("/my-tasks")
+async def get_my_tasks(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get all tasks assigned to the current user across all projects"""
+    from models.developer import Developer
+    from models.project import Project
+    
+    # Find developer associated with current user
+    developer = db.query(Developer).filter(Developer.email == current_user.email).first()
+    
+    if not developer:
+        return []
+    
+    # Get all work items assigned to this developer
+    items = db.query(WorkItem).filter(WorkItem.assignee_id == developer.id).all()
+    
+    result = []
+    for item in items:
+        project = db.query(Project).filter(Project.id == item.project_id).first()
+        
+        result.append({
+            "id": str(item.id),
+            "key": item.key,
+            "title": item.title,
+            "type": item.type,
+            "status": item.status,
+            "priority": item.priority,
+            "project_id": item.project_id,
+            "project_name": project.name if project else "Unknown",
+            "due_date": item.due_date.isoformat() if item.due_date else None,
+            "estimated_hours": item.estimated_hours,
+            "logged_hours": item.logged_hours,
+            "remaining_hours": item.remaining_hours,
+            "is_overdue": item.due_date and item.due_date < datetime.utcnow() and item.status != "done"
+        })
+    
+    return result

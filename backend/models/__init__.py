@@ -10,9 +10,13 @@ from models.work_item import WorkItem, WorkItemType, WorkItemStatus, WorkItemPri
 from models.sprint import Sprint
 from models.comment import Comment
 from models.time_entry import TimeEntry
+from models.task_dependency import TaskDependency
+from models.project_goal import ProjectGoal
+from models.project_milestone import ProjectMilestone
+from models.activity_log import ActivityLog
 
 __all__ = [
     "Project", "Task", "Persona", "UserStory", "MarketInsight", "Milestone",
     "Developer", "project_developers", "WorkItem", "WorkItemType", "WorkItemStatus", "WorkItemPriority",
-    "Sprint", "Comment", "TimeEntry"
+    "Sprint", "Comment", "TimeEntry", "TaskDependency", "ProjectGoal", "ProjectMilestone", "ActivityLog"
 ]

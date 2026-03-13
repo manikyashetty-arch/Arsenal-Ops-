@@ -56,6 +56,9 @@ class Project(Base):
     sprints = relationship("Sprint", back_populates="project", cascade="all, delete-orphan")
     architectures = relationship("Architecture", back_populates="project", cascade="all, delete-orphan")
     prd_analyses = relationship("PRDAnalysis", back_populates="project", cascade="all, delete-orphan")
+    goals = relationship("ProjectGoal", back_populates="project", cascade="all, delete-orphan")
+    project_milestones = relationship("ProjectMilestone", back_populates="project", cascade="all, delete-orphan")
+    activity_logs = relationship("ActivityLog", back_populates="project", cascade="all, delete-orphan")
     
     # Indexes for common queries
     __table_args__ = (

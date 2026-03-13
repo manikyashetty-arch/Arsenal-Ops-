@@ -58,6 +58,9 @@ class WorkItem(Base):
     assignee_id = Column(Integer, ForeignKey("developers.id", ondelete="SET NULL"), index=True)
     reporter_id = Column(Integer, ForeignKey("developers.id", ondelete="SET NULL"))
     
+    # Goal linkage
+    goal_id = Column(Integer, ForeignKey("project_goals.id", ondelete="SET NULL"), index=True)
+    
     # Hierarchy
     parent_id = Column(Integer, ForeignKey("work_items.id", ondelete="CASCADE"), index=True)  # For subtasks
     epic_id = Column(Integer, ForeignKey("work_items.id", ondelete="SET NULL"), index=True)
@@ -73,6 +76,7 @@ class WorkItem(Base):
     started_at = Column(DateTime)
     completed_at = Column(DateTime)
     due_date = Column(DateTime)
+    start_date = Column(DateTime)  # For Gantt chart - planned start date
     
     # Relationships
     project = relationship("Project", back_populates="work_items")
@@ -85,6 +89,9 @@ class WorkItem(Base):
     stories = relationship("WorkItem", foreign_keys=[epic_id], back_populates="epic")
     comments = relationship("Comment", back_populates="work_item", cascade="all, delete-orphan")
     time_entries = relationship("TimeEntry", back_populates="work_item", cascade="all, delete-orphan")
+    goal = relationship("ProjectGoal", back_populates="work_items")
+    dependencies = relationship("TaskDependency", foreign_keys="TaskDependency.work_item_id", back_populates="work_item", cascade="all, delete-orphan")
+    blocked_by = relationship("TaskDependency", foreign_keys="TaskDependency.depends_on_id", back_populates="depends_on", cascade="all, delete-orphan")
     
     # Indexes for common queries
     __table_args__ = (
