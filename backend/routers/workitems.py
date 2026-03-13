@@ -334,6 +334,64 @@ async def delete_work_item(
     return {"status": "deleted", "id": item_id}
 
 
+class LogHoursRequest(BaseModel):
+    hours: int
+    description: Optional[str] = None
+
+
+@router.post("/{item_id}/log-hours")
+async def log_hours(
+    item_id: int,
+    request: LogHoursRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Log hours to a work item - creates time entry and updates totals (requires auth)"""
+    from models.time_entry import TimeEntry
+    from models.developer import Developer
+    
+    item = db.query(WorkItem).filter(WorkItem.id == item_id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Work item not found")
+    
+    if request.hours <= 0:
+        raise HTTPException(status_code=400, detail="Hours must be greater than 0")
+    
+    # Find developer associated with current user
+    developer = db.query(Developer).filter(Developer.email == current_user.email).first()
+    
+    # Create time entry
+    time_entry = TimeEntry(
+        work_item_id=item_id,
+        developer_id=developer.id if developer else None,
+        hours=request.hours,
+        description=request.description
+    )
+    db.add(time_entry)
+    
+    # Update work item totals
+    item.logged_hours = (item.logged_hours or 0) + request.hours
+    item.remaining_hours = max(0, (item.remaining_hours or 0) - request.hours)
+    item.updated_at = datetime.utcnow()
+    
+    db.commit()
+    db.refresh(item)
+    
+    # Return updated item
+    assignee_name = "Unassigned"
+    if item.assignee_id and item.assignee:
+        assignee_name = item.assignee.name
+    
+    return {
+        "id": str(item.id),
+        "key": item.key,
+        "logged_hours": item.logged_hours,
+        "remaining_hours": item.remaining_hours,
+        "time_entry": time_entry.to_dict(),
+        "message": f"Logged {request.hours}h successfully"
+    }
+
+
 @router.post("/generate")
 async def generate_work_items(
     request: GenerateStoriesRequest,
@@ -854,9 +912,14 @@ async def get_hours_analytics(
             "completed_items": len(completed_items)
         })
     
-    # Weekly breakdown - based on project timeline
+    # Weekly breakdown - based on project timeline using TimeEntry
     from datetime import timedelta
+    from models.time_entry import TimeEntry
     weekly_hours = []
+    
+    # Get all time entries for this project's work items
+    work_item_ids = [item.id for item in items]
+    time_entries = db.query(TimeEntry).filter(TimeEntry.work_item_id.in_(work_item_ids)).all()
     
     # Calculate weeks from project start to now
     project_start = project.created_at or datetime.utcnow()
@@ -869,34 +932,36 @@ async def get_hours_analytics(
     # Generate weeks from project start
     for i in range(num_weeks):
         week_start = project_start + timedelta(weeks=i)
-        week_end = week_start + timedelta(days=6)
+        week_end = project_start + timedelta(weeks=i, days=6)
         
         # Don't show future weeks beyond today
         if week_start > today:
             break
         
-        # Items updated this week (logged hours are tracked via updated_at)
-        week_items_updated = [item for item in items 
-                             if item.updated_at 
-                             and week_start <= item.updated_at <= min(week_end, today)]
+        # Time entries logged this week
+        week_entries = [te for te in time_entries 
+                       if te.logged_at 
+                       and week_start <= te.logged_at <= min(week_end, today)]
+        
+        # Sum hours from time entries this week
+        week_logged = sum(te.hours for te in week_entries)
         
         # Items completed this week
         week_items_completed = [item for item in items 
                                if item.completed_at 
                                and week_start <= item.completed_at <= min(week_end, today)]
         
-        # Sum logged hours from items updated this week
-        week_logged = sum(item.logged_hours or 0 for item in week_items_updated)
+        # Items in progress this week (based on sprint or started_at)
+        week_items_in_progress = [item for item in items
+                                  if item.started_at and item.started_at <= min(week_end, today)
+                                  and (not item.completed_at or item.completed_at >= week_start)]
         
-        # Sum allocated hours from items created this week
-        week_items_created = [item for item in items 
-                             if item.created_at 
-                             and week_start <= item.created_at <= min(week_end, today)]
-        week_allocated = sum(item.estimated_hours or 0 for item in week_items_created)
+        # Allocated hours = estimated hours of items being worked on this week
+        week_allocated = sum(item.estimated_hours or 0 for item in week_items_in_progress)
         
         weekly_hours.append({
             "week": week_start.strftime("%Y-%m-%d"),
-            "week_end": week_end.strftime("%Y-%m-%d"),
+            "week_end": min(week_end, today).strftime("%Y-%m-%d"),
             "week_label": f"Week {i + 1}",
             "allocated_hours": week_allocated,
             "logged_hours": week_logged,

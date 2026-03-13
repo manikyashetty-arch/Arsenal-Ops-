@@ -580,22 +580,20 @@ const ProjectBoard = () => {
     // Log hours to a work item
     const handleLogHours = async (item: WorkItem, hoursToLog: number) => {
         try {
-            const newLoggedHours = (item.logged_hours || 0) + hoursToLog;
-            const newRemainingHours = Math.max(0, item.remaining_hours - hoursToLog);
-            
-            const response = await fetch(`${API_BASE_URL}/api/workitems/${item.id}`, {
-                method: 'PUT',
+            const response = await fetch(`${API_BASE_URL}/api/workitems/${item.id}/log-hours`, {
+                method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                 body: JSON.stringify({
-                    logged_hours: newLoggedHours,
-                    remaining_hours: newRemainingHours,
+                    hours: hoursToLog,
                 }),
             });
             if (response.ok) {
-                const updated = await response.json();
+                const data = await response.json();
+                // Update the work item with new values
+                const updated = { ...item, logged_hours: data.logged_hours, remaining_hours: data.remaining_hours };
                 setWorkItems(prev => prev.map(wi => wi.id === item.id ? updated : wi));
                 setSelectedItem(updated);
-                toast.success(`Logged ${hoursToLog}h! Remaining: ${newRemainingHours}h`);
+                toast.success(`Logged ${hoursToLog}h! Remaining: ${data.remaining_hours}h`);
                 refreshProjectStats();
             }
         } catch {

@@ -9,9 +9,10 @@ from models.developer import Developer, project_developers
 from models.work_item import WorkItem, WorkItemType, WorkItemStatus, WorkItemPriority
 from models.sprint import Sprint
 from models.comment import Comment
+from models.time_entry import TimeEntry
 
 __all__ = [
     "Project", "Task", "Persona", "UserStory", "MarketInsight", "Milestone",
     "Developer", "project_developers", "WorkItem", "WorkItemType", "WorkItemStatus", "WorkItemPriority",
-    "Sprint", "Comment"
+    "Sprint", "Comment", "TimeEntry"
 ]

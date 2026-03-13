@@ -84,6 +84,7 @@ class WorkItem(Base):
     epic = relationship("WorkItem", remote_side=[id], foreign_keys=[epic_id], back_populates="stories")
     stories = relationship("WorkItem", foreign_keys=[epic_id], back_populates="epic")
     comments = relationship("Comment", back_populates="work_item", cascade="all, delete-orphan")
+    time_entries = relationship("TimeEntry", back_populates="work_item", cascade="all, delete-orphan")
     
     # Indexes for common queries
     __table_args__ = (

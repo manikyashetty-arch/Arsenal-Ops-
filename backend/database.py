@@ -64,7 +64,7 @@ def init_db():
     from models import (
         project, task, persona, user_story, 
         market_insight, developer, work_item, sprint,
-        architecture, user
+        architecture, user, time_entry
     )
     Base.metadata.create_all(bind=engine)
     
