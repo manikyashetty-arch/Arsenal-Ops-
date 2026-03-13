@@ -2,7 +2,6 @@ import React, { useMemo, useState } from 'react';
 import { Gantt, Task, ViewMode } from 'gantt-task-react';
 import "gantt-task-react/dist/index.css";
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
 import { ChevronLeft, ChevronRight, ZoomIn, ZoomOut } from 'lucide-react';
 
 interface WorkItem {
@@ -86,10 +85,12 @@ const TimelineView: React.FC<TimelineViewProps> = ({ workItems, onTaskClick }) =
     };
 
     const displayOptions = {
-        columnWidth: viewMode === ViewMode.Day ? 60 : viewMode === ViewMode.Week ? 100 : 200,
-        listCellWidth: '250px',
-        rowHeight: 40,
-        ganttHeight: Math.min(400, tasks.length * 50 + 50),
+        columnWidth: viewMode === ViewMode.Day ? 60 : viewMode === ViewMode.Week ? 150 : 250,
+        listCellWidth: '',  // Hide the task list completely for cleaner look
+        rowHeight: 50,
+        barCornerRadius: 4,
+        barFill: 75,
+        ganttHeight: Math.min(500, tasks.length * 60 + 60),
         viewMode,
         viewDate: currentDate,
     };
@@ -124,109 +125,83 @@ const TimelineView: React.FC<TimelineViewProps> = ({ workItems, onTaskClick }) =
                     Timeline View
                 </CardTitle>
                 <div className="flex items-center gap-2">
-                    <Button 
-                        variant="outline" 
-                        size="sm" 
-                        className="border-[rgba(244,246,255,0.2)] text-white hover:bg-[rgba(244,246,255,0.1)] hover:text-white"
+                    <button 
+                        className="px-3 py-1.5 rounded-md border border-gray-600 text-white bg-transparent hover:bg-gray-700 transition-colors"
                         onClick={() => setCurrentDate(new Date(currentDate.getTime() - 7 * 24 * 60 * 60 * 1000))}
                     >
                         <ChevronLeft className="w-4 h-4" />
-                    </Button>
-                    <Button 
-                        variant="outline" 
-                        size="sm" 
-                        className="border-[rgba(244,246,255,0.2)] text-white hover:bg-[rgba(244,246,255,0.1)] hover:text-white"
+                    </button>
+                    <button 
+                        className="px-3 py-1.5 rounded-md border border-gray-600 text-white bg-transparent hover:bg-gray-700 transition-colors"
                         onClick={() => setCurrentDate(new Date())}
                     >
                         Today
-                    </Button>
-                    <Button 
-                        variant="outline" 
-                        size="sm" 
-                        className="border-[rgba(244,246,255,0.2)] text-white hover:bg-[rgba(244,246,255,0.1)] hover:text-white"
+                    </button>
+                    <button 
+                        className="px-3 py-1.5 rounded-md border border-gray-600 text-white bg-transparent hover:bg-gray-700 transition-colors"
                         onClick={() => setCurrentDate(new Date(currentDate.getTime() + 7 * 24 * 60 * 60 * 1000))}
                     >
                         <ChevronRight className="w-4 h-4" />
-                    </Button>
-                    <div className="w-px h-6 bg-[rgba(244,246,255,0.1)] mx-2" />
-                    <Button 
-                        variant="outline" 
-                        size="sm" 
-                        className="border-[rgba(244,246,255,0.2)] text-white hover:bg-[rgba(244,246,255,0.1)] hover:text-white disabled:opacity-50"
+                    </button>
+                    <div className="w-px h-6 bg-gray-600 mx-2" />
+                    <button 
+                        className="px-3 py-1.5 rounded-md border border-gray-600 text-white bg-transparent hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                         onClick={handleZoomIn} 
                         disabled={viewMode === ViewMode.Day}
                     >
                         <ZoomIn className="w-4 h-4" />
-                    </Button>
-                    <Button 
-                        variant="outline" 
-                        size="sm" 
-                        className="border-[rgba(244,246,255,0.2)] text-white hover:bg-[rgba(244,246,255,0.1)] hover:text-white disabled:opacity-50"
+                    </button>
+                    <button 
+                        className="px-3 py-1.5 rounded-md border border-gray-600 text-white bg-transparent hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                         onClick={handleZoomOut} 
                         disabled={viewMode === ViewMode.Month}
                     >
                         <ZoomOut className="w-4 h-4" />
-                    </Button>
+                    </button>
                 </div>
             </CardHeader>
             <CardContent>
                 <style>{`
                     .gantt-task-react-root {
                         font-family: inherit;
+                        overflow-x: auto;
                     }
                     .gantt-task-react-root svg {
-                        background: #0A0A14 !important;
-                    }
-                    .gantt-task-react-root .gantt-task-list-wrapper {
-                        background: #0A0A14 !important;
-                    }
-                    .gantt-task-react-root .gantt-task-list-header {
-                        background: #1A1A2E !important;
-                        border-color: rgba(244,246,255,0.15) !important;
-                    }
-                    .gantt-task-react-root .gantt-task-list-cell {
-                        color: #E5E7EB !important;
-                        background: #0A0A14 !important;
-                        border-color: rgba(244,246,255,0.1) !important;
-                        font-size: 13px;
-                        padding: 8px 12px !important;
-                    }
-                    .gantt-task-react-root .gantt-task-list-header-cell {
-                        color: #9CA3AF !important;
-                        border-color: rgba(244,246,255,0.15) !important;
-                        font-weight: 600;
-                        padding: 10px 12px !important;
+                        background: #0F0F1A !important;
                     }
                     .gantt-task-react-root .grid-row-line {
-                        stroke: rgba(244,246,255,0.08) !important;
+                        stroke: rgba(244,246,255,0.06) !important;
                     }
                     .gantt-task-react-root .grid-tick-line {
-                        stroke: rgba(244,246,255,0.08) !important;
+                        stroke: rgba(244,246,255,0.06) !important;
                     }
                     .gantt-task-react-root .calendar-top {
-                        fill: #9CA3AF !important;
+                        fill: #E5E7EB !important;
+                        font-weight: 500;
                     }
                     .gantt-task-react-root .calendar-bottom {
-                        fill: #D1D5DB !important;
+                        fill: #9CA3AF !important;
                     }
                     .gantt-task-react-root .today-highlight {
-                        fill: rgba(99, 102, 241, 0.15) !important;
+                        fill: rgba(99, 102, 241, 0.12) !important;
                     }
                     .gantt-task-react-root rect[fill="white"],
-                    .gantt-task-react-root rect[fill="#fff"] {
-                        fill: #0A0A14 !important;
-                    }
-                    .gantt-task-react-root text {
-                        fill: #E5E7EB !important;
+                    .gantt-task-react-root rect[fill="#fff"],
+                    .gantt-task-react-root rect[fill="#ffffff"] {
+                        fill: #0F0F1A !important;
                     }
                     .gantt-task-react-root .bar-wrapper {
                         cursor: pointer;
                     }
                     .gantt-task-react-root .bar-wrapper:hover rect {
-                        filter: brightness(1.1);
+                        filter: brightness(1.15);
+                    }
+                    .gantt-task-react-root .bar-label {
+                        fill: white !important;
+                        font-size: 11px;
                     }
                 `}</style>
-                <div className="rounded-lg overflow-hidden bg-[#0A0A14]">
+                <div className="rounded-lg overflow-hidden bg-[#0F0F1A]">
                     <Gantt
                         tasks={tasks}
                         {...displayOptions}
