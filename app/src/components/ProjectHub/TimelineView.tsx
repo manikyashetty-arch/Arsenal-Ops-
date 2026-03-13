@@ -35,7 +35,7 @@ interface TimelineViewProps {
 
 const TimelineView: React.FC<TimelineViewProps> = ({ 
     workItems, 
-    projectStartDate,
+    projectStartDate: _projectStartDate,
     projectId: _projectId,
     developers = [],
     onTaskClick,
@@ -52,18 +52,6 @@ const TimelineView: React.FC<TimelineViewProps> = ({
         estimated_hours: 8,
         assignee_id: undefined as number | undefined
     });
-
-    // Calculate project start for week numbering
-    const projectStart = useMemo(() => {
-        return projectStartDate ? new Date(projectStartDate) : new Date();
-    }, [projectStartDate]);
-
-    // Get week number relative to project start
-    const getProjectWeek = (date: Date): number => {
-        const diffTime = date.getTime() - projectStart.getTime();
-        const diffWeeks = Math.floor(diffTime / (7 * 24 * 60 * 60 * 1000));
-        return Math.max(1, diffWeeks + 1);
-    };
 
     const tasks: Task[] = useMemo(() => {
         return workItems
@@ -171,19 +159,6 @@ const TimelineView: React.FC<TimelineViewProps> = ({
         viewDate: currentDate,
     };
 
-    // Generate week labels for the visible range
-    const weekLabels = useMemo(() => {
-        const labels = [];
-        const startWeek = getProjectWeek(currentDate);
-        for (let i = -2; i <= 6; i++) {
-            labels.push({
-                week: startWeek + i,
-                date: new Date(currentDate.getTime() + i * 7 * 24 * 60 * 60 * 1000)
-            });
-        }
-        return labels.filter(l => l.week > 0);
-    }, [currentDate, projectStart]);
-
     if (tasks.length === 0 && !showAddModal) {
         return (
             <Card className="bg-[#0F0F1A] border-[rgba(244,246,255,0.1)]">
@@ -263,21 +238,6 @@ const TimelineView: React.FC<TimelineViewProps> = ({
                     </div>
                 </CardHeader>
                 <CardContent>
-                    {/* Custom Week Labels */}
-                    <div className="mb-2 flex gap-1 overflow-x-auto pb-2">
-                        {weekLabels.map(({ week, date }) => (
-                            <div 
-                                key={week}
-                                className="flex-shrink-0 px-4 py-2 rounded-md bg-[#1A1A2E] text-center min-w-[120px]"
-                            >
-                                <div className="text-white font-medium text-sm">Week {week}</div>
-                                <div className="text-[#64748B] text-xs">
-                                    {date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                    
                     <style>{`
                         .gantt-task-react-root {
                             font-family: inherit;

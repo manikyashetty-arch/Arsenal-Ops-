@@ -3,6 +3,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { TimelineView, CalendarView, ListView, WorkloadView, GoalsView, ActivityFeed } from './index';
 import { LayoutGrid, Calendar, List, Users, Target, Activity } from 'lucide-react';
 import { API_BASE_URL } from '@/config/api';
+import { toast } from 'sonner';
 
 interface ProjectHubViewProps {
     projectId: string;
@@ -351,9 +352,14 @@ const ProjectHubView: React.FC<ProjectHubViewProps> = ({ projectId, token, proje
                     start_date: newItem.start_date,
                     estimated_hours: newItem.estimated_hours,
                 }]);
+                toast.success(`Task "${newItem.key}" created!`);
+            } else {
+                const error = await res.json();
+                toast.error(error.detail || 'Failed to create task');
             }
         } catch (err) {
             console.error('Failed to create task:', err);
+            toast.error('Failed to create task');
         }
     };
 
