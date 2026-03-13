@@ -257,6 +257,12 @@ async def update_work_item(
     if not item:
         raise HTTPException(status_code=404, detail="Work item not found")
     
+    # Track old assignee before update for transfer comment
+    old_assignee_id = item.assignee_id
+    old_assignee_name = "Unassigned"
+    if old_assignee_id and item.assignee:
+        old_assignee_name = item.assignee.name
+    
     update_data = update.dict(exclude_unset=True)
     
     # Handle frontend compatibility: assigned_hours -> estimated_hours
@@ -283,6 +289,39 @@ async def update_work_item(
         item.remaining_hours = max(0, (item.estimated_hours or 0) - (item.logged_hours or 0))
     
     item.updated_at = datetime.utcnow()
+    
+    # Handle ticket transfer - create automatic comment
+    if 'assignee_id' in update_data:
+        new_assignee_id = update_data['assignee_id']
+        # Only create comment if assignee actually changed
+        if new_assignee_id != old_assignee_id:
+            from models.developer import Developer
+            new_assignee_name = "Unassigned"
+            if new_assignee_id:
+                new_dev = db.query(Developer).filter(Developer.id == new_assignee_id).first()
+                if new_dev:
+                    new_assignee_name = new_dev.name
+            
+            # Create automatic transfer comment
+            from models.comment import Comment
+            transfer_comment = Comment(
+                work_item_id=item.id,
+                author_id=current_user.id,
+                content=f"Ticket transferred from {old_assignee_name} to {new_assignee_name}."
+            )
+            db.add(transfer_comment)
+            
+            # Log activity
+            from models.activity_log import ActivityLog
+            activity = ActivityLog(
+                project_id=item.project_id,
+                user_id=current_user.id,
+                action="reassigned",
+                entity_type="work_item",
+                entity_id=item.id,
+                title=f"Reassigned {item.key} from {old_assignee_name} to {new_assignee_name}"
+            )
+            db.add(activity)
     
     # Log activity for status changes
     if 'status' in update_data:
@@ -928,17 +967,35 @@ async def get_hours_analytics(
             "total_items": len(sprint_items)
         })
     
-    # Hours per developer
+    # Hours per developer - track both current assignments AND past contributions
     developer_hours = []
+    from models.time_entry import TimeEntry
+    all_time_entries = db.query(TimeEntry).join(WorkItem).filter(WorkItem.project_id == project_id).all()
+    
     for dev in developers:
+        # Hours logged BY this developer (their time entries)
+        dev_time_entries = [te for te in all_time_entries if te.developer_id == dev.id]
+        logged = sum(te.hours for te in dev_time_entries)
+        
+        # Tickets currently assigned to this developer
         dev_items = [item for item in items if item.assignee_id == dev.id]
-        allocated = sum(item.estimated_hours or 0 for item in dev_items)
-        logged = sum(item.logged_hours or 0 for item in dev_items)
-        # Calculate remaining properly: estimated - logged for incomplete items
+        
+        # Allocated = remaining work on their current tickets (estimated - total logged)
+        allocated = sum(
+            max(0, (item.estimated_hours or 0) - (item.logged_hours or 0))
+            for item in dev_items if item.status != WorkItemStatus.DONE.value
+        )
+        
+        # If developer has no current tickets but logged hours, show their contribution
+        if len(dev_items) == 0 and logged > 0:
+            allocated = logged  # Show their past contribution as allocated
+        
+        # Remaining = unlogged time on tickets currently assigned to them
         remaining = sum(
             max(0, (item.estimated_hours or 0) - (item.logged_hours or 0))
             for item in dev_items if item.status != WorkItemStatus.DONE.value
         )
+        
         completed_items = [item for item in dev_items if item.status == WorkItemStatus.DONE.value]
         
         # Current week logged hours for this developer
@@ -946,9 +1003,8 @@ async def get_hours_analytics(
         current_week_start = datetime.utcnow() - timedelta(days=datetime.utcnow().weekday())
         current_week_end = current_week_start + timedelta(days=6)
         current_week_logged = sum(
-            item.logged_hours or 0 
-            for item in dev_items 
-            if item.updated_at and current_week_start <= item.updated_at <= current_week_end
+            te.hours for te in dev_time_entries
+            if te.logged_at and current_week_start <= te.logged_at <= current_week_end
         )
         
         developer_hours.append({
@@ -1027,6 +1083,29 @@ async def get_hours_analytics(
         max(0, (item.estimated_hours or 0) - (item.logged_hours or 0)) 
         for item in items if item.status != WorkItemStatus.DONE.value
     )
+    
+    # Add per-ticket time breakdown to each developer
+    for dev_data in developer_hours:
+        dev_id = dev_data["developer_id"]
+        # Get all time entries by this developer
+        dev_entries = [te for te in time_entries if te.developer_id == dev_id]
+        
+        # Group by work item
+        ticket_breakdown = []
+        for entry in dev_entries:
+            # Find the work item
+            work_item = next((item for item in items if item.id == entry.work_item_id), None)
+            if work_item:
+                ticket_breakdown.append({
+                    "item_id": work_item.id,
+                    "item_key": work_item.key,
+                    "title": work_item.title,
+                    "hours_logged": entry.hours,
+                    "logged_at": entry.logged_at.isoformat() if entry.logged_at else None,
+                    "description": entry.description
+                })
+        
+        dev_data["ticket_breakdown"] = ticket_breakdown
     
     return {
         "project_name": project.name,
