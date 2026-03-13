@@ -112,7 +112,7 @@ const ProjectHubView: React.FC<ProjectHubViewProps> = ({ projectId, token, proje
 
     const fetchWorkItems = async () => {
         try {
-            const res = await fetch(`${API_BASE_URL}/api/workitems/projects/${projectId}`, {
+            const res = await fetch(`${API_BASE_URL}/api/workitems/?project_id=${projectId}`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             if (res.ok) {
