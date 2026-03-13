@@ -53,7 +53,7 @@ const localizer = dateFnsLocalizer({
     locales,
 });
 
-const CalendarView: React.FC<CalendarViewProps> = ({ workItems, milestones = [], onTaskClick, onMilestoneClick }) => {
+const CalendarView: React.FC<CalendarViewProps> = ({ workItems, milestones = [], onTaskClick }) => {
     const [currentDate, setCurrentDate] = useState(new Date());
     const [view, setView] = useState<typeof Views[keyof typeof Views]>(Views.MONTH);
 
