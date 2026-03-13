@@ -339,6 +339,8 @@ const ProjectHubView: React.FC<ProjectHubViewProps> = ({ projectId, token, proje
             });
             if (res.ok) {
                 const newItem = await res.json();
+                console.log('Created task:', newItem);
+                console.log('Dates:', { start_date: newItem.start_date, due_date: newItem.due_date });
                 setWorkItems(prev => [...prev, {
                     id: newItem.id,
                     key: newItem.key,

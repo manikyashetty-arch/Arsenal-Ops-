@@ -35,7 +35,7 @@ interface TimelineViewProps {
 
 const TimelineView: React.FC<TimelineViewProps> = ({ 
     workItems, 
-    projectStartDate: _projectStartDate,
+    projectStartDate,
     projectId: _projectId,
     developers = [],
     onTaskClick,
@@ -53,12 +53,33 @@ const TimelineView: React.FC<TimelineViewProps> = ({
         assignee_id: undefined as number | undefined
     });
 
+    // Calculate project start (Sunday of the week containing project creation)
+    const projectStart = useMemo(() => {
+        if (!projectStartDate) return new Date();
+        const date = new Date(projectStartDate);
+        // Find Sunday of that week
+        const day = date.getDay();
+        const diff = date.getDate() - day;
+        return new Date(date.setDate(diff));
+    }, [projectStartDate]);
+
     const tasks: Task[] = useMemo(() => {
+        console.log('Timeline workItems:', workItems);
         return workItems
             .filter(item => item.start_date || item.due_date)
             .map((item) => {
-                const startDate = item.start_date ? new Date(item.start_date) : new Date();
-                const endDate = item.due_date ? new Date(item.due_date) : new Date(startDate.getTime() + 7 * 24 * 60 * 60 * 1000);
+                // Parse dates properly - handle both ISO strings and date objects
+                const startStr = item.start_date || item.due_date;
+                const endStr = item.due_date || item.start_date;
+                const startDate = startStr ? new Date(startStr) : new Date();
+                const endDate = endStr ? new Date(endStr) : new Date(startDate.getTime() + 7 * 24 * 60 * 60 * 1000);
+                
+                // Ensure end date is after start date
+                if (endDate <= startDate) {
+                    endDate.setDate(startDate.getDate() + 1);
+                }
+                
+                console.log('Task:', item.key, 'Start:', startDate, 'End:', endDate);
                 
                 let backgroundColor = '#6366F1';
                 let progressColor = '#818CF8';
@@ -148,6 +169,15 @@ const TimelineView: React.FC<TimelineViewProps> = ({
         }
     };
 
+    // Calculate view date - show earliest task or project start
+    const viewDate = useMemo(() => {
+        if (tasks.length === 0) return projectStart;
+        const earliestTask = tasks.reduce((earliest, task) => 
+            task.start < earliest.start ? task : earliest
+        );
+        return earliestTask.start;
+    }, [tasks, projectStart]);
+
     const displayOptions = {
         columnWidth: viewMode === ViewMode.Day ? 60 : viewMode === ViewMode.Week ? 150 : 250,
         listCellWidth: '',
@@ -156,7 +186,7 @@ const TimelineView: React.FC<TimelineViewProps> = ({
         barFill: 75,
         ganttHeight: Math.min(500, tasks.length * 60 + 60),
         viewMode,
-        viewDate: currentDate,
+        viewDate,
     };
 
     if (tasks.length === 0 && !showAddModal) {
@@ -238,6 +268,50 @@ const TimelineView: React.FC<TimelineViewProps> = ({
                     </div>
                 </CardHeader>
                 <CardContent>
+                    {/* Custom Week Labels */}
+                    <div className="mb-3 flex gap-2 overflow-x-auto pb-2">
+                        {tasks.length > 0 && (() => {
+                            // Find date range
+                            const dates = tasks.flatMap(t => [t.start, t.end]);
+                            const minDate = new Date(Math.min(...dates.map(d => d.getTime())));
+                            const maxDate = new Date(Math.max(...dates.map(d => d.getTime())));
+                            
+                            // Generate week labels
+                            const labels = [];
+                            let currentWeekStart = new Date(projectStart);
+                            let weekNum = 1;
+                            
+                            while (currentWeekStart <= maxDate) {
+                                const weekEnd = new Date(currentWeekStart);
+                                weekEnd.setDate(weekEnd.getDate() + 6);
+                                
+                                // Only show if within visible range
+                                if (weekEnd >= minDate) {
+                                    labels.push({
+                                        week: weekNum,
+                                        start: new Date(currentWeekStart),
+                                        end: new Date(weekEnd)
+                                    });
+                                }
+                                
+                                currentWeekStart.setDate(currentWeekStart.getDate() + 7);
+                                weekNum++;
+                            }
+                            
+                            return labels.map(({ week, start }) => (
+                                <div 
+                                    key={week}
+                                    className="flex-shrink-0 px-3 py-2 rounded-md bg-[#1A1A2E] text-center min-w-[100px]"
+                                >
+                                    <div className="text-white font-medium text-sm">W{week}</div>
+                                    <div className="text-[#64748B] text-xs">
+                                        {start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                                    </div>
+                                </div>
+                            ));
+                        })()}
+                    </div>
+                    
                     <style>{`
                         .gantt-task-react-root {
                             font-family: inherit;
