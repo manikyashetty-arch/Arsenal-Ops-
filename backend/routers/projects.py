@@ -795,6 +795,49 @@ async def get_project_activity(
 
 # --- Workload ---
 
+def get_working_days_in_range(start_date: datetime, end_date: datetime) -> int:
+    """Calculate number of working days (Mon-Fri) between two dates"""
+    if not start_date or not end_date:
+        return 0
+    
+    # Ensure start <= end
+    if start_date > end_date:
+        start_date, end_date = end_date, start_date
+    
+    working_days = 0
+    current = start_date.replace(hour=0, minute=0, second=0, microsecond=0)
+    end = end_date.replace(hour=0, minute=0, second=0, microsecond=0)
+    
+    while current <= end:
+        # weekday(): Monday=0, Sunday=6
+        if current.weekday() < 5:  # Mon-Fri
+            working_days += 1
+        current += timedelta(days=1)
+    
+    return working_days
+
+def calculate_hours_excluding_weekends(total_hours: int, start_date: datetime, end_date: datetime) -> int:
+    """Calculate hours proportionally excluding weekend days"""
+    if not start_date or not end_date or total_hours <= 0:
+        return 0
+    
+    # Total days in range
+    total_days = (end_date - start_date).days + 1
+    if total_days <= 0:
+        return total_hours
+    
+    # Working days in range
+    working_days = get_working_days_in_range(start_date, end_date)
+    
+    # If no working days (task spans only weekend), return 0
+    if working_days == 0:
+        return 0
+    
+    # Proportional hours: (working_days / total_days) * total_hours
+    # But simpler: assume hours are evenly distributed across working days only
+    hours_per_day = total_hours / total_days
+    return int(hours_per_day * working_days)
+
 @router.get("/{project_id}/workload")
 async def get_project_workload(
     project_id: int,
@@ -840,7 +883,7 @@ async def get_project_workload(
                 "estimated_hours": 0,
                 "logged_hours": 0,
                 "remaining_hours": 0,
-                "this_week_remaining_hours": 0,  # Only tasks due this week
+                "this_week_remaining_hours": 0,  # Only tasks due this week (Mon-Fri)
                 "items": []
             }
         
@@ -851,8 +894,17 @@ async def get_project_workload(
         workload_data[assignee_id]["remaining_hours"] += item.remaining_hours or 0
         
         # Count this week's remaining hours (tasks due this week that aren't done)
+        # Exclude weekends from hour calculation
         if item.due_date and week_start <= item.due_date <= week_end and item.status != "done":
-            workload_data[assignee_id]["this_week_remaining_hours"] += item.remaining_hours or 0
+            # Calculate working days only
+            task_start = item.start_date or week_start
+            task_end = item.due_date
+            working_hours = calculate_hours_excluding_weekends(
+                item.remaining_hours or 0, 
+                task_start, 
+                task_end
+            )
+            workload_data[assignee_id]["this_week_remaining_hours"] += working_hours
         
         if item.status == "done":
             workload_data[assignee_id]["completed_items"] += 1

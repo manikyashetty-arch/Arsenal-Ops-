@@ -189,8 +189,8 @@ async def create_work_item(
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     
-    # Generate key
-    key_prefix = project.status[:4].upper() if project.status else "PROJ"
+    # Generate key using project's key_prefix
+    key_prefix = project.key_prefix if project.key_prefix else "PROJ"
     item_number = get_next_item_number(db, item.project_id)
     key = f"{key_prefix}-{item_number}"
     
@@ -1116,11 +1116,32 @@ async def get_hours_analytics(
                                and current_week_start <= item.completed_at <= min(week_end, today)]
         
         # Allocated hours = estimated hours of items DUE this week (work to be done)
+        # Exclude weekends from calculation
         week_items_allocated = [item for item in items
                                if item.due_date 
                                and current_week_start <= item.due_date <= week_end
                                and item.status != WorkItemStatus.DONE.value]  # Only non-completed items
-        week_allocated = sum(item.estimated_hours or 0 for item in week_items_allocated)
+        
+        # Calculate allocated hours excluding weekends
+        week_allocated = 0
+        for item in week_items_allocated:
+            task_start = item.start_date or current_week_start
+            task_end = item.due_date
+            # Count only working days (Mon-Fri) in this week
+            working_days = 0
+            current_day = max(task_start, current_week_start)
+            end_day = min(task_end, week_end)
+            while current_day <= end_day:
+                if current_day.weekday() < 5:  # Mon-Fri
+                    working_days += 1
+                current_day += timedelta(days=1)
+            
+            # Total days in task
+            total_task_days = (task_end - task_start).days + 1
+            if total_task_days > 0 and working_days > 0:
+                # Proportional hours for working days
+                hours_per_day = (item.estimated_hours or 0) / total_task_days
+                week_allocated += int(hours_per_day * working_days)
         
         weekly_hours.append({
             "week": current_week_start.strftime("%Y-%m-%d"),
