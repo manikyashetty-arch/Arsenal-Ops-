@@ -46,7 +46,28 @@ interface CalendarEvent {
     title: string;
     start: Date;
     end: Date;
+    allDay: boolean;
     resource: any;
+}
+
+/**
+ * Parse a date string into a local-midnight Date object.
+ * Handles both ISO datetime strings ("2026-03-15T00:00:00") and
+ * date-only strings ("2026-03-15") correctly across all timezones.
+ * 
+ * The key insight: "2026-03-15T00:00:00" without a 'Z' suffix is treated
+ * by JavaScript as LOCAL time already — no shift needed.
+ * But "2026-03-15T00:00:00Z" (with Z) would shift to local time, so we
+ * strip the time component and reconstruct as local midnight to be safe.
+ */
+function parseLocalDate(str: string): Date {
+    // Remove any trailing Z to treat as local time, not UTC
+    const clean = str.endsWith('Z') ? str.slice(0, -1) : str;
+    // Extract YYYY-MM-DD portion (handles both "2026-03-15" and "2026-03-15T00:00:00")
+    const datePart = clean.includes('T') ? clean.split('T')[0] : clean;
+    const [year, month, day] = datePart.split('-').map(Number);
+    // Construct at local midnight — timezone-safe for any locale
+    return new Date(year, month - 1, day, 0, 0, 0, 0);
 }
 
 const locales = {
@@ -68,84 +89,56 @@ const CalendarView: React.FC<CalendarViewProps> = ({ workItems, milestones = [],
     const events: CalendarEvent[] = useMemo(() => {
         console.log('CalendarView - workItems:', workItems.length, workItems.map(i => ({key: i.key, start_date: i.start_date, due_date: i.due_date})));
         
-        const taskEvents = workItems
+        const taskEvents: CalendarEvent[] = workItems
             .filter(item => item.due_date || item.start_date)
             .map(item => {
-                // Parse dates and ensure they're in local timezone for display
-                const startStr = item.start_date || item.due_date;
-                const endStr = item.due_date || item.start_date;
-                
-                // Parse date string manually to avoid UTC->local timezone shift
-                // e.g. "2026-03-15" should become March 15 local time, not March 14
-                const parseLocalDate = (str: string) => {
-                    if (str.includes('T')) {
-                        // ISO datetime - parse and convert to local midnight
-                        const d = new Date(str);
-                        return new Date(d.getFullYear(), d.getMonth(), d.getDate());
-                    }
-                    // Date-only string like "2026-03-15" - parse as local
-                    const [year, month, day] = str.split('-').map(Number);
-                    return new Date(year, month - 1, day);
-                };
-                
-                let startDate = startStr ? parseLocalDate(startStr) : new Date();
-                let endDate = endStr ? parseLocalDate(endStr) : new Date(startDate);
-                
-                // Ensure end date is not before start date
-                if (endDate < startDate) {
-                    endDate = new Date(startDate);
-                }
-                
-                // End date needs to be inclusive - add 1 day so the event shows on the end day
-                endDate.setDate(endDate.getDate() + 1);
-                
+                const startDate = parseLocalDate((item.start_date || item.due_date)!);
+                const dueDate = parseLocalDate((item.due_date || item.start_date)!);
+                const effectiveEnd = dueDate < startDate ? startDate : dueDate;
+                // react-big-calendar allDay end is exclusive:
+                // to display an event THROUGH March 30, end must be March 31.
+                const endExclusive = new Date(effectiveEnd);
+                endExclusive.setDate(endExclusive.getDate() + 1);
                 return {
                     id: item.id,
                     title: `${item.key}: ${item.title}`,
                     start: startDate,
-                    end: endDate,
+                    end: endExclusive,
+                    allDay: true,
                     resource: { ...item, type: 'task' },
                 };
             });
         
-        console.log('CalendarView - events created:', taskEvents.length, taskEvents.map(e => ({title: e.title, start: e.start, end: e.end})));
+        console.log('CalendarView - events created:', taskEvents.length);
         
-        const milestoneEvents = milestones
+        const milestoneEvents: CalendarEvent[] = milestones
             .filter(m => m.due_date)
             .map(m => {
-                const parseLocalDate = (str: string) => {
-                    if (str.includes('T')) { const d = new Date(str); return new Date(d.getFullYear(), d.getMonth(), d.getDate()); }
-                    const [year, month, day] = str.split('-').map(Number);
-                    return new Date(year, month - 1, day);
-                };
                 const dueDate = parseLocalDate(m.due_date!);
-                const endDate = new Date(dueDate);
-                endDate.setDate(endDate.getDate() + 1);
+                const endExclusive = new Date(dueDate);
+                endExclusive.setDate(endExclusive.getDate() + 1);
                 return {
                     id: `milestone-${m.id}`,
                     title: `🎯 ${m.title}`,
                     start: dueDate,
-                    end: endDate,
+                    end: endExclusive,
+                    allDay: true,
                     resource: { ...m, type: 'milestone' },
                 };
             });
         
-        const goalEvents = goals
+        const goalEvents: CalendarEvent[] = goals
             .filter(g => g.due_date)
             .map(g => {
-                const parseLocalDate = (str: string) => {
-                    if (str.includes('T')) { const d = new Date(str); return new Date(d.getFullYear(), d.getMonth(), d.getDate()); }
-                    const [year, month, day] = str.split('-').map(Number);
-                    return new Date(year, month - 1, day);
-                };
                 const dueDate = parseLocalDate(g.due_date!);
-                const endDate = new Date(dueDate);
-                endDate.setDate(endDate.getDate() + 1);
+                const endExclusive = new Date(dueDate);
+                endExclusive.setDate(endExclusive.getDate() + 1);
                 return {
                     id: `goal-${g.id}`,
                     title: `⭐ ${g.title}`,
                     start: dueDate,
-                    end: endDate,
+                    end: endExclusive,
+                    allDay: true,
                     resource: { ...g, type: 'goal' },
                 };
             });
