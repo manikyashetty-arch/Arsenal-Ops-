@@ -42,6 +42,7 @@ import { API_BASE_URL } from '@/config/api';
 
 interface WorkItem {
     id: string;
+    key: string;  // Ticket key like PROJ-123
     type: 'user_story' | 'task' | 'bug' | 'epic';
     title: string;
     description: string;
@@ -1070,7 +1071,7 @@ const ProjectBoard = () => {
                                                     className={`group bg-[rgba(244,246,255,0.03)] rounded-xl border border-[rgba(244,246,255,0.06)] p-3.5 cursor-pointer transition-all duration-200 hover:border-[rgba(244,246,255,0.15)] hover:bg-[rgba(244,246,255,0.05)] hover:shadow-lg hover:shadow-black/20 ${draggedItem === item.id ? 'opacity-40 scale-95' : ''
                                                         }`}
                                                 >
-                                                    {/* Type + ID */}
+                                                    {/* Type + Key */}
                                                     <div className="flex items-center gap-2 mb-2.5">
                                                         <div
                                                             className="flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium"
@@ -1079,7 +1080,7 @@ const ProjectBoard = () => {
                                                             <TypeIcon className="w-3 h-3" />
                                                             {typeInfo.label}
                                                         </div>
-                                                        <span className="text-[10px] text-[#475569] font-mono">{item.id}</span>
+                                                        <span className="text-[10px] text-[#6366F1] font-mono font-medium">{item.key}</span>
                                                     </div>
 
                                                     {/* Title */}
@@ -1191,7 +1192,7 @@ const ProjectBoard = () => {
                                             className="grid grid-cols-[1fr_120px_100px_100px_100px_120px] gap-4 px-5 py-3.5 border-b border-[rgba(244,246,255,0.04)] hover:bg-[rgba(244,246,255,0.03)] cursor-pointer transition-colors group"
                                         >
                                             <div className="flex items-center gap-3 min-w-0">
-                                                <span className="text-[10px] text-[#475569] font-mono shrink-0">{item.id}</span>
+                                                <span className="text-[10px] text-[#6366F1] font-mono font-medium shrink-0">{item.key}</span>
                                                 <span className="text-sm text-[#E2E8F0] truncate group-hover:text-white transition-colors">{item.title}</span>
                                             </div>
                                             <div className="flex items-center">
