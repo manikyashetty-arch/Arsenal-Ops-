@@ -1034,17 +1034,17 @@ async def get_hours_analytics(
         print(f"DEBUG: TimeEntry id={te.id}, developer_id={te.developer_id}, effective={effective_dev_id}, hours={te.hours}")
     
     for dev in developers:
-        # Hours logged BY this developer (their time entries OR entries on their assigned items with NULL developer_id)
-        dev_time_entries = [
-            te for te in all_time_entries 
-            if te.developer_id == dev.id or 
-               (te.developer_id is None and work_item_assignee_map.get(te.work_item_id) == dev.id)
-        ]
-        logged = sum(te.hours for te in dev_time_entries)
-        print(f"DEBUG: Developer {dev.name} (id={dev.id}) logged {logged}h from {len(dev_time_entries)} entries")
-        
         # Tickets currently assigned to this developer
         dev_items = [item for item in items if item.assignee_id == dev.id]
+        
+        # Hours logged ON tickets assigned to this developer (regardless of who logged them)
+        # This attributes hours to the assignee, not the person who logged the time
+        dev_time_entries = [
+            te for te in all_time_entries 
+            if work_item_assignee_map.get(te.work_item_id) == dev.id
+        ]
+        logged = sum(te.hours for te in dev_time_entries)
+        print(f"DEBUG: Developer {dev.name} (id={dev.id}) has {logged}h logged on their assigned tickets from {len(dev_time_entries)} entries")
         
         # Allocated = remaining work on their current tickets (estimated - total logged)
         allocated = sum(

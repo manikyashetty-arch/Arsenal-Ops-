@@ -320,12 +320,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({ workItems, milestones = [],
                         .rbc-allday-cell {
                             background-color: #0F0F1A;
                         }
-                        /* Hide events on weekends (first and last columns in month view) */
-                        .rbc-month-view .rbc-month-row .rbc-row-content .rbc-row .rbc-row-segment:first-child,
-                        .rbc-month-view .rbc-month-row .rbc-row-content .rbc-row .rbc-row-segment:last-child {
-                            display: none;
-                        }
-                        /* Alternative: dim weekend columns */
+                        /* Dim weekend columns */
                         .rbc-month-view .rbc-month-row .rbc-day-bg:first-child,
                         .rbc-month-view .rbc-month-row .rbc-day-bg:last-child {
                             background-color: rgba(244,246,255,0.03);

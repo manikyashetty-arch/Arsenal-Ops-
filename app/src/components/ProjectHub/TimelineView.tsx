@@ -246,23 +246,10 @@ const TimelineView: React.FC<TimelineViewProps> = ({
         }
     };
 
-    // Calculate view date - use currentDate from navigation, or show earliest task/project start
+    // Calculate view date - use currentDate from navigation
     const viewDate = useMemo(() => {
-        // If user has navigated (currentDate is different from today), use currentDate
-        const today = new Date();
-        const isNavigated = currentDate.toDateString() !== today.toDateString();
-        
-        if (isNavigated) {
-            return currentDate;
-        }
-        
-        // Otherwise show earliest task or project start
-        if (tasks.length === 0) return projectStart;
-        const earliestTask = tasks.reduce((earliest, task) => 
-            task.start < earliest.start ? task : earliest
-        );
-        return earliestTask.start;
-    }, [tasks, projectStart, currentDate]);
+        return currentDate;
+    }, [currentDate]);
 
     const displayOptions = {
         columnWidth: viewMode === ViewMode.Day ? 60 : viewMode === ViewMode.Week ? 150 : 250,
