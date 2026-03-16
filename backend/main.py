@@ -87,10 +87,14 @@ async def startup_event():
         from database import init_db, SessionLocal
         init_db()
         print("DEBUG: Database initialized successfully")
-        
-        # Create default admin user if none exists
+    except Exception as e:
+        print(f"DEBUG: Database initialization error: {e}")
+    
+    # Create default admin user in background (non-blocking)
+    try:
         from models.user import User, UserRole
         import hashlib
+        from database import SessionLocal
         
         db = SessionLocal()
         try:
@@ -114,7 +118,7 @@ async def startup_event():
         finally:
             db.close()
     except Exception as e:
-        print(f"DEBUG: Database initialization error: {e}")
+        print(f"Admin setup error: {e}")
 
 @app.get("/")
 def root():
