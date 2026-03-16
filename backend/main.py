@@ -38,31 +38,28 @@ app = FastAPI(
 )
 
 # CORS middleware - MUST be added before other middleware/routes
-# Get allowed origins from environment variable (comma-separated)
-cors_origins_env = os.getenv("CORS_ORIGINS", "")
-if cors_origins_env:
-    cors_origins = [origin.strip() for origin in cors_origins_env.split(",") if origin.strip()]
-else:
-    cors_origins = ["http://localhost:5173", "http://127.0.0.1:5173"]
+# Note: allow_credentials=True CANNOT be used with allow_origins=["*"]
+# So we must use specific origins list
 
-# Always add common production frontend URLs
-production_frontends = [
+# Start with production frontend URLs (these are always needed)
+cors_origins = [
     "https://arsenal-ops.vercel.app",
     "https://www.arsenal-ops.vercel.app",
     "https://arsenal-ops-git-main-manikyashetty-archs-projects.vercel.app",
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
 ]
-for fe in production_frontends:
-    if fe not in cors_origins:
-        cors_origins.append(fe)
 
-# Allow wildcard in development
-if os.getenv("ENVIRONMENT") != "production":
-    cors_origins.append("*")
+# Add any additional origins from environment variable
+cors_origins_env = os.getenv("CORS_ORIGINS", "")
+if cors_origins_env:
+    for origin in cors_origins_env.split(","):
+        origin = origin.strip()
+        if origin and origin not in cors_origins:
+            cors_origins.append(origin)
 
 print(f"DEBUG CORS Origins: {cors_origins}")  # Debug logging
 
-# Note: allow_credentials=True cannot be used with allow_origins=["*"]
-# So we use specific origins list instead of wildcard in production
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins,
