@@ -70,51 +70,6 @@ app.add_middleware(
     max_age=3600,
 )
 
-# Initialize database tables on startup
-try:
-    from database import init_db, SessionLocal
-    init_db()
-    print("DEBUG: Database initialized successfully")
-    
-    # Create default admin user if none exists
-    from models.user import User, UserRole
-    import hashlib
-    
-    db = SessionLocal()
-    
-    try:
-        # Check if admin already exists
-        existing_admin = db.query(User).filter(User.role == UserRole.ADMIN.value).first()
-        if not existing_admin:
-            # Use SHA256 hashing instead of bcrypt to avoid 72-byte limit
-            temp_password = "AdminPass123!"
-            hashed_password = hashlib.sha256(temp_password.encode()).hexdigest()
-            
-            admin = User(
-                email="manikya.shetty@arsenalai.com",
-                name="manikya rathna",
-                hashed_password=hashed_password,
-                role=UserRole.ADMIN.value,
-                is_active=True,
-                is_first_login=True
-            )
-            db.add(admin)
-            db.commit()
-            print("=" * 60)
-            print("DEFAULT ADMIN CREATED!")
-            print("=" * 60)
-            print(f"Email: {admin.email}")
-            print(f"Temporary Password: {temp_password}")
-            print("=" * 60)
-    except Exception as e:
-        print(f"Admin creation error: {e}")
-    finally:
-        db.close()
-        
-except Exception as e:
-    print(f"DEBUG: Database initialization error: {e}")
-    # Continue anyway - tables might already exist
-
 # Include routers
 app.include_router(auth_router)
 app.include_router(projects_router)
@@ -123,6 +78,43 @@ app.include_router(developers_router)
 app.include_router(prd_router)
 app.include_router(comments_router)
 app.include_router(admin_router)
+
+# Startup event for database initialization
+@app.on_event("startup")
+async def startup_event():
+    """Initialize database on startup"""
+    try:
+        from database import init_db, SessionLocal
+        init_db()
+        print("DEBUG: Database initialized successfully")
+        
+        # Create default admin user if none exists
+        from models.user import User, UserRole
+        import hashlib
+        
+        db = SessionLocal()
+        try:
+            existing_admin = db.query(User).filter(User.role == UserRole.ADMIN.value).first()
+            if not existing_admin:
+                temp_password = "AdminPass123!"
+                hashed_password = hashlib.sha256(temp_password.encode()).hexdigest()
+                admin = User(
+                    email="manikya.shetty@arsenalai.com",
+                    name="manikya rathna",
+                    hashed_password=hashed_password,
+                    role=UserRole.ADMIN.value,
+                    is_active=True,
+                    is_first_login=True
+                )
+                db.add(admin)
+                db.commit()
+                print("DEFAULT ADMIN CREATED! Email: manikya.shetty@arsenalai.com")
+        except Exception as e:
+            print(f"Admin creation error: {e}")
+        finally:
+            db.close()
+    except Exception as e:
+        print(f"DEBUG: Database initialization error: {e}")
 
 @app.get("/")
 def root():

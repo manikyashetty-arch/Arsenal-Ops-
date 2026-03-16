@@ -3,10 +3,11 @@ services:
   - type: web
     name: arsenal-ops-api
     env: python
-    region: oregon # or choose closest region
+    region: oregon
     plan: free
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn main:app --workers 1 --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT
+    startCommand: gunicorn main:app --workers 1 --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT --timeout 300 --graceful-timeout 30
+    healthCheckPath: /api/health
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.0
