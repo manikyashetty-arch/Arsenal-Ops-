@@ -25,7 +25,6 @@ router = APIRouter(prefix="/api/comments", tags=["comments"])
 class CommentCreate(BaseModel):
     work_item_id: int
     content: str
-    author_id: int
     comment_type: str = "comment"  # comment, blocker, status_change
 
 
@@ -172,13 +171,17 @@ async def create_comment(
     if not work_item:
         raise HTTPException(status_code=404, detail="Work item not found")
     
+    # Get author from current user
+    author = db.query(Developer).filter(Developer.email == current_user.email).first()
+    author_id = author.id if author else None
+    
     # Extract mentions from content
     mentions = extract_mentions(comment.content)
     
     # Create comment
     new_comment = Comment(
         work_item_id=comment.work_item_id,
-        author_id=comment.author_id,
+        author_id=author_id,
         content=comment.content,
         mentions=mentions,
         comment_type=comment.comment_type
@@ -189,7 +192,6 @@ async def create_comment(
     db.refresh(new_comment)
     
     # Get author name
-    author = db.query(Developer).filter(Developer.id == comment.author_id).first()
     author_name = author.name if author else "Unknown"
     
     # Send email notifications to mentioned users
