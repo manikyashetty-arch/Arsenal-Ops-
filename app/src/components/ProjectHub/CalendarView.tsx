@@ -65,37 +65,34 @@ const CalendarView: React.FC<CalendarViewProps> = ({ workItems, milestones = [],
     const [currentDate, setCurrentDate] = useState(new Date());
     const [view, setView] = useState<typeof Views[keyof typeof Views]>(Views.MONTH);
 
-    // Helper to adjust date range to exclude weekends
-    // If task starts/ends on weekend, shift to nearest weekday
-    const adjustForWeekend = (date: Date, isStart: boolean): Date => {
-        const result = new Date(date);
-        const day = result.getDay();
-        
-        if (day === 0) { // Sunday
-            // Move to Monday
-            result.setDate(result.getDate() + 1);
-        } else if (day === 6) { // Saturday
-            if (isStart) {
-                // Start date on Saturday -> move to Monday
-                result.setDate(result.getDate() + 2);
-            } else {
-                // End date on Saturday -> move to Friday
-                result.setDate(result.getDate() - 1);
-            }
-        }
-        return result;
-    };
-
     const events: CalendarEvent[] = useMemo(() => {
         const taskEvents = workItems
             .filter(item => item.due_date || item.start_date)
             .map(item => {
-                let startDate = item.start_date ? new Date(item.start_date) : new Date(item.due_date!);
-                let endDate = item.due_date ? new Date(item.due_date) : new Date(startDate);
+                // Parse dates and ensure they're in local timezone for display
+                const startStr = item.start_date || item.due_date;
+                const endStr = item.due_date || item.start_date;
+                
+                // Create dates from ISO strings - they will be in local timezone
+                let startDate = startStr ? new Date(startStr) : new Date();
+                let endDate = endStr ? new Date(endStr) : new Date(startDate);
                 
                 // Adjust for weekends - tasks don't happen on weekends
-                startDate = adjustForWeekend(startDate, true);
-                endDate = adjustForWeekend(endDate, false);
+                // Only adjust if the date actually falls on a weekend
+                const startDay = startDate.getDay();
+                const endDay = endDate.getDay();
+                
+                if (startDay === 0) { // Sunday -> Monday
+                    startDate.setDate(startDate.getDate() + 1);
+                } else if (startDay === 6) { // Saturday -> Monday
+                    startDate.setDate(startDate.getDate() + 2);
+                }
+                
+                if (endDay === 0) { // Sunday -> Friday
+                    endDate.setDate(endDate.getDate() - 2);
+                } else if (endDay === 6) { // Saturday -> Friday
+                    endDate.setDate(endDate.getDate() - 1);
+                }
                 
                 // Ensure end date is not before start date after adjustment
                 if (endDate < startDate) {
@@ -114,7 +111,12 @@ const CalendarView: React.FC<CalendarViewProps> = ({ workItems, milestones = [],
         const milestoneEvents = milestones
             .filter(m => m.due_date)
             .map(m => {
-                const dueDate = adjustForWeekend(new Date(m.due_date!), false);
+                const dueDate = new Date(m.due_date!);
+                // Adjust if falls on weekend
+                const day = dueDate.getDay();
+                if (day === 0) dueDate.setDate(dueDate.getDate() - 2); // Sunday -> Friday
+                else if (day === 6) dueDate.setDate(dueDate.getDate() - 1); // Saturday -> Friday
+                
                 return {
                     id: `milestone-${m.id}`,
                     title: `🎯 ${m.title}`,
@@ -127,7 +129,12 @@ const CalendarView: React.FC<CalendarViewProps> = ({ workItems, milestones = [],
         const goalEvents = goals
             .filter(g => g.due_date)
             .map(g => {
-                const dueDate = adjustForWeekend(new Date(g.due_date!), false);
+                const dueDate = new Date(g.due_date!);
+                // Adjust if falls on weekend
+                const day = dueDate.getDay();
+                if (day === 0) dueDate.setDate(dueDate.getDate() - 2); // Sunday -> Friday
+                else if (day === 6) dueDate.setDate(dueDate.getDate() - 1); // Saturday -> Friday
+                
                 return {
                     id: `goal-${g.id}`,
                     title: `⭐ ${g.title}`,

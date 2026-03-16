@@ -797,6 +797,8 @@ async def get_project_activity(
 
 def get_working_days_in_range(start_date: datetime, end_date: datetime) -> int:
     """Calculate number of working days (Mon-Fri) between two dates"""
+    from datetime import timedelta
+    
     if not start_date or not end_date:
         return 0
     
