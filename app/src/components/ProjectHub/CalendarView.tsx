@@ -196,6 +196,17 @@ const CalendarView: React.FC<CalendarViewProps> = ({ workItems, milestones = [],
         };
     };
 
+    // Hide events on weekends by checking if the event date falls on Sat/Sun
+    const eventWrapperStyle = (event: CalendarEvent) => {
+        const startDay = event.start.getDay();
+        const endDay = event.end.getDay();
+        // If both start and end are on weekends, hide the event
+        if ((startDay === 0 || startDay === 6) && (endDay === 0 || endDay === 6)) {
+            return { style: { display: 'none' } };
+        }
+        return {};
+    };
+
     const CustomToolbar = ({ onNavigate, label }: { onNavigate: (action: typeof Navigate.PREVIOUS | typeof Navigate.NEXT | typeof Navigate.TODAY) => void; label: string }) => (
         <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
@@ -317,6 +328,16 @@ const CalendarView: React.FC<CalendarViewProps> = ({ workItems, milestones = [],
                         }
                         .rbc-allday-cell {
                             background-color: #0F0F1A;
+                        }
+                        /* Hide events on weekends (first and last columns in month view) */
+                        .rbc-month-view .rbc-month-row .rbc-row-content .rbc-row .rbc-row-segment:first-child,
+                        .rbc-month-view .rbc-month-row .rbc-row-content .rbc-row .rbc-row-segment:last-child {
+                            display: none;
+                        }
+                        /* Alternative: dim weekend columns */
+                        .rbc-month-view .rbc-month-row .rbc-day-bg:first-child,
+                        .rbc-month-view .rbc-month-row .rbc-day-bg:last-child {
+                            background-color: rgba(244,246,255,0.03);
                         }
                     `}</style>
                     <Calendar

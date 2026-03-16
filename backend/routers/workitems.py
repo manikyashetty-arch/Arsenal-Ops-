@@ -983,18 +983,6 @@ async def get_hours_analytics(
     # Get all developers assigned to this project
     developers = list(project.developers) if hasattr(project, 'developers') else []
     
-    # Also get developers who have logged time entries for this project's work items
-    # (they might not be formally assigned to the project)
-    developer_ids_from_entries = {te.developer_id for te in all_time_entries if te.developer_id}
-    existing_ids = {d.id for d in developers}
-    
-    for dev_id in developer_ids_from_entries:
-        if dev_id not in existing_ids:
-            dev = db.query(Developer).filter(Developer.id == dev_id).first()
-            if dev:
-                developers.append(dev)
-                existing_ids.add(dev_id)
-    
     # Hours per sprint
     sprint_hours = []
     for sprint in sprints:
@@ -1024,6 +1012,18 @@ async def get_hours_analytics(
     # Get all time entries for this project's work items
     work_item_ids = [item.id for item in items]
     all_time_entries = db.query(TimeEntry).filter(TimeEntry.work_item_id.in_(work_item_ids)).all() if work_item_ids else []
+    
+    # Also get developers who have logged time entries for this project's work items
+    # (they might not be formally assigned to the project)
+    developer_ids_from_entries = {te.developer_id for te in all_time_entries if te.developer_id}
+    existing_ids = {d.id for d in developers}
+    
+    for dev_id in developer_ids_from_entries:
+        if dev_id not in existing_ids:
+            dev = db.query(Developer).filter(Developer.id == dev_id).first()
+            if dev:
+                developers.append(dev)
+                existing_ids.add(dev_id)
     
     # Build a map of work_item_id to assignee_id for entries with NULL developer_id
     work_item_assignee_map = {item.id: item.assignee_id for item in items}

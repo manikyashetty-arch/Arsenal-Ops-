@@ -145,11 +145,15 @@ const TimelineView: React.FC<TimelineViewProps> = ({
             .filter(m => m.due_date)
             .map((m) => {
                 const dueDate = new Date(m.due_date!);
+                // Ensure at least 1 day duration for visibility
+                const endDate = new Date(dueDate);
+                endDate.setDate(endDate.getDate() + 1);
+                
                 return {
                     id: `milestone-${m.id}`,
                     name: `🎯 ${m.title}`,
                     start: dueDate,
-                    end: dueDate,
+                    end: endDate,
                     progress: m.completed_at ? 100 : 0,
                     type: 'milestone' as const,
                     project: 'Milestones',
@@ -168,11 +172,15 @@ const TimelineView: React.FC<TimelineViewProps> = ({
             .filter(g => g.due_date)
             .map((g) => {
                 const dueDate = new Date(g.due_date!);
+                // Ensure at least 1 day duration for visibility
+                const endDate = new Date(dueDate);
+                endDate.setDate(endDate.getDate() + 1);
+                
                 return {
                     id: `goal-${g.id}`,
                     name: `⭐ ${g.title}`,
                     start: dueDate,
-                    end: dueDate,
+                    end: endDate,
                     progress: g.status === 'completed' ? 100 : g.progress || 0,
                     type: 'milestone' as const,
                     project: 'Goals',
@@ -185,6 +193,8 @@ const TimelineView: React.FC<TimelineViewProps> = ({
                     },
                 };
             });
+        
+        console.log('Timeline tasks:', workItemTasks.length, 'milestones:', milestoneTasks.length, 'goals:', goalTasks.length);
         
         return [...workItemTasks, ...milestoneTasks, ...goalTasks];
     }, [workItems, milestones, goals]);
