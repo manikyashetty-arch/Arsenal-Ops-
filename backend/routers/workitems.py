@@ -1177,9 +1177,10 @@ async def get_hours_analytics(
         
         weekly_hours.append({
             "week": current_week_start.strftime("%Y-%m-%d"),
-            "week_end": min(week_end, today).strftime("%Y-%m-%d"),
+            "week_end": week_end.strftime("%Y-%m-%d"),
             "week_label": f"Week {week_num}",
-            "date_range": f"{current_week_start.strftime('%Y-%m-%d')} - {min(week_end, today).strftime('%Y-%m-%d')}",
+            # Always show full Sun-Sat range for the week label, not truncated to today
+            "date_range": f"{current_week_start.strftime('%Y-%m-%d')} - {week_end.strftime('%Y-%m-%d')}",
             "allocated_hours": week_allocated,
             "logged_hours": week_logged,
             "items_completed": len(week_items_completed)
