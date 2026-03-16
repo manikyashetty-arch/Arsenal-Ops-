@@ -228,6 +228,25 @@ def run_migrations():
                 print("[MIGRATION] time_entries table created!")
         except Exception as e:
             print(f"[MIGRATION ERROR] {e}")
+        
+        # Migration: Add key_prefix column to projects
+        try:
+            result = conn.execute(text("""
+                SELECT column_name 
+                FROM information_schema.columns 
+                WHERE table_name = 'projects' AND column_name = 'key_prefix'
+            """))
+            
+            if not result.fetchone():
+                print("[MIGRATION] Adding key_prefix column to projects...")
+                conn.execute(text("""
+                    ALTER TABLE projects 
+                    ADD COLUMN key_prefix VARCHAR(10) DEFAULT 'PROJ'
+                """))
+                conn.commit()
+                print("[MIGRATION] key_prefix column added successfully!")
+        except Exception as e:
+            print(f"[MIGRATION ERROR] {e}")
 
 def init_db():
     """Initialize database tables"""

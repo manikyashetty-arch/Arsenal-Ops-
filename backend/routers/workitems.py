@@ -190,7 +190,7 @@ async def create_work_item(
         raise HTTPException(status_code=404, detail="Project not found")
     
     # Generate key using project's key_prefix
-    key_prefix = project.key_prefix if project.key_prefix else "PROJ"
+    key_prefix = getattr(project, 'key_prefix', None) or "PROJ"
     item_number = get_next_item_number(db, item.project_id)
     key = f"{key_prefix}-{item_number}"
     

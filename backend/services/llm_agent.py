@@ -13,7 +13,7 @@ client = AzureOpenAI(
     azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT", ""),
     api_key=os.getenv("AZURE_OPENAI_API_KEY", ""),
     api_version=os.getenv("AZURE_OPENAI_API_VERSION", "2024-02-15-preview"),
-    timeout=25.0  # 25 second timeout to stay under Render's 30s limit
+    timeout=90.0  # 90 second timeout for complex AI operations
 )
 
 # Default deployment name

@@ -771,13 +771,25 @@ const ProjectBoard = () => {
 
             if (response.ok) {
                 const data = await response.json();
+                
+                // Check if AI actually created tickets
+                if (!data.success || data.tickets_created === 0) {
+                    toast.error(data.error || 'AI failed to generate tickets. Existing tickets preserved.');
+                    setAiStep('preview');
+                    return;
+                }
+                
                 setAiStep('done');
                 toast.success(`Created ${data.tickets_created} tickets${data.sprints?.length ? ` in ${data.sprints.length} sprints` : ''}!`);
                 
-                // Refresh work items and sprints
+                // Refresh work items and sprints with auth headers
                 const [itemsRes, sprintsRes] = await Promise.all([
-                    fetch(`${API_BASE_URL}/api/workitems/?project_id=${project.id}`),
-                    fetch(`${API_BASE_URL}/api/workitems/projects/${project.id}/sprints`),
+                    fetch(`${API_BASE_URL}/api/workitems/?project_id=${project.id}`, {
+                        headers: { 'Authorization': `Bearer ${token}` }
+                    }),
+                    fetch(`${API_BASE_URL}/api/workitems/projects/${project.id}/sprints`, {
+                        headers: { 'Authorization': `Bearer ${token}` }
+                    }),
                 ]);
                 if (itemsRes.ok) {
                     setWorkItems(await itemsRes.json());

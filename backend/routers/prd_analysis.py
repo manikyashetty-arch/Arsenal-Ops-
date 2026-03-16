@@ -389,12 +389,11 @@ async def commit_architecture(
     if not architecture:
         raise HTTPException(status_code=404, detail="Architecture not found")
     
-    # Delete existing work items and sprints for this project to avoid duplicates
-    # First delete all work items (they have foreign key to sprints)
-    db.query(WorkItem).filter(WorkItem.project_id == project_id).delete(synchronize_session=False)
-    # Then delete all sprints
-    db.query(Sprint).filter(Sprint.project_id == project_id).delete(synchronize_session=False)
-    db.commit()
+    # Get PRD analysis for the project (to enrich ticket generation)
+    prd_analysis = db.query(PRDAnalysis).filter(
+        PRDAnalysis.project_id == project_id
+    ).order_by(PRDAnalysis.created_at.desc()).first()
+    prd_data = prd_analysis.to_dict() if prd_analysis else None
     
     # Get project developers with their roles
     developers = []
@@ -433,14 +432,32 @@ async def commit_architecture(
         except ValueError:
             pass
     
-    # Generate tickets using AI with sprint planning
+    # Generate tickets using AI with sprint planning FIRST
+    # This way we don't delete existing tickets if generation fails
     ticket_result = await architecture_generator.generate_tickets_from_architecture(
         architecture=architecture.to_dict(),
+        prd_analysis=prd_data,
         developers=developers,
         project_name=project.name,
         start_date=start_date,
         end_date=end_date
     )
+    
+    # Check if we got tickets - if not, return error without deleting anything
+    tickets = ticket_result.get("tickets", [])
+    if not tickets:
+        return {
+            "success": False,
+            "error": "AI failed to generate tickets. Existing tickets preserved.",
+            "tickets_created": 0,
+            "sprints_created": 0
+        }
+    
+    # NOW delete existing work items and sprints for this project
+    # We have new tickets ready, so safe to delete old ones
+    db.query(WorkItem).filter(WorkItem.project_id == project_id).delete(synchronize_session=False)
+    db.query(Sprint).filter(Sprint.project_id == project_id).delete(synchronize_session=False)
+    db.commit()
     
     # Create sprints if timeline is provided
     sprints_created = []
@@ -466,8 +483,8 @@ async def commit_architecture(
     
     # Create work items in database
     created_tickets = []
-    # Get the max key number for this project's key prefix to avoid duplicates
-    key_prefix = project.status[:4].upper() if project.status else "PROJ"
+    # Get the key prefix from project, or generate from project name
+    key_prefix = getattr(project, 'key_prefix', None) or (project.name[:4].upper() if project.name else "PROJ")
     # Find max existing number for this prefix across ALL projects
     existing_keys = db.query(WorkItem.key).filter(WorkItem.key.like(f"{key_prefix}-%")).all()
     max_number = 0
@@ -582,6 +599,12 @@ async def preview_generated_tickets(
     if not architecture:
         raise HTTPException(status_code=404, detail="Architecture not found")
     
+    # Get PRD analysis for the project (to enrich ticket generation)
+    prd_analysis = db.query(PRDAnalysis).filter(
+        PRDAnalysis.project_id == project_id
+    ).order_by(PRDAnalysis.created_at.desc()).first()
+    prd_data = prd_analysis.to_dict() if prd_analysis else None
+    
     # Get project developers
     developers = []
     result = db.execute(
@@ -608,6 +631,7 @@ async def preview_generated_tickets(
     # Generate tickets preview
     ticket_result = await architecture_generator.generate_tickets_from_architecture(
         architecture=architecture.to_dict(),
+        prd_analysis=prd_data,
         developers=developers,
         project_name=project.name
     )

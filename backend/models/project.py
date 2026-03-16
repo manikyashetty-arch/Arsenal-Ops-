@@ -22,6 +22,7 @@ class Project(Base):
     
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(255), nullable=False)
+    key_prefix = Column(String(10), default="PROJ")  # Short key for work items (e.g., PROJ-123)
     description = Column(Text, nullable=False)
     vision = Column(Text)
     target_market = Column(String(255))

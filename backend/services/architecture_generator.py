@@ -7,11 +7,13 @@ from typing import List, Dict, Any, Optional
 from openai import AzureOpenAI
 
 # Initialize Azure OpenAI client
+# Note: PRD analysis can take 30-60 seconds. Render free tier has 30s limit.
+# For production, consider using background jobs or upgrading Render.
 client = AzureOpenAI(
     azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT", ""),
     api_key=os.getenv("AZURE_OPENAI_API_KEY", ""),
     api_version=os.getenv("AZURE_OPENAI_API_VERSION", "2024-02-15-preview"),
-    timeout=25.0  # 25 second timeout to stay under Render's 30s limit
+    timeout=90.0  # 90 second timeout for complex PRD analysis
 )
 
 DEPLOYMENT_NAME = os.getenv("AZURE_OPENAI_DEPLOYMENT", "gpt-4o-mini")
@@ -252,15 +254,37 @@ Return as JSON with keys:
         developers: List[Dict[str, Any]],
         project_name: str,
         start_date = None,
-        end_date = None
+        end_date = None,
+        prd_analysis: Dict[str, Any] = None
     ) -> Dict[str, Any]:
         """
-        Generate Jira tickets from selected architecture and assign to developers
+        Generate Jira tickets from selected architecture and PRD analysis
+        Assign to developers based on their specialization
         If timeline is provided, divide tickets into sprints
         """
         arch_name = architecture.get("name", "Architecture")
         arch_desc = architecture.get("description", "")
         mermaid_code = architecture.get("mermaid_code", "")
+        
+        # Build PRD context if available
+        prd_context = ""
+        if prd_analysis:
+            summary = prd_analysis.get("summary", "")
+            key_features = prd_analysis.get("key_features", [])
+            tech_reqs = prd_analysis.get("technical_requirements", [])
+            timeline_data = prd_analysis.get("timeline", [])
+            
+            prd_context = f"""
+PRD ANALYSIS:
+- Summary: {summary}
+- Key Features: {', '.join(key_features[:10]) if key_features else 'Not specified'}
+- Technical Requirements: {', '.join(tech_reqs[:10]) if tech_reqs else 'Not specified'}
+- Timeline Phases: {len(timeline_data)} phases planned
+"""
+            if timeline_data:
+                prd_context += "\nPRD Timeline:\n"
+                for phase in timeline_data[:5]:
+                    prd_context += f"  - {phase.get('phase', 'Unknown')}: {phase.get('duration', 'TBD')}\n"
         
         # Format developers info
         devs_info = []
@@ -312,14 +336,14 @@ ARCHITECTURE DESCRIPTION: {arch_desc}
 
 ARCHITECTURE DIAGRAM:
 {mermaid_code}
-
+{prd_context}
 AVAILABLE DEVELOPERS:
 {devs_str}
 {timeline_context}
 
 Create a comprehensive set of Jira tickets to implement this architecture. For each ticket:
 
-1. Analyze the architecture components
+1. Analyze the architecture components and PRD requirements
 2. Break down into implementable tasks
 3. Assign to the most suitable developer based on their role/responsibilities
 4. Estimate story points and hours
