@@ -55,17 +55,14 @@ for fe in production_frontends:
     if fe not in cors_origins:
         cors_origins.append(fe)
 
-# In production, allow all origins to avoid CORS issues with Vercel previews
-# This is safe because we use authentication tokens
-if os.getenv("ENVIRONMENT") == "production":
-    cors_origins = ["*"]
-
 # Allow wildcard in development
 if os.getenv("ENVIRONMENT") != "production":
     cors_origins.append("*")
 
 print(f"DEBUG CORS Origins: {cors_origins}")  # Debug logging
 
+# Note: allow_credentials=True cannot be used with allow_origins=["*"]
+# So we use specific origins list instead of wildcard in production
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins,
