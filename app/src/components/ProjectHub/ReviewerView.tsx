@@ -36,12 +36,7 @@ interface ReviewerViewProps {
     onTaskUpdate?: (itemId: string, updates: any) => void;
 }
 
-const STATUS_COLOR: Record<string, string> = {
-    done: '#10B981',
-    in_progress: '#F59E0B',
-    in_review: '#8B5CF6',
-    todo: '#64748B',
-};
+// STATUS_COLOR available for future use if needed
 
 const PRIORITY_COLOR: Record<string, string> = {
     high: '#EF4444',
@@ -50,7 +45,7 @@ const PRIORITY_COLOR: Record<string, string> = {
     critical: '#DC2626',
 };
 
-const ReviewerView: React.FC<ReviewerViewProps> = ({ workItems, projectId, token, onTaskUpdate }) => {
+const ReviewerView: React.FC<ReviewerViewProps> = ({ workItems, projectId: _projectId, token, onTaskUpdate }) => {
     const [comments, setComments] = useState<Record<string, Comment[]>>({});
     const [newComment, setNewComment] = useState<Record<string, string>>({});
     const [logHoursInput, setLogHoursInput] = useState<Record<string, string>>({});
