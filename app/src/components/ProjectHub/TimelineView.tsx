@@ -1,6 +1,4 @@
-import React, { useMemo, useState } from 'react';
-import { Gantt, Task, ViewMode } from 'gantt-task-react';
-import "gantt-task-react/dist/index.css";
+import React, { useMemo, useState, useRef, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Plus, X } from 'lucide-react';
 
@@ -50,8 +48,73 @@ interface TimelineViewProps {
     onTaskCreate?: (task: { title: string; start_date: string; due_date: string; estimated_hours: number; assignee_id?: number }) => void;
 }
 
-const TimelineView: React.FC<TimelineViewProps> = ({ 
-    workItems, 
+type ZoomLevel = 'day' | 'week' | 'month';
+
+/** Parse a date string into local midnight — timezone-safe */
+function parseLocalDate(str: string): Date {
+    const clean = str.endsWith('Z') ? str.slice(0, -1) : str;
+    const datePart = clean.includes('T') ? clean.split('T')[0] : clean;
+    const [year, month, day] = datePart.split('-').map(Number);
+    return new Date(year, month - 1, day, 0, 0, 0, 0);
+}
+
+/** Add days to a date, returns new Date */
+function addDays(date: Date, days: number): Date {
+    const d = new Date(date);
+    d.setDate(d.getDate() + days);
+    return d;
+}
+
+/** Format date as "Mar 15" */
+function fmtShort(date: Date): string {
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+/** Format date as "March 2026" */
+function fmtMonth(date: Date): string {
+    return date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+}
+
+/** Get column width in px based on zoom level */
+function colWidth(zoom: ZoomLevel): number {
+    if (zoom === 'day') return 40;
+    if (zoom === 'week') return 120;
+    return 160; // month
+}
+
+/** Get step in days for each column based on zoom */
+function colDays(zoom: ZoomLevel): number {
+    if (zoom === 'day') return 1;
+    if (zoom === 'week') return 7;
+    return 30;
+}
+
+/** Number of columns to render on each side of the viewport for infinite scroll */
+const BUFFER_COLS = 30;
+/** Row height in px */
+const ROW_HEIGHT = 44;
+/** Left label width in px */
+const LABEL_WIDTH = 200;
+
+interface GanttRow {
+    id: string;
+    label: string;
+    start: Date;
+    end: Date;
+    color: string;
+    type: 'task' | 'milestone' | 'goal';
+    progress: number;
+}
+
+const STATUS_COLOR: Record<string, string> = {
+    done: '#10B981',
+    in_progress: '#F59E0B',
+    in_review: '#8B5CF6',
+    todo: '#64748B',
+};
+
+const TimelineView: React.FC<TimelineViewProps> = ({
+    workItems,
     milestones = [],
     goals = [],
     projectStartDate,
@@ -61,8 +124,13 @@ const TimelineView: React.FC<TimelineViewProps> = ({
     onTaskUpdate,
     onTaskCreate
 }) => {
-    const [viewMode, setViewMode] = useState<ViewMode>(ViewMode.Week);
-    const [currentDate, setCurrentDate] = useState(new Date());
+    const [zoom, setZoom] = useState<ZoomLevel>('week');
+    const [viewStart, setViewStart] = useState<Date>(() => {
+        // Start view at today minus 2 columns so there's context
+        const d = new Date();
+        d.setDate(d.getDate() - colDays('week') * 2);
+        return d;
+    });
     const [showAddModal, setShowAddModal] = useState(false);
     const [newTask, setNewTask] = useState({
         title: '',
@@ -72,158 +140,102 @@ const TimelineView: React.FC<TimelineViewProps> = ({
         assignee_id: undefined as number | undefined
     });
 
-    // Calculate project start (Sunday of the week containing project creation)
-    const projectStart = useMemo(() => {
-        if (!projectStartDate) return new Date();
-        const date = new Date(projectStartDate);
-        // Find Sunday of that week
-        const day = date.getDay();
-        const diff = date.getDate() - day;
-        return new Date(date.setDate(diff));
-    }, [projectStartDate]);
+    const scrollRef = useRef<HTMLDivElement>(null);
 
-    const tasks: Task[] = useMemo(() => {
-        console.log('Timeline workItems:', workItems);
-        const workItemTasks = workItems
+    // Build rows from workItems, milestones, goals
+    const rows: GanttRow[] = useMemo(() => {
+        const taskRows: GanttRow[] = workItems
             .filter(item => item.start_date || item.due_date)
-            .map((item) => {
-                // Parse dates properly - handle both ISO strings and date objects
-                const startStr = item.start_date || item.due_date;
-                const endStr = item.due_date || item.start_date;
-                const startDate = startStr ? new Date(startStr) : new Date();
-                const endDate = endStr ? new Date(endStr) : new Date(startDate.getTime() + 7 * 24 * 60 * 60 * 1000);
-                
-                // Ensure end date is after start date
-                if (endDate <= startDate) {
-                    endDate.setDate(startDate.getDate() + 1);
-                }
-                
-                console.log('Task:', item.key, 'Start:', startDate, 'End:', endDate);
-                
-                let backgroundColor = '#6366F1';
-                let progressColor = '#818CF8';
-                
-                switch (item.status) {
-                    case 'done':
-                        backgroundColor = '#10B981';
-                        progressColor = '#34D399';
-                        break;
-                    case 'in_progress':
-                        backgroundColor = '#F59E0B';
-                        progressColor = '#FBBF24';
-                        break;
-                    case 'in_review':
-                        backgroundColor = '#8B5CF6';
-                        progressColor = '#A78BFA';
-                        break;
-                    case 'todo':
-                        backgroundColor = '#64748B';
-                        progressColor = '#94A3B8';
-                        break;
-                }
-
+            .map(item => {
+                const start = parseLocalDate((item.start_date || item.due_date)!);
+                const end = parseLocalDate((item.due_date || item.start_date)!);
+                const isOverdue = item.due_date && parseLocalDate(item.due_date) < new Date() && item.status !== 'done';
+                const color = isOverdue ? '#EF4444' : (STATUS_COLOR[item.status] || '#6366F1');
                 return {
                     id: item.id,
-                    name: `${item.key}: ${item.title}`,
-                    start: startDate,
-                    end: endDate,
-                    progress: item.status === 'done' ? 100 : item.status === 'in_progress' ? 50 : 0,
+                    label: `${item.key}: ${item.title}`,
+                    start,
+                    end: end < start ? start : end,
+                    color,
                     type: 'task' as const,
-                    project: item.key,
-                    isDisabled: false,
-                    styles: {
-                        backgroundColor,
-                        backgroundSelectedColor: backgroundColor,
-                        progressColor,
-                        progressSelectedColor: progressColor,
-                    },
+                    progress: item.status === 'done' ? 100 : item.status === 'in_progress' ? 50 : 0,
                 };
             });
-        
-        // Add milestones as tasks
-        const milestoneTasks: Task[] = milestones
+
+        const milestoneRows: GanttRow[] = milestones
             .filter(m => m.due_date)
-            .map((m) => {
-                const dueDate = new Date(m.due_date!);
-                // Ensure at least 1 day duration for visibility
-                const endDate = new Date(dueDate);
-                endDate.setDate(endDate.getDate() + 1);
-                
+            .map(m => {
+                const due = parseLocalDate(m.due_date!);
                 return {
                     id: `milestone-${m.id}`,
-                    name: `🎯 ${m.title}`,
-                    start: dueDate,
-                    end: endDate,
-                    progress: m.completed_at ? 100 : 0,
+                    label: `🎯 ${m.title}`,
+                    start: due,
+                    end: due,
+                    color: m.completed_at ? '#10B981' : '#EC4899',
                     type: 'milestone' as const,
-                    project: 'Milestones',
-                    isDisabled: true,
-                    styles: {
-                        backgroundColor: m.completed_at ? '#10B981' : '#EC4899',
-                        backgroundSelectedColor: m.completed_at ? '#10B981' : '#EC4899',
-                        progressColor: m.completed_at ? '#34D399' : '#F472B6',
-                        progressSelectedColor: m.completed_at ? '#34D399' : '#F472B6',
-                    },
+                    progress: m.completed_at ? 100 : 0,
                 };
             });
-        
-        // Add goals as tasks
-        const goalTasks: Task[] = goals
+
+        const goalRows: GanttRow[] = goals
             .filter(g => g.due_date)
-            .map((g) => {
-                const dueDate = new Date(g.due_date!);
-                // Ensure at least 1 day duration for visibility
-                const endDate = new Date(dueDate);
-                endDate.setDate(endDate.getDate() + 1);
-                
+            .map(g => {
+                const due = parseLocalDate(g.due_date!);
                 return {
                     id: `goal-${g.id}`,
-                    name: `⭐ ${g.title}`,
-                    start: dueDate,
-                    end: endDate,
-                    progress: g.status === 'completed' ? 100 : g.progress || 0,
-                    type: 'milestone' as const,
-                    project: 'Goals',
-                    isDisabled: true,
-                    styles: {
-                        backgroundColor: g.status === 'completed' ? '#10B981' : '#F59E0B',
-                        backgroundSelectedColor: g.status === 'completed' ? '#10B981' : '#F59E0B',
-                        progressColor: g.status === 'completed' ? '#34D399' : '#FBBF24',
-                        progressSelectedColor: g.status === 'completed' ? '#34D399' : '#FBBF24',
-                    },
+                    label: `⭐ ${g.title}`,
+                    start: due,
+                    end: due,
+                    color: g.status === 'completed' ? '#10B981' : '#F59E0B',
+                    type: 'goal' as const,
+                    progress: g.status === 'completed' ? 100 : (g.progress || 0),
                 };
             });
-        
-        console.log('Timeline tasks:', workItemTasks.length, 'milestones:', milestoneTasks.length, 'goals:', goalTasks.length);
-        
-        return [...workItemTasks, ...milestoneTasks, ...goalTasks];
+
+        return [...taskRows, ...milestoneRows, ...goalRows];
     }, [workItems, milestones, goals]);
 
-    const handleZoomIn = () => {
-        if (viewMode === ViewMode.Month) setViewMode(ViewMode.Week);
-        else if (viewMode === ViewMode.Week) setViewMode(ViewMode.Day);
+    // Total visible columns = viewport width / colWidth, plus buffer on both sides
+    const TOTAL_COLS = BUFFER_COLS * 2 + 60; // render 60 cols visible + buffer
+
+    // Column headers: each column = one colDays(zoom) unit starting from viewStart - BUFFER_COLS*colDays
+    const gridStart = useMemo(() => addDays(viewStart, -BUFFER_COLS * colDays(zoom)), [viewStart, zoom]);
+
+    const columns = useMemo(() => {
+        return Array.from({ length: TOTAL_COLS }, (_, i) => {
+            const date = addDays(gridStart, i * colDays(zoom));
+            return date;
+        });
+    }, [gridStart, zoom, TOTAL_COLS]);
+
+    const cw = colWidth(zoom);
+    const totalWidth = TOTAL_COLS * cw;
+
+    // Convert a date to X pixel offset within the grid
+    const dateToX = useCallback((date: Date): number => {
+        const diffMs = date.getTime() - gridStart.getTime();
+        const diffDays = diffMs / (1000 * 60 * 60 * 24);
+        return (diffDays / colDays(zoom)) * cw;
+    }, [gridStart, zoom, cw]);
+
+    // Scroll to viewStart on mount and when viewStart/zoom changes
+    useEffect(() => {
+        if (!scrollRef.current) return;
+        // Scroll so that viewStart is at the left edge
+        const x = BUFFER_COLS * cw;
+        scrollRef.current.scrollLeft = x;
+    }, [viewStart, zoom, cw]);
+
+    // Navigate: move viewStart forward/backward
+    const navigateBy = (direction: 1 | -1) => {
+        const step = colDays(zoom) * 4; // move 4 columns at a time
+        setViewStart(prev => addDays(prev, direction * step));
     };
 
-    const handleZoomOut = () => {
-        if (viewMode === ViewMode.Day) setViewMode(ViewMode.Week);
-        else if (viewMode === ViewMode.Week) setViewMode(ViewMode.Month);
-    };
-
-    // Handle task date change (drag to resize)
-    const handleDateChange = (task: Task) => {
-        if (onTaskUpdate) {
-            onTaskUpdate(task.id, {
-                start_date: task.start.toISOString().split('T')[0],
-                due_date: task.end.toISOString().split('T')[0]
-            });
-        }
-    };
-
-    const handleClick = (task: Task) => {
-        const item = workItems.find(wi => wi.id === task.id);
-        if (item && onTaskClick) {
-            onTaskClick(item);
-        }
+    const goToToday = () => {
+        const d = new Date();
+        d.setDate(d.getDate() - colDays(zoom) * 2);
+        setViewStart(d);
     };
 
     const handleAddTask = () => {
@@ -246,50 +258,33 @@ const TimelineView: React.FC<TimelineViewProps> = ({
         }
     };
 
-    // Calculate view date - use currentDate from navigation
-    const viewDate = useMemo(() => {
-        return currentDate;
-    }, [currentDate]);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const todayX = dateToX(today);
 
-    // ganttKey forces a full re-mount of the Gantt when navigation changes,
-    // because gantt-task-react only reads viewDate on initial mount.
-    const ganttKey = `${currentDate.getFullYear()}-${currentDate.getMonth()}-${currentDate.getDate()}-${viewMode}`;
+    // Month label groups for header top row
+    const monthGroups = useMemo(() => {
+        const groups: { label: string; x: number; width: number }[] = [];
+        let currentMonth = '';
+        let groupStart = 0;
+        columns.forEach((date, i) => {
+            const label = fmtMonth(date);
+            if (label !== currentMonth) {
+                if (currentMonth) {
+                    groups.push({ label: currentMonth, x: groupStart, width: i * cw - groupStart });
+                }
+                currentMonth = label;
+                groupStart = i * cw;
+            }
+        });
+        if (currentMonth) {
+            groups.push({ label: currentMonth, x: groupStart, width: totalWidth - groupStart });
+        }
+        return groups;
+    }, [columns, cw, totalWidth]);
 
-    const displayOptions = {
-        columnWidth: viewMode === ViewMode.Day ? 60 : viewMode === ViewMode.Week ? 150 : 250,
-        listCellWidth: '',
-        rowHeight: 50,
-        barCornerRadius: 4,
-        barFill: 75,
-        ganttHeight: Math.min(500, tasks.length * 60 + 60),
-        viewMode,
-        viewDate,
-    };
-
-    if (tasks.length === 0 && !showAddModal) {
-        return (
-            <Card className="bg-[#0F0F1A] border-[rgba(244,246,255,0.1)]">
-                <CardHeader className="flex flex-row items-center justify-between">
-                    <CardTitle className="text-white flex items-center gap-2">
-                        Timeline View
-                    </CardTitle>
-                    {onTaskCreate && (
-                        <button 
-                            className="px-4 py-2 rounded-md bg-indigo-600 text-white hover:bg-indigo-700 transition-colors flex items-center gap-2"
-                            onClick={() => setShowAddModal(true)}
-                        >
-                            <Plus className="w-4 h-4" />
-                            Add Task
-                        </button>
-                    )}
-                </CardHeader>
-                <CardContent className="text-center py-12">
-                    <p className="text-[#64748B]">No tasks with dates to display</p>
-                    <p className="text-[#64748B] text-sm mt-2">Add start and due dates to your tasks to see them in the timeline</p>
-                </CardContent>
-            </Card>
-        );
-    }
+    const headerHeight = 56; // px for 2-row header
+    const chartHeight = Math.max(rows.length * ROW_HEIGHT + 20, 200);
 
     return (
         <>
@@ -300,7 +295,7 @@ const TimelineView: React.FC<TimelineViewProps> = ({
                     </CardTitle>
                     <div className="flex items-center gap-2">
                         {onTaskCreate && (
-                            <button 
+                            <button
                                 className="px-3 py-1.5 rounded-md bg-indigo-600 text-white hover:bg-indigo-700 transition-colors flex items-center gap-2 text-sm"
                                 onClick={() => setShowAddModal(true)}
                             >
@@ -308,179 +303,275 @@ const TimelineView: React.FC<TimelineViewProps> = ({
                                 Add Task
                             </button>
                         )}
-                        <div className="w-px h-6 bg-gray-600 mx-2" />
-                        <button 
+                        <div className="w-px h-6 bg-gray-600 mx-1" />
+                        <button
                             className="px-3 py-1.5 rounded-md border border-gray-600 text-white bg-transparent hover:bg-gray-700 transition-colors"
-                            onClick={() => setCurrentDate(new Date(currentDate.getTime() - 7 * 24 * 60 * 60 * 1000))}
+                            onClick={() => navigateBy(-1)}
+                            title="Previous"
                         >
                             <ChevronLeft className="w-4 h-4" />
                         </button>
-                        <button 
-                            className="px-3 py-1.5 rounded-md border border-gray-600 text-white bg-transparent hover:bg-gray-700 transition-colors"
-                            onClick={() => setCurrentDate(new Date())}
+                        <button
+                            className="px-3 py-1.5 rounded-md border border-gray-600 text-white bg-transparent hover:bg-gray-700 transition-colors text-sm"
+                            onClick={goToToday}
                         >
                             Today
                         </button>
-                        <button 
+                        <button
                             className="px-3 py-1.5 rounded-md border border-gray-600 text-white bg-transparent hover:bg-gray-700 transition-colors"
-                            onClick={() => setCurrentDate(new Date(currentDate.getTime() + 7 * 24 * 60 * 60 * 1000))}
+                            onClick={() => navigateBy(1)}
+                            title="Next"
                         >
                             <ChevronRight className="w-4 h-4" />
                         </button>
-                        <div className="w-px h-6 bg-gray-600 mx-2" />
-                        <button 
-                            className="px-3 py-1.5 rounded-md border border-gray-600 text-white bg-transparent hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                            onClick={handleZoomIn} 
-                            disabled={viewMode === ViewMode.Day}
+                        <div className="w-px h-6 bg-gray-600 mx-1" />
+                        <button
+                            className="px-3 py-1.5 rounded-md border border-gray-600 text-white bg-transparent hover:bg-gray-700 transition-colors disabled:opacity-40"
+                            onClick={() => setZoom(z => z === 'month' ? 'week' : z === 'week' ? 'day' : 'day')}
+                            disabled={zoom === 'day'}
+                            title="Zoom In"
                         >
                             <ZoomIn className="w-4 h-4" />
                         </button>
-                        <button 
-                            className="px-3 py-1.5 rounded-md border border-gray-600 text-white bg-transparent hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                            onClick={handleZoomOut} 
-                            disabled={viewMode === ViewMode.Month}
+                        <button
+                            className="px-3 py-1.5 rounded-md border border-gray-600 text-white bg-transparent hover:bg-gray-700 transition-colors disabled:opacity-40"
+                            onClick={() => setZoom(z => z === 'day' ? 'week' : z === 'week' ? 'month' : 'month')}
+                            disabled={zoom === 'month'}
+                            title="Zoom Out"
                         >
                             <ZoomOut className="w-4 h-4" />
                         </button>
                     </div>
                 </CardHeader>
-                <CardContent>
-                    {/* Custom Week Labels */}
-                    <div className="mb-3 flex gap-2 overflow-x-auto pb-2">
-                        {tasks.length > 0 && (() => {
-                            // Find date range
-                            const dates = tasks.flatMap(t => [t.start, t.end]);
-                            const minDate = new Date(Math.min(...dates.map(d => d.getTime())));
-                            const maxDate = new Date(Math.max(...dates.map(d => d.getTime())));
-                            
-                            // Generate week labels
-                            const labels = [];
-                            let currentWeekStart = new Date(projectStart);
-                            let weekNum = 1;
-                            
-                            while (currentWeekStart <= maxDate) {
-                                const weekEnd = new Date(currentWeekStart);
-                                weekEnd.setDate(weekEnd.getDate() + 6);
-                                
-                                // Only show if within visible range
-                                if (weekEnd >= minDate) {
-                                    labels.push({
-                                        week: weekNum,
-                                        start: new Date(currentWeekStart),
-                                        end: new Date(weekEnd)
-                                    });
-                                }
-                                
-                                currentWeekStart.setDate(currentWeekStart.getDate() + 7);
-                                weekNum++;
-                            }
-                            
-                            return labels.map(({ week, start }) => (
-                                <div 
-                                    key={week}
-                                    className="flex-shrink-0 px-3 py-2 rounded-md bg-[#1A1A2E] text-center min-w-[100px]"
+                <CardContent className="p-0">
+                    <div className="flex" style={{ height: headerHeight + chartHeight }}>
+                        {/* Left labels panel */}
+                        <div
+                            className="flex-shrink-0 bg-[#0F0F1A] border-r border-[rgba(244,246,255,0.1)] z-10"
+                            style={{ width: LABEL_WIDTH }}
+                        >
+                            {/* Header spacer */}
+                            <div style={{ height: headerHeight }} className="border-b border-[rgba(244,246,255,0.1)]" />
+                            {/* Row labels */}
+                            {rows.length === 0 ? (
+                                <div className="flex items-center justify-center h-full text-[#64748B] text-sm px-4 text-center">
+                                    No tasks with dates.<br />Add dates to see the timeline.
+                                </div>
+                            ) : (
+                                rows.map((row, i) => (
+                                    <div
+                                        key={row.id}
+                                        className="flex items-center px-3 text-sm truncate cursor-pointer hover:bg-[#1A1A2E] transition-colors"
+                                        style={{ height: ROW_HEIGHT, borderBottom: '1px solid rgba(244,246,255,0.04)' }}
+                                        onClick={() => {
+                                            if (row.type === 'task' && onTaskClick) {
+                                                const item = workItems.find(w => w.id === row.id);
+                                                if (item) onTaskClick(item);
+                                            }
+                                        }}
+                                        title={row.label}
+                                    >
+                                        <div
+                                            className="w-2 h-2 rounded-full flex-shrink-0 mr-2"
+                                            style={{ backgroundColor: row.color }}
+                                        />
+                                        <span className="text-[#CBD5E1] truncate text-xs">{row.label}</span>
+                                    </div>
+                                ))
+                            )}
+                        </div>
+
+                        {/* Scrollable gantt area */}
+                        <div
+                            ref={scrollRef}
+                            className="flex-1 overflow-x-auto overflow-y-hidden relative"
+                            style={{ scrollBehavior: 'smooth' }}
+                        >
+                            <div style={{ width: totalWidth, position: 'relative' }}>
+                                {/* Header: month row + date/week row */}
+                                <div
+                                    className="sticky top-0 z-20 bg-[#0F0F1A] border-b border-[rgba(244,246,255,0.1)]"
+                                    style={{ height: headerHeight }}
                                 >
-                                    <div className="text-white font-medium text-sm">W{week}</div>
-                                    <div className="text-[#64748B] text-xs">
-                                        {start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                                    {/* Month labels */}
+                                    <div style={{ height: 24, position: 'relative', borderBottom: '1px solid rgba(244,246,255,0.05)' }}>
+                                        {monthGroups.map((g, i) => (
+                                            <div
+                                                key={i}
+                                                className="absolute top-0 text-xs font-semibold text-white px-2 flex items-center overflow-hidden"
+                                                style={{ left: g.x, width: g.width, height: 24 }}
+                                            >
+                                                {g.label}
+                                            </div>
+                                        ))}
+                                    </div>
+                                    {/* Date/Week labels */}
+                                    <div style={{ height: 32, position: 'relative' }}>
+                                        {columns.map((date, i) => {
+                                            const isToday = date.toDateString() === today.toDateString();
+                                            const isWeekend = date.getDay() === 0 || date.getDay() === 6;
+                                            return (
+                                                <div
+                                                    key={i}
+                                                    className={`absolute top-0 flex items-center justify-center text-xs border-r border-[rgba(244,246,255,0.04)] ${isToday ? 'text-indigo-400 font-bold' : isWeekend ? 'text-[#4B5563]' : 'text-[#94A3B8]'}`}
+                                                    style={{ left: i * cw, width: cw, height: 32 }}
+                                                >
+                                                    {zoom === 'day'
+                                                        ? date.getDate()
+                                                        : zoom === 'week'
+                                                            ? fmtShort(date)
+                                                            : date.toLocaleDateString('en-US', { month: 'short' })
+                                                    }
+                                                </div>
+                                            );
+                                        })}
                                     </div>
                                 </div>
-                            ));
-                        })()}
-                    </div>
-                    
-                    <style>{`
-                        .gantt-task-react-root {
-                            font-family: inherit;
-                            overflow-x: auto;
-                        }
-                        .gantt-task-react-root svg {
-                            background: #0F0F1A !important;
-                        }
-                        .gantt-task-react-root .grid-row-line {
-                            stroke: rgba(244,246,255,0.06) !important;
-                        }
-                        .gantt-task-react-root .grid-tick-line {
-                            stroke: rgba(244,246,255,0.06) !important;
-                        }
-                        .gantt-task-react-root .calendar-top {
-                            fill: #1A1A2E !important;
-                            font-weight: 600;
-                            font-size: 13px;
-                        }
-                        .gantt-task-react-root .calendar-bottom {
-                            fill: #64748B !important;
-                            font-size: 11px;
-                        }
-                        .gantt-task-react-root .calendar-top text,
-                        .gantt-task-react-root .calendar-bottom text {
-                            fill: white !important;
-                        }
-                        .gantt-task-react-root .today-highlight {
-                            fill: rgba(99, 102, 241, 0.12) !important;
-                        }
-                        .gantt-task-react-root rect[fill="white"],
-                        .gantt-task-react-root rect[fill="#fff"],
-                        .gantt-task-react-root rect[fill="#ffffff"] {
-                            fill: #0F0F1A !important;
-                        }
-                        .gantt-task-react-root .bar-wrapper {
-                            cursor: grab;
-                        }
-                        .gantt-task-react-root .bar-wrapper:active {
-                            cursor: grabbing;
-                        }
-                        .gantt-task-react-root .bar-wrapper:hover rect {
-                            filter: brightness(1.15);
-                        }
-                        .gantt-task-react-root .bar-label {
-                            fill: white !important;
-                            font-size: 11px;
-                        }
-                        .gantt-task-react-root .handleGroup {
-                            cursor: ew-resize;
-                        }
-                    `}</style>
-                    <div className="rounded-lg overflow-hidden bg-[#0F0F1A]">
-                        <Gantt
-                            key={ganttKey}
-                            tasks={tasks}
-                            {...displayOptions}
-                            onClick={handleClick}
-                            onDateChange={handleDateChange}
-                            TooltipContent={({ task }: { task: Task }) => (
-                                <div className="bg-[#1A1A2E] p-3 rounded-lg shadow-xl border border-[rgba(244,246,255,0.1)]">
-                                    <p className="text-white font-medium">{task.name}</p>
-                                    <p className="text-[#64748B] text-sm">
-                                        {task.start.toLocaleDateString()} - {task.end.toLocaleDateString()}
-                                    </p>
-                                    <p className="text-[#64748B] text-sm">
-                                        Progress: {task.progress}%
-                                    </p>
-                                    <p className="text-indigo-400 text-xs mt-1">
-                                        Drag edges to adjust dates
-                                    </p>
+
+                                {/* Grid + bars */}
+                                <div style={{ height: chartHeight, position: 'relative' }}>
+                                    {/* Vertical grid lines */}
+                                    {columns.map((date, i) => {
+                                        const isWeekend = date.getDay() === 0 || date.getDay() === 6;
+                                        return (
+                                            <div
+                                                key={i}
+                                                style={{
+                                                    position: 'absolute',
+                                                    left: i * cw,
+                                                    top: 0,
+                                                    width: cw,
+                                                    height: chartHeight,
+                                                    backgroundColor: isWeekend ? 'rgba(244,246,255,0.015)' : 'transparent',
+                                                    borderRight: '1px solid rgba(244,246,255,0.04)',
+                                                }}
+                                            />
+                                        );
+                                    })}
+
+                                    {/* Today highlight */}
+                                    {todayX >= 0 && todayX <= totalWidth && (
+                                        <div
+                                            style={{
+                                                position: 'absolute',
+                                                left: todayX,
+                                                top: 0,
+                                                width: cw,
+                                                height: chartHeight,
+                                                backgroundColor: 'rgba(99,102,241,0.08)',
+                                                borderLeft: '2px solid rgba(99,102,241,0.6)',
+                                                pointerEvents: 'none',
+                                            }}
+                                        />
+                                    )}
+
+                                    {/* Horizontal row lines */}
+                                    {rows.map((_, i) => (
+                                        <div
+                                            key={i}
+                                            style={{
+                                                position: 'absolute',
+                                                left: 0,
+                                                top: i * ROW_HEIGHT,
+                                                width: totalWidth,
+                                                height: ROW_HEIGHT,
+                                                borderBottom: '1px solid rgba(244,246,255,0.04)',
+                                            }}
+                                        />
+                                    ))}
+
+                                    {/* Task bars */}
+                                    {rows.map((row, i) => {
+                                        const x1 = dateToX(row.start);
+                                        // For milestones/goals (same start=end), show diamond; add 1 colDays width minimum
+                                        const isMilestone = row.type !== 'task';
+                                        const endDate = isMilestone ? addDays(row.end, colDays(zoom)) : addDays(row.end, 1);
+                                        const x2 = dateToX(endDate);
+                                        const barWidth = Math.max(isMilestone ? cw * 0.6 : 4, x2 - x1);
+                                        const barTop = i * ROW_HEIGHT + 8;
+                                        const barHeight = ROW_HEIGHT - 16;
+
+                                        return (
+                                            <div
+                                                key={row.id}
+                                                style={{
+                                                    position: 'absolute',
+                                                    left: x1,
+                                                    top: barTop,
+                                                    width: barWidth,
+                                                    height: barHeight,
+                                                    backgroundColor: row.color,
+                                                    borderRadius: isMilestone ? '50%' : 4,
+                                                    opacity: 0.9,
+                                                    cursor: 'pointer',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    overflow: 'hidden',
+                                                    boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
+                                                }}
+                                                onClick={() => {
+                                                    if (row.type === 'task' && onTaskClick) {
+                                                        const item = workItems.find(w => w.id === row.id);
+                                                        if (item) onTaskClick(item);
+                                                    }
+                                                }}
+                                                title={`${row.label}\n${fmtShort(row.start)} → ${fmtShort(row.end)}`}
+                                            >
+                                                {/* Progress fill */}
+                                                {row.progress > 0 && (
+                                                    <div
+                                                        style={{
+                                                            position: 'absolute',
+                                                            left: 0,
+                                                            top: 0,
+                                                            width: `${row.progress}%`,
+                                                            height: '100%',
+                                                            backgroundColor: 'rgba(255,255,255,0.15)',
+                                                            borderRadius: 4,
+                                                        }}
+                                                    />
+                                                )}
+                                                {/* Label inside bar */}
+                                                {barWidth > 60 && (
+                                                    <span
+                                                        style={{
+                                                            fontSize: 10,
+                                                            color: 'white',
+                                                            paddingLeft: 6,
+                                                            whiteSpace: 'nowrap',
+                                                            overflow: 'hidden',
+                                                            textOverflow: 'ellipsis',
+                                                            position: 'relative',
+                                                            zIndex: 1,
+                                                        }}
+                                                    >
+                                                        {row.label}
+                                                    </span>
+                                                )}
+                                            </div>
+                                        );
+                                    })}
                                 </div>
-                            )}
-                        />
+                            </div>
+                        </div>
                     </div>
-                    <div className="flex items-center gap-4 mt-4 text-sm">
-                        <div className="flex items-center gap-2">
-                            <div className="w-3 h-3 rounded bg-[#10B981]" />
-                            <span className="text-[#64748B]">Done</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                            <div className="w-3 h-3 rounded bg-[#F59E0B]" />
-                            <span className="text-[#64748B]">In Progress</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                            <div className="w-3 h-3 rounded bg-[#8B5CF6]" />
-                            <span className="text-[#64748B]">In Review</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                            <div className="w-3 h-3 rounded bg-[#64748B]" />
-                            <span className="text-[#64748B]">To Do</span>
-                        </div>
+
+                    {/* Legend */}
+                    <div className="flex items-center gap-4 px-4 py-3 border-t border-[rgba(244,246,255,0.06)] text-xs">
+                        {[
+                            { color: '#10B981', label: 'Done' },
+                            { color: '#F59E0B', label: 'In Progress' },
+                            { color: '#8B5CF6', label: 'In Review' },
+                            { color: '#64748B', label: 'To Do' },
+                            { color: '#EF4444', label: 'Overdue' },
+                            { color: '#EC4899', label: 'Milestone' },
+                            { color: '#F59E0B', label: 'Goal' },
+                        ].map(({ color, label }) => (
+                            <div key={label} className="flex items-center gap-1.5">
+                                <div className="w-3 h-3 rounded" style={{ backgroundColor: color }} />
+                                <span className="text-[#64748B]">{label}</span>
+                            </div>
+                        ))}
                     </div>
                 </CardContent>
             </Card>
@@ -491,14 +582,10 @@ const TimelineView: React.FC<TimelineViewProps> = ({
                     <div className="bg-[#1A1A2E] rounded-lg p-6 w-full max-w-md border border-[rgba(244,246,255,0.1)]">
                         <div className="flex items-center justify-between mb-4">
                             <h3 className="text-white text-lg font-semibold">Add New Task</h3>
-                            <button 
-                                className="text-gray-400 hover:text-white"
-                                onClick={() => setShowAddModal(false)}
-                            >
+                            <button className="text-gray-400 hover:text-white" onClick={() => setShowAddModal(false)}>
                                 <X className="w-5 h-5" />
                             </button>
                         </div>
-                        
                         <div className="space-y-4">
                             <div>
                                 <label className="block text-sm text-gray-400 mb-1">Title *</label>
@@ -510,7 +597,6 @@ const TimelineView: React.FC<TimelineViewProps> = ({
                                     onChange={(e) => setNewTask({ ...newTask, title: e.target.value })}
                                 />
                             </div>
-                            
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
                                     <label className="block text-sm text-gray-400 mb-1">Start Date</label>
@@ -531,7 +617,6 @@ const TimelineView: React.FC<TimelineViewProps> = ({
                                     />
                                 </div>
                             </div>
-                            
                             <div>
                                 <label className="block text-sm text-gray-400 mb-1">Estimated Hours</label>
                                 <input
@@ -541,7 +626,6 @@ const TimelineView: React.FC<TimelineViewProps> = ({
                                     onChange={(e) => setNewTask({ ...newTask, estimated_hours: parseInt(e.target.value) || 0 })}
                                 />
                             </div>
-                            
                             <div>
                                 <label className="block text-sm text-gray-400 mb-1">Assignee</label>
                                 <select
@@ -556,7 +640,6 @@ const TimelineView: React.FC<TimelineViewProps> = ({
                                 </select>
                             </div>
                         </div>
-                        
                         <div className="flex justify-end gap-3 mt-6">
                             <button
                                 className="px-4 py-2 rounded-md border border-gray-600 text-white hover:bg-gray-700 transition-colors"
