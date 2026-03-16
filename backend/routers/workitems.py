@@ -981,7 +981,19 @@ async def get_hours_analytics(
     sprints = db.query(Sprint).filter(Sprint.project_id == project_id).order_by(Sprint.start_date).all()
     
     # Get all developers assigned to this project
-    developers = project.developers if hasattr(project, 'developers') else []
+    developers = list(project.developers) if hasattr(project, 'developers') else []
+    
+    # Also get developers who have logged time entries for this project's work items
+    # (they might not be formally assigned to the project)
+    developer_ids_from_entries = {te.developer_id for te in all_time_entries if te.developer_id}
+    existing_ids = {d.id for d in developers}
+    
+    for dev_id in developer_ids_from_entries:
+        if dev_id not in existing_ids:
+            dev = db.query(Developer).filter(Developer.id == dev_id).first()
+            if dev:
+                developers.append(dev)
+                existing_ids.add(dev_id)
     
     # Hours per sprint
     sprint_hours = []
@@ -1054,11 +1066,19 @@ async def get_hours_analytics(
         
         # Current week logged hours for this developer (Sunday to Saturday)
         from datetime import timedelta
-        # Find Sunday of current week
-        days_to_sunday = (datetime.utcnow().weekday() + 1) % 7
-        current_week_start = datetime.utcnow() - timedelta(days=days_to_sunday)
+        # Find Sunday of current week (weekday(): Monday=0, Sunday=6)
+        today = datetime.utcnow()
+        days_since_sunday = (today.weekday() + 1) % 7  # Days since last Sunday
+        current_week_start = today - timedelta(days=days_since_sunday)
         current_week_start = current_week_start.replace(hour=0, minute=0, second=0, microsecond=0)
         current_week_end = current_week_start + timedelta(days=6, hours=23, minutes=59, seconds=59)
+        
+        # Debug logging
+        print(f"DEBUG: Week range {current_week_start} to {current_week_end}")
+        for te in dev_time_entries:
+            if te.logged_at:
+                print(f"DEBUG: Entry logged_at={te.logged_at}, in_range={current_week_start <= te.logged_at <= current_week_end}")
+        
         current_week_logged = sum(
             te.hours for te in dev_time_entries
             if te.logged_at and current_week_start <= te.logged_at <= current_week_end
@@ -1086,16 +1106,28 @@ async def get_hours_analytics(
     work_item_ids = [item.id for item in items]
     time_entries = db.query(TimeEntry).filter(TimeEntry.work_item_id.in_(work_item_ids)).all()
     
-    # Calculate weeks from project start to now using Sunday-Saturday weeks
-    project_start = project.created_at or datetime.utcnow()
+    # Calculate weeks from first sprint start (or project start if no sprints) to now
     today = datetime.utcnow()
     
-    # Find the Sunday of the week containing project_start
-    # weekday() returns 0=Monday, 6=Sunday. We want Sunday as start (6 or -1)
-    days_to_sunday = (project_start.weekday() + 1) % 7  # Days to previous Sunday
-    first_sunday = project_start - timedelta(days=days_to_sunday)
+    # Find the earliest sprint start date, or use project creation if no sprints
+    earliest_sprint = db.query(Sprint).filter(
+        Sprint.project_id == project_id,
+        Sprint.start_date != None
+    ).order_by(Sprint.start_date.asc()).first()
     
-    # Generate weeks from first Sunday to now
+    if earliest_sprint and earliest_sprint.start_date:
+        # Start from the week containing the first sprint start
+        period_start = earliest_sprint.start_date
+    else:
+        # No sprints yet - don't show any weeks until sprint is created
+        period_start = today  # This will result in empty weekly_hours
+    
+    # Find the Sunday of the week containing period_start
+    # weekday() returns 0=Monday, 6=Sunday. We want Sunday as start (6 or -1)
+    days_to_sunday = (period_start.weekday() + 1) % 7  # Days to previous Sunday
+    first_sunday = period_start - timedelta(days=days_to_sunday)
+    
+    # Generate weeks from first Sunday to now (max 10 weeks for display)
     week_num = 1
     current_week_start = first_sunday
     
@@ -1155,6 +1187,13 @@ async def get_hours_analytics(
         
         week_num += 1
         current_week_start = current_week_start + timedelta(weeks=1)
+        
+        # Limit to 10 most recent weeks
+        if week_num > 10:
+            break
+    
+    # Reverse to show most recent weeks first
+    weekly_hours.reverse()
     
     # Totals - calculate remaining as estimated - logged if not set
     total_allocated = sum(item.estimated_hours or 0 for item in items)

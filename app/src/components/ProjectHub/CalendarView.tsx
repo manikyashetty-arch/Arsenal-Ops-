@@ -25,9 +25,18 @@ interface Milestone {
     is_completed?: boolean;
 }
 
+interface Goal {
+    id: number;
+    title: string;
+    due_date?: string;
+    status: string;
+    progress: number;
+}
+
 interface CalendarViewProps {
     workItems: WorkItem[];
     milestones?: Milestone[];
+    goals?: Goal[];
     onTaskClick?: (item: WorkItem) => void;
     onMilestoneClick?: (milestone: Milestone) => void;
 }
@@ -52,16 +61,53 @@ const localizer = dateFnsLocalizer({
     locales,
 });
 
-const CalendarView: React.FC<CalendarViewProps> = ({ workItems, milestones = [], onTaskClick }) => {
+const CalendarView: React.FC<CalendarViewProps> = ({ workItems, milestones = [], goals = [], onTaskClick }) => {
     const [currentDate, setCurrentDate] = useState(new Date());
     const [view, setView] = useState<typeof Views[keyof typeof Views]>(Views.MONTH);
+
+    // Helper to check if date is a weekend
+    const isWeekend = (date: Date) => {
+        const day = date.getDay();
+        return day === 0 || day === 6; // Sunday = 0, Saturday = 6
+    };
+
+    // Helper to adjust date range to exclude weekends
+    // If task starts/ends on weekend, shift to nearest weekday
+    const adjustForWeekend = (date: Date, isStart: boolean): Date => {
+        const result = new Date(date);
+        const day = result.getDay();
+        
+        if (day === 0) { // Sunday
+            // Move to Monday
+            result.setDate(result.getDate() + 1);
+        } else if (day === 6) { // Saturday
+            if (isStart) {
+                // Start date on Saturday -> move to Monday
+                result.setDate(result.getDate() + 2);
+            } else {
+                // End date on Saturday -> move to Friday
+                result.setDate(result.getDate() - 1);
+            }
+        }
+        return result;
+    };
 
     const events: CalendarEvent[] = useMemo(() => {
         const taskEvents = workItems
             .filter(item => item.due_date || item.start_date)
             .map(item => {
-                const startDate = item.start_date ? new Date(item.start_date) : new Date(item.due_date!);
-                const endDate = item.due_date ? new Date(item.due_date) : startDate;
+                let startDate = item.start_date ? new Date(item.start_date) : new Date(item.due_date!);
+                let endDate = item.due_date ? new Date(item.due_date) : new Date(startDate);
+                
+                // Adjust for weekends - tasks don't happen on weekends
+                startDate = adjustForWeekend(startDate, true);
+                endDate = adjustForWeekend(endDate, false);
+                
+                // Ensure end date is not before start date after adjustment
+                if (endDate < startDate) {
+                    endDate = new Date(startDate);
+                }
+                
                 return {
                     id: item.id,
                     title: `${item.key}: ${item.title}`,
@@ -74,7 +120,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({ workItems, milestones = [],
         const milestoneEvents = milestones
             .filter(m => m.due_date)
             .map(m => {
-                const dueDate = new Date(m.due_date!);
+                const dueDate = adjustForWeekend(new Date(m.due_date!), false);
                 return {
                     id: `milestone-${m.id}`,
                     title: `🎯 ${m.title}`,
@@ -84,8 +130,21 @@ const CalendarView: React.FC<CalendarViewProps> = ({ workItems, milestones = [],
                 };
             });
         
-        return [...taskEvents, ...milestoneEvents];
-    }, [workItems, milestones]);
+        const goalEvents = goals
+            .filter(g => g.due_date)
+            .map(g => {
+                const dueDate = adjustForWeekend(new Date(g.due_date!), false);
+                return {
+                    id: `goal-${g.id}`,
+                    title: `⭐ ${g.title}`,
+                    start: dueDate,
+                    end: dueDate,
+                    resource: { ...g, type: 'goal' },
+                };
+            });
+        
+        return [...taskEvents, ...milestoneEvents, ...goalEvents];
+    }, [workItems, milestones, goals]);
 
     const handleNavigate = (newDate: Date) => {
         setCurrentDate(newDate);

@@ -2,7 +2,8 @@ import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { Users, Clock, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { Users, Clock, AlertTriangle, CheckCircle2, Info } from 'lucide-react';
 
 interface WorkloadData {
     developer_id: number | string;
@@ -95,10 +96,22 @@ const WorkloadView: React.FC<WorkloadViewProps> = ({ workloadData, onDeveloperCl
                                         )}
                                     </div>
 
-                                    {/* Capacity Bar */}
+                                    {/* Weekly Capacity Bar */}
                                     <div className="mb-4">
                                         <div className="flex items-center justify-between mb-1">
-                                            <span className="text-[#64748B] text-sm">Capacity</span>
+                                            <div className="flex items-center gap-1">
+                                                <span className="text-[#64748B] text-sm">This Week</span>
+                                                <TooltipProvider>
+                                                    <Tooltip>
+                                                        <TooltipTrigger>
+                                                            <Info className="w-3 h-3 text-[#64748B]" />
+                                                        </TooltipTrigger>
+                                                        <TooltipContent className="bg-[#1A1A2E] border-[rgba(244,246,255,0.1)] text-white max-w-xs">
+                                                            <p>Hours allocated for tasks due this week only (Mon-Fri). Weekends excluded.</p>
+                                                        </TooltipContent>
+                                                    </Tooltip>
+                                                </TooltipProvider>
+                                            </div>
                                             <span className={`text-sm font-medium ${getCapacityColor(capacityPercentage)}`}>
                                                 {capacityPercentage}%
                                             </span>
@@ -110,7 +123,7 @@ const WorkloadView: React.FC<WorkloadViewProps> = ({ workloadData, onDeveloperCl
                                             />
                                         </div>
                                         <p className="text-[#64748B] text-xs mt-1">
-                                            {thisWeekHours}h this week / {weeklyCapacity}h capacity
+                                            {thisWeekHours}h allocated / {weeklyCapacity}h weekly capacity
                                         </p>
                                     </div>
 
@@ -140,15 +153,46 @@ const WorkloadView: React.FC<WorkloadViewProps> = ({ workloadData, onDeveloperCl
                                     </div>
 
                                     {/* Hours Summary */}
-                                    <div className="flex items-center justify-between text-sm">
-                                        <div>
-                                            <span className="text-[#64748B]">Logged: </span>
-                                            <span className="text-white">{developer.logged_hours}h</span>
-                                        </div>
-                                        <div>
-                                            <span className="text-[#64748B]">Total Rem: </span>
-                                            <span className="text-white">{developer.remaining_hours}h</span>
-                                        </div>
+                                    <div className="grid grid-cols-3 gap-2 text-sm">
+                                        <TooltipProvider>
+                                            <Tooltip>
+                                                <TooltipTrigger className="text-left">
+                                                    <div>
+                                                        <span className="text-[#64748B] text-xs">Logged</span>
+                                                        <p className="text-white font-medium">{developer.logged_hours}h</p>
+                                                    </div>
+                                                </TooltipTrigger>
+                                                <TooltipContent className="bg-[#1A1A2E] border-[rgba(244,246,255,0.1)] text-white">
+                                                    <p>Total hours logged across all tasks</p>
+                                                </TooltipContent>
+                                            </Tooltip>
+                                        </TooltipProvider>
+                                        <TooltipProvider>
+                                            <Tooltip>
+                                                <TooltipTrigger className="text-left">
+                                                    <div>
+                                                        <span className="text-[#64748B] text-xs">This Week</span>
+                                                        <p className="text-white font-medium">{thisWeekHours}h</p>
+                                                    </div>
+                                                </TooltipTrigger>
+                                                <TooltipContent className="bg-[#1A1A2E] border-[rgba(244,246,255,0.1)] text-white">
+                                                    <p>Hours for tasks due this week (Mon-Fri only)</p>
+                                                </TooltipContent>
+                                            </Tooltip>
+                                        </TooltipProvider>
+                                        <TooltipProvider>
+                                            <Tooltip>
+                                                <TooltipTrigger className="text-left">
+                                                    <div>
+                                                        <span className="text-[#64748B] text-xs">Total Rem</span>
+                                                        <p className="text-white font-medium">{developer.remaining_hours}h</p>
+                                                    </div>
+                                                </TooltipTrigger>
+                                                <TooltipContent className="bg-[#1A1A2E] border-[rgba(244,246,255,0.1)] text-white">
+                                                    <p>Total remaining hours across all incomplete tasks</p>
+                                                </TooltipContent>
+                                            </Tooltip>
+                                        </TooltipProvider>
                                     </div>
                                 </div>
                             );

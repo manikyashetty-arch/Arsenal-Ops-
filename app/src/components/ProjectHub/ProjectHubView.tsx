@@ -71,6 +71,7 @@ interface WorkloadData {
     estimated_hours: number;
     logged_hours: number;
     remaining_hours: number;
+    this_week_remaining_hours?: number;
 }
 
 const ProjectHubView: React.FC<ProjectHubViewProps> = ({ projectId, token, project, developers = [] }) => {
@@ -411,6 +412,8 @@ const ProjectHubView: React.FC<ProjectHubViewProps> = ({ projectId, token, proje
                     <TabsContent value="timeline">
                         <TimelineView
                             workItems={workItems}
+                            milestones={milestones}
+                            goals={goals}
                             projectStartDate={project?.created_at}
                             projectId={parseInt(projectId)}
                             developers={developers}
@@ -420,7 +423,7 @@ const ProjectHubView: React.FC<ProjectHubViewProps> = ({ projectId, token, proje
                     </TabsContent>
 
                     <TabsContent value="calendar">
-                        <CalendarView workItems={workItems} milestones={milestones} />
+                        <CalendarView workItems={workItems} milestones={milestones} goals={goals} />
                     </TabsContent>
 
                     <TabsContent value="list">

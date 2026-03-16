@@ -17,6 +17,21 @@ interface WorkItem {
     dependencies?: { depends_on_id: number; dependency_type: string }[];
 }
 
+interface Milestone {
+    id: number;
+    title: string;
+    due_date?: string;
+    completed_at?: string;
+}
+
+interface Goal {
+    id: number;
+    title: string;
+    due_date?: string;
+    status: string;
+    progress?: number;
+}
+
 interface Developer {
     id: number;
     name: string;
@@ -25,6 +40,8 @@ interface Developer {
 
 interface TimelineViewProps {
     workItems: WorkItem[];
+    milestones?: Milestone[];
+    goals?: Goal[];
     projectStartDate: string;
     projectId: number;
     developers?: Developer[];
@@ -35,6 +52,8 @@ interface TimelineViewProps {
 
 const TimelineView: React.FC<TimelineViewProps> = ({ 
     workItems, 
+    milestones = [],
+    goals = [],
     projectStartDate,
     projectId: _projectId,
     developers = [],
@@ -65,7 +84,7 @@ const TimelineView: React.FC<TimelineViewProps> = ({
 
     const tasks: Task[] = useMemo(() => {
         console.log('Timeline workItems:', workItems);
-        return workItems
+        const workItemTasks = workItems
             .filter(item => item.start_date || item.due_date)
             .map((item) => {
                 // Parse dates properly - handle both ISO strings and date objects
@@ -120,7 +139,55 @@ const TimelineView: React.FC<TimelineViewProps> = ({
                     },
                 };
             });
-    }, [workItems]);
+        
+        // Add milestones as tasks
+        const milestoneTasks: Task[] = milestones
+            .filter(m => m.due_date)
+            .map((m) => {
+                const dueDate = new Date(m.due_date!);
+                return {
+                    id: `milestone-${m.id}`,
+                    name: `🎯 ${m.title}`,
+                    start: dueDate,
+                    end: dueDate,
+                    progress: m.completed_at ? 100 : 0,
+                    type: 'milestone' as const,
+                    project: 'Milestones',
+                    isDisabled: true,
+                    styles: {
+                        backgroundColor: m.completed_at ? '#10B981' : '#EC4899',
+                        backgroundSelectedColor: m.completed_at ? '#10B981' : '#EC4899',
+                        progressColor: m.completed_at ? '#34D399' : '#F472B6',
+                        progressSelectedColor: m.completed_at ? '#34D399' : '#F472B6',
+                    },
+                };
+            });
+        
+        // Add goals as tasks
+        const goalTasks: Task[] = goals
+            .filter(g => g.due_date)
+            .map((g) => {
+                const dueDate = new Date(g.due_date!);
+                return {
+                    id: `goal-${g.id}`,
+                    name: `⭐ ${g.title}`,
+                    start: dueDate,
+                    end: dueDate,
+                    progress: g.status === 'completed' ? 100 : g.progress || 0,
+                    type: 'milestone' as const,
+                    project: 'Goals',
+                    isDisabled: true,
+                    styles: {
+                        backgroundColor: g.status === 'completed' ? '#10B981' : '#F59E0B',
+                        backgroundSelectedColor: g.status === 'completed' ? '#10B981' : '#F59E0B',
+                        progressColor: g.status === 'completed' ? '#34D399' : '#FBBF24',
+                        progressSelectedColor: g.status === 'completed' ? '#34D399' : '#FBBF24',
+                    },
+                };
+            });
+        
+        return [...workItemTasks, ...milestoneTasks, ...goalTasks];
+    }, [workItems, milestones, goals]);
 
     const handleZoomIn = () => {
         if (viewMode === ViewMode.Month) setViewMode(ViewMode.Week);
@@ -327,11 +394,17 @@ const TimelineView: React.FC<TimelineViewProps> = ({
                             stroke: rgba(244,246,255,0.06) !important;
                         }
                         .gantt-task-react-root .calendar-top {
-                            fill: #E5E7EB !important;
-                            font-weight: 500;
+                            fill: #1A1A2E !important;
+                            font-weight: 600;
+                            font-size: 13px;
                         }
                         .gantt-task-react-root .calendar-bottom {
-                            fill: #9CA3AF !important;
+                            fill: #64748B !important;
+                            font-size: 11px;
+                        }
+                        .gantt-task-react-root .calendar-top text,
+                        .gantt-task-react-root .calendar-bottom text {
+                            fill: white !important;
                         }
                         .gantt-task-react-root .today-highlight {
                             fill: rgba(99, 102, 241, 0.12) !important;

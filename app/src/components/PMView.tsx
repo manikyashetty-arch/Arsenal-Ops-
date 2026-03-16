@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
-import { Clock, Users, Calendar, TrendingUp, AlertTriangle } from 'lucide-react';
+import { Clock, Users, Calendar, TrendingUp, AlertTriangle, Filter, ChevronDown } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { API_BASE_URL } from '@/config/api';
 
 interface PMViewProps {
@@ -54,6 +55,7 @@ interface WeeklyHours {
 export default function PMView({ projectId, token }: PMViewProps) {
     const [analytics, setAnalytics] = useState<HoursAnalytics | null>(null);
     const [isLoading, setIsLoading] = useState(true);
+    const [weekFilter, setWeekFilter] = useState<'all' | 'with-activity'>('all');
 
     useEffect(() => {
         fetchAnalytics();
@@ -157,11 +159,23 @@ export default function PMView({ projectId, token }: PMViewProps) {
 
             {/* Weekly Hours Table */}
             <Card className="bg-[rgba(244,246,255,0.02)] border-[rgba(244,246,255,0.06)]">
-                <CardHeader>
+                <CardHeader className="flex flex-row items-center justify-between">
                     <CardTitle className="text-white flex items-center gap-2">
                         <Calendar className="w-5 h-5" />
                         Weekly Hours Breakdown
+                        <span className="text-xs text-[#64748B] font-normal ml-2">(Last 10 weeks)</span>
                     </CardTitle>
+                    <div className="flex items-center gap-2">
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setWeekFilter(weekFilter === 'all' ? 'with-activity' : 'all')}
+                            className={`border-[rgba(244,246,255,0.1)] text-xs ${weekFilter === 'with-activity' ? 'bg-[#6366F1]/20 text-[#6366F1]' : 'text-[#64748B]'}`}
+                        >
+                            <Filter className="w-3 h-3 mr-1" />
+                            {weekFilter === 'all' ? 'Show All' : 'With Activity'}
+                        </Button>
+                    </div>
                 </CardHeader>
                 <CardContent>
                     <div className="overflow-x-auto">
@@ -176,7 +190,10 @@ export default function PMView({ projectId, token }: PMViewProps) {
                                 </tr>
                             </thead>
                             <tbody>
-                                {analytics.weekly_hours.map((week, idx) => (
+                                {analytics.weekly_hours
+                                    .filter(week => weekFilter === 'all' || week.logged_hours > 0 || week.allocated_hours > 0 || week.items_completed > 0)
+                                    .slice(0, 10)
+                                    .map((week, idx) => (
                                     <tr key={idx} className={`border-b border-[rgba(244,246,255,0.04)] hover:bg-[rgba(244,246,255,0.02)] ${week.logged_hours > 0 ? 'bg-[#10B981]/5' : ''}`}>
                                         <td className="py-3 px-4 text-sm text-white font-medium">{week.week_label}</td>
                                         <td className="py-3 px-4 text-sm text-[#94A3B8]">{week.week} - {week.week_end}</td>
@@ -195,6 +212,11 @@ export default function PMView({ projectId, token }: PMViewProps) {
                                 ))}
                             </tbody>
                         </table>
+                        {analytics.weekly_hours.length === 0 && (
+                            <div className="text-center py-8 text-[#64748B]">
+                                <p>No sprints created yet. Weeks will appear once sprints are started.</p>
+                            </div>
+                        )}
                     </div>
                 </CardContent>
             </Card>

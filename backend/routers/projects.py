@@ -893,18 +893,34 @@ async def get_project_workload(
         workload_data[assignee_id]["logged_hours"] += item.logged_hours or 0
         workload_data[assignee_id]["remaining_hours"] += item.remaining_hours or 0
         
-        # Count this week's remaining hours (tasks due this week that aren't done)
-        # Exclude weekends from hour calculation
-        if item.due_date and week_start <= item.due_date <= week_end and item.status != "done":
-            # Calculate working days only
-            task_start = item.start_date or week_start
-            task_end = item.due_date
-            working_hours = calculate_hours_excluding_weekends(
-                item.remaining_hours or 0, 
-                task_start, 
-                task_end
+        # Count this week's allocated hours for active tasks (in_progress or todo)
+        # Include tasks that are in progress (regardless of due date) OR due this week
+        if item.status != "done" and item.estimated_hours:
+            is_active_this_week = (
+                # Task is in progress (actively being worked on)
+                item.status == "in_progress" or
+                # Task is due this week
+                (item.due_date and week_start <= item.due_date <= week_end) or
+                # Task spans this week (start date in past, due date in future)
+                (item.start_date and item.due_date and item.start_date <= week_end and item.due_date >= week_start)
             )
-            workload_data[assignee_id]["this_week_remaining_hours"] += working_hours
+            
+            if is_active_this_week:
+                # Calculate working days only for this week portion
+                task_start = item.start_date or week_start
+                task_end = item.due_date or (week_start + timedelta(days=6))
+                
+                # Calculate overlap with this week
+                overlap_start = max(task_start, week_start)
+                overlap_end = min(task_end, week_end)
+                
+                if overlap_start <= overlap_end:
+                    working_hours = calculate_hours_excluding_weekends(
+                        item.remaining_hours or item.estimated_hours or 0, 
+                        overlap_start, 
+                        overlap_end
+                    )
+                    workload_data[assignee_id]["this_week_remaining_hours"] += working_hours
         
         if item.status == "done":
             workload_data[assignee_id]["completed_items"] += 1
