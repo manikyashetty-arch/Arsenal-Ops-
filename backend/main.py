@@ -48,13 +48,17 @@ else:
 # Always add common production frontend URLs
 production_frontends = [
     "https://arsenal-ops.vercel.app",
-    "https://arsenal-ops-git-main-manikyashetty-archs-projects.vercel.app",
     "https://www.arsenal-ops.vercel.app",
-    "https://*.vercel.app"  # Allow all vercel.app subdomains
+    "https://arsenal-ops-git-main-manikyashetty-archs-projects.vercel.app",
 ]
 for fe in production_frontends:
     if fe not in cors_origins:
         cors_origins.append(fe)
+
+# In production, allow all origins to avoid CORS issues with Vercel previews
+# This is safe because we use authentication tokens
+if os.getenv("ENVIRONMENT") == "production":
+    cors_origins = ["*"]
 
 # Allow wildcard in development
 if os.getenv("ENVIRONMENT") != "production":
