@@ -876,6 +876,15 @@ const ProjectBoard = () => {
                     </div>
                     <div className="flex items-center gap-3">
                         <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => navigate(`/project/${id}`)}
+                            className="text-[#64748B] hover:text-white hover:bg-[rgba(244,246,255,0.05)] rounded-lg"
+                            title="Back to Project Overview"
+                        >
+                            <X className="w-4 h-4" />
+                        </Button>
+                        <Button
                             onClick={handleAIGenerate}
                             disabled={isGenerating}
                             size="sm"

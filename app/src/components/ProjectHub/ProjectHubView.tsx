@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { TimelineView, CalendarView, ListView, WorkloadView, GoalsView, ActivityFeed } from './index';
-import { LayoutGrid, Calendar, List, Users, Target, Activity } from 'lucide-react';
+import { TimelineView, CalendarView, ListView, WorkloadView, GoalsView, ActivityFeed, ReviewerView } from './index';
+import { LayoutGrid, Calendar, List, Users, Target, Activity, Eye } from 'lucide-react';
 import { API_BASE_URL } from '@/config/api';
 import { toast } from 'sonner';
 
@@ -376,6 +376,7 @@ const ProjectHubView: React.FC<ProjectHubViewProps> = ({ projectId, token, proje
         { id: 'calendar', label: 'Calendar', icon: Calendar },
         { id: 'list', label: 'List', icon: List },
         { id: 'workload', label: 'Workload', icon: Users },
+        { id: 'reviewer', label: 'Reviewer', icon: Eye },
         { id: 'goals', label: 'Goals', icon: Target },
         { id: 'activity', label: 'Activity', icon: Activity },
     ];
@@ -432,6 +433,15 @@ const ProjectHubView: React.FC<ProjectHubViewProps> = ({ projectId, token, proje
 
                     <TabsContent value="workload">
                         <WorkloadView workloadData={workload} />
+                    </TabsContent>
+
+                    <TabsContent value="reviewer">
+                        <ReviewerView
+                            workItems={workItems}
+                            projectId={projectId}
+                            token={token}
+                            onTaskUpdate={handleTaskUpdate}
+                        />
                     </TabsContent>
 
                     <TabsContent value="goals">

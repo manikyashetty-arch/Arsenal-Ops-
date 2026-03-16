@@ -6,3 +6,4 @@ export { default as GoalsView } from './GoalsView';
 export { default as MyTasksView } from './MyTasksView';
 export { default as ActivityFeed } from './ActivityFeed';
 export { default as ProjectHubView } from './ProjectHubView';
+export { default as ReviewerView } from './ReviewerView';

@@ -117,11 +117,11 @@ const TimelineView: React.FC<TimelineViewProps> = ({
     workItems,
     milestones = [],
     goals = [],
-    projectStartDate,
+    projectStartDate: _projectStartDate,
     projectId: _projectId,
     developers = [],
     onTaskClick,
-    onTaskUpdate,
+    onTaskUpdate: _onTaskUpdate,
     onTaskCreate
 }) => {
     const [zoom, setZoom] = useState<ZoomLevel>('week');
@@ -358,7 +358,7 @@ const TimelineView: React.FC<TimelineViewProps> = ({
                                     No tasks with dates.<br />Add dates to see the timeline.
                                 </div>
                             ) : (
-                                rows.map((row, i) => (
+                                rows.map((row) => (
                                     <div
                                         key={row.id}
                                         className="flex items-center px-3 text-sm truncate cursor-pointer hover:bg-[#1A1A2E] transition-colors"

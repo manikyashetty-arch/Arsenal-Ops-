@@ -466,18 +466,16 @@ async def log_hours(
     if request.hours <= 0:
         raise HTTPException(status_code=400, detail="Hours must be greater than 0")
     
-    # Find developer - prefer assignee if current user is a PM, or find by email
-    developer = None
-    
-    # First try to find developer by current user's email
+    # Attribute hours to the PERSON LOGGING THE TIME (current user).
+    # This ensures reviewers get credit for their review time in PM tab.
+    # The ticket's logged_hours total still increases, but the time entry belongs to the logger.
     developer = db.query(Developer).filter(Developer.email == current_user.email).first()
     
-    # If no developer found and the work item has an assignee, use that
-    # This handles the case where a PM logs time on behalf of a developer
+    # If current user is not a developer, fall back to ticket assignee
     if not developer and item.assignee_id:
         developer = db.query(Developer).filter(Developer.id == item.assignee_id).first()
     
-    print(f"DEBUG log-hours: current_user.email={current_user.email}, assignee_id={item.assignee_id}, developer={developer.id if developer else 'NOT FOUND'}")
+    print(f"DEBUG log-hours: current_user.email={current_user.email}, assignee_id={item.assignee_id}, logger_developer={developer.id if developer else 'NOT FOUND'}")
     
     # Create time entry
     time_entry = TimeEntry(
@@ -1037,14 +1035,15 @@ async def get_hours_analytics(
         # Tickets currently assigned to this developer
         dev_items = [item for item in items if item.assignee_id == dev.id]
         
-        # Hours logged ON tickets assigned to this developer (regardless of who logged them)
-        # This attributes hours to the assignee, not the person who logged the time
+        # Hours logged BY this developer (their own time entries where developer_id = dev.id)
+        # OR if developer_id is NULL, fall back to ticket assignee attribution
         dev_time_entries = [
             te for te in all_time_entries 
-            if work_item_assignee_map.get(te.work_item_id) == dev.id
+            if te.developer_id == dev.id or
+               (te.developer_id is None and work_item_assignee_map.get(te.work_item_id) == dev.id)
         ]
         logged = sum(te.hours for te in dev_time_entries)
-        print(f"DEBUG: Developer {dev.name} (id={dev.id}) has {logged}h logged on their assigned tickets from {len(dev_time_entries)} entries")
+        print(f"DEBUG: Developer {dev.name} (id={dev.id}) logged {logged}h from {len(dev_time_entries)} personal entries")
         
         # Allocated = remaining work on their current tickets (estimated - total logged)
         allocated = sum(
