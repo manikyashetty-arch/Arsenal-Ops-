@@ -66,6 +66,8 @@ const CalendarView: React.FC<CalendarViewProps> = ({ workItems, milestones = [],
     const [view, setView] = useState<typeof Views[keyof typeof Views]>(Views.MONTH);
 
     const events: CalendarEvent[] = useMemo(() => {
+        console.log('CalendarView - workItems:', workItems.length, workItems.map(i => ({key: i.key, start_date: i.start_date, due_date: i.due_date})));
+        
         const taskEvents = workItems
             .filter(item => item.due_date || item.start_date)
             .map(item => {
@@ -73,31 +75,29 @@ const CalendarView: React.FC<CalendarViewProps> = ({ workItems, milestones = [],
                 const startStr = item.start_date || item.due_date;
                 const endStr = item.due_date || item.start_date;
                 
-                // Create dates from ISO strings - they will be in local timezone
-                let startDate = startStr ? new Date(startStr) : new Date();
-                let endDate = endStr ? new Date(endStr) : new Date(startDate);
+                // Parse date string manually to avoid UTC->local timezone shift
+                // e.g. "2026-03-15" should become March 15 local time, not March 14
+                const parseLocalDate = (str: string) => {
+                    if (str.includes('T')) {
+                        // ISO datetime - parse and convert to local midnight
+                        const d = new Date(str);
+                        return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+                    }
+                    // Date-only string like "2026-03-15" - parse as local
+                    const [year, month, day] = str.split('-').map(Number);
+                    return new Date(year, month - 1, day);
+                };
                 
-                // Adjust for weekends - tasks don't happen on weekends
-                // Only adjust if the date actually falls on a weekend
-                const startDay = startDate.getDay();
-                const endDay = endDate.getDay();
+                let startDate = startStr ? parseLocalDate(startStr) : new Date();
+                let endDate = endStr ? parseLocalDate(endStr) : new Date(startDate);
                 
-                if (startDay === 0) { // Sunday -> Monday
-                    startDate.setDate(startDate.getDate() + 1);
-                } else if (startDay === 6) { // Saturday -> Monday
-                    startDate.setDate(startDate.getDate() + 2);
-                }
-                
-                if (endDay === 0) { // Sunday -> Friday
-                    endDate.setDate(endDate.getDate() - 2);
-                } else if (endDay === 6) { // Saturday -> Friday
-                    endDate.setDate(endDate.getDate() - 1);
-                }
-                
-                // Ensure end date is not before start date after adjustment
+                // Ensure end date is not before start date
                 if (endDate < startDate) {
                     endDate = new Date(startDate);
                 }
+                
+                // End date needs to be inclusive - add 1 day so the event shows on the end day
+                endDate.setDate(endDate.getDate() + 1);
                 
                 return {
                     id: item.id,
@@ -108,20 +108,24 @@ const CalendarView: React.FC<CalendarViewProps> = ({ workItems, milestones = [],
                 };
             });
         
+        console.log('CalendarView - events created:', taskEvents.length, taskEvents.map(e => ({title: e.title, start: e.start, end: e.end})));
+        
         const milestoneEvents = milestones
             .filter(m => m.due_date)
             .map(m => {
-                const dueDate = new Date(m.due_date!);
-                // Adjust if falls on weekend
-                const day = dueDate.getDay();
-                if (day === 0) dueDate.setDate(dueDate.getDate() - 2); // Sunday -> Friday
-                else if (day === 6) dueDate.setDate(dueDate.getDate() - 1); // Saturday -> Friday
-                
+                const parseLocalDate = (str: string) => {
+                    if (str.includes('T')) { const d = new Date(str); return new Date(d.getFullYear(), d.getMonth(), d.getDate()); }
+                    const [year, month, day] = str.split('-').map(Number);
+                    return new Date(year, month - 1, day);
+                };
+                const dueDate = parseLocalDate(m.due_date!);
+                const endDate = new Date(dueDate);
+                endDate.setDate(endDate.getDate() + 1);
                 return {
                     id: `milestone-${m.id}`,
                     title: `🎯 ${m.title}`,
                     start: dueDate,
-                    end: dueDate,
+                    end: endDate,
                     resource: { ...m, type: 'milestone' },
                 };
             });
@@ -129,17 +133,19 @@ const CalendarView: React.FC<CalendarViewProps> = ({ workItems, milestones = [],
         const goalEvents = goals
             .filter(g => g.due_date)
             .map(g => {
-                const dueDate = new Date(g.due_date!);
-                // Adjust if falls on weekend
-                const day = dueDate.getDay();
-                if (day === 0) dueDate.setDate(dueDate.getDate() - 2); // Sunday -> Friday
-                else if (day === 6) dueDate.setDate(dueDate.getDate() - 1); // Saturday -> Friday
-                
+                const parseLocalDate = (str: string) => {
+                    if (str.includes('T')) { const d = new Date(str); return new Date(d.getFullYear(), d.getMonth(), d.getDate()); }
+                    const [year, month, day] = str.split('-').map(Number);
+                    return new Date(year, month - 1, day);
+                };
+                const dueDate = parseLocalDate(g.due_date!);
+                const endDate = new Date(dueDate);
+                endDate.setDate(endDate.getDate() + 1);
                 return {
                     id: `goal-${g.id}`,
                     title: `⭐ ${g.title}`,
                     start: dueDate,
-                    end: dueDate,
+                    end: endDate,
                     resource: { ...g, type: 'goal' },
                 };
             });

@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useRef, useEffect } from 'react';
 import { Gantt, Task, ViewMode } from 'gantt-task-react';
 import "gantt-task-react/dist/index.css";
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -63,6 +63,7 @@ const TimelineView: React.FC<TimelineViewProps> = ({
 }) => {
     const [viewMode, setViewMode] = useState<ViewMode>(ViewMode.Week);
     const [currentDate, setCurrentDate] = useState(new Date());
+    const ganttContainerRef = useRef<HTMLDivElement>(null);
     const [showAddModal, setShowAddModal] = useState(false);
     const [newTask, setNewTask] = useState({
         title: '',
@@ -251,6 +252,26 @@ const TimelineView: React.FC<TimelineViewProps> = ({
         return currentDate;
     }, [currentDate]);
 
+    // Scroll the gantt chart horizontally when currentDate changes
+    useEffect(() => {
+        if (!ganttContainerRef.current || tasks.length === 0) return;
+        
+        // Find the horizontal scroll container inside the gantt
+        const scrollEl = ganttContainerRef.current.querySelector('.gantt-task-react-root > div > div:last-child') as HTMLElement ||
+                         ganttContainerRef.current.querySelector('[class*="scroll"]') as HTMLElement ||
+                         ganttContainerRef.current.querySelector('div > div') as HTMLElement;
+        
+        if (!scrollEl) return;
+        
+        // Calculate how many pixels to scroll based on currentDate relative to task start
+        const allDates = tasks.flatMap(t => [t.start, t.end]);
+        const minDate = new Date(Math.min(...allDates.map(d => d.getTime())));
+        const columnWidth = viewMode === ViewMode.Day ? 60 : viewMode === ViewMode.Week ? 150 : 250;
+        const msPerColumn = viewMode === ViewMode.Day ? 86400000 : viewMode === ViewMode.Week ? 7 * 86400000 : 30 * 86400000;
+        const pixelOffset = ((currentDate.getTime() - minDate.getTime()) / msPerColumn) * columnWidth;
+        scrollEl.scrollLeft = Math.max(0, pixelOffset);
+    }, [currentDate, tasks, viewMode]);
+
     const displayOptions = {
         columnWidth: viewMode === ViewMode.Day ? 60 : viewMode === ViewMode.Week ? 150 : 250,
         listCellWidth: '',
@@ -437,7 +458,7 @@ const TimelineView: React.FC<TimelineViewProps> = ({
                             cursor: ew-resize;
                         }
                     `}</style>
-                    <div className="rounded-lg overflow-hidden bg-[#0F0F1A]">
+                    <div ref={ganttContainerRef} className="rounded-lg overflow-hidden bg-[#0F0F1A]">
                         <Gantt
                             tasks={tasks}
                             {...displayOptions}
