@@ -65,12 +65,6 @@ const CalendarView: React.FC<CalendarViewProps> = ({ workItems, milestones = [],
     const [currentDate, setCurrentDate] = useState(new Date());
     const [view, setView] = useState<typeof Views[keyof typeof Views]>(Views.MONTH);
 
-    // Helper to check if date is a weekend
-    const isWeekend = (date: Date) => {
-        const day = date.getDay();
-        return day === 0 || day === 6; // Sunday = 0, Saturday = 6
-    };
-
     // Helper to adjust date range to exclude weekends
     // If task starts/ends on weekend, shift to nearest weekday
     const adjustForWeekend = (date: Date, isStart: boolean): Date => {
