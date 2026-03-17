@@ -5,16 +5,27 @@ Uses Azure OpenAI API with structured outputs for agentic tasks
 import os
 import json
 from typing import List, Dict, Any, Optional
-from openai import AzureOpenAI
 from pydantic import BaseModel
 
-# Initialize Azure OpenAI client
-client = AzureOpenAI(
-    azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT", ""),
-    api_key=os.getenv("AZURE_OPENAI_API_KEY", ""),
-    api_version=os.getenv("AZURE_OPENAI_API_VERSION", "2024-02-15-preview"),
-    timeout=90.0  # 90 second timeout for complex AI operations
-)
+# Lazy initialization of Azure OpenAI client
+_client = None
+
+def get_openai_client():
+    """Get or create the Azure OpenAI client"""
+    global _client
+    if _client is None:
+        try:
+            from openai import AzureOpenAI
+            _client = AzureOpenAI(
+                azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT", ""),
+                api_key=os.getenv("AZURE_OPENAI_API_KEY", ""),
+                api_version=os.getenv("AZURE_OPENAI_API_VERSION", "2024-02-15-preview"),
+                timeout=90.0
+            )
+        except Exception as e:
+            print(f"[WARNING] Failed to initialize Azure OpenAI client: {e}")
+            _client = None
+    return _client
 
 # Default deployment name
 DEPLOYMENT_NAME = os.getenv("AZURE_OPENAI_DEPLOYMENT", "gpt-4o-mini")
@@ -71,7 +82,11 @@ class LLMAgent:
     
     def __init__(self, deployment: str = None):
         self.deployment = deployment or DEPLOYMENT_NAME
-        self.client = client
+    
+    @property
+    def client(self):
+        """Lazy client access"""
+        return get_openai_client()
     
     async def decompose_project(self, project_description: str, target_market: str = "") -> Dict[str, Any]:
         """Break a project description into tasks, milestones, and user stories"""
