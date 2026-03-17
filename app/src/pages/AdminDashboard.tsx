@@ -18,6 +18,9 @@ import {
     Shield,
     UserCog,
     Key,
+    Mail,
+    CheckCircle2,
+    AlertCircle,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -102,6 +105,7 @@ const AdminDashboard = () => {
         github_repo_name: '',
         github_token: '',
     });
+    const [invitingProjectId, setInvitingProjectId] = useState<number | null>(null);
 
     useEffect(() => {
         fetchData();
@@ -229,6 +233,31 @@ const AdminDashboard = () => {
             }
         } catch {
             toast.error('Failed to update GitHub settings');
+        }
+    };
+
+    const handleSendGitHubInvites = async (project: Project, e: React.MouseEvent) => {
+        e.stopPropagation();
+        if (!project.github_repo_url) {
+            toast.error('No GitHub repository configured');
+            return;
+        }
+        setInvitingProjectId(project.id);
+        try {
+            const res = await fetch(`${API_BASE_URL}/api/projects/${project.id}/github-invite?role=push`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            const data = await res.json();
+            if (res.ok) {
+                toast.success(`Sent ${data.successful_invitations} GitHub invitation(s) for ${project.name}!`);
+            } else {
+                toast.error(data.detail || 'Failed to send invitations');
+            }
+        } catch {
+            toast.error('Failed to send invitations');
+        } finally {
+            setInvitingProjectId(null);
         }
     };
 
@@ -597,10 +626,10 @@ const AdminDashboard = () => {
                                                     <Settings className="w-3.5 h-3.5" />
                                                 </Button>
                                             </div>
-                                            {/* GitHub Info */}
+                                            {/* GitHub Info + Invite */}
                                             {project.github_repo_url && (
                                                 <div className="mb-3 p-2 rounded-lg bg-[rgba(244,246,255,0.02)] border border-[rgba(244,246,255,0.04)]">
-                                                    <div className="flex items-center gap-2">
+                                                    <div className="flex items-center gap-2 mb-2">
                                                         <Github className="w-3.5 h-3.5 text-[#64748B]" />
                                                         <a
                                                             href={project.github_repo_url}
@@ -613,9 +642,35 @@ const AdminDashboard = () => {
                                                             <ExternalLink className="w-3 h-3" />
                                                         </a>
                                                         {project.has_github_token && (
-                                                            <span className="ml-auto text-[10px] text-[#10B981]">Token Set</span>
+                                                            <span className="ml-auto text-[10px] text-[#10B981] flex items-center gap-1">
+                                                                <CheckCircle2 className="w-3 h-3" />Token
+                                                            </span>
                                                         )}
                                                     </div>
+                                                    <Button
+                                                        size="sm"
+                                                        onClick={(e) => handleSendGitHubInvites(project, e)}
+                                                        disabled={invitingProjectId === project.id}
+                                                        className="w-full h-7 text-[10px] bg-gradient-to-r from-[#6366F1] to-[#4F46E5] hover:from-[#5558E6] hover:to-[#4338CA] text-white rounded-lg font-medium shadow-sm disabled:opacity-50"
+                                                    >
+                                                        {invitingProjectId === project.id ? (
+                                                            <>
+                                                                <div className="w-3 h-3 border border-white/30 border-t-white rounded-full animate-spin mr-1" />
+                                                                Sending...
+                                                            </>
+                                                        ) : (
+                                                            <>
+                                                                <Mail className="w-3 h-3 mr-1" />
+                                                                Send GitHub Invites
+                                                            </>
+                                                        )}
+                                                    </Button>
+                                                </div>
+                                            )}
+                                            {!project.github_repo_url && (
+                                                <div className="mb-3 p-2 rounded-lg bg-[rgba(244,246,255,0.02)] border border-[rgba(244,246,255,0.04)] flex items-center gap-2">
+                                                    <AlertCircle className="w-3.5 h-3.5 text-[#475569]" />
+                                                    <span className="text-[10px] text-[#475569]">No GitHub repo configured</span>
                                                 </div>
                                             )}
                                             <div className="flex items-center gap-4 mt-4 text-xs text-[#64748B]">

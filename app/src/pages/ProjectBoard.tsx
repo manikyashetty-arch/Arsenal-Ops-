@@ -28,6 +28,7 @@ import {
     GitCommit,
     Inbox,
     Calendar,
+    Eye,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -36,6 +37,7 @@ import { Badge } from '@/components/ui/badge';
 import { toast, Toaster } from 'sonner';
 import ArchitectureCard from '@/components/ArchitectureCard';
 import ArchitectureEditor from '@/components/ArchitectureEditor';
+import { ReviewerView } from '@/components/ProjectHub';
 import { useAuth } from '@/contexts/AuthContext';
 
 import { API_BASE_URL } from '@/config/api';
@@ -177,6 +179,7 @@ const ProjectBoard = () => {
     const { token } = useAuth();
     const [project, setProject] = useState<Project | null>(null);
     const [workItems, setWorkItems] = useState<WorkItem[]>([]);
+    const [showReviewer, setShowReviewer] = useState(false);
     const [selectedItem, setSelectedItem] = useState<WorkItem | null>(null);
     const [isEditing, setIsEditing] = useState(false);
     const [editForm, setEditForm] = useState<Partial<WorkItem>>({});
@@ -896,6 +899,16 @@ const ProjectBoard = () => {
                             title="Back to Project Overview"
                         >
                             <X className="w-4 h-4" />
+                        </Button>
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setShowReviewer(v => !v)}
+                            className={`text-[#64748B] hover:text-white hover:bg-[rgba(244,246,255,0.05)] rounded-lg gap-2 h-9 px-3 ${showReviewer ? 'bg-[rgba(99,102,241,0.1)] text-[#6366F1]' : ''}`}
+                            title="Review Mode"
+                        >
+                            <Eye className="w-3.5 h-3.5" />
+                            Reviewer
                         </Button>
                         <Button
                             onClick={handleAIGenerate}
@@ -2134,6 +2147,41 @@ const ProjectBoard = () => {
                                 Create Sprint
                             </Button>
                         </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Reviewer Panel - slide in from right */}
+            {showReviewer && (
+                <div className="fixed inset-y-0 right-0 w-[480px] max-w-full bg-[#0B0D14] border-l border-[rgba(244,246,255,0.08)] shadow-2xl z-50 flex flex-col">
+                    <div className="flex items-center justify-between px-5 py-4 border-b border-[rgba(244,246,255,0.06)] flex-shrink-0">
+                        <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 rounded-lg bg-[#6366F1]/10 flex items-center justify-center">
+                                <Eye className="w-4 h-4 text-[#6366F1]" />
+                            </div>
+                            <div>
+                                <h2 className="text-sm font-semibold text-white">Review Queue</h2>
+                                <p className="text-xs text-[#64748B]">Items pending review</p>
+                            </div>
+                        </div>
+                        <button
+                            onClick={() => setShowReviewer(false)}
+                            className="p-1.5 rounded-lg hover:bg-[rgba(244,246,255,0.05)] text-[#475569] hover:text-white"
+                        >
+                            <X className="w-4 h-4" />
+                        </button>
+                    </div>
+                    <div className="flex-1 overflow-y-auto">
+                        <ReviewerView
+                            workItems={workItems.map(item => ({ ...item, assignee_id: item.assignee_id ?? undefined }))}
+                            projectId={id!}
+                            token={token!}
+                            onTaskUpdate={(itemId, updates) => {
+                                setWorkItems(prev => prev.map(item =>
+                                    item.id === itemId ? { ...item, ...updates } : item
+                                ));
+                            }}
+                        />
                     </div>
                 </div>
             )}

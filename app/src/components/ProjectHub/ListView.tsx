@@ -3,12 +3,13 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ChevronUp, ChevronDown, Search, CheckCircle2, Clock, AlertCircle, Circle } from 'lucide-react';
+import { ChevronUp, ChevronDown, Search, CheckCircle2, Clock, AlertCircle, Circle, X, BookOpen, ClipboardList, Bug, Target } from 'lucide-react';
 
 interface WorkItem {
     id: string;
     key: string;
     title: string;
+    description?: string;
     type: string;
     status: string;
     priority: string;
@@ -18,6 +19,8 @@ interface WorkItem {
     estimated_hours?: number;
     logged_hours?: number;
     sprint?: string;
+    story_points?: number;
+    acceptance_criteria?: string;
 }
 
 interface ListViewProps {
@@ -28,6 +31,13 @@ interface ListViewProps {
 type SortField = 'title' | 'status' | 'priority' | 'due_date' | 'assignee';
 type SortDirection = 'asc' | 'desc';
 
+const TYPE_CONFIG: Record<string, { icon: React.ElementType; color: string; label: string; bg: string }> = {
+    user_story: { icon: BookOpen, color: '#6366F1', label: 'Story', bg: 'rgba(99,102,241,0.15)' },
+    task: { icon: ClipboardList, color: '#F59E0B', label: 'Task', bg: 'rgba(245,158,11,0.15)' },
+    bug: { icon: Bug, color: '#EF4444', label: 'Bug', bg: 'rgba(239,68,68,0.15)' },
+    epic: { icon: Target, color: '#8B5CF6', label: 'Epic', bg: 'rgba(139,92,246,0.15)' },
+};
+
 const ListView: React.FC<ListViewProps> = ({ workItems, onTaskClick }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const [statusFilter, setStatusFilter] = useState<string>('all');
@@ -35,6 +45,7 @@ const ListView: React.FC<ListViewProps> = ({ workItems, onTaskClick }) => {
     const [sortField, setSortField] = useState<SortField>('status');
     const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
     const [groupBy, setGroupBy] = useState<string>('none');
+    const [selectedItem, setSelectedItem] = useState<WorkItem | null>(null);
 
     const filteredAndSortedItems = useMemo(() => {
         let items = [...workItems];
@@ -241,7 +252,7 @@ const ListView: React.FC<ListViewProps> = ({ workItems, onTaskClick }) => {
                                         <tr 
                                             key={item.id}
                                             className="border-t border-[rgba(244,246,255,0.04)] hover:bg-[rgba(244,246,255,0.02)] cursor-pointer transition-colors"
-                                            onClick={() => onTaskClick?.(item)}
+                                            onClick={() => { setSelectedItem(item); onTaskClick?.(item); }}
                                         >
                                             <td className="py-3 px-4">{getStatusIcon(item.status)}</td>
                                             <td className="py-3 px-4">
@@ -281,6 +292,110 @@ const ListView: React.FC<ListViewProps> = ({ workItems, onTaskClick }) => {
                     </div>
                 )}
             </CardContent>
+
+            {/* Ticket Detail Slide-in Panel */}
+            {selectedItem && (
+                <>
+                    <div
+                        className="fixed inset-0 bg-black/40 z-40"
+                        onClick={() => setSelectedItem(null)}
+                    />
+                    <div className="fixed right-0 top-0 bottom-0 w-full max-w-lg bg-[#0B0D14] border-l border-[rgba(244,246,255,0.08)] z-50 flex flex-col shadow-2xl shadow-black/50 overflow-y-auto">
+                        {/* Header */}
+                        <div className="flex items-start justify-between p-5 border-b border-[rgba(244,246,255,0.06)] sticky top-0 bg-[#0B0D14]">
+                            <div className="flex items-center gap-3 flex-1 min-w-0">
+                                {(() => {
+                                    const ti = TYPE_CONFIG[selectedItem.type] || TYPE_CONFIG.task;
+                                    return (
+                                        <div
+                                            className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-sm font-medium flex-shrink-0"
+                                            style={{ backgroundColor: ti.bg, color: ti.color }}
+                                        >
+                                            <ti.icon className="w-4 h-4" />
+                                            {ti.label}
+                                        </div>
+                                    );
+                                })()}
+                                <span className="text-xs font-mono text-[#6366F1]">{selectedItem.key}</span>
+                            </div>
+                            <button
+                                onClick={() => setSelectedItem(null)}
+                                className="p-1.5 rounded-lg hover:bg-[rgba(244,246,255,0.05)] text-[#475569] hover:text-white flex-shrink-0"
+                            >
+                                <X className="w-4 h-4" />
+                            </button>
+                        </div>
+
+                        {/* Content */}
+                        <div className="p-5 space-y-5">
+                            <h2 className="text-lg font-semibold text-white leading-tight">
+                                {selectedItem.title}
+                            </h2>
+
+                            {/* Status + Priority */}
+                            <div className="flex items-center gap-2 flex-wrap">
+                                <Badge
+                                    variant="outline"
+                                    className="border-[rgba(244,246,255,0.1)] text-[#94A3B8] capitalize"
+                                >
+                                    {selectedItem.status.replace(/_/g, ' ')}
+                                </Badge>
+                                <Badge
+                                    variant="outline"
+                                    className={getPriorityColor(selectedItem.priority)}
+                                >
+                                    {selectedItem.priority}
+                                </Badge>
+                            </div>
+
+                            {/* Description */}
+                            {selectedItem.description && (
+                                <div>
+                                    <p className="text-xs font-medium text-[#64748B] mb-2">Description</p>
+                                    <p className="text-sm text-[#E2E8F0] leading-relaxed bg-[rgba(244,246,255,0.02)] border border-[rgba(244,246,255,0.06)] rounded-xl p-4">
+                                        {selectedItem.description}
+                                    </p>
+                                </div>
+                            )}
+
+                            {/* Acceptance Criteria */}
+                            {selectedItem.acceptance_criteria && (
+                                <div>
+                                    <p className="text-xs font-medium text-[#64748B] mb-2">Acceptance Criteria</p>
+                                    <p className="text-sm text-[#E2E8F0] leading-relaxed bg-[rgba(244,246,255,0.02)] border border-[rgba(244,246,255,0.06)] rounded-xl p-4">
+                                        {selectedItem.acceptance_criteria}
+                                    </p>
+                                </div>
+                            )}
+
+                            {/* Details Grid */}
+                            <div className="grid grid-cols-2 gap-3">
+                                {[
+                                    { label: 'Assignee', value: selectedItem.assignee || 'Unassigned' },
+                                    { label: 'Sprint', value: selectedItem.sprint || 'Backlog' },
+                                    { label: 'Story Points', value: selectedItem.story_points ?? '-' },
+                                    { label: 'Est. Hours', value: selectedItem.estimated_hours ? `${selectedItem.estimated_hours}h` : '-' },
+                                    { label: 'Logged Hours', value: selectedItem.logged_hours ? `${selectedItem.logged_hours}h` : '0h' },
+                                    {
+                                        label: 'Due Date',
+                                        value: selectedItem.due_date
+                                            ? new Date(selectedItem.due_date).toLocaleDateString()
+                                            : 'Not set',
+                                    },
+                                ].map(({ label, value }) => (
+                                    <div
+                                        key={label}
+                                        className="bg-[rgba(244,246,255,0.03)] rounded-xl p-3"
+                                    >
+                                        <p className="text-xs text-[#64748B] mb-1">{label}</p>
+                                        <p className="text-sm font-medium text-white">{value}</p>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                </>
+            )}
         </Card>
     );
 };

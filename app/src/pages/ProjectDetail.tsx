@@ -14,7 +14,6 @@ import {
     Plus,
     Trash2,
     ExternalLink,
-    Mail,
     CheckCircle2,
     AlertCircle,
     LayoutGrid,
@@ -31,10 +30,12 @@ import {
     Calendar,
     FileText,
     BarChart3,
+    List,
+    Activity,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import PMView from '@/components/PMView';
-import { ProjectHubView } from '@/components/ProjectHub';
+import { TimelineView, CalendarView, ListView, GoalsView, ActivityFeed, BusinessReviewView, WorkloadView } from '@/components/ProjectHub';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
@@ -156,7 +157,57 @@ interface Project {
     architectures: Architecture[];
 }
 
-type TabType = 'overview' | 'developers' | 'github' | 'pm' | 'hub';
+type TabType = 'overview' | 'hub' | 'tracker' | 'calendar' | 'business' | 'goals' | 'activity' | 'pm';
+
+interface HubWorkItem {
+    id: string;
+    key: string;
+    title: string;
+    description?: string;
+    type: string;
+    status: string;
+    priority: string;
+    assignee?: string;
+    assignee_id?: number;
+    due_date?: string;
+    start_date?: string;
+    estimated_hours?: number;
+    logged_hours?: number;
+    remaining_hours?: number;
+    sprint?: string;
+    story_points?: number;
+}
+
+interface Goal {
+    id: number;
+    title: string;
+    description?: string;
+    status: string;
+    progress: number;
+    due_date?: string;
+    completed_at?: string;
+}
+
+interface Milestone {
+    id: number;
+    title: string;
+    description?: string;
+    due_date?: string;
+    completed_at?: string;
+    is_completed: boolean;
+}
+
+interface ActivityItem {
+    id: number;
+    action: string;
+    entity_type: string;
+    entity_id?: number;
+    title: string;
+    details?: Record<string, any>;
+    created_at: string;
+    user_name: string;
+    user_email?: string;
+}
 
 const ProjectDetail = () => {
     const { id } = useParams<{ id: string }>();
@@ -174,8 +225,7 @@ const ProjectDetail = () => {
         role: '',
         responsibilities: '',
     });
-    const [githubStatus, setGithubStatus] = useState<{ has_repo: boolean; developer_count: number; sent_count: number } | null>(null);
-    const [isSendingInvites, setIsSendingInvites] = useState(false);
+
     const [accessDenied, setAccessDenied] = useState(false);
     const [prdAnalysis, setPrdAnalysis] = useState<PRDAnalysis | null>(null);
     const [sprints, setSprints] = useState<Sprint[]>([]);
@@ -184,6 +234,26 @@ const ProjectDetail = () => {
     // Architecture editing state
     const [editingArchitecture, setEditingArchitecture] = useState<Architecture | null>(null);
 
+    // Lifted hub state (was inside ProjectHubView)
+    const [hubWorkItems, setHubWorkItems] = useState<HubWorkItem[]>([]);
+    const [goals, setGoals] = useState<Goal[]>([]);
+    const [milestones, setMilestones] = useState<Milestone[]>([]);
+    const [activities, setActivities] = useState<ActivityItem[]>([]);
+    const [workload, setWorkload] = useState<{
+        developer_id: number | string;
+        developer_name: string;
+        total_items: number;
+        completed_items: number;
+        in_progress_items: number;
+        todo_items: number;
+        overdue_items: number;
+        estimated_hours: number;
+        logged_hours: number;
+        remaining_hours: number;
+        this_week_remaining_hours?: number;
+    }[]>([]);
+    const [hubLoading, setHubLoading] = useState(false);
+
     // Fetch project data
     useEffect(() => {
         if (!id) return;
@@ -191,6 +261,7 @@ const ProjectDetail = () => {
         fetchAllDevelopers();
         fetchSprints();
         fetchAnalytics();
+        fetchHubData();
     }, [id]);
 
     const fetchProject = async () => {
@@ -230,22 +301,6 @@ const ProjectDetail = () => {
             }
         } catch (err) {
             console.error('Failed to fetch developers:', err);
-        }
-    };
-
-    const fetchGithubStatus = async () => {
-        if (!id) return;
-        try {
-            const res = await fetch(`${API_BASE_URL}/api/projects/${id}/github-status`, {
-                headers: {
-                    'Authorization': `Bearer ${token}`
-                }
-            });
-            if (res.ok) {
-                setGithubStatus(await res.json());
-            }
-        } catch (err) {
-            console.error('Failed to fetch GitHub status:', err);
         }
     };
 
@@ -298,11 +353,193 @@ const ProjectDetail = () => {
         }
     };
 
-    useEffect(() => {
-        if (activeTab === 'github') {
-            fetchGithubStatus();
+    // Hub data fetch functions
+    const fetchHubData = async () => {
+        if (!id) return;
+        setHubLoading(true);
+        await Promise.all([
+            fetchHubWorkItems(),
+            fetchGoals(),
+            fetchMilestones(),
+            fetchActivities(),
+            fetchWorkload(),
+        ]);
+        setHubLoading(false);
+    };
+
+    const fetchHubWorkItems = async () => {
+        if (!id) return;
+        try {
+            const res = await fetch(`${API_BASE_URL}/api/workitems/?project_id=${id}`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (res.ok) {
+                const data = await res.json();
+                setHubWorkItems(data.map((item: any) => ({
+                    id: item.id,
+                    key: item.key,
+                    title: item.title,
+                    description: item.description,
+                    type: item.type,
+                    status: item.status,
+                    priority: item.priority,
+                    assignee: item.assignee,
+                    assignee_id: item.assignee_id,
+                    due_date: item.due_date,
+                    start_date: item.start_date || item.started_at,
+                    estimated_hours: item.estimated_hours,
+                    logged_hours: item.logged_hours,
+                    remaining_hours: item.remaining_hours,
+                    sprint: item.sprint,
+                    story_points: item.story_points,
+                })));
+            }
+        } catch (err) {
+            console.error('Failed to fetch hub work items:', err);
         }
-    }, [activeTab]);
+    };
+
+    const fetchGoals = async () => {
+        if (!id) return;
+        try {
+            const res = await fetch(`${API_BASE_URL}/api/projects/${id}/goals`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (res.ok) setGoals(await res.json());
+        } catch (err) {
+            console.error('Failed to fetch goals:', err);
+        }
+    };
+
+    const fetchMilestones = async () => {
+        if (!id) return;
+        try {
+            const res = await fetch(`${API_BASE_URL}/api/projects/${id}/milestones`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (res.ok) setMilestones(await res.json());
+        } catch (err) {
+            console.error('Failed to fetch milestones:', err);
+        }
+    };
+
+    const fetchActivities = async () => {
+        if (!id) return;
+        try {
+            const res = await fetch(`${API_BASE_URL}/api/projects/${id}/activity`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (res.ok) setActivities(await res.json());
+        } catch (err) {
+            console.error('Failed to fetch activities:', err);
+        }
+    };
+
+    const fetchWorkload = async () => {
+        if (!id) return;
+        try {
+            const res = await fetch(`${API_BASE_URL}/api/projects/${id}/workload`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (res.ok) setWorkload(await res.json());
+        } catch (err) {
+            console.error('Failed to fetch workload:', err);
+        }
+    };
+
+    // Goal handlers
+    const handleAddGoal = async (goal: { title: string; description?: string; due_date?: string }) => {
+        if (!id) return;
+        try {
+            const res = await fetch(`${API_BASE_URL}/api/projects/${id}/goals`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify(goal),
+            });
+            if (res.ok) { toast.success('Goal added!'); fetchGoals(); }
+        } catch { toast.error('Failed to add goal'); }
+    };
+
+    const handleUpdateGoalProgress = async (goalId: number, progress: number) => {
+        if (!id) return;
+        try {
+            const res = await fetch(`${API_BASE_URL}/api/projects/${id}/goals/${goalId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({ progress }),
+            });
+            if (res.ok) fetchGoals();
+        } catch { toast.error('Failed to update goal'); }
+    };
+
+    const handleDeleteGoal = async (goalId: number) => {
+        if (!id) return;
+        try {
+            const res = await fetch(`${API_BASE_URL}/api/projects/${id}/goals/${goalId}`, {
+                method: 'DELETE',
+                headers: { 'Authorization': `Bearer ${token}` },
+            });
+            if (res.ok) { toast.success('Goal deleted'); fetchGoals(); }
+        } catch { toast.error('Failed to delete goal'); }
+    };
+
+    // Milestone handlers
+    const handleAddMilestone = async (milestone: { title: string; description?: string; due_date?: string }) => {
+        if (!id) return;
+        try {
+            const res = await fetch(`${API_BASE_URL}/api/projects/${id}/milestones`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify(milestone),
+            });
+            if (res.ok) { toast.success('Milestone added!'); fetchMilestones(); }
+        } catch { toast.error('Failed to add milestone'); }
+    };
+
+    const handleCompleteMilestone = async (milestoneId: number) => {
+        if (!id) return;
+        try {
+            const res = await fetch(`${API_BASE_URL}/api/projects/${id}/milestones/${milestoneId}/complete`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}` },
+            });
+            if (res.ok) { toast.success('Milestone completed!'); fetchMilestones(); }
+        } catch { toast.error('Failed to complete milestone'); }
+    };
+
+    const handleDeleteMilestone = async (milestoneId: number) => {
+        if (!id) return;
+        try {
+            const res = await fetch(`${API_BASE_URL}/api/projects/${id}/milestones/${milestoneId}`, {
+                method: 'DELETE',
+                headers: { 'Authorization': `Bearer ${token}` },
+            });
+            if (res.ok) { toast.success('Milestone deleted'); fetchMilestones(); }
+        } catch { toast.error('Failed to delete milestone'); }
+    };
+
+    // Task update/create handlers for TimelineView
+    const handleTaskUpdate = async (itemId: string, updates: any) => {
+        try {
+            const res = await fetch(`${API_BASE_URL}/api/workitems/${itemId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify(updates),
+            });
+            if (res.ok) fetchHubWorkItems();
+        } catch { toast.error('Failed to update task'); }
+    };
+
+    const handleTaskCreate = async (taskData: any) => {
+        try {
+            const res = await fetch(`${API_BASE_URL}/api/workitems/`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({ ...taskData, project_id: id }),
+            });
+            if (res.ok) { toast.success('Task created!'); fetchHubWorkItems(); }
+        } catch { toast.error('Failed to create task'); }
+    };
 
     // Fetch PRD analysis when project loads
     useEffect(() => {
@@ -393,32 +630,6 @@ const ProjectDetail = () => {
         }
     };
 
-    // Send GitHub invitations
-    const handleSendGitHubInvites = async () => {
-        if (!project || !project.github_repo_url) {
-            toast.error('No GitHub repository configured');
-            return;
-        }
-        setIsSendingInvites(true);
-        try {
-            const res = await fetch(`${API_BASE_URL}/api/projects/${project.id}/github-invite?role=push`, {
-                method: 'POST',
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            const data = await res.json();
-            if (res.ok) {
-                toast.success(`Sent ${data.successful_invitations} GitHub invitations!`);
-                fetchGithubStatus();
-            } else {
-                toast.error(data.detail || 'Failed to send invitations');
-            }
-        } catch {
-            toast.error('Failed to send invitations');
-        } finally {
-            setIsSendingInvites(false);
-        }
-    };
-
     if (isLoading) {
         return (
             <div className="min-h-screen bg-[#05060B] flex items-center justify-center">
@@ -459,9 +670,12 @@ const ProjectDetail = () => {
 
     const tabs = [
         { id: 'overview' as TabType, label: 'Overview', icon: Info },
-        { id: 'developers' as TabType, label: 'Developers', icon: Users },
-        { id: 'github' as TabType, label: 'GitHub', icon: Github },
-        { id: 'hub' as TabType, label: 'Project Hub', icon: BarChart3 },
+        { id: 'hub' as TabType, label: 'Project Hub', icon: List },
+        { id: 'tracker' as TabType, label: 'Project Tracker', icon: BarChart3 },
+        { id: 'calendar' as TabType, label: 'Calendar', icon: Calendar },
+        { id: 'business' as TabType, label: 'Business Review', icon: TrendingUp },
+        { id: 'goals' as TabType, label: 'Goals', icon: Target },
+        { id: 'activity' as TabType, label: 'Activity', icon: Activity },
         // PM tab only for admins and project managers
         ...(isProjectManager(user) ? [{ id: 'pm' as TabType, label: 'Project Manager', icon: Clock }] : []),
     ];
@@ -476,7 +690,7 @@ const ProjectDetail = () => {
             <Toaster position="top-right" theme="dark" richColors />
 
             {/* Header */}
-            <header className="border-b border-[rgba(244,246,255,0.06)] bg-[#05060B]/90 backdrop-blur-xl sticky top-0 z-40">
+            <header className="border-b border-[rgba(99,102,241,0.15)] bg-[#05060B]/95 backdrop-blur-xl sticky top-0 z-40 shadow-[0_1px_0_0_rgba(99,102,241,0.08)]">
                 <div className="px-6 py-4">
                     <div className="flex items-center justify-between">
                         <div className="flex items-center gap-4">
@@ -491,7 +705,7 @@ const ProjectDetail = () => {
                             </Button>
                             <div className="w-px h-6 bg-[rgba(244,246,255,0.08)]" />
                             <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-[#6366F1] to-[#4F46E5] flex items-center justify-center text-sm font-bold text-white">
+                                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#6366F1] to-[#8B5CF6] flex items-center justify-center text-sm font-bold text-white shadow-lg shadow-[#6366F1]/25">
                                     {project.key_prefix.substring(0, 2)}
                                 </div>
                                 <div>
@@ -502,7 +716,7 @@ const ProjectDetail = () => {
                         </div>
                         <Button
                             onClick={() => navigate(`/project/${project.id}/board`)}
-                            className="bg-gradient-to-r from-[#6366F1] to-[#4F46E5] hover:from-[#5558E6] hover:to-[#4338CA] text-white rounded-lg"
+                            className="bg-gradient-to-r from-[#6366F1] to-[#8B5CF6] hover:opacity-90 text-white rounded-xl font-semibold shadow-lg shadow-[#6366F1]/20 h-9 px-4"
                         >
                             <LayoutGrid className="w-4 h-4 mr-2" />
                             Open Board
@@ -518,13 +732,13 @@ const ProjectDetail = () => {
                             <button
                                 key={tab.id}
                                 onClick={() => setActiveTab(tab.id)}
-                                className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+                                className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-all ${
                                     activeTab === tab.id
-                                        ? 'text-[#6366F1] border-[#6366F1]'
-                                        : 'text-[#64748B] border-transparent hover:text-white hover:border-[rgba(244,246,255,0.1)]'
+                                        ? 'text-white border-[#6366F1] drop-shadow-[0_0_8px_rgba(99,102,241,0.6)]'
+                                        : 'text-[#64748B] border-transparent hover:text-[#94A3B8] hover:border-[rgba(244,246,255,0.1)]'
                                 }`}
                             >
-                                <Icon className="w-4 h-4" />
+                                <Icon className={`w-4 h-4 ${activeTab === tab.id ? 'text-[#8B5CF6]' : ''}`} />
                                 {tab.label}
                             </button>
                         );
@@ -533,12 +747,12 @@ const ProjectDetail = () => {
             </header>
 
             {/* Content */}
-            <main className="p-6 max-w-5xl mx-auto">
+            <main className="px-6 py-4 max-w-7xl mx-auto">
                 {/* Overview Tab */}
                 {activeTab === 'overview' && (
-                    <div className="space-y-6">
-                        <div className="bg-[rgba(244,246,255,0.02)] border border-[rgba(244,246,255,0.06)] rounded-2xl p-6">
-                            <div className="flex items-center justify-between mb-4">
+                    <div className="space-y-4">
+                        <div className="bg-[rgba(244,246,255,0.02)] border border-[rgba(244,246,255,0.06)] rounded-2xl p-4">
+                            <div className="flex items-center justify-between mb-3">
                                 <h2 className="text-lg font-semibold text-white">Project Information</h2>
                                 {!isEditing ? (
                                     <Button
@@ -646,7 +860,7 @@ const ProjectDetail = () => {
                                             <p className="text-sm text-[#475569]">No repository configured</p>
                                         )}
                                     </div>
-                                    <div className="flex items-center gap-6 pt-4 border-t border-[rgba(244,246,255,0.06)]">
+                                    <div className="flex items-center gap-4 pt-3 border-t border-[rgba(244,246,255,0.06)] flex-wrap">
                                         <div>
                                             <span className="text-xs text-[#64748B]">Start Date</span>
                                             <p className="text-sm text-[#E2E8F0]">{new Date(project.created_at).toLocaleDateString()}</p>
@@ -673,7 +887,7 @@ const ProjectDetail = () => {
                         </div>
 
                         {/* Quick Stats */}
-                        <div className="grid grid-cols-3 gap-4">
+                        <div className="grid grid-cols-4 gap-3">
                             <div className="bg-[rgba(244,246,255,0.02)] border border-[rgba(244,246,255,0.06)] rounded-xl p-4">
                                 <div className="flex items-center gap-3">
                                     <div className="w-10 h-10 rounded-lg bg-[#6366F1]/10 flex items-center justify-center">
@@ -709,106 +923,43 @@ const ProjectDetail = () => {
                                     </div>
                                 </div>
                             </div>
-                        </div>
-
-                        {/* Analytics Dashboard */}
-                        {analytics && analytics.total_items > 0 && (
-                            <div className="bg-[rgba(244,246,255,0.02)] border border-[rgba(244,246,255,0.06)] rounded-2xl p-6">
-                                <div className="flex items-center gap-3 mb-6">
-                                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#10B981] to-[#059669] flex items-center justify-center">
-                                        <BarChart3 className="w-5 h-5 text-white" />
-                                    </div>
-                                    <div>
-                                        <h3 className="font-semibold text-white">Project Analytics</h3>
-                                        <p className="text-xs text-[#64748B]">{analytics.total_items} items • {analytics.completed_points}/{analytics.total_story_points} points completed</p>
-                                    </div>
-                                </div>
-
-                                {/* Charts Grid */}
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                    {/* Status Distribution Pie Chart */}
-                                    <div className="bg-[rgba(244,246,255,0.03)] rounded-xl p-4">
-                                        <h4 className="text-sm font-medium text-[#94A3B8] mb-4">Status Distribution</h4>
-                                        <ResponsiveContainer width="100%" height={200}>
-                                            <PieChart>
-                                                <Pie
-                                                    data={Object.entries(analytics.status_distribution).map(([name, value]) => ({ name, value }))}
-                                                    cx="50%"
-                                                    cy="50%"
-                                                    innerRadius={40}
-                                                    outerRadius={80}
-                                                    paddingAngle={5}
-                                                    dataKey="value"
-                                                >
-                                                    {Object.entries(analytics.status_distribution).map((_, index) => (
-                                                        <Cell key={`cell-${index}`} fill={['#6366F1', '#10B981', '#F59E0B', '#EF4444', '#64748B'][index % 5]} />
-                                                    ))}
-                                                </Pie>
-                                                <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px' }} />
-                                                <Legend />
-                                            </PieChart>
-                                        </ResponsiveContainer>
-                                    </div>
-
-                                    {/* Velocity Chart */}
-                                    {analytics.velocity_data.length > 0 && (
-                                        <div className="bg-[rgba(244,246,255,0.03)] rounded-xl p-4">
-                                            <h4 className="text-sm font-medium text-[#94A3B8] mb-4">Sprint Velocity</h4>
-                                            <ResponsiveContainer width="100%" height={200}>
-                                                <BarChart data={analytics.velocity_data}>
-                                                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" />
-                                                    <XAxis dataKey="sprint_name" tick={{ fill: '#64748B', fontSize: 10 }} angle={-45} textAnchor="end" height={60} />
-                                                    <YAxis tick={{ fill: '#64748B' }} />
-                                                    <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px' }} />
-                                                    <Legend />
-                                                    <Bar dataKey="committed" fill="#6366F1" name="Committed" />
-                                                    <Bar dataKey="completed" fill="#10B981" name="Completed" />
-                                                </BarChart>
-                                            </ResponsiveContainer>
+                            {analytics && (
+                                <div className="bg-[rgba(244,246,255,0.02)] border border-[rgba(244,246,255,0.06)] rounded-xl p-4">
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-10 h-10 rounded-lg bg-[#8B5CF6]/10 flex items-center justify-center">
+                                            <BarChart3 className="w-5 h-5 text-[#8B5CF6]" />
                                         </div>
-                                    )}
-
-                                    {/* Burndown Chart */}
-                                    <div className="bg-[rgba(244,246,255,0.03)] rounded-xl p-4 md:col-span-2">
-                                        <h4 className="text-sm font-medium text-[#94A3B8] mb-4">Burndown Chart (Last 14 Days)</h4>
-                                        <ResponsiveContainer width="100%" height={250}>
-                                            <LineChart data={analytics.burndown_data}>
-                                                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" />
-                                                <XAxis dataKey="date" tick={{ fill: '#64748B', fontSize: 10 }} />
-                                                <YAxis tick={{ fill: '#64748B' }} />
-                                                <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px' }} />
-                                                <Legend />
-                                                <Line type="monotone" dataKey="remaining" stroke="#F59E0B" name="Remaining Items" strokeWidth={2} />
-                                                <Line type="monotone" dataKey="completed" stroke="#10B981" name="Completed Items" strokeWidth={2} />
-                                            </LineChart>
-                                        </ResponsiveContainer>
+                                        <div>
+                                            <p className="text-2xl font-bold text-white">{Math.round((analytics.completed_points / (analytics.total_story_points || 1)) * 100)}%</p>
+                                            <p className="text-xs text-[#64748B]">Completion</p>
+                                        </div>
                                     </div>
                                 </div>
-                            </div>
-                        )}
+                            )}
+                        </div>
 
                         {/* PRD Analysis Section */}
                         {prdAnalysis && (
-                            <div className="bg-[rgba(244,246,255,0.02)] border border-[rgba(244,246,255,0.06)] rounded-2xl p-6">
-                                <div className="flex items-center gap-3 mb-6">
+                            <div className="bg-[rgba(244,246,255,0.02)] border border-[rgba(244,246,255,0.06)] rounded-2xl p-5">
+                                <div className="flex items-center gap-3 mb-4">
                                     <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#6366F1] to-[#4F46E5] flex items-center justify-center">
                                         <FileText className="w-5 h-5 text-white" />
                                     </div>
                                     <div>
-                                        <h3 className="font-semibold text-white">AI Project Analysis</h3>
+                                        <h3 className="font-semibold text-white">Project Overview</h3>
                                         <p className="text-xs text-[#64748B]">Generated from PRD</p>
                                     </div>
                                 </div>
 
                                 {/* Summary */}
-                                <div className="mb-6">
-                                    <h4 className="text-sm font-medium text-[#94A3B8] mb-2">Summary</h4>
+                                <div className="mb-3">
+                                    <h4 className="text-sm font-medium text-[#94A3B8] mb-1.5">Summary</h4>
                                     <p className="text-sm text-[#E2E8F0] leading-relaxed">{prdAnalysis.summary}</p>
                                 </div>
 
                                 {/* Key Features */}
                                 {prdAnalysis.key_features && prdAnalysis.key_features.length > 0 && (
-                                    <div className="mb-6">
+                                    <div className="mb-4">
                                         <h4 className="text-sm font-medium text-[#94A3B8] mb-3 flex items-center gap-2">
                                             <Target className="w-4 h-4 text-[#6366F1]" />
                                             Key Features
@@ -825,7 +976,7 @@ const ProjectDetail = () => {
 
                                 {/* Technical Requirements */}
                                 {prdAnalysis.technical_requirements && prdAnalysis.technical_requirements.length > 0 && (
-                                    <div className="mb-6">
+                                    <div className="mb-4">
                                         <h4 className="text-sm font-medium text-[#94A3B8] mb-3 flex items-center gap-2">
                                             <Wrench className="w-4 h-4 text-[#10B981]" />
                                             Technical Requirements
@@ -842,7 +993,7 @@ const ProjectDetail = () => {
                                 )}
 
                                 {/* Recommended Tools */}
-                                <div className="mb-6">
+                                <div className="mb-4">
                                     <h4 className="text-sm font-medium text-[#94A3B8] mb-3 flex items-center gap-2">
                                         <Zap className="w-4 h-4 text-[#F59E0B]" />
                                         Recommended Tools
@@ -872,7 +1023,7 @@ const ProjectDetail = () => {
                                 </div>
 
                                 {/* Cost Analysis - Infrastructure Only */}
-                                <div className="mb-6">
+                                <div className="mb-4">
                                     <h4 className="text-sm font-medium text-[#94A3B8] mb-3 flex items-center gap-2">
                                         <DollarSign className="w-4 h-4 text-[#10B981]" />
                                         Infrastructure Cost Analysis
@@ -912,10 +1063,10 @@ const ProjectDetail = () => {
 
                                 {/* Risks */}
                                 {prdAnalysis.risks && prdAnalysis.risks.length > 0 && (
-                                    <div className="mb-6">
+                                    <div className="mb-4">
                                         <h4 className="text-sm font-medium text-[#94A3B8] mb-3 flex items-center gap-2">
                                             <AlertTriangle className="w-4 h-4 text-[#F59E0B]" />
-                                            Risk Assessment
+                                            Initial Risk Assessment
                                         </h4>
                                         <div className="space-y-3">
                                             {prdAnalysis.risks.map((risk, idx) => (
@@ -929,68 +1080,6 @@ const ProjectDetail = () => {
                                                     <p className="text-xs text-[#94A3B8]">
                                                         <span className="text-[#64748B]">Mitigation:</span> {risk.mitigation}
                                                     </p>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </div>
-                                )}
-
-                                {/* Active Sprints Section */}
-                                {sprints.length > 0 && (
-                                    <div className="mb-6">
-                                        <h4 className="text-sm font-medium text-[#94A3B8] mb-3 flex items-center gap-2">
-                                            <TrendingUp className="w-4 h-4 text-[#10B981]" />
-                                            Active Sprints ({sprints.length})
-                                        </h4>
-                                        <div className="space-y-3">
-                                            {sprints.map((sprint) => (
-                                                <div key={sprint.id} className={`bg-[rgba(244,246,255,0.03)] border rounded-xl p-4 ${
-                                                    sprint.status === 'active' ? 'border-[#10B981]/30 bg-[#10B981]/5' : 
-                                                    sprint.status === 'completed' ? 'border-[#6366F1]/30' : 'border-[rgba(244,246,255,0.06)]'
-                                                }`}>
-                                                    <div className="flex items-start justify-between mb-2">
-                                                        <div className="flex items-center gap-2">
-                                                            <span className={`w-2 h-2 rounded-full ${
-                                                                sprint.status === 'active' ? 'bg-[#10B981] animate-pulse' :
-                                                                sprint.status === 'completed' ? 'bg-[#6366F1]' : 'bg-[#64748B]'
-                                                            }`} />
-                                                            <p className="text-sm font-medium text-white">{sprint.name}</p>
-                                                            <Badge className={`text-xs border-0 ${
-                                                                sprint.status === 'active' ? 'bg-[#10B981]/20 text-[#10B981]' :
-                                                                sprint.status === 'completed' ? 'bg-[#6366F1]/20 text-[#6366F1]' :
-                                                                'bg-[#64748B]/20 text-[#64748B]'
-                                                            }`}>
-                                                                {sprint.status}
-                                                            </Badge>
-                                                        </div>
-                                                        <div className="text-right">
-                                                            <p className="text-xs text-[#64748B]">
-                                                                {sprint.start_date && sprint.end_date ? (
-                                                                    `${new Date(sprint.start_date).toLocaleDateString()} - ${new Date(sprint.end_date).toLocaleDateString()}`
-                                                                ) : 'Dates not set'}
-                                                            </p>
-                                                        </div>
-                                                    </div>
-                                                    {sprint.goal && (
-                                                        <p className="text-xs text-[#94A3B8] mb-3">{sprint.goal}</p>
-                                                    )}
-                                                    {/* Progress Bar */}
-                                                    <div className="flex items-center gap-3 mb-2">
-                                                        <div className="flex-1 h-2 bg-[rgba(244,246,255,0.06)] rounded-full overflow-hidden">
-                                                            <div 
-                                                                className="h-full bg-gradient-to-r from-[#6366F1] to-[#10B981] rounded-full transition-all"
-                                                                style={{ width: `${sprint.completion_pct}%` }}
-                                                            />
-                                                        </div>
-                                                        <span className="text-xs font-medium text-[#10B981]">{sprint.completion_pct}%</span>
-                                                    </div>
-                                                    {/* Stats */}
-                                                    <div className="flex items-center gap-4 text-xs">
-                                                        <span className="text-[#64748B]">{sprint.total_items} items</span>
-                                                        <span className="text-[#10B981]">{sprint.done_count} done</span>
-                                                        <span className="text-[#F59E0B]">{sprint.in_progress_count} in progress</span>
-                                                        <span className="text-[#64748B]">{sprint.total_points} pts</span>
-                                                    </div>
                                                 </div>
                                             ))}
                                         </div>
@@ -1216,29 +1305,32 @@ const ProjectDetail = () => {
                             </div>
                             );
                         })()}
-                    </div>
-                )}
 
-                {/* Developers Tab */}
-                {activeTab === 'developers' && (
-                    <div className="space-y-6">
-                        <div className="flex items-center justify-between">
-                            <h2 className="text-lg font-semibold text-white">Project Team</h2>
-                            <Button
-                                onClick={() => setShowAddDeveloper(true)}
-                                className="bg-gradient-to-r from-[#6366F1] to-[#4F46E5] hover:from-[#5558E6] hover:to-[#4338CA] text-white font-medium shadow-lg shadow-[#4F46E5]/20 disabled:opacity-50"
-                                disabled={availableDevelopers.length === 0}
-                            >
-                                <Plus className="w-4 h-4 mr-2" />
-                                Add Developer
-                            </Button>
-                        </div>
-
-                        {/* Developers List */}
-                        <div className="space-y-3">
+                        {/* Team Section */}
+                        <div className="bg-[rgba(244,246,255,0.02)] border border-[rgba(244,246,255,0.06)] rounded-2xl p-4">
+                            <div className="flex items-center justify-between mb-3">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-xl bg-[#6366F1]/10 flex items-center justify-center">
+                                        <Users className="w-5 h-5 text-[#6366F1]" />
+                                    </div>
+                                    <div>
+                                        <h3 className="font-semibold text-white">Project Team</h3>
+                                        <p className="text-xs text-[#64748B]">{project.developers.length} developers assigned</p>
+                                    </div>
+                                </div>
+                                <Button
+                                    onClick={() => setShowAddDeveloper(true)}
+                                    disabled={availableDevelopers.length === 0}
+                                    className="bg-gradient-to-r from-[#6366F1] to-[#4F46E5] hover:from-[#5558E6] hover:to-[#4338CA] text-white font-medium shadow-lg shadow-[#4F46E5]/20 disabled:opacity-50 rounded-xl"
+                                    size="sm"
+                                >
+                                    <Plus className="w-4 h-4 mr-2" />
+                                    Add Developer
+                                </Button>
+                            </div>
                             {project.developers.length === 0 ? (
-                                <div className="text-center py-12 bg-[rgba(244,246,255,0.02)] border border-[rgba(244,246,255,0.06)] rounded-2xl">
-                                    <Users className="w-12 h-12 text-[#334155] mx-auto mb-3" />
+                                <div className="text-center py-10 bg-[rgba(244,246,255,0.02)] border border-[rgba(244,246,255,0.06)] rounded-2xl">
+                                    <Users className="w-10 h-10 text-[#334155] mx-auto mb-3" />
                                     <p className="text-[#64748B]">No developers assigned yet</p>
                                     <Button
                                         onClick={() => setShowAddDeveloper(true)}
@@ -1249,279 +1341,435 @@ const ProjectDetail = () => {
                                     </Button>
                                 </div>
                             ) : (
-                                project.developers.map((dev) => (
-                                    <div
-                                        key={dev.id}
-                                        className="bg-[rgba(244,246,255,0.02)] border border-[rgba(244,246,255,0.06)] rounded-xl p-4 flex items-start justify-between"
-                                    >
-                                        <div className="flex items-start gap-4">
-                                            <div className="w-12 h-12 rounded-full bg-gradient-to-br from-[#6366F1] to-[#4F46E5] flex items-center justify-center text-white font-semibold">
-                                                {dev.name.charAt(0).toUpperCase()}
-                                            </div>
-                                            <div>
-                                                <h3 className="font-semibold text-white">{dev.name}</h3>
-                                                <p className="text-sm text-[#64748B]">{dev.email}</p>
-                                                <div className="flex items-center gap-2 mt-2">
-                                                    <Badge className="bg-[#6366F1]/20 text-[#6366F1] border-0">
-                                                        {dev.role}
-                                                    </Badge>
-                                                    {dev.github_username && (
-                                                        <Badge variant="outline" className="text-[#64748B] border-[rgba(244,246,255,0.1)]">
-                                                            <Github className="w-3 h-3 mr-1" />
-                                                            {dev.github_username}
-                                                        </Badge>
-                                                    )}
-                                                </div>
-                                                {dev.responsibilities && (
-                                                    <p className="text-sm text-[#94A3B8] mt-2">
-                                                        {dev.responsibilities}
-                                                    </p>
-                                                )}
-                                            </div>
-                                        </div>
-                                        <Button
-                                            variant="ghost"
-                                            size="sm"
-                                            onClick={() => handleRemoveDeveloper(dev.id)}
-                                            className="text-red-400 hover:text-red-300 hover:bg-red-400/10"
-                                        >
-                                            <Trash2 className="w-4 h-4" />
-                                        </Button>
-                                    </div>
-                                ))
-                            )}
-                        </div>
-
-                        {/* Add Developer Modal */}
-                        {showAddDeveloper && (
-                            <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-                                <div className="bg-[#0F1118] border border-[rgba(244,246,255,0.08)] rounded-2xl w-full max-w-md shadow-2xl">
-                                    <div className="flex items-center justify-between p-5 border-b border-[rgba(244,246,255,0.06)]">
-                                        <h2 className="text-lg font-bold text-white">Add Developer</h2>
-                                        <button
-                                            onClick={() => setShowAddDeveloper(false)}
-                                            className="p-2 rounded-lg hover:bg-[rgba(244,246,255,0.05)] text-[#475569] hover:text-white"
-                                        >
-                                            <X className="w-5 h-5" />
-                                        </button>
-                                    </div>
-                                    <div className="p-5 space-y-4">
-                                        <div>
-                                            <label className="text-xs font-medium text-[#64748B] block mb-1.5">Developer</label>
-                                            <select
-                                                value={newDeveloper.developer_id}
-                                                onChange={(e) => setNewDeveloper(d => ({ ...d, developer_id: e.target.value }))}
-                                                className="w-full h-10 bg-[rgba(244,246,255,0.03)] border border-[rgba(244,246,255,0.08)] text-[#E2E8F0] rounded-xl px-3 text-sm"
-                                            >
-                                                <option value="">Select a developer</option>
-                                                {availableDevelopers.map((dev) => (
-                                                    <option key={dev.id} value={dev.id}>
-                                                        {dev.name} ({dev.email})
-                                                    </option>
-                                                ))}
-                                            </select>
-                                        </div>
-                                        <div>
-                                            <label className="text-xs font-medium text-[#64748B] block mb-1.5">Role</label>
-                                            <Input
-                                                value={newDeveloper.role}
-                                                onChange={(e) => setNewDeveloper(d => ({ ...d, role: e.target.value }))}
-                                                placeholder="e.g., Backend Developer"
-                                                className="bg-[rgba(244,246,255,0.03)] border-[rgba(244,246,255,0.08)] text-[#F4F6FF] rounded-xl"
-                                            />
-                                        </div>
-                                        <div>
-                                            <label className="text-xs font-medium text-[#64748B] block mb-1.5">Responsibilities</label>
-                                            <Textarea
-                                                value={newDeveloper.responsibilities}
-                                                onChange={(e) => setNewDeveloper(d => ({ ...d, responsibilities: e.target.value }))}
-                                                placeholder="What will this developer work on?"
-                                                className="bg-[rgba(244,246,255,0.03)] border-[rgba(244,246,255,0.08)] text-[#F4F6FF] rounded-xl min-h-[80px]"
-                                            />
-                                        </div>
-                                    </div>
-                                    <div className="flex justify-end gap-3 p-5 border-t border-[rgba(244,246,255,0.06)]">
-                                        <Button
-                                            variant="ghost"
-                                            onClick={() => setShowAddDeveloper(false)}
-                                            className="text-[#64748B] rounded-xl"
-                                        >
-                                            Cancel
-                                        </Button>
-                                        <Button
-                                            onClick={handleAddDeveloper}
-                                            disabled={!newDeveloper.developer_id || !newDeveloper.role}
-                                            className="bg-gradient-to-r from-[#6366F1] to-[#4F46E5] hover:from-[#5558E6] hover:to-[#4338CA] text-white rounded-xl font-medium shadow-lg shadow-[#4F46E5]/20 disabled:opacity-50"
-                                        >
-                                            <Plus className="w-4 h-4 mr-2" />
-                                            Add Developer
-                                        </Button>
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-                    </div>
-                )}
-
-                {/* GitHub Tab */}
-                {activeTab === 'github' && (
-                    <div className="space-y-6">
-                        <div className="bg-[rgba(244,246,255,0.02)] border border-[rgba(244,246,255,0.06)] rounded-2xl p-6">
-                            <div className="flex items-center gap-3 mb-6">
-                                <div className="w-12 h-12 rounded-xl bg-[#6366F1]/10 flex items-center justify-center">
-                                    <Github className="w-6 h-6 text-[#6366F1]" />
-                                </div>
-                                <div>
-                                    <h2 className="text-lg font-semibold text-white">GitHub Integration</h2>
-                                    <p className="text-sm text-[#64748B]">Manage repository access for your team</p>
-                                </div>
-                            </div>
-
-                            {/* Repository Info */}
-                            <div className="space-y-4 mb-6">
-                                <div>
-                                    <label className="text-xs font-medium text-[#64748B] block mb-1.5">Repository URL</label>
-                                    {isEditing ? (
-                                        <Input
-                                            value={editForm.github_repo_url || ''}
-                                            onChange={(e) => setEditForm(f => ({ ...f, github_repo_url: e.target.value }))}
-                                            placeholder="https://github.com/username/repo"
-                                            className="bg-[rgba(244,246,255,0.03)] border-[rgba(244,246,255,0.08)] text-[#F4F6FF] rounded-xl"
-                                        />
-                                    ) : project.github_repo_url ? (
-                                        <a
-                                            href={project.github_repo_url}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            className="flex items-center gap-2 text-sm text-[#6366F1] hover:underline"
-                                        >
-                                            {project.github_repo_url}
-                                            <ExternalLink className="w-4 h-4" />
-                                        </a>
-                                    ) : (
-                                        <div className="flex items-center gap-2 text-sm text-[#475569]">
-                                            <AlertCircle className="w-4 h-4" />
-                                            No repository configured
-                                        </div>
-                                    )}
-                                </div>
-
-                                {!isEditing && !project.github_repo_url && (
-                                    <div className="bg-[#F59E0B]/10 border border-[#F59E0B]/20 rounded-xl p-4">
-                                        <div className="flex items-start gap-3">
-                                            <AlertCircle className="w-5 h-5 text-[#F59E0B] mt-0.5" />
-                                            <div>
-                                                <p className="text-sm font-medium text-[#F59E0B]">Repository not configured</p>
-                                                <p className="text-xs text-[#94A3B8] mt-1">
-                                                    Add a GitHub repository URL in the Overview tab to send invitations to your team.
-                                                </p>
-                                                <Button
-                                                    variant="ghost"
-                                                    size="sm"
-                                                    onClick={() => setActiveTab('overview')}
-                                                    className="text-[#6366F1] mt-2"
-                                                >
-                                                    Go to Overview
-                                                </Button>
-                                            </div>
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
-
-                            {/* Invitation Status */}
-                            {githubStatus && (
-                                <div className="bg-[rgba(244,246,255,0.03)] border border-[rgba(244,246,255,0.06)] rounded-xl p-4 mb-6">
-                                    <div className="grid grid-cols-3 gap-4">
-                                        <div className="text-center">
-                                            <p className="text-2xl font-bold text-white">{githubStatus.developer_count}</p>
-                                            <p className="text-xs text-[#64748B]">Developers with GitHub</p>
-                                        </div>
-                                        <div className="text-center">
-                                            <p className="text-2xl font-bold text-[#10B981]">{githubStatus.sent_count}</p>
-                                            <p className="text-xs text-[#64748B]">Invitations Sent</p>
-                                        </div>
-                                        <div className="text-center">
-                                            <p className="text-2xl font-bold text-[#6366F1]">
-                                                {githubStatus.developer_count - githubStatus.sent_count}
-                                            </p>
-                                            <p className="text-xs text-[#64748B]">Pending</p>
-                                        </div>
-                                    </div>
-                                </div>
-                            )}
-
-                            {/* Send Invitations Button */}
-                            {project.github_repo_url && (
-                                <Button
-                                    onClick={handleSendGitHubInvites}
-                                    disabled={isSendingInvites || project.developers.length === 0}
-                                    className="w-full bg-gradient-to-r from-[#6366F1] to-[#4F46E5] hover:from-[#5558E6] hover:to-[#4338CA] text-white rounded-xl h-12"
-                                >
-                                    {isSendingInvites ? (
-                                        <>
-                                            <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin mr-2" />
-                                            Sending Invitations...
-                                        </>
-                                    ) : (
-                                        <>
-                                            <Mail className="w-4 h-4 mr-2" />
-                                            Send GitHub Invitations to Team
-                                        </>
-                                    )}
-                                </Button>
-                            )}
-                        </div>
-
-                        {/* Developers with GitHub */}
-                        {project.developers.length > 0 && (
-                            <div className="bg-[rgba(244,246,255,0.02)] border border-[rgba(244,246,255,0.06)] rounded-2xl p-6">
-                                <h3 className="text-sm font-semibold text-white mb-4">Team GitHub Accounts</h3>
-                                <div className="space-y-2">
+                                <div className="space-y-3">
                                     {project.developers.map((dev) => (
                                         <div
                                             key={dev.id}
-                                            className="flex items-center justify-between py-2 border-b border-[rgba(244,246,255,0.04)] last:border-0"
+                                            className="bg-[rgba(244,246,255,0.02)] border border-[rgba(244,246,255,0.06)] rounded-xl p-4 flex items-start justify-between"
                                         >
-                                            <div className="flex items-center gap-3">
-                                                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#6366F1] to-[#4F46E5] flex items-center justify-center text-white text-sm font-semibold">
+                                            <div className="flex items-start gap-4">
+                                                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#6366F1] to-[#4F46E5] flex items-center justify-center text-white font-semibold">
                                                     {dev.name.charAt(0).toUpperCase()}
                                                 </div>
-                                                <span className="text-sm text-[#E2E8F0]">{dev.name}</span>
+                                                <div>
+                                                    <h3 className="font-semibold text-white">{dev.name}</h3>
+                                                    <p className="text-sm text-[#64748B]">{dev.email}</p>
+                                                    <div className="flex items-center gap-2 mt-1.5">
+                                                        <Badge className="bg-[#6366F1]/20 text-[#6366F1] border-0">
+                                                            {dev.role}
+                                                        </Badge>
+                                                        {dev.github_username && (
+                                                            <Badge variant="outline" className="text-[#64748B] border-[rgba(244,246,255,0.1)]">
+                                                                <Github className="w-3 h-3 mr-1" />
+                                                                {dev.github_username}
+                                                            </Badge>
+                                                        )}
+                                                    </div>
+                                                    {dev.responsibilities && (
+                                                        <p className="text-sm text-[#94A3B8] mt-1.5">{dev.responsibilities}</p>
+                                                    )}
+                                                </div>
                                             </div>
-                                            {dev.github_username ? (
-                                                <Badge className="bg-[#10B981]/20 text-[#10B981] border-0">
-                                                    <CheckCircle2 className="w-3 h-3 mr-1" />
-                                                    {dev.github_username}
-                                                </Badge>
-                                            ) : (
-                                                <Badge variant="outline" className="text-[#F59E0B] border-[#F59E0B]/30">
-                                                    <AlertCircle className="w-3 h-3 mr-1" />
-                                                    No GitHub
-                                                </Badge>
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                onClick={() => handleRemoveDeveloper(dev.id)}
+                                                className="text-red-400 hover:text-red-300 hover:bg-red-400/10"
+                                            >
+                                                <Trash2 className="w-4 h-4" />
+                                            </Button>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                )}
+
+                {/* Add Developer Modal (shared across overview & hub) */}
+                {showAddDeveloper && (
+                    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                        <div className="bg-[#0F1118] border border-[rgba(244,246,255,0.08)] rounded-2xl w-full max-w-md shadow-2xl">
+                            <div className="flex items-center justify-between p-5 border-b border-[rgba(244,246,255,0.06)]">
+                                <h2 className="text-lg font-bold text-white">Add Developer</h2>
+                                <button
+                                    onClick={() => setShowAddDeveloper(false)}
+                                    className="p-2 rounded-lg hover:bg-[rgba(244,246,255,0.05)] text-[#475569] hover:text-white"
+                                >
+                                    <X className="w-5 h-5" />
+                                </button>
+                            </div>
+                            <div className="p-5 space-y-4">
+                                <div>
+                                    <label className="text-xs font-medium text-[#64748B] block mb-1.5">Developer</label>
+                                    <select
+                                        value={newDeveloper.developer_id}
+                                        onChange={(e) => setNewDeveloper(d => ({ ...d, developer_id: e.target.value }))}
+                                        className="w-full h-10 bg-[rgba(244,246,255,0.03)] border border-[rgba(244,246,255,0.08)] text-[#E2E8F0] rounded-xl px-3 text-sm"
+                                    >
+                                        <option value="">Select a developer</option>
+                                        {availableDevelopers.map((dev) => (
+                                            <option key={dev.id} value={dev.id}>
+                                                {dev.name} ({dev.email})
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="text-xs font-medium text-[#64748B] block mb-1.5">Role</label>
+                                    <Input
+                                        value={newDeveloper.role}
+                                        onChange={(e) => setNewDeveloper(d => ({ ...d, role: e.target.value }))}
+                                        placeholder="e.g., Backend Developer"
+                                        className="bg-[rgba(244,246,255,0.03)] border-[rgba(244,246,255,0.08)] text-[#F4F6FF] rounded-xl"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="text-xs font-medium text-[#64748B] block mb-1.5">Responsibilities</label>
+                                    <Textarea
+                                        value={newDeveloper.responsibilities}
+                                        onChange={(e) => setNewDeveloper(d => ({ ...d, responsibilities: e.target.value }))}
+                                        placeholder="What will this developer work on?"
+                                        className="bg-[rgba(244,246,255,0.03)] border-[rgba(244,246,255,0.08)] text-[#F4F6FF] rounded-xl min-h-[80px]"
+                                    />
+                                </div>
+                            </div>
+                            <div className="flex justify-end gap-3 p-5 border-t border-[rgba(244,246,255,0.06)]">
+                                <Button
+                                    variant="ghost"
+                                    onClick={() => setShowAddDeveloper(false)}
+                                    className="text-[#64748B] rounded-xl"
+                                >
+                                    Cancel
+                                </Button>
+                                <Button
+                                    onClick={handleAddDeveloper}
+                                    disabled={!newDeveloper.developer_id || !newDeveloper.role}
+                                    className="bg-gradient-to-r from-[#6366F1] to-[#4F46E5] hover:from-[#5558E6] hover:to-[#4338CA] text-white rounded-xl font-medium shadow-lg shadow-[#4F46E5]/20 disabled:opacity-50"
+                                >
+                                    <Plus className="w-4 h-4 mr-2" />
+                                    Add Developer
+                                </Button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+                {/* Project Hub Tab */}
+                {activeTab === 'hub' && (
+                    <div className="space-y-4">
+                        {/* Active Sprints in Hub */}
+                        {sprints.length > 0 && (
+                            <div className="bg-[rgba(244,246,255,0.02)] border border-[rgba(99,102,241,0.12)] rounded-2xl p-5">
+                                <div className="flex items-center gap-3 mb-4">
+                                    <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-[#6366F1] to-[#8B5CF6] flex items-center justify-center shadow-lg shadow-[#6366F1]/20">
+                                        <TrendingUp className="w-4 h-4 text-white" />
+                                    </div>
+                                    <div>
+                                        <h3 className="font-semibold text-white">Active Sprints</h3>
+                                        <p className="text-xs text-[#64748B]">{sprints.filter(s => s.status === 'active').length} active · {sprints.length} total</p>
+                                    </div>
+                                </div>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                    {sprints.map((sprint) => (
+                                        <div key={sprint.id} className={`border rounded-xl p-4 ${
+                                            sprint.status === 'active' ? 'border-[#10B981]/30 bg-[#10B981]/5' :
+                                            sprint.status === 'completed' ? 'border-[#6366F1]/20 bg-[rgba(99,102,241,0.03)]' :
+                                            'border-[rgba(244,246,255,0.06)] bg-[rgba(244,246,255,0.02)]'
+                                        }`}>
+                                            <div className="flex items-center justify-between mb-2">
+                                                <div className="flex items-center gap-2">
+                                                    <span className={`w-2 h-2 rounded-full flex-shrink-0 ${
+                                                        sprint.status === 'active' ? 'bg-[#10B981] animate-pulse' :
+                                                        sprint.status === 'completed' ? 'bg-[#6366F1]' : 'bg-[#64748B]'
+                                                    }`} />
+                                                    <p className="text-sm font-semibold text-white truncate">{sprint.name}</p>
+                                                </div>
+                                                <Badge className={`text-[10px] border-0 flex-shrink-0 ${
+                                                    sprint.status === 'active' ? 'bg-[#10B981]/20 text-[#10B981]' :
+                                                    sprint.status === 'completed' ? 'bg-[#6366F1]/20 text-[#6366F1]' :
+                                                    'bg-[#64748B]/20 text-[#64748B]'
+                                                }`}>{sprint.status}</Badge>
+                                            </div>
+                                            {sprint.goal && (
+                                                <p className="text-xs text-[#94A3B8] mb-2 line-clamp-1">{sprint.goal}</p>
                                             )}
+                                            <div className="flex items-center gap-2 mb-2">
+                                                <div className="flex-1 h-1.5 bg-[rgba(244,246,255,0.06)] rounded-full overflow-hidden">
+                                                    <div
+                                                        className="h-full bg-gradient-to-r from-[#6366F1] to-[#10B981] rounded-full transition-all"
+                                                        style={{ width: `${sprint.completion_pct}%` }}
+                                                    />
+                                                </div>
+                                                <span className="text-xs font-bold text-[#10B981] w-10 text-right">{sprint.completion_pct}%</span>
+                                            </div>
+                                            <div className="flex items-center gap-3 text-[10px] text-[#64748B]">
+                                                <span>{sprint.done_count}/{sprint.total_items} done</span>
+                                                <span>·</span>
+                                                <span>{sprint.total_points} pts</span>
+                                                {sprint.start_date && sprint.end_date && (
+                                                    <>
+                                                        <span>·</span>
+                                                        <span>{new Date(sprint.end_date).toLocaleDateString()}</span>
+                                                    </>
+                                                )}
+                                            </div>
                                         </div>
                                     ))}
                                 </div>
                             </div>
                         )}
+
+                        {/* Work Items List */}
+                        {hubLoading ? (
+                            <div className="flex items-center justify-center py-12">
+                                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#6366F1]"></div>
+                            </div>
+                        ) : (
+                            <ListView workItems={hubWorkItems} />
+                        )}
                     </div>
                 )}
 
-                {/* Project Hub Tab */}
-                {activeTab === 'hub' && (
-                    <ProjectHubView 
-                        projectId={id!} 
-                        token={token!} 
-                        project={project} 
-                        developers={project.developers.map(d => ({ id: d.id, name: d.name, email: d.email }))}
+                {/* Project Tracker Tab */}
+                {activeTab === 'tracker' && (
+                    <div className="space-y-4">
+                        <TimelineView
+                            workItems={hubWorkItems}
+                            milestones={milestones}
+                            goals={goals}
+                            projectStartDate={project?.created_at}
+                            projectId={parseInt(id!)}
+                            developers={project.developers.map(d => ({ id: d.id, name: d.name, email: d.email }))}
+                            onTaskUpdate={handleTaskUpdate}
+                            onTaskCreate={handleTaskCreate}
+                        />
+
+                        {/* Analytics Charts */}
+                        {analytics && analytics.total_items > 0 && (
+                            <div className="bg-[rgba(244,246,255,0.02)] border border-[rgba(244,246,255,0.06)] rounded-2xl p-5">
+                                <div className="flex items-center gap-3 mb-4">
+                                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#10B981] to-[#059669] flex items-center justify-center">
+                                        <BarChart3 className="w-5 h-5 text-white" />
+                                    </div>
+                                    <div>
+                                        <h3 className="font-semibold text-white">Project Analytics</h3>
+                                        <p className="text-xs text-[#64748B]">{analytics.total_items} items &bull; {analytics.completed_points}/{analytics.total_story_points} points completed</p>
+                                    </div>
+                                </div>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div className="bg-[rgba(244,246,255,0.03)] rounded-xl p-4">
+                                        <h4 className="text-sm font-medium text-[#94A3B8] mb-4">Status Distribution</h4>
+                                        <ResponsiveContainer width="100%" height={200}>
+                                            <PieChart>
+                                                <Pie
+                                                    data={Object.entries(analytics.status_distribution).map(([name, value]) => ({ name, value }))}
+                                                    cx="50%" cy="50%" innerRadius={40} outerRadius={80} paddingAngle={5} dataKey="value"
+                                                >
+                                                    {Object.entries(analytics.status_distribution).map((_, index) => (
+                                                        <Cell key={`cell-${index}`} fill={['#6366F1', '#10B981', '#F59E0B', '#EF4444', '#64748B'][index % 5]} />
+                                                    ))}
+                                                </Pie>
+                                                <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px' }} />
+                                                <Legend />
+                                            </PieChart>
+                                        </ResponsiveContainer>
+                                    </div>
+                                    {analytics.velocity_data.length > 0 && (
+                                        <div className="bg-[rgba(244,246,255,0.03)] rounded-xl p-4">
+                                            <h4 className="text-sm font-medium text-[#94A3B8] mb-4">Sprint Velocity</h4>
+                                            <ResponsiveContainer width="100%" height={200}>
+                                                <BarChart data={analytics.velocity_data}>
+                                                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" />
+                                                    <XAxis dataKey="sprint_name" tick={{ fill: '#64748B', fontSize: 10 }} angle={-45} textAnchor="end" height={60} />
+                                                    <YAxis tick={{ fill: '#64748B' }} />
+                                                    <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px' }} />
+                                                    <Legend />
+                                                    <Bar dataKey="committed" fill="#6366F1" name="Committed" />
+                                                    <Bar dataKey="completed" fill="#10B981" name="Completed" />
+                                                </BarChart>
+                                            </ResponsiveContainer>
+                                        </div>
+                                    )}
+                                    <div className="bg-[rgba(244,246,255,0.03)] rounded-xl p-4 md:col-span-2">
+                                        <h4 className="text-sm font-medium text-[#94A3B8] mb-4">Burndown Chart (Last 14 Days)</h4>
+                                        <ResponsiveContainer width="100%" height={250}>
+                                            <LineChart data={analytics.burndown_data}>
+                                                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" />
+                                                <XAxis dataKey="date" tick={{ fill: '#64748B', fontSize: 10 }} />
+                                                <YAxis tick={{ fill: '#64748B' }} />
+                                                <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px' }} />
+                                                <Legend />
+                                                <Line type="monotone" dataKey="remaining" stroke="#F59E0B" name="Remaining Items" strokeWidth={2} />
+                                                <Line type="monotone" dataKey="completed" stroke="#10B981" name="Completed Items" strokeWidth={2} />
+                                            </LineChart>
+                                        </ResponsiveContainer>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                {/* Calendar Tab */}
+                {activeTab === 'calendar' && (
+                    <CalendarView workItems={hubWorkItems} milestones={milestones} goals={goals} />
+                )}
+
+                {/* Business Review Tab */}
+                {activeTab === 'business' && (
+                    <BusinessReviewView
+                        project={project}
+                        analytics={analytics}
+                        sprints={sprints}
+                        milestones={milestones}
+                        workItems={hubWorkItems}
+                        goals={goals}
                     />
+                )}
+
+                {/* Goals Tab */}
+                {activeTab === 'goals' && (
+                    <GoalsView
+                        goals={goals}
+                        milestones={milestones}
+                        onAddGoal={handleAddGoal}
+                        onAddMilestone={handleAddMilestone}
+                        onUpdateGoalProgress={handleUpdateGoalProgress}
+                        onCompleteMilestone={handleCompleteMilestone}
+                        onDeleteGoal={handleDeleteGoal}
+                        onDeleteMilestone={handleDeleteMilestone}
+                    />
+                )}
+
+                {/* Activity Tab */}
+                {activeTab === 'activity' && (
+                    <ActivityFeed activities={activities} />
                 )}
 
                 {/* Project Manager Tab */}
                 {activeTab === 'pm' && isProjectManager(user) && (
-                    <div className="space-y-6">
+                    <div className="space-y-4">
+                        {/* Sprint Expected vs Actual Progress */}
+                        {sprints.length > 0 && (
+                            <div className="bg-[rgba(244,246,255,0.02)] border border-[rgba(99,102,241,0.12)] rounded-2xl p-5 shadow-[0_0_30px_rgba(99,102,241,0.05)]">
+                                <div className="flex items-center gap-3 mb-5">
+                                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#6366F1] to-[#8B5CF6] flex items-center justify-center shadow-lg shadow-[#6366F1]/25">
+                                        <BarChart3 className="w-5 h-5 text-white" />
+                                    </div>
+                                    <div>
+                                        <h3 className="font-semibold text-white">Sprint Progress vs Expected</h3>
+                                        <p className="text-xs text-[#64748B]">Actual completion compared to time-based expected progress</p>
+                                    </div>
+                                </div>
+                                <div className="space-y-4">
+                                    {sprints.map((sprint) => {
+                                        // Calculate expected progress based on time elapsed
+                                        const now = new Date();
+                                        let expectedPct = 0;
+                                        if (sprint.start_date && sprint.end_date) {
+                                            const start = new Date(sprint.start_date);
+                                            const end = new Date(sprint.end_date);
+                                            const totalMs = end.getTime() - start.getTime();
+                                            const elapsedMs = Math.min(now.getTime() - start.getTime(), totalMs);
+                                            expectedPct = totalMs > 0 ? Math.max(0, Math.round((elapsedMs / totalMs) * 100)) : 0;
+                                            if (sprint.status === 'completed') expectedPct = 100;
+                                            if (now < start) expectedPct = 0;
+                                        }
+                                        const actual = sprint.completion_pct;
+                                        const delta = actual - expectedPct;
+                                        const isAhead = delta >= 0;
+                                        const isFar = Math.abs(delta) > 15;
+                                        return (
+                                            <div key={sprint.id} className={`border rounded-xl p-4 ${
+                                                sprint.status === 'completed' ? 'border-[#6366F1]/20 bg-[rgba(99,102,241,0.03)]' :
+                                                isFar && !isAhead ? 'border-[#EF4444]/20 bg-[rgba(239,68,68,0.03)]' :
+                                                'border-[rgba(244,246,255,0.06)] bg-[rgba(244,246,255,0.02)]'
+                                            }`}>
+                                                <div className="flex items-center justify-between mb-3">
+                                                    <div className="flex items-center gap-2">
+                                                        <span className={`w-2 h-2 rounded-full ${
+                                                            sprint.status === 'active' ? 'bg-[#10B981] animate-pulse' :
+                                                            sprint.status === 'completed' ? 'bg-[#6366F1]' : 'bg-[#64748B]'
+                                                        }`} />
+                                                        <p className="text-sm font-semibold text-white">{sprint.name}</p>
+                                                        <Badge className={`text-[10px] border-0 ${
+                                                            sprint.status === 'active' ? 'bg-[#10B981]/20 text-[#10B981]' :
+                                                            sprint.status === 'completed' ? 'bg-[#6366F1]/20 text-[#6366F1]' :
+                                                            'bg-[#64748B]/20 text-[#64748B]'
+                                                        }`}>{sprint.status}</Badge>
+                                                    </div>
+                                                    <div className="flex items-center gap-2">
+                                                        <span className={`text-xs font-bold px-2 py-0.5 rounded-lg ${
+                                                            isAhead ? 'bg-[#10B981]/15 text-[#10B981]' :
+                                                            isFar ? 'bg-[#EF4444]/15 text-[#EF4444]' :
+                                                            'bg-[#F59E0B]/15 text-[#F59E0B]'
+                                                        }`}>
+                                                            {isAhead ? '+' : ''}{delta}% {isAhead ? 'ahead' : 'behind'}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                                {sprint.goal && (
+                                                    <p className="text-xs text-[#64748B] mb-3 line-clamp-1">{sprint.goal}</p>
+                                                )}
+                                                {/* Dual progress bars */}
+                                                <div className="space-y-2">
+                                                    <div className="flex items-center gap-3">
+                                                        <span className="text-[10px] text-[#64748B] w-16 flex-shrink-0">Actual</span>
+                                                        <div className="flex-1 h-2 bg-[rgba(244,246,255,0.06)] rounded-full overflow-hidden">
+                                                            <div
+                                                                className="h-full bg-gradient-to-r from-[#6366F1] to-[#10B981] rounded-full transition-all"
+                                                                style={{ width: `${actual}%` }}
+                                                            />
+                                                        </div>
+                                                        <span className="text-xs font-bold text-[#10B981] w-10 text-right">{actual}%</span>
+                                                    </div>
+                                                    <div className="flex items-center gap-3">
+                                                        <span className="text-[10px] text-[#64748B] w-16 flex-shrink-0">Expected</span>
+                                                        <div className="flex-1 h-2 bg-[rgba(244,246,255,0.06)] rounded-full overflow-hidden">
+                                                            <div
+                                                                className="h-full bg-[#475569] rounded-full transition-all"
+                                                                style={{ width: `${expectedPct}%` }}
+                                                            />
+                                                        </div>
+                                                        <span className="text-xs font-medium text-[#64748B] w-10 text-right">{expectedPct}%</span>
+                                                    </div>
+                                                </div>
+                                                <div className="flex items-center gap-4 mt-3 text-[10px] text-[#475569]">
+                                                    <span>{sprint.done_count}/{sprint.total_items} items done</span>
+                                                    <span>·</span>
+                                                    <span>{sprint.total_points} story pts</span>
+                                                    {sprint.start_date && sprint.end_date && (
+                                                        <>
+                                                            <span>·</span>
+                                                            <span>{new Date(sprint.start_date).toLocaleDateString()} – {new Date(sprint.end_date).toLocaleDateString()}</span>
+                                                        </>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        )}
+
                         <PMView projectId={id!} token={token!} />
+
+                        {/* Workload Section */}
+                        <div>
+                            <div className="flex items-center gap-3 mb-4">
+                                <div className="w-9 h-9 rounded-xl bg-[#6366F1]/10 flex items-center justify-center">
+                                    <Users className="w-4 h-4 text-[#6366F1]" />
+                                </div>
+                                <div>
+                                    <h3 className="font-semibold text-white">Team Workload</h3>
+                                    <p className="text-xs text-[#64748B]">Developer capacity and task distribution</p>
+                                </div>
+                            </div>
+                            <WorkloadView
+                                workloadData={workload}
+                                onDeveloperClick={(devId) => console.log('Developer clicked:', devId)}
+                            />
+                        </div>
                     </div>
                 )}
             </main>
