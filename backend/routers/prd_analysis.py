@@ -346,22 +346,26 @@ async def select_architecture(
     current_user: User = Depends(get_current_user)
 ):
     """Select an architecture for the project (requires auth)"""
+    print(f"[SELECT] Request received for architecture_id={architecture_id}, user={current_user.id}")
     try:
+        print(f"[SELECT] Querying architecture...")
         architecture = db.query(Architecture).filter(Architecture.id == architecture_id).first()
         if not architecture:
             raise HTTPException(status_code=404, detail="Architecture not found")
         
+        print(f"[SELECT] Found architecture project_id={architecture.project_id}, deselecting others...")
         # Deselect other architectures for this project
         db.query(Architecture).filter(
             Architecture.project_id == architecture.project_id
         ).update({"is_selected": False, "selected_at": None})
         
-        # Select this one
+        print(f"[SELECT] Selecting architecture {architecture_id}...")
         architecture.is_selected = True
         architecture.selected_at = datetime.utcnow()
         db.commit()
         db.refresh(architecture)
         
+        print(f"[SELECT] Success! Returning response...")
         return architecture.to_dict()
     except HTTPException:
         raise
