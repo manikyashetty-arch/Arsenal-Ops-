@@ -1,17 +1,25 @@
 import React, { useMemo, useState, useRef, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Plus, X } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Plus, X, BookOpen, ClipboardList, Bug, Target } from 'lucide-react';
 
 interface WorkItem {
     id: string;
     key: string;
     title: string;
+    description?: string;
     status: string;
+    priority?: string;
+    type?: string;
     start_date?: string;
     due_date?: string;
     estimated_hours?: number;
+    logged_hours?: number;
+    story_points?: number;
     assignee?: string;
     assignee_id?: number;
+    sprint?: string;
+    acceptance_criteria?: string;
     dependencies?: { depends_on_id: number; dependency_type: string }[];
 }
 
@@ -106,6 +114,19 @@ interface GanttRow {
     progress: number;
 }
 
+const TYPE_CONFIG: Record<string, { icon: React.ElementType; color: string; label: string; bg: string }> = {
+    user_story: { icon: BookOpen, color: '#6366F1', label: 'Story', bg: 'rgba(99,102,241,0.15)' },
+    task: { icon: ClipboardList, color: '#F59E0B', label: 'Task', bg: 'rgba(245,158,11,0.15)' },
+    bug: { icon: Bug, color: '#EF4444', label: 'Bug', bg: 'rgba(239,68,68,0.15)' },
+    epic: { icon: Target, color: '#8B5CF6', label: 'Epic', bg: 'rgba(139,92,246,0.15)' },
+};
+
+const getPriorityColor = (priority?: string) => {
+    if (priority === 'high' || priority === 'critical') return 'border-[#EF4444]/50 text-[#EF4444]';
+    if (priority === 'medium') return 'border-[#F59E0B]/50 text-[#F59E0B]';
+    return 'border-[#64748B]/50 text-[#64748B]';
+};
+
 const STATUS_COLOR: Record<string, string> = {
     done: '#10B981',
     in_progress: '#F59E0B',
@@ -124,6 +145,7 @@ const TimelineView: React.FC<TimelineViewProps> = ({
     onTaskUpdate: _onTaskUpdate,
     onTaskCreate
 }) => {
+    const [selectedItem, setSelectedItem] = useState<WorkItem | null>(null);
     const [zoom, setZoom] = useState<ZoomLevel>('week');
     const [viewStart, setViewStart] = useState<Date>(() => {
         // Start view at today minus 2 columns so there's context
@@ -364,9 +386,9 @@ const TimelineView: React.FC<TimelineViewProps> = ({
                                         className="flex items-center px-3 text-sm truncate cursor-pointer hover:bg-[#1A1A2E] transition-colors"
                                         style={{ height: ROW_HEIGHT, borderBottom: '1px solid rgba(244,246,255,0.04)' }}
                                         onClick={() => {
-                                            if (row.type === 'task' && onTaskClick) {
+                                            if (row.type === 'task') {
                                                 const item = workItems.find(w => w.id === row.id);
-                                                if (item) onTaskClick(item);
+                                                if (item) { setSelectedItem(item); onTaskClick?.(item); }
                                             }
                                         }}
                                         title={row.label}
@@ -510,9 +532,9 @@ const TimelineView: React.FC<TimelineViewProps> = ({
                                                     boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
                                                 }}
                                                 onClick={() => {
-                                                    if (row.type === 'task' && onTaskClick) {
+                                                    if (row.type === 'task') {
                                                         const item = workItems.find(w => w.id === row.id);
-                                                        if (item) onTaskClick(item);
+                                                        if (item) { setSelectedItem(item); onTaskClick?.(item); }
                                                     }
                                                 }}
                                                 title={`${row.label}\n${fmtShort(row.start)} → ${fmtShort(row.end)}`}
@@ -575,6 +597,109 @@ const TimelineView: React.FC<TimelineViewProps> = ({
                     </div>
                 </CardContent>
             </Card>
+
+            {/* Ticket Detail Slide-in Panel */}
+            {selectedItem && (
+                <>
+                    <div
+                        className="fixed inset-0 bg-black/40 z-40"
+                        onClick={() => setSelectedItem(null)}
+                    />
+                    <div className="fixed right-0 top-0 bottom-0 w-full max-w-lg bg-[#0B0D14] border-l border-[rgba(244,246,255,0.08)] z-50 flex flex-col shadow-2xl shadow-black/50 overflow-y-auto">
+                        {/* Header */}
+                        <div className="flex items-start justify-between p-5 border-b border-[rgba(244,246,255,0.06)] sticky top-0 bg-[#0B0D14]">
+                            <div className="flex items-center gap-3 flex-1 min-w-0">
+                                {(() => {
+                                    const ti = TYPE_CONFIG[selectedItem.type || 'task'] || TYPE_CONFIG.task;
+                                    return (
+                                        <div
+                                            className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-sm font-medium flex-shrink-0"
+                                            style={{ backgroundColor: ti.bg, color: ti.color }}
+                                        >
+                                            <ti.icon className="w-4 h-4" />
+                                            {ti.label}
+                                        </div>
+                                    );
+                                })()}
+                                <span className="text-xs font-mono text-[#6366F1]">{selectedItem.key}</span>
+                            </div>
+                            <button
+                                onClick={() => setSelectedItem(null)}
+                                className="p-1.5 rounded-lg hover:bg-[rgba(244,246,255,0.05)] text-[#475569] hover:text-white flex-shrink-0"
+                            >
+                                <X className="w-4 h-4" />
+                            </button>
+                        </div>
+
+                        {/* Content */}
+                        <div className="p-5 space-y-5">
+                            <h2 className="text-lg font-semibold text-white leading-tight">
+                                {selectedItem.title}
+                            </h2>
+
+                            {/* Status + Priority */}
+                            <div className="flex items-center gap-2 flex-wrap">
+                                <Badge variant="outline" className="border-[rgba(244,246,255,0.1)] text-[#94A3B8] capitalize">
+                                    {selectedItem.status.replace(/_/g, ' ')}
+                                </Badge>
+                                {selectedItem.priority && (
+                                    <Badge variant="outline" className={getPriorityColor(selectedItem.priority)}>
+                                        {selectedItem.priority}
+                                    </Badge>
+                                )}
+                            </div>
+
+                            {/* Description */}
+                            {selectedItem.description && (
+                                <div>
+                                    <p className="text-xs font-medium text-[#64748B] mb-2">Description</p>
+                                    <p className="text-sm text-[#E2E8F0] leading-relaxed bg-[rgba(244,246,255,0.02)] border border-[rgba(244,246,255,0.06)] rounded-xl p-4">
+                                        {selectedItem.description}
+                                    </p>
+                                </div>
+                            )}
+
+                            {/* Acceptance Criteria */}
+                            {selectedItem.acceptance_criteria && (
+                                <div>
+                                    <p className="text-xs font-medium text-[#64748B] mb-2">Acceptance Criteria</p>
+                                    <p className="text-sm text-[#E2E8F0] leading-relaxed bg-[rgba(244,246,255,0.02)] border border-[rgba(244,246,255,0.06)] rounded-xl p-4">
+                                        {selectedItem.acceptance_criteria}
+                                    </p>
+                                </div>
+                            )}
+
+                            {/* Details Grid */}
+                            <div className="grid grid-cols-2 gap-3">
+                                {[
+                                    { label: 'Assignee', value: selectedItem.assignee || 'Unassigned' },
+                                    { label: 'Sprint', value: selectedItem.sprint || 'Backlog' },
+                                    { label: 'Story Points', value: selectedItem.story_points ?? '-' },
+                                    { label: 'Est. Hours', value: selectedItem.estimated_hours ? `${selectedItem.estimated_hours}h` : '-' },
+                                    { label: 'Logged Hours', value: selectedItem.logged_hours ? `${selectedItem.logged_hours}h` : '0h' },
+                                    {
+                                        label: 'Start Date',
+                                        value: selectedItem.start_date
+                                            ? new Date(selectedItem.start_date).toLocaleDateString()
+                                            : 'Not set',
+                                    },
+                                    {
+                                        label: 'Due Date',
+                                        value: selectedItem.due_date
+                                            ? new Date(selectedItem.due_date).toLocaleDateString()
+                                            : 'Not set',
+                                    },
+                                ].map(({ label, value }) => (
+                                    <div key={label} className="bg-[rgba(244,246,255,0.03)] rounded-xl p-3">
+                                        <p className="text-xs text-[#64748B] mb-1">{label}</p>
+                                        <p className="text-sm font-medium text-white">{value}</p>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                </>
+            )}
 
             {/* Add Task Modal */}
             {showAddModal && (

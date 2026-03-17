@@ -827,6 +827,26 @@ async def list_project_sprints(
     """List all sprints for a project with work item counts (requires auth)"""
     sprints = db.query(Sprint).filter(Sprint.project_id == project_id).order_by(Sprint.start_date).all()
     
+    # Auto-update sprint status based on current date
+    today = datetime.utcnow()
+    status_changed = False
+    for sprint in sprints:
+        if sprint.status in (SprintStatus.PLANNING.value, 'planned') and sprint.start_date and sprint.end_date:
+            if sprint.start_date <= today <= sprint.end_date:
+                sprint.status = SprintStatus.ACTIVE.value
+                sprint.activated_at = sprint.activated_at or today
+                status_changed = True
+            elif today > sprint.end_date:
+                sprint.status = SprintStatus.COMPLETED.value
+                sprint.completed_at = sprint.completed_at or today
+                status_changed = True
+        elif sprint.status == SprintStatus.ACTIVE.value and sprint.end_date and today > sprint.end_date:
+            sprint.status = SprintStatus.COMPLETED.value
+            sprint.completed_at = sprint.completed_at or today
+            status_changed = True
+    if status_changed:
+        db.commit()
+    
     result = []
     for sprint in sprints:
         # Count items by status
@@ -996,6 +1016,26 @@ async def get_hours_analytics(
     # Get all sprints
     sprints = db.query(Sprint).filter(Sprint.project_id == project_id).order_by(Sprint.start_date).all()
     
+    # Auto-update sprint status based on current date (same logic as list endpoint)
+    now = datetime.utcnow()
+    ha_changed = False
+    for sprint in sprints:
+        if sprint.status in (SprintStatus.PLANNING.value, 'planned') and sprint.start_date and sprint.end_date:
+            if sprint.start_date <= now <= sprint.end_date:
+                sprint.status = SprintStatus.ACTIVE.value
+                sprint.activated_at = sprint.activated_at or now
+                ha_changed = True
+            elif now > sprint.end_date:
+                sprint.status = SprintStatus.COMPLETED.value
+                sprint.completed_at = sprint.completed_at or now
+                ha_changed = True
+        elif sprint.status == SprintStatus.ACTIVE.value and sprint.end_date and now > sprint.end_date:
+            sprint.status = SprintStatus.COMPLETED.value
+            sprint.completed_at = sprint.completed_at or now
+            ha_changed = True
+    if ha_changed:
+        db.commit()
+    
     # Get all developers assigned to this project
     developers = list(project.developers) if hasattr(project, 'developers') else []
     
@@ -1164,33 +1204,41 @@ async def get_hours_analytics(
                                if item.completed_at 
                                and current_week_start <= item.completed_at <= min(week_end, today)]
         
-        # Allocated hours = estimated hours of items DUE this week (work to be done)
-        # Exclude weekends from calculation
-        week_items_allocated = [item for item in items
-                               if item.due_date 
-                               and current_week_start <= item.due_date <= week_end
-                               and item.status != WorkItemStatus.DONE.value]  # Only non-completed items
-        
-        # Calculate allocated hours excluding weekends
+        # Allocated hours = proportional share of sprint estimated hours overlapping this week
+        # This ensures weeks show allocated work even when items have no explicit due_date
         week_allocated = 0
-        for item in week_items_allocated:
-            task_start = item.start_date or current_week_start
-            task_end = item.due_date
-            # Count only working days (Mon-Fri) in this week
-            working_days = 0
-            current_day = max(task_start, current_week_start)
-            end_day = min(task_end, week_end)
-            while current_day <= end_day:
-                if current_day.weekday() < 5:  # Mon-Fri
-                    working_days += 1
-                current_day += timedelta(days=1)
-            
-            # Total days in task
-            total_task_days = (task_end - task_start).days + 1
-            if total_task_days > 0 and working_days > 0:
-                # Proportional hours for working days
-                hours_per_day = (item.estimated_hours or 0) / total_task_days
-                week_allocated += int(hours_per_day * working_days)
+        for sprint in sprints:
+            if sprint.start_date and sprint.end_date:
+                sprint_start = sprint.start_date
+                sprint_end = sprint.end_date
+                # Check if this sprint overlaps with the current week
+                if sprint_start <= week_end and sprint_end >= current_week_start:
+                    overlap_start = max(sprint_start, current_week_start)
+                    overlap_end = min(sprint_end, week_end)
+                    # Count working days (Mon-Fri) in the overlap
+                    overlap_working_days = 0
+                    d = overlap_start
+                    while d <= overlap_end:
+                        if d.weekday() < 5:
+                            overlap_working_days += 1
+                        d += timedelta(days=1)
+                    # Count total working days in the sprint
+                    sprint_working_days = 0
+                    d = sprint_start
+                    while d <= sprint_end:
+                        if d.weekday() < 5:
+                            sprint_working_days += 1
+                        d += timedelta(days=1)
+                    if sprint_working_days > 0 and overlap_working_days > 0:
+                        sprint_items_in = [item for item in items if item.sprint_id == sprint.id]
+                        sprint_estimated = sum(item.estimated_hours or 0 for item in sprint_items_in)
+                        week_allocated += round(sprint_estimated * overlap_working_days / sprint_working_days)
+            else:
+                # Sprint has no dates — fall back to item-level due_date
+                sprint_items_in = [item for item in items if item.sprint_id == sprint.id]
+                for item in sprint_items_in:
+                    if item.due_date and current_week_start <= item.due_date <= week_end:
+                        week_allocated += item.estimated_hours or 0
         
         weekly_hours.append({
             "week": current_week_start.strftime("%Y-%m-%d"),

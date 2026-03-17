@@ -1533,17 +1533,6 @@ const ProjectDetail = () => {
                 {/* Project Tracker Tab */}
                 {activeTab === 'tracker' && (
                     <div className="space-y-4">
-                        <TimelineView
-                            workItems={hubWorkItems}
-                            milestones={milestones}
-                            goals={goals}
-                            projectStartDate={project?.created_at}
-                            projectId={parseInt(id!)}
-                            developers={project.developers.map(d => ({ id: d.id, name: d.name, email: d.email }))}
-                            onTaskUpdate={handleTaskUpdate}
-                            onTaskCreate={handleTaskCreate}
-                        />
-
                         {/* Analytics Charts */}
                         {analytics && analytics.total_items > 0 && (
                             <div className="bg-[rgba(244,246,255,0.02)] border border-[rgba(244,246,255,0.06)] rounded-2xl p-5">
@@ -1607,6 +1596,17 @@ const ProjectDetail = () => {
                                 </div>
                             </div>
                         )}
+
+                        <TimelineView
+                            workItems={hubWorkItems}
+                            milestones={milestones}
+                            goals={goals}
+                            projectStartDate={project?.created_at}
+                            projectId={parseInt(id!)}
+                            developers={project.developers.map(d => ({ id: d.id, name: d.name, email: d.email }))}
+                            onTaskUpdate={handleTaskUpdate}
+                            onTaskCreate={handleTaskCreate}
+                        />
                     </div>
                 )}
 
