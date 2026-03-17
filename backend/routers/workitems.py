@@ -23,9 +23,27 @@ router = APIRouter(prefix="/api/workitems", tags=["Work Items"])
 
 # Counter for generating work item keys
 def get_next_item_number(db: Session, project_id: int) -> int:
-    """Get the next work item number for a project"""
-    count = db.query(func.count(WorkItem.id)).filter(WorkItem.project_id == project_id).scalar()
-    return (count or 0) + 1
+    """Get the next work item number for a project - uses max existing number to avoid duplicates after deletions"""
+    # Get the project's key_prefix
+    project = db.query(Project).filter(Project.id == project_id).first()
+    key_prefix = getattr(project, 'key_prefix', None) or "PROJ" if project else "PROJ"
+    
+    # Find the highest existing number for this project's key prefix
+    existing_keys = db.query(WorkItem.key).filter(
+        WorkItem.project_id == project_id,
+        WorkItem.key.like(f"{key_prefix}-%")
+    ).all()
+    
+    max_num = 0
+    for (key,) in existing_keys:
+        try:
+            num = int(key.split("-")[-1])
+            if num > max_num:
+                max_num = num
+        except (ValueError, IndexError):
+            pass
+    
+    return max_num + 1
 
 
 # Request/Response models
