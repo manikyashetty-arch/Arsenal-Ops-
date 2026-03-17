@@ -4,6 +4,7 @@ Uses Azure OpenAI API with structured outputs for agentic tasks
 """
 import os
 import json
+import asyncio
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel
 
@@ -102,11 +103,15 @@ Create a structured project plan with:
 
 Return as JSON with keys: milestones, tasks, user_stories"""
 
-        response = self.client.chat.completions.create(
-            model=self.deployment,
-            messages=[{"role": "user", "content": prompt}],
-            response_format={"type": "json_object"},
-            temperature=1
+        client = self.client
+        deployment = self.deployment
+        response = await asyncio.to_thread(
+            lambda: client.chat.completions.create(
+                model=deployment,
+                messages=[{"role": "user", "content": prompt}],
+                response_format={"type": "json_object"},
+                temperature=1
+            )
         )
         return json.loads(response.choices[0].message.content)
     
@@ -128,11 +133,15 @@ Create 5-8 Jira tickets with:
 
 Return as JSON with key: tickets"""
 
-        response = self.client.chat.completions.create(
-            model=self.deployment,
-            messages=[{"role": "user", "content": prompt}],
-            response_format={"type": "json_object"},
-            temperature=1
+        client = self.client
+        deployment = self.deployment
+        response = await asyncio.to_thread(
+            lambda: client.chat.completions.create(
+                model=deployment,
+                messages=[{"role": "user", "content": prompt}],
+                response_format={"type": "json_object"},
+                temperature=1
+            )
         )
         return json.loads(response.choices[0].message.content)
     
@@ -151,11 +160,15 @@ Create a timeline with:
 
 Return as JSON with keys: phases, total_weeks, critical_path, risks"""
 
-        response = self.client.chat.completions.create(
-            model=self.deployment,
-            messages=[{"role": "user", "content": prompt}],
-            response_format={"type": "json_object"},
-            temperature=1
+        client = self.client
+        deployment = self.deployment
+        response = await asyncio.to_thread(
+            lambda: client.chat.completions.create(
+                model=deployment,
+                messages=[{"role": "user", "content": prompt}],
+                response_format={"type": "json_object"},
+                temperature=1
+            )
         )
         return json.loads(response.choices[0].message.content)
     
@@ -178,11 +191,15 @@ Provide comprehensive analysis:
 
 Return as JSON with keys: market_size, competitors, swot, trends, opportunities, threats"""
 
-        response = self.client.chat.completions.create(
-            model=self.deployment,
-            messages=[{"role": "user", "content": prompt}],
-            response_format={"type": "json_object"},
-            temperature=1
+        client = self.client
+        deployment = self.deployment
+        response = await asyncio.to_thread(
+            lambda: client.chat.completions.create(
+                model=deployment,
+                messages=[{"role": "user", "content": prompt}],
+                response_format={"type": "json_object"},
+                temperature=1
+            )
         )
         return json.loads(response.choices[0].message.content)
     
@@ -208,11 +225,15 @@ For each persona include:
 
 Return as JSON with key: personas"""
 
-        response = self.client.chat.completions.create(
-            model=self.deployment,
-            messages=[{"role": "user", "content": prompt}],
-            response_format={"type": "json_object"},
-            temperature=1
+        client = self.client
+        deployment = self.deployment
+        response = await asyncio.to_thread(
+            lambda: client.chat.completions.create(
+                model=deployment,
+                messages=[{"role": "user", "content": prompt}],
+                response_format={"type": "json_object"},
+                temperature=1
+            )
         )
         return json.loads(response.choices[0].message.content)
     
@@ -235,11 +256,15 @@ Create release notes with:
 
 Return as JSON"""
 
-        response = self.client.chat.completions.create(
-            model=self.deployment,
-            messages=[{"role": "user", "content": prompt}],
-            response_format={"type": "json_object"},
-            temperature=1
+        client = self.client
+        deployment = self.deployment
+        response = await asyncio.to_thread(
+            lambda: client.chat.completions.create(
+                model=deployment,
+                messages=[{"role": "user", "content": prompt}],
+                response_format={"type": "json_object"},
+                temperature=1
+            )
         )
         return json.loads(response.choices[0].message.content)
     
@@ -262,11 +287,15 @@ Create a brief with:
 
 Return as JSON"""
 
-        response = self.client.chat.completions.create(
-            model=self.deployment,
-            messages=[{"role": "user", "content": prompt}],
-            response_format={"type": "json_object"},
-            temperature=1
+        client = self.client
+        deployment = self.deployment
+        response = await asyncio.to_thread(
+            lambda: client.chat.completions.create(
+                model=deployment,
+                messages=[{"role": "user", "content": prompt}],
+                response_format={"type": "json_object"},
+                temperature=1
+            )
         )
         return json.loads(response.choices[0].message.content)
     
@@ -287,11 +316,15 @@ Generate:
 
 Return as JSON with keys: ideas, scenarios, quick_wins, moonshots, differentiators"""
 
-        response = self.client.chat.completions.create(
-            model=self.deployment,
-            messages=[{"role": "user", "content": prompt}],
-            response_format={"type": "json_object"},
-            temperature=1
+        client = self.client
+        deployment = self.deployment
+        response = await asyncio.to_thread(
+            lambda: client.chat.completions.create(
+                model=deployment,
+                messages=[{"role": "user", "content": prompt}],
+                response_format={"type": "json_object"},
+                temperature=1
+            )
         )
         return json.loads(response.choices[0].message.content)
     async def generate_strategy_ideation(self, product: str, description: str, target_market: str) -> Dict[str, Any]:
@@ -306,11 +339,15 @@ TARGET MARKET: {target_market}
 
 Return as JSON with keys: ideas_grouped (list of {{category, ideas}}), concepts (list of {{name, description, user_value, complexity, risk, why_now, tradeoffs}})"""
 
-        response = self.client.chat.completions.create(
-            model=self.deployment,
-            messages=[{"role": "user", "content": prompt}],
-            response_format={"type": "json_object"},
-            temperature=1
+        client = self.client
+        deployment = self.deployment
+        response = await asyncio.to_thread(
+            lambda: client.chat.completions.create(
+                model=deployment,
+                messages=[{"role": "user", "content": prompt}],
+                response_format={"type": "json_object"},
+                temperature=1
+            )
         )
         return json.loads(response.choices[0].message.content)
 
@@ -326,11 +363,15 @@ Provide TAM, SAM, SOM with reasoning and assumptions.
 
 Return as JSON with keys: tam (value + reasoning), sam (value + reasoning), som (value + reasoning), assumptions (list)"""
 
-        response = self.client.chat.completions.create(
-            model=self.deployment,
-            messages=[{"role": "user", "content": prompt}],
-            response_format={"type": "json_object"},
-            temperature=1
+        client = self.client
+        deployment = self.deployment
+        response = await asyncio.to_thread(
+            lambda: client.chat.completions.create(
+                model=deployment,
+                messages=[{"role": "user", "content": prompt}],
+                response_format={"type": "json_object"},
+                temperature=1
+            )
         )
         return json.loads(response.choices[0].message.content)
 
@@ -342,13 +383,17 @@ STRATEGY: {strategy}
 
 Create 3 scenarios (Best, Base, Worst) with probability, impact, and mitigation strategies.
 
-Return as JSON with keys: scenarios (list of {{name, probability, description, impact, mitigation}})"""
+Return as JSON with keys: scenarios (list of {name, probability, description, impact, mitigation})"""
 
-        response = self.client.chat.completions.create(
-            model=self.deployment,
-            messages=[{"role": "user", "content": prompt}],
-            response_format={"type": "json_object"},
-            temperature=1
+        client = self.client
+        deployment = self.deployment
+        response = await asyncio.to_thread(
+            lambda: client.chat.completions.create(
+                model=deployment,
+                messages=[{"role": "user", "content": prompt}],
+                response_format={"type": "json_object"},
+                temperature=1
+            )
         )
         return json.loads(response.choices[0].message.content)
 

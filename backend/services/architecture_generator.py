@@ -3,6 +3,7 @@ Architecture Generator Service - AI-powered PRD analysis and architecture genera
 """
 import os
 import json
+import asyncio
 from typing import List, Dict, Any, Optional
 
 # Lazy initialization of Azure OpenAI client to prevent startup crashes
@@ -99,10 +100,14 @@ Return as valid JSON with these exact keys:
 """
 
         try:
-            response = self.client.chat.completions.create(
-                model=self.deployment,
-                messages=[{"role": "user", "content": prompt}],
-                response_format={"type": "json_object"}
+            client = self.client
+            deployment = self.deployment
+            response = await asyncio.to_thread(
+                lambda: client.chat.completions.create(
+                    model=deployment,
+                    messages=[{"role": "user", "content": prompt}],
+                    response_format={"type": "json_object"}
+                )
             )
             return json.loads(response.choices[0].message.content)
         except Exception as e:
@@ -198,10 +203,14 @@ Return as JSON with keys:
 """
 
         try:
-            response = self.client.chat.completions.create(
-                model=self.deployment,
-                messages=[{"role": "user", "content": prompt}],
-                response_format={"type": "json_object"}
+            client = self.client
+            deployment = self.deployment
+            response = await asyncio.to_thread(
+                lambda: client.chat.completions.create(
+                    model=deployment,
+                    messages=[{"role": "user", "content": prompt}],
+                    response_format={"type": "json_object"}
+                )
             )
             result = json.loads(response.choices[0].message.content)
             
@@ -400,10 +409,14 @@ Return as JSON with keys:
 """
 
         try:
-            response = self.client.chat.completions.create(
-                model=self.deployment,
-                messages=[{"role": "user", "content": prompt}],
-                response_format={"type": "json_object"}
+            client = self.client
+            deployment = self.deployment
+            response = await asyncio.to_thread(
+                lambda: client.chat.completions.create(
+                    model=deployment,
+                    messages=[{"role": "user", "content": prompt}],
+                    response_format={"type": "json_object"}
+                )
             )
             result = json.loads(response.choices[0].message.content)
             
@@ -531,10 +544,14 @@ Return as JSON with keys:
 """
 
         try:
-            response = self.client.chat.completions.create(
-                model=self.deployment,
-                messages=[{"role": "user", "content": prompt}],
-                response_format={"type": "json_object"}
+            client = self.client
+            deployment = self.deployment
+            response = await asyncio.to_thread(
+                lambda: client.chat.completions.create(
+                    model=deployment,
+                    messages=[{"role": "user", "content": prompt}],
+                    response_format={"type": "json_object"}
+                )
             )
             result = json.loads(response.choices[0].message.content)
             
