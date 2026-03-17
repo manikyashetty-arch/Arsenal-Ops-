@@ -3,8 +3,9 @@ Arsenal Ops - AI-Powered Project Management Platform
 FastAPI backend with Jira-like project/work item management + AI generation
 """
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from dotenv import load_dotenv
 import os
 
@@ -69,6 +70,16 @@ app.add_middleware(
     expose_headers=["*"],
     max_age=3600,
 )
+
+# Global exception handler to ensure CORS headers on errors
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """Catch all unhandled exceptions and return JSON with proper CORS"""
+    print(f"[GLOBAL ERROR] {request.method} {request.url.path}: {str(exc)}")
+    return JSONResponse(
+        status_code=500,
+        content={"detail": f"Internal server error: {str(exc)}"}
+    )
 
 # Include routers
 app.include_router(auth_router)

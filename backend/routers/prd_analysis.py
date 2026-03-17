@@ -346,22 +346,29 @@ async def select_architecture(
     current_user: User = Depends(get_current_user)
 ):
     """Select an architecture for the project (requires auth)"""
-    architecture = db.query(Architecture).filter(Architecture.id == architecture_id).first()
-    if not architecture:
-        raise HTTPException(status_code=404, detail="Architecture not found")
-    
-    # Deselect other architectures for this project
-    db.query(Architecture).filter(
-        Architecture.project_id == architecture.project_id
-    ).update({"is_selected": False, "selected_at": None})
-    
-    # Select this one
-    architecture.is_selected = True
-    architecture.selected_at = datetime.utcnow()
-    db.commit()
-    db.refresh(architecture)
-    
-    return architecture.to_dict()
+    try:
+        architecture = db.query(Architecture).filter(Architecture.id == architecture_id).first()
+        if not architecture:
+            raise HTTPException(status_code=404, detail="Architecture not found")
+        
+        # Deselect other architectures for this project
+        db.query(Architecture).filter(
+            Architecture.project_id == architecture.project_id
+        ).update({"is_selected": False, "selected_at": None})
+        
+        # Select this one
+        architecture.is_selected = True
+        architecture.selected_at = datetime.utcnow()
+        db.commit()
+        db.refresh(architecture)
+        
+        return architecture.to_dict()
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[ERROR] select_architecture failed: {str(e)}")
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to select architecture: {str(e)}")
 
 
 @router.post("/projects/{project_id}/commit-architecture")
