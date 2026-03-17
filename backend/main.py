@@ -132,6 +132,7 @@ async def startup_event():
         print(f"Admin setup error: {e}")
 
 @app.get("/")
+@app.head("/")  # Support HEAD requests for Render health check
 def root():
     """API root"""
     return {
