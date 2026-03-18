@@ -632,23 +632,23 @@ const ProjectDetail = () => {
 
     if (isLoading) {
         return (
-            <div className="min-h-screen bg-[#05060B] flex items-center justify-center">
-                <div className="w-10 h-10 border-2 border-[#6366F1]/30 border-t-[#6366F1] rounded-full animate-spin" />
+            <div className="min-h-screen bg-[#080808] flex items-center justify-center">
+                <div className="w-10 h-10 border-2 border-[#E0B954]/30 border-t-[#E0B954] rounded-full animate-spin" />
             </div>
         );
     }
 
     if (accessDenied) {
         return (
-            <div className="min-h-screen bg-[#05060B] flex flex-col items-center justify-center text-center p-4">
+            <div className="min-h-screen bg-[#080808] flex flex-col items-center justify-center text-center p-4">
                 <div className="w-20 h-20 rounded-2xl bg-red-500/10 border border-red-500/20 flex items-center justify-center mb-6">
                     <ShieldAlert className="w-10 h-10 text-red-400" />
                 </div>
                 <h2 className="text-2xl font-bold text-white mb-2">Access Denied</h2>
-                <p className="text-[#64748B] max-w-md mb-6">
+                <p className="text-[#737373] max-w-md mb-6">
                     You do not have permission to view this project. Only assigned developers and admins can access project details.
                 </p>
-                <Button onClick={() => navigate('/')} className="bg-gradient-to-r from-[#6366F1] to-[#4F46E5] text-white rounded-xl px-6">
+                <Button onClick={() => navigate('/')} className="bg-gradient-to-r from-[#E0B954] to-[#B8872A] text-white rounded-xl px-6">
                     <ArrowLeft className="w-4 h-4 mr-2" />
                     Back to Projects
                 </Button>
@@ -658,9 +658,9 @@ const ProjectDetail = () => {
 
     if (!project) {
         return (
-            <div className="min-h-screen bg-[#05060B] flex flex-col items-center justify-center text-center">
+            <div className="min-h-screen bg-[#080808] flex flex-col items-center justify-center text-center">
                 <h2 className="text-xl font-bold text-white mb-2">Project not found</h2>
-                <Button onClick={() => navigate('/')} variant="ghost" className="text-[#6366F1]">
+                <Button onClick={() => navigate('/')} variant="ghost" className="text-[#E0B954]">
                     <ArrowLeft className="w-4 h-4 mr-2" />
                     Back to Projects
                 </Button>
@@ -686,11 +686,11 @@ const ProjectDetail = () => {
     );
 
     return (
-        <div className="min-h-screen bg-[#05060B] text-[#F4F6FF]">
+        <div className="min-h-screen bg-[#080808] text-[#F4F6FF]">
             <Toaster position="top-right" theme="dark" richColors />
 
             {/* Header */}
-            <header className="border-b border-[rgba(99,102,241,0.15)] bg-[#05060B]/95 backdrop-blur-xl sticky top-0 z-40 shadow-[0_1px_0_0_rgba(99,102,241,0.08)]">
+            <header className="border-b border-[rgba(224,185,84,0.15)] bg-[#080808]/95 backdrop-blur-xl sticky top-0 z-40 shadow-[0_1px_0_0_rgba(224,185,84,0.08)]">
                 <div className="px-6 py-4">
                     <div className="flex items-center justify-between">
                         <div className="flex items-center gap-4">
@@ -698,25 +698,25 @@ const ProjectDetail = () => {
                                 variant="ghost"
                                 size="sm"
                                 onClick={() => navigate('/')}
-                                className="text-[#64748B] hover:text-white hover:bg-[rgba(244,246,255,0.05)] rounded-lg gap-2"
+                                className="text-[#737373] hover:text-white hover:bg-[rgba(244,246,255,0.05)] rounded-lg gap-2"
                             >
                                 <ArrowLeft className="w-4 h-4" />
                                 Projects
                             </Button>
-                            <div className="w-px h-6 bg-[rgba(244,246,255,0.08)]" />
+                            <div className="w-px h-6 bg-[rgba(255,255,255,0.07)]" />
                             <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#6366F1] to-[#8B5CF6] flex items-center justify-center text-sm font-bold text-white shadow-lg shadow-[#6366F1]/25">
+                                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#E0B954] to-[#C79E3B] flex items-center justify-center text-sm font-bold text-[#080808] shadow-lg shadow-[#E0B954]/25">
                                     {project.key_prefix.substring(0, 2)}
                                 </div>
                                 <div>
                                     <h1 className="text-lg font-semibold text-white">{project.name}</h1>
-                                    <p className="text-xs text-[#475569] font-mono">{project.key_prefix}</p>
+                                    <p className="text-xs text-[#737373] font-mono">{project.key_prefix}</p>
                                 </div>
                             </div>
                         </div>
                         <Button
                             onClick={() => navigate(`/project/${project.id}/board`)}
-                            className="bg-gradient-to-r from-[#6366F1] to-[#8B5CF6] hover:opacity-90 text-white rounded-xl font-semibold shadow-lg shadow-[#6366F1]/20 h-9 px-4"
+                            className="bg-gradient-to-r from-[#E0B954] to-[#C79E3B] hover:opacity-90 text-[#080808] rounded-xl font-semibold shadow-lg shadow-[#E0B954]/20 h-9 px-4"
                         >
                             <LayoutGrid className="w-4 h-4 mr-2" />
                             Open Board
@@ -725,7 +725,7 @@ const ProjectDetail = () => {
                 </div>
 
                 {/* Tabs */}
-                <div className="px-6 flex gap-1 border-t border-[rgba(244,246,255,0.04)]">
+                <div className="px-6 flex gap-1 border-t border-[rgba(255,255,255,0.03)]">
                     {tabs.map((tab) => {
                         const Icon = tab.icon;
                         return (
@@ -734,11 +734,11 @@ const ProjectDetail = () => {
                                 onClick={() => setActiveTab(tab.id)}
                                 className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-all ${
                                     activeTab === tab.id
-                                        ? 'text-white border-[#6366F1] drop-shadow-[0_0_8px_rgba(99,102,241,0.6)]'
-                                        : 'text-[#64748B] border-transparent hover:text-[#94A3B8] hover:border-[rgba(244,246,255,0.1)]'
+                                        ? 'text-white border-[#E0B954] drop-shadow-[0_0_8px_rgba(224,185,84,0.6)]'
+                                        : 'text-[#737373] border-transparent hover:text-[#a3a3a3] hover:border-[rgba(255,255,255,0.08)]'
                                 }`}
                             >
-                                <Icon className={`w-4 h-4 ${activeTab === tab.id ? 'text-[#8B5CF6]' : ''}`} />
+                                <Icon className={`w-4 h-4 ${activeTab === tab.id ? 'text-[#C79E3B]' : ''}`} />
                                 {tab.label}
                             </button>
                         );
@@ -751,7 +751,7 @@ const ProjectDetail = () => {
                 {/* Overview Tab */}
                 {activeTab === 'overview' && (
                     <div className="space-y-4">
-                        <div className="bg-[rgba(244,246,255,0.02)] border border-[rgba(244,246,255,0.06)] rounded-2xl p-4">
+                        <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-2xl p-4">
                             <div className="flex items-center justify-between mb-3">
                                 <h2 className="text-lg font-semibold text-white">Project Information</h2>
                                 {!isEditing ? (
@@ -759,7 +759,7 @@ const ProjectDetail = () => {
                                         variant="ghost"
                                         size="sm"
                                         onClick={() => { setEditForm(project); setIsEditing(true); }}
-                                        className="text-[#64748B] hover:text-white"
+                                        className="text-[#737373] hover:text-white"
                                     >
                                         <Pencil className="w-4 h-4 mr-2" />
                                         Edit
@@ -770,7 +770,7 @@ const ProjectDetail = () => {
                                             variant="ghost"
                                             size="sm"
                                             onClick={() => { setIsEditing(false); setEditForm(project); }}
-                                            className="text-[#64748B] hover:text-white"
+                                            className="text-[#737373] hover:text-white"
                                         >
                                             <X className="w-4 h-4 mr-2" />
                                             Cancel
@@ -778,7 +778,7 @@ const ProjectDetail = () => {
                                         <Button
                                             size="sm"
                                             onClick={handleSaveEdit}
-                                            className="bg-[#6366F1] hover:bg-[#5558E6] text-white"
+                                            className="bg-[#E0B954] hover:bg-[#5558E6] text-white"
                                         >
                                             <Save className="w-4 h-4 mr-2" />
                                             Save
@@ -790,47 +790,47 @@ const ProjectDetail = () => {
                             {isEditing ? (
                                 <div className="space-y-4">
                                     <div>
-                                        <label className="text-xs font-medium text-[#64748B] block mb-1.5">Project Name</label>
+                                        <label className="text-xs font-medium text-[#737373] block mb-1.5">Project Name</label>
                                         <Input
                                             value={editForm.name || ''}
                                             onChange={(e) => setEditForm(f => ({ ...f, name: e.target.value }))}
-                                            className="bg-[rgba(244,246,255,0.03)] border-[rgba(244,246,255,0.08)] text-[#F4F6FF] rounded-xl"
+                                            className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl"
                                         />
                                     </div>
                                     <div>
-                                        <label className="text-xs font-medium text-[#64748B] block mb-1.5">Description</label>
+                                        <label className="text-xs font-medium text-[#737373] block mb-1.5">Description</label>
                                         <Textarea
                                             value={editForm.description || ''}
                                             onChange={(e) => setEditForm(f => ({ ...f, description: e.target.value }))}
-                                            className="bg-[rgba(244,246,255,0.03)] border-[rgba(244,246,255,0.08)] text-[#F4F6FF] rounded-xl min-h-[120px]"
+                                            className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl min-h-[120px]"
                                         />
                                     </div>
                                     <div>
-                                        <label className="text-xs font-medium text-[#64748B] block mb-1.5">GitHub Repository URL</label>
+                                        <label className="text-xs font-medium text-[#737373] block mb-1.5">GitHub Repository URL</label>
                                         <Input
                                             value={editForm.github_repo_url || ''}
                                             onChange={(e) => setEditForm(f => ({ ...f, github_repo_url: e.target.value }))}
                                             placeholder="https://github.com/username/repo"
-                                            className="bg-[rgba(244,246,255,0.03)] border-[rgba(244,246,255,0.08)] text-[#F4F6FF] rounded-xl"
+                                            className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl"
                                         />
                                     </div>
                                     <div className="grid grid-cols-2 gap-4">
                                         <div>
-                                            <label className="text-xs font-medium text-[#64748B] block mb-1.5">Start Date</label>
+                                            <label className="text-xs font-medium text-[#737373] block mb-1.5">Start Date</label>
                                             <Input
                                                 type="date"
                                                 value={editForm.created_at ? new Date(editForm.created_at).toISOString().split('T')[0] : ''}
                                                 onChange={(e) => setEditForm(f => ({ ...f, created_at: e.target.value }))}
-                                                className="bg-[rgba(244,246,255,0.03)] border-[rgba(244,246,255,0.08)] text-[#F4F6FF] rounded-xl"
+                                                className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl"
                                             />
                                         </div>
                                         <div>
-                                            <label className="text-xs font-medium text-[#64748B] block mb-1.5">End Date</label>
+                                            <label className="text-xs font-medium text-[#737373] block mb-1.5">End Date</label>
                                             <Input
                                                 type="date"
                                                 value={editForm.end_date ? new Date(editForm.end_date).toISOString().split('T')[0] : ''}
                                                 onChange={(e) => setEditForm(f => ({ ...f, end_date: e.target.value }))}
-                                                className="bg-[rgba(244,246,255,0.03)] border-[rgba(244,246,255,0.08)] text-[#F4F6FF] rounded-xl"
+                                                className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl"
                                             />
                                         </div>
                                     </div>
@@ -838,48 +838,48 @@ const ProjectDetail = () => {
                             ) : (
                                 <div className="space-y-4">
                                     <div>
-                                        <label className="text-xs font-medium text-[#64748B] block mb-1">Description</label>
-                                        <p className="text-sm text-[#E2E8F0] leading-relaxed">
+                                        <label className="text-xs font-medium text-[#737373] block mb-1">Description</label>
+                                        <p className="text-sm text-[#f5f5f5] leading-relaxed">
                                             {project.description || 'No description provided.'}
                                         </p>
                                     </div>
                                     <div>
-                                        <label className="text-xs font-medium text-[#64748B] block mb-1">GitHub Repository</label>
+                                        <label className="text-xs font-medium text-[#737373] block mb-1">GitHub Repository</label>
                                         {project.github_repo_url ? (
                                             <a
                                                 href={project.github_repo_url}
                                                 target="_blank"
                                                 rel="noopener noreferrer"
-                                                className="flex items-center gap-2 text-sm text-[#6366F1] hover:underline"
+                                                className="flex items-center gap-2 text-sm text-[#E0B954] hover:underline"
                                             >
                                                 <Github className="w-4 h-4" />
                                                 {project.github_repo_url}
                                                 <ExternalLink className="w-3 h-3" />
                                             </a>
                                         ) : (
-                                            <p className="text-sm text-[#475569]">No repository configured</p>
+                                            <p className="text-sm text-[#737373]">No repository configured</p>
                                         )}
                                     </div>
-                                    <div className="flex items-center gap-4 pt-3 border-t border-[rgba(244,246,255,0.06)] flex-wrap">
+                                    <div className="flex items-center gap-4 pt-3 border-t border-[rgba(255,255,255,0.05)] flex-wrap">
                                         <div>
-                                            <span className="text-xs text-[#64748B]">Start Date</span>
-                                            <p className="text-sm text-[#E2E8F0]">{new Date(project.created_at).toLocaleDateString()}</p>
+                                            <span className="text-xs text-[#737373]">Start Date</span>
+                                            <p className="text-sm text-[#f5f5f5]">{new Date(project.created_at).toLocaleDateString()}</p>
                                         </div>
                                         <div>
-                                            <span className="text-xs text-[#64748B]">End Date</span>
-                                            <p className="text-sm text-[#E2E8F0]">
+                                            <span className="text-xs text-[#737373]">End Date</span>
+                                            <p className="text-sm text-[#f5f5f5]">
                                                 {project.end_date ? new Date(project.end_date).toLocaleDateString() : 'Not set'}
                                             </p>
                                         </div>
                                         <div>
-                                            <span className="text-xs text-[#64748B]">Status</span>
-                                            <Badge className="bg-[#6366F1]/20 text-[#6366F1] border-0 ml-2">
+                                            <span className="text-xs text-[#737373]">Status</span>
+                                            <Badge className="bg-[#E0B954]/20 text-[#E0B954] border-0 ml-2">
                                                 {project.status}
                                             </Badge>
                                         </div>
                                         <div>
-                                            <span className="text-xs text-[#64748B]">Team Size</span>
-                                            <p className="text-sm text-[#E2E8F0]">{project.developers.length} developers</p>
+                                            <span className="text-xs text-[#737373]">Team Size</span>
+                                            <p className="text-sm text-[#f5f5f5]">{project.developers.length} developers</p>
                                         </div>
                                     </div>
                                 </div>
@@ -888,18 +888,18 @@ const ProjectDetail = () => {
 
                         {/* Quick Stats */}
                         <div className="grid grid-cols-4 gap-3">
-                            <div className="bg-[rgba(244,246,255,0.02)] border border-[rgba(244,246,255,0.06)] rounded-xl p-4">
+                            <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-xl p-4">
                                 <div className="flex items-center gap-3">
-                                    <div className="w-10 h-10 rounded-lg bg-[#6366F1]/10 flex items-center justify-center">
-                                        <Users className="w-5 h-5 text-[#6366F1]" />
+                                    <div className="w-10 h-10 rounded-lg bg-[#E0B954]/10 flex items-center justify-center">
+                                        <Users className="w-5 h-5 text-[#E0B954]" />
                                     </div>
                                     <div>
                                         <p className="text-2xl font-bold text-white">{project.developers.length}</p>
-                                        <p className="text-xs text-[#64748B]">Developers</p>
+                                        <p className="text-xs text-[#737373]">Developers</p>
                                     </div>
                                 </div>
                             </div>
-                            <div className="bg-[rgba(244,246,255,0.02)] border border-[rgba(244,246,255,0.06)] rounded-xl p-4">
+                            <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-xl p-4">
                                 <div className="flex items-center gap-3">
                                     <div className="w-10 h-10 rounded-lg bg-[#10B981]/10 flex items-center justify-center">
                                         <Github className="w-5 h-5 text-[#10B981]" />
@@ -908,30 +908,30 @@ const ProjectDetail = () => {
                                         <p className="text-2xl font-bold text-white">
                                             {project.github_repo_url ? 'Yes' : 'No'}
                                         </p>
-                                        <p className="text-xs text-[#64748B]">GitHub Repo</p>
+                                        <p className="text-xs text-[#737373]">GitHub Repo</p>
                                     </div>
                                 </div>
                             </div>
-                            <div className="bg-[rgba(244,246,255,0.02)] border border-[rgba(244,246,255,0.06)] rounded-xl p-4">
+                            <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-xl p-4">
                                 <div className="flex items-center gap-3">
                                     <div className="w-10 h-10 rounded-lg bg-[#F59E0B]/10 flex items-center justify-center">
                                         <Info className="w-5 h-5 text-[#F59E0B]" />
                                     </div>
                                     <div>
                                         <p className="text-2xl font-bold text-white">{project.key_prefix}</p>
-                                        <p className="text-xs text-[#64748B]">Key Prefix</p>
+                                        <p className="text-xs text-[#737373]">Key Prefix</p>
                                     </div>
                                 </div>
                             </div>
                             {analytics && (
-                                <div className="bg-[rgba(244,246,255,0.02)] border border-[rgba(244,246,255,0.06)] rounded-xl p-4">
+                                <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-xl p-4">
                                     <div className="flex items-center gap-3">
-                                        <div className="w-10 h-10 rounded-lg bg-[#8B5CF6]/10 flex items-center justify-center">
-                                            <BarChart3 className="w-5 h-5 text-[#8B5CF6]" />
+                                        <div className="w-10 h-10 rounded-lg bg-[#C79E3B]/10 flex items-center justify-center">
+                                            <BarChart3 className="w-5 h-5 text-[#C79E3B]" />
                                         </div>
                                         <div>
                                             <p className="text-2xl font-bold text-white">{Math.round((analytics.completed_points / (analytics.total_story_points || 1)) * 100)}%</p>
-                                            <p className="text-xs text-[#64748B]">Completion</p>
+                                            <p className="text-xs text-[#737373]">Completion</p>
                                         </div>
                                     </div>
                                 </div>
@@ -940,33 +940,33 @@ const ProjectDetail = () => {
 
                         {/* PRD Analysis Section */}
                         {prdAnalysis && (
-                            <div className="bg-[rgba(244,246,255,0.02)] border border-[rgba(244,246,255,0.06)] rounded-2xl p-5">
+                            <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-2xl p-5">
                                 <div className="flex items-center gap-3 mb-4">
-                                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#6366F1] to-[#4F46E5] flex items-center justify-center">
+                                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#E0B954] to-[#B8872A] flex items-center justify-center">
                                         <FileText className="w-5 h-5 text-white" />
                                     </div>
                                     <div>
                                         <h3 className="font-semibold text-white">Project Overview</h3>
-                                        <p className="text-xs text-[#64748B]">Generated from PRD</p>
+                                        <p className="text-xs text-[#737373]">Generated from PRD</p>
                                     </div>
                                 </div>
 
                                 {/* Summary */}
                                 <div className="mb-3">
-                                    <h4 className="text-sm font-medium text-[#94A3B8] mb-1.5">Summary</h4>
-                                    <p className="text-sm text-[#E2E8F0] leading-relaxed">{prdAnalysis.summary}</p>
+                                    <h4 className="text-sm font-medium text-[#a3a3a3] mb-1.5">Summary</h4>
+                                    <p className="text-sm text-[#f5f5f5] leading-relaxed">{prdAnalysis.summary}</p>
                                 </div>
 
                                 {/* Key Features */}
                                 {prdAnalysis.key_features && prdAnalysis.key_features.length > 0 && (
                                     <div className="mb-4">
-                                        <h4 className="text-sm font-medium text-[#94A3B8] mb-3 flex items-center gap-2">
-                                            <Target className="w-4 h-4 text-[#6366F1]" />
+                                        <h4 className="text-sm font-medium text-[#a3a3a3] mb-3 flex items-center gap-2">
+                                            <Target className="w-4 h-4 text-[#E0B954]" />
                                             Key Features
                                         </h4>
                                         <div className="flex flex-wrap gap-2">
                                             {prdAnalysis.key_features.map((feature, idx) => (
-                                                <Badge key={idx} className="bg-[#6366F1]/10 text-[#818CF8] border border-[#6366F1]/20 hover:bg-[#6366F1]/20">
+                                                <Badge key={idx} className="bg-[#E0B954]/10 text-[#818CF8] border border-[#E0B954]/20 hover:bg-[#E0B954]/20">
                                                     {feature}
                                                 </Badge>
                                             ))}
@@ -977,13 +977,13 @@ const ProjectDetail = () => {
                                 {/* Technical Requirements */}
                                 {prdAnalysis.technical_requirements && prdAnalysis.technical_requirements.length > 0 && (
                                     <div className="mb-4">
-                                        <h4 className="text-sm font-medium text-[#94A3B8] mb-3 flex items-center gap-2">
+                                        <h4 className="text-sm font-medium text-[#a3a3a3] mb-3 flex items-center gap-2">
                                             <Wrench className="w-4 h-4 text-[#10B981]" />
                                             Technical Requirements
                                         </h4>
                                         <ul className="space-y-2">
                                             {prdAnalysis.technical_requirements.map((req, idx) => (
-                                                <li key={idx} className="flex items-start gap-2 text-sm text-[#E2E8F0]">
+                                                <li key={idx} className="flex items-start gap-2 text-sm text-[#f5f5f5]">
                                                     <CheckCircle2 className="w-4 h-4 text-[#10B981] mt-0.5 flex-shrink-0" />
                                                     {req}
                                                 </li>
@@ -994,7 +994,7 @@ const ProjectDetail = () => {
 
                                 {/* Recommended Tools */}
                                 <div className="mb-4">
-                                    <h4 className="text-sm font-medium text-[#94A3B8] mb-3 flex items-center gap-2">
+                                    <h4 className="text-sm font-medium text-[#a3a3a3] mb-3 flex items-center gap-2">
                                         <Zap className="w-4 h-4 text-[#F59E0B]" />
                                         Recommended Tools
                                     </h4>
@@ -1002,11 +1002,11 @@ const ProjectDetail = () => {
                                         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                                             {Object.entries(prdAnalysis.recommended_tools).map(([category, tools]) => (
                                                 tools && Array.isArray(tools) && tools.length > 0 && (
-                                                    <div key={category} className="bg-[rgba(244,246,255,0.03)] rounded-xl p-3">
-                                                        <p className="text-xs font-medium text-[#64748B] capitalize mb-2">{category}</p>
+                                                    <div key={category} className="bg-[rgba(255,255,255,0.025)] rounded-xl p-3">
+                                                        <p className="text-xs font-medium text-[#737373] capitalize mb-2">{category}</p>
                                                         <div className="flex flex-wrap gap-1">
                                                             {tools.slice(0, 3).map((tool, idx) => (
-                                                                <span key={idx} className="text-xs bg-[rgba(99,102,241,0.1)] text-[#818CF8] px-2 py-0.5 rounded">
+                                                                <span key={idx} className="text-xs bg-[rgba(224,185,84,0.1)] text-[#818CF8] px-2 py-0.5 rounded">
                                                                     {tool}
                                                                 </span>
                                                             ))}
@@ -1016,15 +1016,15 @@ const ProjectDetail = () => {
                                             ))}
                                         </div>
                                     ) : (
-                                        <div className="bg-[rgba(244,246,255,0.02)] border border-[rgba(244,246,255,0.06)] rounded-xl p-4 text-center">
-                                            <p className="text-sm text-[#64748B]">No recommended tools data available. Re-analyze PRD to generate.</p>
+                                        <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-xl p-4 text-center">
+                                            <p className="text-sm text-[#737373]">No recommended tools data available. Re-analyze PRD to generate.</p>
                                         </div>
                                     )}
                                 </div>
 
                                 {/* Cost Analysis - Infrastructure Only */}
                                 <div className="mb-4">
-                                    <h4 className="text-sm font-medium text-[#94A3B8] mb-3 flex items-center gap-2">
+                                    <h4 className="text-sm font-medium text-[#a3a3a3] mb-3 flex items-center gap-2">
                                         <DollarSign className="w-4 h-4 text-[#10B981]" />
                                         Infrastructure Cost Analysis
                                     </h4>
@@ -1032,21 +1032,21 @@ const ProjectDetail = () => {
                                         <div className="bg-[rgba(16,185,129,0.05)] border border-[rgba(16,185,129,0.2)] rounded-xl p-4">
                                             <div className="flex items-center justify-between mb-4">
                                                 <div>
-                                                    <p className="text-xs text-[#64748B]">Monthly Cost</p>
+                                                    <p className="text-xs text-[#737373]">Monthly Cost</p>
                                                     <p className="text-2xl font-bold text-[#10B981]">{prdAnalysis.cost_analysis.infrastructure.monthly || 'N/A'}</p>
                                                 </div>
                                                 <div className="text-right">
-                                                    <p className="text-xs text-[#64748B]">Annual Cost</p>
+                                                    <p className="text-xs text-[#737373]">Annual Cost</p>
                                                     <p className="text-lg font-bold text-[#10B981]">{prdAnalysis.cost_analysis.infrastructure.annual || 'N/A'}</p>
                                                 </div>
                                             </div>
                                             {prdAnalysis.cost_analysis.infrastructure.breakdown && prdAnalysis.cost_analysis.infrastructure.breakdown.length > 0 && (
                                                 <div className="border-t border-[rgba(16,185,129,0.2)] pt-3">
-                                                    <p className="text-xs font-medium text-[#64748B] mb-2">Detailed Breakdown</p>
+                                                    <p className="text-xs font-medium text-[#737373] mb-2">Detailed Breakdown</p>
                                                     <div className="space-y-2">
                                                         {prdAnalysis.cost_analysis.infrastructure.breakdown.map((item, idx) => (
-                                                            <div key={idx} className="flex items-center justify-between py-1.5 px-2 bg-[rgba(244,246,255,0.03)] rounded-lg">
-                                                                <span className="text-sm text-[#E2E8F0]">{item.item}</span>
+                                                            <div key={idx} className="flex items-center justify-between py-1.5 px-2 bg-[rgba(255,255,255,0.025)] rounded-lg">
+                                                                <span className="text-sm text-[#f5f5f5]">{item.item}</span>
                                                                 <span className="text-sm font-medium text-[#10B981]">{item.cost}</span>
                                                             </div>
                                                         ))}
@@ -1055,8 +1055,8 @@ const ProjectDetail = () => {
                                             )}
                                         </div>
                                     ) : (
-                                        <div className="bg-[rgba(244,246,255,0.02)] border border-[rgba(244,246,255,0.06)] rounded-xl p-4 text-center">
-                                            <p className="text-sm text-[#64748B]">No infrastructure cost data available. Re-analyze PRD to generate.</p>
+                                        <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-xl p-4 text-center">
+                                            <p className="text-sm text-[#737373]">No infrastructure cost data available. Re-analyze PRD to generate.</p>
                                         </div>
                                     )}
                                 </div>
@@ -1064,7 +1064,7 @@ const ProjectDetail = () => {
                                 {/* Risks */}
                                 {prdAnalysis.risks && prdAnalysis.risks.length > 0 && (
                                     <div className="mb-4">
-                                        <h4 className="text-sm font-medium text-[#94A3B8] mb-3 flex items-center gap-2">
+                                        <h4 className="text-sm font-medium text-[#a3a3a3] mb-3 flex items-center gap-2">
                                             <AlertTriangle className="w-4 h-4 text-[#F59E0B]" />
                                             Initial Risk Assessment
                                         </h4>
@@ -1077,8 +1077,8 @@ const ProjectDetail = () => {
                                                             {risk.impact}
                                                         </Badge>
                                                     </div>
-                                                    <p className="text-xs text-[#94A3B8]">
-                                                        <span className="text-[#64748B]">Mitigation:</span> {risk.mitigation}
+                                                    <p className="text-xs text-[#a3a3a3]">
+                                                        <span className="text-[#737373]">Mitigation:</span> {risk.mitigation}
                                                     </p>
                                                 </div>
                                             ))}
@@ -1088,30 +1088,30 @@ const ProjectDetail = () => {
 
                                 {/* Timeline */}
                                 <div>
-                                    <h4 className="text-sm font-medium text-[#94A3B8] mb-3 flex items-center gap-2">
-                                        <Calendar className="w-4 h-4 text-[#6366F1]" />
+                                    <h4 className="text-sm font-medium text-[#a3a3a3] mb-3 flex items-center gap-2">
+                                        <Calendar className="w-4 h-4 text-[#E0B954]" />
                                         Project Timeline
                                     </h4>
                                     {prdAnalysis.timeline && prdAnalysis.timeline.length > 0 ? (
                                         <div className="space-y-3">
                                             {prdAnalysis.timeline.map((phase, idx) => (
                                                 <div key={idx} className="flex items-start gap-4">
-                                                    <div className="w-8 h-8 rounded-full bg-[#6366F1]/10 flex items-center justify-center flex-shrink-0">
-                                                        <span className="text-xs font-bold text-[#6366F1]">{idx + 1}</span>
+                                                    <div className="w-8 h-8 rounded-full bg-[#E0B954]/10 flex items-center justify-center flex-shrink-0">
+                                                        <span className="text-xs font-bold text-[#E0B954]">{idx + 1}</span>
                                                     </div>
                                                     <div className="flex-1">
                                                         <div className="flex items-center justify-between mb-1">
                                                             <p className="text-sm font-medium text-white">{phase.phase}</p>
-                                                            <span className="text-xs text-[#6366F1]">{phase.duration}</span>
+                                                            <span className="text-xs text-[#E0B954]">{phase.duration}</span>
                                                         </div>
                                                         <div className="flex flex-wrap gap-1">
                                                             {phase.tasks && phase.tasks.slice(0, 3).map((task, taskIdx) => (
-                                                                <span key={taskIdx} className="text-xs bg-[rgba(244,246,255,0.03)] text-[#94A3B8] px-2 py-0.5 rounded">
+                                                                <span key={taskIdx} className="text-xs bg-[rgba(255,255,255,0.025)] text-[#a3a3a3] px-2 py-0.5 rounded">
                                                                     {task}
                                                                 </span>
                                                             ))}
                                                             {phase.tasks && phase.tasks.length > 3 && (
-                                                                <span className="text-xs text-[#64748B]">+{phase.tasks.length - 3} more</span>
+                                                                <span className="text-xs text-[#737373]">+{phase.tasks.length - 3} more</span>
                                                             )}
                                                         </div>
                                                     </div>
@@ -1119,8 +1119,8 @@ const ProjectDetail = () => {
                                             ))}
                                         </div>
                                     ) : (
-                                        <div className="bg-[rgba(244,246,255,0.02)] border border-[rgba(244,246,255,0.06)] rounded-xl p-4 text-center">
-                                            <p className="text-sm text-[#64748B]">No timeline data available. Provide a PRD with timeline details to generate phases.</p>
+                                        <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-xl p-4 text-center">
+                                            <p className="text-sm text-[#737373]">No timeline data available. Provide a PRD with timeline details to generate phases.</p>
                                         </div>
                                     )}
                                 </div>
@@ -1131,13 +1131,13 @@ const ProjectDetail = () => {
                         {project.selected_architecture && (() => {
                             const arch = project.selected_architecture!;
                             return (
-                            <div className="bg-[rgba(244,246,255,0.02)] border border-[rgba(244,246,255,0.06)] rounded-2xl overflow-hidden">
-                                <div className="p-4 border-b border-[rgba(244,246,255,0.06)] flex items-center justify-between">
+                            <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-2xl overflow-hidden">
+                                <div className="p-4 border-b border-[rgba(255,255,255,0.05)] flex items-center justify-between">
                                     <div className="flex items-center gap-3">
-                                        <Layers className="w-5 h-5 text-[#6366F1]" />
+                                        <Layers className="w-5 h-5 text-[#E0B954]" />
                                         <div>
                                             <h3 className="font-semibold text-white">Selected Architecture</h3>
-                                            <p className="text-xs text-[#64748B]">{arch.name}</p>
+                                            <p className="text-xs text-[#737373]">{arch.name}</p>
                                         </div>
                                     </div>
                                     <div className="flex gap-2">
@@ -1145,7 +1145,7 @@ const ProjectDetail = () => {
                                             size="sm"
                                             variant="ghost"
                                             onClick={() => setEditingArchitecture(arch)}
-                                            className="text-[#64748B] hover:text-white"
+                                            className="text-[#737373] hover:text-white"
                                         >
                                             <Pencil className="w-4 h-4 mr-2" />
                                             Edit
@@ -1153,14 +1153,14 @@ const ProjectDetail = () => {
                                         <Button
                                             size="sm"
                                             onClick={() => navigate(`/project/${project.id}/board`)}
-                                            className="bg-gradient-to-r from-[#6366F1] to-[#4F46E5] hover:from-[#5558E6] hover:to-[#4338CA] text-white"
+                                            className="bg-gradient-to-r from-[#E0B954] to-[#B8872A] hover:from-[#5558E6] hover:to-[#4338CA] text-white"
                                         >
                                             <Sparkles className="w-4 h-4 mr-2" />
                                             AI Generate
                                         </Button>
                                     </div>
                                 </div>
-                                <div className="p-4 bg-[#0B0D14] min-h-[400px]">
+                                <div className="p-4 bg-[#080808] min-h-[400px]">
                                     <MermaidRenderer 
                                         code={arch.mermaid_code} 
                                         className="w-full h-full min-h-[350px]"
@@ -1168,13 +1168,13 @@ const ProjectDetail = () => {
                                 </div>
                                 
                                 {/* Architecture Details */}
-                                <div className="p-4 border-t border-[rgba(244,246,255,0.06)] space-y-4">
+                                <div className="p-4 border-t border-[rgba(255,255,255,0.05)] space-y-4">
                                     {/* Quick Stats Row */}
                                     <div className="grid grid-cols-3 gap-4">
-                                        <div className="bg-[rgba(244,246,255,0.02)] rounded-xl p-3">
+                                        <div className="bg-[rgba(255,255,255,0.02)] rounded-xl p-3">
                                             <div className="flex items-center gap-2 mb-1">
                                                 <TrendingUp className="w-4 h-4 text-[#F59E0B]" />
-                                                <span className="text-xs text-[#64748B]">Complexity</span>
+                                                <span className="text-xs text-[#737373]">Complexity</span>
                                             </div>
                                             <div className="flex items-center gap-2">
                                                 <p className="text-lg font-bold text-[#F59E0B] capitalize">{arch.complexity}</p>
@@ -1193,17 +1193,17 @@ const ProjectDetail = () => {
                                                 </div>
                                             </div>
                                         </div>
-                                        <div className="bg-[rgba(244,246,255,0.02)] rounded-xl p-3">
+                                        <div className="bg-[rgba(255,255,255,0.02)] rounded-xl p-3">
                                             <div className="flex items-center gap-2 mb-1">
-                                                <Clock className="w-4 h-4 text-[#6366F1]" />
-                                                <span className="text-xs text-[#64748B]">Timeline</span>
+                                                <Clock className="w-4 h-4 text-[#E0B954]" />
+                                                <span className="text-xs text-[#737373]">Timeline</span>
                                             </div>
-                                            <p className="text-lg font-bold text-[#6366F1]">{arch.time_to_implement}</p>
+                                            <p className="text-lg font-bold text-[#E0B954]">{arch.time_to_implement}</p>
                                         </div>
-                                        <div className="bg-[rgba(244,246,255,0.02)] rounded-xl p-3">
+                                        <div className="bg-[rgba(255,255,255,0.02)] rounded-xl p-3">
                                             <div className="flex items-center gap-2 mb-1">
                                                 <DollarSign className="w-4 h-4 text-[#10B981]" />
-                                                <span className="text-xs text-[#64748B]">Est. Cost</span>
+                                                <span className="text-xs text-[#737373]">Est. Cost</span>
                                             </div>
                                             <p className="text-lg font-bold text-[#10B981]">{arch.estimated_cost}</p>
                                         </div>
@@ -1218,11 +1218,11 @@ const ProjectDetail = () => {
                                             </h4>
                                             {arch.cost_analysis.infrastructure?.breakdown && (
                                                 <div className="mb-3">
-                                                    <p className="text-xs text-[#64748B] mb-2">Infrastructure Components</p>
+                                                    <p className="text-xs text-[#737373] mb-2">Infrastructure Components</p>
                                                     <div className="space-y-1.5">
                                                         {arch.cost_analysis.infrastructure.breakdown.map((item: {item: string; cost: string}, idx: number) => (
-                                                            <div key={idx} className="flex items-center justify-between py-1 px-2 bg-[rgba(244,246,255,0.03)] rounded">
-                                                                <span className="text-xs text-[#E2E8F0]">{item.item}</span>
+                                                            <div key={idx} className="flex items-center justify-between py-1 px-2 bg-[rgba(255,255,255,0.025)] rounded">
+                                                                <span className="text-xs text-[#f5f5f5]">{item.item}</span>
                                                                 <span className="text-xs font-medium text-[#10B981]">{item.cost}</span>
                                                             </div>
                                                         ))}
@@ -1231,13 +1231,13 @@ const ProjectDetail = () => {
                                             )}
                                             {arch.tools_recommended && (
                                                 <div>
-                                                    <p className="text-xs text-[#64748B] mb-2">Tools & Services Required</p>
+                                                    <p className="text-xs text-[#737373] mb-2">Tools & Services Required</p>
                                                     <div className="space-y-1.5">
                                                         {Object.entries(arch.tools_recommended).map(([category, tools]) => (
                                                             tools && Array.isArray(tools) && tools.length > 0 && (
-                                                                <div key={category} className="flex items-center justify-between py-1 px-2 bg-[rgba(244,246,255,0.03)] rounded">
-                                                                    <span className="text-xs text-[#E2E8F0] capitalize">{category}</span>
-                                                                    <span className="text-xs text-[#94A3B8]">{tools.slice(0, 3).join(', ')}{tools.length > 3 ? '...' : ''}</span>
+                                                                <div key={category} className="flex items-center justify-between py-1 px-2 bg-[rgba(255,255,255,0.025)] rounded">
+                                                                    <span className="text-xs text-[#f5f5f5] capitalize">{category}</span>
+                                                                    <span className="text-xs text-[#a3a3a3]">{tools.slice(0, 3).join(', ')}{tools.length > 3 ? '...' : ''}</span>
                                                                 </div>
                                                             )
                                                         ))}
@@ -1257,7 +1257,7 @@ const ProjectDetail = () => {
                                                 </h4>
                                                 <ul className="space-y-1">
                                                     {arch.pros.map((pro, idx) => (
-                                                        <li key={idx} className="text-xs text-[#94A3B8] flex items-start gap-2">
+                                                        <li key={idx} className="text-xs text-[#a3a3a3] flex items-start gap-2">
                                                             <span className="text-[#10B981] mt-1">•</span>
                                                             {pro}
                                                         </li>
@@ -1273,7 +1273,7 @@ const ProjectDetail = () => {
                                                 </h4>
                                                 <ul className="space-y-1">
                                                     {arch.cons.map((con, idx) => (
-                                                        <li key={idx} className="text-xs text-[#94A3B8] flex items-start gap-2">
+                                                        <li key={idx} className="text-xs text-[#a3a3a3] flex items-start gap-2">
                                                             <span className="text-[#EF4444] mt-1">•</span>
                                                             {con}
                                                         </li>
@@ -1286,14 +1286,14 @@ const ProjectDetail = () => {
                                     {/* Tools Recommended */}
                                     {arch.tools_recommended && Object.keys(arch.tools_recommended).length > 0 && (
                                         <div>
-                                            <h4 className="text-xs font-medium text-[#94A3B8] mb-2 flex items-center gap-1">
+                                            <h4 className="text-xs font-medium text-[#a3a3a3] mb-2 flex items-center gap-1">
                                                 <Wrench className="w-3.5 h-3.5 text-[#F59E0B]" />
                                                 Recommended Tools
                                             </h4>
                                             <div className="flex flex-wrap gap-2">
                                                 {Object.entries(arch.tools_recommended).map(([category, tools]) => (
                                                     tools && Array.isArray(tools) && tools.map((tool, idx) => (
-                                                        <span key={`${category}-${idx}`} className="text-xs bg-[rgba(99,102,241,0.1)] text-[#818CF8] px-2 py-1 rounded-lg">
+                                                        <span key={`${category}-${idx}`} className="text-xs bg-[rgba(224,185,84,0.1)] text-[#818CF8] px-2 py-1 rounded-lg">
                                                             {tool}
                                                         </span>
                                                     ))
@@ -1307,21 +1307,21 @@ const ProjectDetail = () => {
                         })()}
 
                         {/* Team Section */}
-                        <div className="bg-[rgba(244,246,255,0.02)] border border-[rgba(244,246,255,0.06)] rounded-2xl p-4">
+                        <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-2xl p-4">
                             <div className="flex items-center justify-between mb-3">
                                 <div className="flex items-center gap-3">
-                                    <div className="w-10 h-10 rounded-xl bg-[#6366F1]/10 flex items-center justify-center">
-                                        <Users className="w-5 h-5 text-[#6366F1]" />
+                                    <div className="w-10 h-10 rounded-xl bg-[#E0B954]/10 flex items-center justify-center">
+                                        <Users className="w-5 h-5 text-[#E0B954]" />
                                     </div>
                                     <div>
                                         <h3 className="font-semibold text-white">Project Team</h3>
-                                        <p className="text-xs text-[#64748B]">{project.developers.length} developers assigned</p>
+                                        <p className="text-xs text-[#737373]">{project.developers.length} developers assigned</p>
                                     </div>
                                 </div>
                                 <Button
                                     onClick={() => setShowAddDeveloper(true)}
                                     disabled={availableDevelopers.length === 0}
-                                    className="bg-gradient-to-r from-[#6366F1] to-[#4F46E5] hover:from-[#5558E6] hover:to-[#4338CA] text-white font-medium shadow-lg shadow-[#4F46E5]/20 disabled:opacity-50 rounded-xl"
+                                    className="bg-gradient-to-r from-[#E0B954] to-[#B8872A] hover:from-[#5558E6] hover:to-[#4338CA] text-white font-medium shadow-lg shadow-[#B8872A]/20 disabled:opacity-50 rounded-xl"
                                     size="sm"
                                 >
                                     <Plus className="w-4 h-4 mr-2" />
@@ -1329,13 +1329,13 @@ const ProjectDetail = () => {
                                 </Button>
                             </div>
                             {project.developers.length === 0 ? (
-                                <div className="text-center py-10 bg-[rgba(244,246,255,0.02)] border border-[rgba(244,246,255,0.06)] rounded-2xl">
+                                <div className="text-center py-10 bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-2xl">
                                     <Users className="w-10 h-10 text-[#334155] mx-auto mb-3" />
-                                    <p className="text-[#64748B]">No developers assigned yet</p>
+                                    <p className="text-[#737373]">No developers assigned yet</p>
                                     <Button
                                         onClick={() => setShowAddDeveloper(true)}
                                         variant="ghost"
-                                        className="text-[#6366F1] mt-2"
+                                        className="text-[#E0B954] mt-2"
                                     >
                                         Add your first developer
                                     </Button>
@@ -1345,28 +1345,28 @@ const ProjectDetail = () => {
                                     {project.developers.map((dev) => (
                                         <div
                                             key={dev.id}
-                                            className="bg-[rgba(244,246,255,0.02)] border border-[rgba(244,246,255,0.06)] rounded-xl p-4 flex items-start justify-between"
+                                            className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-xl p-4 flex items-start justify-between"
                                         >
                                             <div className="flex items-start gap-4">
-                                                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#6366F1] to-[#4F46E5] flex items-center justify-center text-white font-semibold">
+                                                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#E0B954] to-[#B8872A] flex items-center justify-center text-white font-semibold">
                                                     {dev.name.charAt(0).toUpperCase()}
                                                 </div>
                                                 <div>
                                                     <h3 className="font-semibold text-white">{dev.name}</h3>
-                                                    <p className="text-sm text-[#64748B]">{dev.email}</p>
+                                                    <p className="text-sm text-[#737373]">{dev.email}</p>
                                                     <div className="flex items-center gap-2 mt-1.5">
-                                                        <Badge className="bg-[#6366F1]/20 text-[#6366F1] border-0">
+                                                        <Badge className="bg-[#E0B954]/20 text-[#E0B954] border-0">
                                                             {dev.role}
                                                         </Badge>
                                                         {dev.github_username && (
-                                                            <Badge variant="outline" className="text-[#64748B] border-[rgba(244,246,255,0.1)]">
+                                                            <Badge variant="outline" className="text-[#737373] border-[rgba(255,255,255,0.08)]">
                                                                 <Github className="w-3 h-3 mr-1" />
                                                                 {dev.github_username}
                                                             </Badge>
                                                         )}
                                                     </div>
                                                     {dev.responsibilities && (
-                                                        <p className="text-sm text-[#94A3B8] mt-1.5">{dev.responsibilities}</p>
+                                                        <p className="text-sm text-[#a3a3a3] mt-1.5">{dev.responsibilities}</p>
                                                     )}
                                                 </div>
                                             </div>
@@ -1389,23 +1389,23 @@ const ProjectDetail = () => {
                 {/* Add Developer Modal (shared across overview & hub) */}
                 {showAddDeveloper && (
                     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-                        <div className="bg-[#0F1118] border border-[rgba(244,246,255,0.08)] rounded-2xl w-full max-w-md shadow-2xl">
-                            <div className="flex items-center justify-between p-5 border-b border-[rgba(244,246,255,0.06)]">
+                        <div className="bg-[#0d0d0d] border border-[rgba(255,255,255,0.07)] rounded-2xl w-full max-w-md shadow-2xl">
+                            <div className="flex items-center justify-between p-5 border-b border-[rgba(255,255,255,0.05)]">
                                 <h2 className="text-lg font-bold text-white">Add Developer</h2>
                                 <button
                                     onClick={() => setShowAddDeveloper(false)}
-                                    className="p-2 rounded-lg hover:bg-[rgba(244,246,255,0.05)] text-[#475569] hover:text-white"
+                                    className="p-2 rounded-lg hover:bg-[rgba(244,246,255,0.05)] text-[#737373] hover:text-white"
                                 >
                                     <X className="w-5 h-5" />
                                 </button>
                             </div>
                             <div className="p-5 space-y-4">
                                 <div>
-                                    <label className="text-xs font-medium text-[#64748B] block mb-1.5">Developer</label>
+                                    <label className="text-xs font-medium text-[#737373] block mb-1.5">Developer</label>
                                     <select
                                         value={newDeveloper.developer_id}
                                         onChange={(e) => setNewDeveloper(d => ({ ...d, developer_id: e.target.value }))}
-                                        className="w-full h-10 bg-[rgba(244,246,255,0.03)] border border-[rgba(244,246,255,0.08)] text-[#E2E8F0] rounded-xl px-3 text-sm"
+                                        className="w-full h-10 bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.07)] text-[#f5f5f5] rounded-xl px-3 text-sm"
                                     >
                                         <option value="">Select a developer</option>
                                         {availableDevelopers.map((dev) => (
@@ -1416,36 +1416,36 @@ const ProjectDetail = () => {
                                     </select>
                                 </div>
                                 <div>
-                                    <label className="text-xs font-medium text-[#64748B] block mb-1.5">Role</label>
+                                    <label className="text-xs font-medium text-[#737373] block mb-1.5">Role</label>
                                     <Input
                                         value={newDeveloper.role}
                                         onChange={(e) => setNewDeveloper(d => ({ ...d, role: e.target.value }))}
                                         placeholder="e.g., Backend Developer"
-                                        className="bg-[rgba(244,246,255,0.03)] border-[rgba(244,246,255,0.08)] text-[#F4F6FF] rounded-xl"
+                                        className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl"
                                     />
                                 </div>
                                 <div>
-                                    <label className="text-xs font-medium text-[#64748B] block mb-1.5">Responsibilities</label>
+                                    <label className="text-xs font-medium text-[#737373] block mb-1.5">Responsibilities</label>
                                     <Textarea
                                         value={newDeveloper.responsibilities}
                                         onChange={(e) => setNewDeveloper(d => ({ ...d, responsibilities: e.target.value }))}
                                         placeholder="What will this developer work on?"
-                                        className="bg-[rgba(244,246,255,0.03)] border-[rgba(244,246,255,0.08)] text-[#F4F6FF] rounded-xl min-h-[80px]"
+                                        className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl min-h-[80px]"
                                     />
                                 </div>
                             </div>
-                            <div className="flex justify-end gap-3 p-5 border-t border-[rgba(244,246,255,0.06)]">
+                            <div className="flex justify-end gap-3 p-5 border-t border-[rgba(255,255,255,0.05)]">
                                 <Button
                                     variant="ghost"
                                     onClick={() => setShowAddDeveloper(false)}
-                                    className="text-[#64748B] rounded-xl"
+                                    className="text-[#737373] rounded-xl"
                                 >
                                     Cancel
                                 </Button>
                                 <Button
                                     onClick={handleAddDeveloper}
                                     disabled={!newDeveloper.developer_id || !newDeveloper.role}
-                                    className="bg-gradient-to-r from-[#6366F1] to-[#4F46E5] hover:from-[#5558E6] hover:to-[#4338CA] text-white rounded-xl font-medium shadow-lg shadow-[#4F46E5]/20 disabled:opacity-50"
+                                    className="bg-gradient-to-r from-[#E0B954] to-[#B8872A] hover:from-[#5558E6] hover:to-[#4338CA] text-white rounded-xl font-medium shadow-lg shadow-[#B8872A]/20 disabled:opacity-50"
                                 >
                                     <Plus className="w-4 h-4 mr-2" />
                                     Add Developer
@@ -1459,50 +1459,50 @@ const ProjectDetail = () => {
                     <div className="space-y-4">
                         {/* Active Sprints in Hub */}
                         {sprints.length > 0 && (
-                            <div className="bg-[rgba(244,246,255,0.02)] border border-[rgba(99,102,241,0.12)] rounded-2xl p-5">
+                            <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(224,185,84,0.12)] rounded-2xl p-5">
                                 <div className="flex items-center gap-3 mb-4">
-                                    <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-[#6366F1] to-[#8B5CF6] flex items-center justify-center shadow-lg shadow-[#6366F1]/20">
+                                    <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-[#E0B954] to-[#C79E3B] flex items-center justify-center shadow-lg shadow-[#E0B954]/20">
                                         <TrendingUp className="w-4 h-4 text-white" />
                                     </div>
                                     <div>
                                         <h3 className="font-semibold text-white">Active Sprints</h3>
-                                        <p className="text-xs text-[#64748B]">{sprints.filter(s => s.status === 'active').length} active · {sprints.length} total</p>
+                                        <p className="text-xs text-[#737373]">{sprints.filter(s => s.status === 'active').length} active · {sprints.length} total</p>
                                     </div>
                                 </div>
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                                     {sprints.map((sprint) => (
                                         <div key={sprint.id} className={`border rounded-xl p-4 ${
                                             sprint.status === 'active' ? 'border-[#10B981]/30 bg-[#10B981]/5' :
-                                            sprint.status === 'completed' ? 'border-[#6366F1]/20 bg-[rgba(99,102,241,0.03)]' :
-                                            'border-[rgba(244,246,255,0.06)] bg-[rgba(244,246,255,0.02)]'
+                                            sprint.status === 'completed' ? 'border-[#E0B954]/20 bg-[rgba(224,185,84,0.03)]' :
+                                            'border-[rgba(255,255,255,0.05)] bg-[rgba(255,255,255,0.02)]'
                                         }`}>
                                             <div className="flex items-center justify-between mb-2">
                                                 <div className="flex items-center gap-2">
                                                     <span className={`w-2 h-2 rounded-full flex-shrink-0 ${
                                                         sprint.status === 'active' ? 'bg-[#10B981] animate-pulse' :
-                                                        sprint.status === 'completed' ? 'bg-[#6366F1]' : 'bg-[#64748B]'
+                                                        sprint.status === 'completed' ? 'bg-[#E0B954]' : 'bg-[#737373]'
                                                     }`} />
                                                     <p className="text-sm font-semibold text-white truncate">{sprint.name}</p>
                                                 </div>
                                                 <Badge className={`text-[10px] border-0 flex-shrink-0 ${
                                                     sprint.status === 'active' ? 'bg-[#10B981]/20 text-[#10B981]' :
-                                                    sprint.status === 'completed' ? 'bg-[#6366F1]/20 text-[#6366F1]' :
-                                                    'bg-[#64748B]/20 text-[#64748B]'
+                                                    sprint.status === 'completed' ? 'bg-[#E0B954]/20 text-[#E0B954]' :
+                                                    'bg-[#737373]/20 text-[#737373]'
                                                 }`}>{sprint.status}</Badge>
                                             </div>
                                             {sprint.goal && (
-                                                <p className="text-xs text-[#94A3B8] mb-2 line-clamp-1">{sprint.goal}</p>
+                                                <p className="text-xs text-[#a3a3a3] mb-2 line-clamp-1">{sprint.goal}</p>
                                             )}
                                             <div className="flex items-center gap-2 mb-2">
-                                                <div className="flex-1 h-1.5 bg-[rgba(244,246,255,0.06)] rounded-full overflow-hidden">
+                                                <div className="flex-1 h-1.5 bg-[rgba(255,255,255,0.05)] rounded-full overflow-hidden">
                                                     <div
-                                                        className="h-full bg-gradient-to-r from-[#6366F1] to-[#10B981] rounded-full transition-all"
+                                                        className="h-full bg-gradient-to-r from-[#E0B954] to-[#10B981] rounded-full transition-all"
                                                         style={{ width: `${sprint.completion_pct}%` }}
                                                     />
                                                 </div>
                                                 <span className="text-xs font-bold text-[#10B981] w-10 text-right">{sprint.completion_pct}%</span>
                                             </div>
-                                            <div className="flex items-center gap-3 text-[10px] text-[#64748B]">
+                                            <div className="flex items-center gap-3 text-[10px] text-[#737373]">
                                                 <span>{sprint.done_count}/{sprint.total_items} done</span>
                                                 <span>·</span>
                                                 <span>{sprint.total_points} pts</span>
@@ -1522,7 +1522,7 @@ const ProjectDetail = () => {
                         {/* Work Items List */}
                         {hubLoading ? (
                             <div className="flex items-center justify-center py-12">
-                                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#6366F1]"></div>
+                                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#E0B954]"></div>
                             </div>
                         ) : (
                             <ListView workItems={hubWorkItems} />
@@ -1535,19 +1535,19 @@ const ProjectDetail = () => {
                     <div className="space-y-4">
                         {/* Analytics Charts */}
                         {analytics && analytics.total_items > 0 && (
-                            <div className="bg-[rgba(244,246,255,0.02)] border border-[rgba(244,246,255,0.06)] rounded-2xl p-5">
+                            <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-2xl p-5">
                                 <div className="flex items-center gap-3 mb-4">
                                     <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#10B981] to-[#059669] flex items-center justify-center">
                                         <BarChart3 className="w-5 h-5 text-white" />
                                     </div>
                                     <div>
                                         <h3 className="font-semibold text-white">Project Analytics</h3>
-                                        <p className="text-xs text-[#64748B]">{analytics.total_items} items &bull; {analytics.completed_points}/{analytics.total_story_points} points completed</p>
+                                        <p className="text-xs text-[#737373]">{analytics.total_items} items &bull; {analytics.completed_points}/{analytics.total_story_points} points completed</p>
                                     </div>
                                 </div>
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                    <div className="bg-[rgba(244,246,255,0.03)] rounded-xl p-4">
-                                        <h4 className="text-sm font-medium text-[#94A3B8] mb-4">Status Distribution</h4>
+                                    <div className="bg-[rgba(255,255,255,0.025)] rounded-xl p-4">
+                                        <h4 className="text-sm font-medium text-[#a3a3a3] mb-4">Status Distribution</h4>
                                         <ResponsiveContainer width="100%" height={200}>
                                             <PieChart>
                                                 <Pie
@@ -1555,38 +1555,38 @@ const ProjectDetail = () => {
                                                     cx="50%" cy="50%" innerRadius={40} outerRadius={80} paddingAngle={5} dataKey="value"
                                                 >
                                                     {Object.entries(analytics.status_distribution).map((_, index) => (
-                                                        <Cell key={`cell-${index}`} fill={['#6366F1', '#10B981', '#F59E0B', '#EF4444', '#64748B'][index % 5]} />
+                                                        <Cell key={`cell-${index}`} fill={['#E0B954', '#10B981', '#F59E0B', '#EF4444', '#737373'][index % 5]} />
                                                     ))}
                                                 </Pie>
-                                                <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px' }} />
+                                                <Tooltip contentStyle={{ backgroundColor: '#121212', border: 'none', borderRadius: '8px' }} />
                                                 <Legend />
                                             </PieChart>
                                         </ResponsiveContainer>
                                     </div>
                                     {analytics.velocity_data.length > 0 && (
-                                        <div className="bg-[rgba(244,246,255,0.03)] rounded-xl p-4">
-                                            <h4 className="text-sm font-medium text-[#94A3B8] mb-4">Sprint Velocity</h4>
+                                        <div className="bg-[rgba(255,255,255,0.025)] rounded-xl p-4">
+                                            <h4 className="text-sm font-medium text-[#a3a3a3] mb-4">Sprint Velocity</h4>
                                             <ResponsiveContainer width="100%" height={200}>
                                                 <BarChart data={analytics.velocity_data}>
                                                     <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" />
-                                                    <XAxis dataKey="sprint_name" tick={{ fill: '#64748B', fontSize: 10 }} angle={-45} textAnchor="end" height={60} />
-                                                    <YAxis tick={{ fill: '#64748B' }} />
-                                                    <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px' }} />
+                                                    <XAxis dataKey="sprint_name" tick={{ fill: '#737373', fontSize: 10 }} angle={-45} textAnchor="end" height={60} />
+                                                    <YAxis tick={{ fill: '#737373' }} />
+                                                    <Tooltip contentStyle={{ backgroundColor: '#121212', border: 'none', borderRadius: '8px' }} />
                                                     <Legend />
-                                                    <Bar dataKey="committed" fill="#6366F1" name="Committed" />
+                                                    <Bar dataKey="committed" fill="#E0B954" name="Committed" />
                                                     <Bar dataKey="completed" fill="#10B981" name="Completed" />
                                                 </BarChart>
                                             </ResponsiveContainer>
                                         </div>
                                     )}
-                                    <div className="bg-[rgba(244,246,255,0.03)] rounded-xl p-4 md:col-span-2">
-                                        <h4 className="text-sm font-medium text-[#94A3B8] mb-4">Burndown Chart (Last 14 Days)</h4>
+                                    <div className="bg-[rgba(255,255,255,0.025)] rounded-xl p-4 md:col-span-2">
+                                        <h4 className="text-sm font-medium text-[#a3a3a3] mb-4">Burndown Chart (Last 14 Days)</h4>
                                         <ResponsiveContainer width="100%" height={250}>
                                             <LineChart data={analytics.burndown_data}>
                                                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" />
-                                                <XAxis dataKey="date" tick={{ fill: '#64748B', fontSize: 10 }} />
-                                                <YAxis tick={{ fill: '#64748B' }} />
-                                                <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px' }} />
+                                                <XAxis dataKey="date" tick={{ fill: '#737373', fontSize: 10 }} />
+                                                <YAxis tick={{ fill: '#737373' }} />
+                                                <Tooltip contentStyle={{ backgroundColor: '#121212', border: 'none', borderRadius: '8px' }} />
                                                 <Legend />
                                                 <Line type="monotone" dataKey="remaining" stroke="#F59E0B" name="Remaining Items" strokeWidth={2} />
                                                 <Line type="monotone" dataKey="completed" stroke="#10B981" name="Completed Items" strokeWidth={2} />
@@ -1651,14 +1651,14 @@ const ProjectDetail = () => {
                     <div className="space-y-4">
                         {/* Sprint Expected vs Actual Progress */}
                         {sprints.length > 0 && (
-                            <div className="bg-[rgba(244,246,255,0.02)] border border-[rgba(99,102,241,0.12)] rounded-2xl p-5 shadow-[0_0_30px_rgba(99,102,241,0.05)]">
+                            <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(224,185,84,0.12)] rounded-2xl p-5 shadow-[0_0_30px_rgba(224,185,84,0.05)]">
                                 <div className="flex items-center gap-3 mb-5">
-                                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#6366F1] to-[#8B5CF6] flex items-center justify-center shadow-lg shadow-[#6366F1]/25">
+                                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#E0B954] to-[#C79E3B] flex items-center justify-center shadow-lg shadow-[#E0B954]/25">
                                         <BarChart3 className="w-5 h-5 text-white" />
                                     </div>
                                     <div>
                                         <h3 className="font-semibold text-white">Sprint Progress vs Expected</h3>
-                                        <p className="text-xs text-[#64748B]">Actual completion compared to time-based expected progress</p>
+                                        <p className="text-xs text-[#737373]">Actual completion compared to time-based expected progress</p>
                                     </div>
                                 </div>
                                 <div className="space-y-4">
@@ -1681,21 +1681,21 @@ const ProjectDetail = () => {
                                         const isFar = Math.abs(delta) > 15;
                                         return (
                                             <div key={sprint.id} className={`border rounded-xl p-4 ${
-                                                sprint.status === 'completed' ? 'border-[#6366F1]/20 bg-[rgba(99,102,241,0.03)]' :
+                                                sprint.status === 'completed' ? 'border-[#E0B954]/20 bg-[rgba(224,185,84,0.03)]' :
                                                 isFar && !isAhead ? 'border-[#EF4444]/20 bg-[rgba(239,68,68,0.03)]' :
-                                                'border-[rgba(244,246,255,0.06)] bg-[rgba(244,246,255,0.02)]'
+                                                'border-[rgba(255,255,255,0.05)] bg-[rgba(255,255,255,0.02)]'
                                             }`}>
                                                 <div className="flex items-center justify-between mb-3">
                                                     <div className="flex items-center gap-2">
                                                         <span className={`w-2 h-2 rounded-full ${
                                                             sprint.status === 'active' ? 'bg-[#10B981] animate-pulse' :
-                                                            sprint.status === 'completed' ? 'bg-[#6366F1]' : 'bg-[#64748B]'
+                                                            sprint.status === 'completed' ? 'bg-[#E0B954]' : 'bg-[#737373]'
                                                         }`} />
                                                         <p className="text-sm font-semibold text-white">{sprint.name}</p>
                                                         <Badge className={`text-[10px] border-0 ${
                                                             sprint.status === 'active' ? 'bg-[#10B981]/20 text-[#10B981]' :
-                                                            sprint.status === 'completed' ? 'bg-[#6366F1]/20 text-[#6366F1]' :
-                                                            'bg-[#64748B]/20 text-[#64748B]'
+                                                            sprint.status === 'completed' ? 'bg-[#E0B954]/20 text-[#E0B954]' :
+                                                            'bg-[#737373]/20 text-[#737373]'
                                                         }`}>{sprint.status}</Badge>
                                                     </div>
                                                     <div className="flex items-center gap-2">
@@ -1709,32 +1709,32 @@ const ProjectDetail = () => {
                                                     </div>
                                                 </div>
                                                 {sprint.goal && (
-                                                    <p className="text-xs text-[#64748B] mb-3 line-clamp-1">{sprint.goal}</p>
+                                                    <p className="text-xs text-[#737373] mb-3 line-clamp-1">{sprint.goal}</p>
                                                 )}
                                                 {/* Dual progress bars */}
                                                 <div className="space-y-2">
                                                     <div className="flex items-center gap-3">
-                                                        <span className="text-[10px] text-[#64748B] w-16 flex-shrink-0">Actual</span>
-                                                        <div className="flex-1 h-2 bg-[rgba(244,246,255,0.06)] rounded-full overflow-hidden">
+                                                        <span className="text-[10px] text-[#737373] w-16 flex-shrink-0">Actual</span>
+                                                        <div className="flex-1 h-2 bg-[rgba(255,255,255,0.05)] rounded-full overflow-hidden">
                                                             <div
-                                                                className="h-full bg-gradient-to-r from-[#6366F1] to-[#10B981] rounded-full transition-all"
+                                                                className="h-full bg-gradient-to-r from-[#E0B954] to-[#10B981] rounded-full transition-all"
                                                                 style={{ width: `${actual}%` }}
                                                             />
                                                         </div>
                                                         <span className="text-xs font-bold text-[#10B981] w-10 text-right">{actual}%</span>
                                                     </div>
                                                     <div className="flex items-center gap-3">
-                                                        <span className="text-[10px] text-[#64748B] w-16 flex-shrink-0">Expected</span>
-                                                        <div className="flex-1 h-2 bg-[rgba(244,246,255,0.06)] rounded-full overflow-hidden">
+                                                        <span className="text-[10px] text-[#737373] w-16 flex-shrink-0">Expected</span>
+                                                        <div className="flex-1 h-2 bg-[rgba(255,255,255,0.05)] rounded-full overflow-hidden">
                                                             <div
-                                                                className="h-full bg-[#475569] rounded-full transition-all"
+                                                                className="h-full bg-[#737373] rounded-full transition-all"
                                                                 style={{ width: `${expectedPct}%` }}
                                                             />
                                                         </div>
-                                                        <span className="text-xs font-medium text-[#64748B] w-10 text-right">{expectedPct}%</span>
+                                                        <span className="text-xs font-medium text-[#737373] w-10 text-right">{expectedPct}%</span>
                                                     </div>
                                                 </div>
-                                                <div className="flex items-center gap-4 mt-3 text-[10px] text-[#475569]">
+                                                <div className="flex items-center gap-4 mt-3 text-[10px] text-[#737373]">
                                                     <span>{sprint.done_count}/{sprint.total_items} items done</span>
                                                     <span>·</span>
                                                     <span>{sprint.total_points} story pts</span>
@@ -1757,12 +1757,12 @@ const ProjectDetail = () => {
                         {/* Workload Section */}
                         <div>
                             <div className="flex items-center gap-3 mb-4">
-                                <div className="w-9 h-9 rounded-xl bg-[#6366F1]/10 flex items-center justify-center">
-                                    <Users className="w-4 h-4 text-[#6366F1]" />
+                                <div className="w-9 h-9 rounded-xl bg-[#E0B954]/10 flex items-center justify-center">
+                                    <Users className="w-4 h-4 text-[#E0B954]" />
                                 </div>
                                 <div>
                                     <h3 className="font-semibold text-white">Team Workload</h3>
-                                    <p className="text-xs text-[#64748B]">Developer capacity and task distribution</p>
+                                    <p className="text-xs text-[#737373]">Developer capacity and task distribution</p>
                                 </div>
                             </div>
                             <WorkloadView

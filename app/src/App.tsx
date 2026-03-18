@@ -17,14 +17,14 @@ function IdleWarningModal({ onStay, onLogout, remainingSeconds }: { onStay: () =
   
   return (
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
-      <div className="bg-[#0F1118] border border-[rgba(244,246,255,0.08)] rounded-2xl w-full max-w-md shadow-2xl p-6">
+      <div className="bg-[#0d0d0d] border border-[rgba(255,255,255,0.07)] rounded-2xl w-full max-w-md shadow-2xl p-6">
         <div className="flex items-center gap-3 mb-4">
           <div className="w-12 h-12 rounded-xl bg-[#F59E0B]/20 flex items-center justify-center">
             <AlertTriangle className="w-6 h-6 text-[#F59E0B]" />
           </div>
           <div>
             <h2 className="text-lg font-bold text-white">Session Timeout Warning</h2>
-            <p className="text-sm text-[#64748B]">You have been inactive for 25 minutes</p>
+            <p className="text-sm text-[#737373]">You have been inactive for 25 minutes</p>
           </div>
         </div>
         
@@ -36,7 +36,7 @@ function IdleWarningModal({ onStay, onLogout, remainingSeconds }: { onStay: () =
           <div className="text-3xl font-bold text-white tabular-nums">
             {minutes}:{seconds.toString().padStart(2, '0')}
           </div>
-          <p className="text-xs text-[#94A3B8] mt-2">
+          <p className="text-xs text-[#a3a3a3] mt-2">
             You will be automatically logged out due to inactivity.
           </p>
         </div>
@@ -45,13 +45,13 @@ function IdleWarningModal({ onStay, onLogout, remainingSeconds }: { onStay: () =
           <Button 
             variant="ghost" 
             onClick={onLogout}
-            className="flex-1 text-[#64748B] hover:text-white rounded-xl h-11"
+            className="flex-1 text-[#737373] hover:text-white rounded-xl h-11"
           >
             Logout Now
           </Button>
           <Button 
             onClick={onStay}
-            className="flex-1 bg-gradient-to-r from-[#6366F1] to-[#4F46E5] hover:from-[#5558E6] hover:to-[#4338CA] text-white rounded-xl h-11 font-medium"
+            className="flex-1 bg-gradient-to-r from-[#E0B954] to-[#B8872A] hover:from-[#5558E6] hover:to-[#4338CA] text-white rounded-xl h-11 font-medium"
           >
             Stay Logged In
           </Button>
@@ -87,8 +87,8 @@ function AuthenticatedRoutes() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-[#05060B] flex items-center justify-center">
-        <div className="w-10 h-10 border-2 border-[#6366F1]/30 border-t-[#6366F1] rounded-full animate-spin" />
+      <div className="min-h-screen bg-[#080808] flex items-center justify-center">
+        <div className="w-10 h-10 border-2 border-[#E0B954]/30 border-t-[#E0B954] rounded-full animate-spin" />
       </div>
     );
   }

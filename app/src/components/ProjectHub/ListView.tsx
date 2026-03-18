@@ -32,10 +32,10 @@ type SortField = 'title' | 'status' | 'priority' | 'due_date' | 'assignee';
 type SortDirection = 'asc' | 'desc';
 
 const TYPE_CONFIG: Record<string, { icon: React.ElementType; color: string; label: string; bg: string }> = {
-    user_story: { icon: BookOpen, color: '#6366F1', label: 'Story', bg: 'rgba(99,102,241,0.15)' },
+    user_story: { icon: BookOpen, color: '#E0B954', label: 'Story', bg: 'rgba(224,185,84,0.15)' },
     task: { icon: ClipboardList, color: '#F59E0B', label: 'Task', bg: 'rgba(245,158,11,0.15)' },
     bug: { icon: Bug, color: '#EF4444', label: 'Bug', bg: 'rgba(239,68,68,0.15)' },
-    epic: { icon: Target, color: '#8B5CF6', label: 'Epic', bg: 'rgba(139,92,246,0.15)' },
+    epic: { icon: Target, color: '#C79E3B', label: 'Epic', bg: 'rgba(199,158,59,0.15)' },
 };
 
 const ListView: React.FC<ListViewProps> = ({ workItems, onTaskClick }) => {
@@ -129,9 +129,9 @@ const ListView: React.FC<ListViewProps> = ({ workItems, onTaskClick }) => {
             case 'in_progress':
                 return <Clock className="w-4 h-4 text-[#F59E0B]" />;
             case 'in_review':
-                return <AlertCircle className="w-4 h-4 text-[#8B5CF6]" />;
+                return <AlertCircle className="w-4 h-4 text-[#C79E3B]" />;
             default:
-                return <Circle className="w-4 h-4 text-[#64748B]" />;
+                return <Circle className="w-4 h-4 text-[#737373]" />;
         }
     };
 
@@ -150,7 +150,7 @@ const ListView: React.FC<ListViewProps> = ({ workItems, onTaskClick }) => {
 
     const SortHeader = ({ field, label }: { field: SortField; label: string }) => (
         <th 
-            className="text-left py-3 px-4 text-xs font-medium text-[#64748B] uppercase cursor-pointer hover:text-white transition-colors"
+            className="text-left py-3 px-4 text-xs font-medium text-[#737373] uppercase cursor-pointer hover:text-white transition-colors"
             onClick={() => handleSort(field)}
         >
             <div className="flex items-center gap-1">
@@ -163,27 +163,27 @@ const ListView: React.FC<ListViewProps> = ({ workItems, onTaskClick }) => {
     );
 
     return (
-        <Card className="bg-[#0F0F1A] border-[rgba(244,246,255,0.1)]">
+        <Card className="bg-[#0d0d0d] border-[rgba(255,255,255,0.08)]">
             <CardHeader>
                 <div className="flex items-center justify-between">
                     <CardTitle className="text-white">List View</CardTitle>
-                    <span className="text-[#64748B] text-sm">{filteredAndSortedItems.length} items</span>
+                    <span className="text-[#737373] text-sm">{filteredAndSortedItems.length} items</span>
                 </div>
                 
                 {/* Filters */}
                 <div className="flex flex-wrap items-center gap-3 mt-4">
                     <div className="relative flex-1 min-w-[200px]">
-                        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-[#64748B]" />
+                        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-[#737373]" />
                         <Input
                             placeholder="Search tasks..."
                             value={searchTerm}
                             onChange={(e) => setSearchTerm(e.target.value)}
-                            className="pl-10 bg-[#0A0A14] border-[rgba(244,246,255,0.1)] text-white"
+                            className="pl-10 bg-[#0A0A14] border-[rgba(255,255,255,0.08)] text-white"
                         />
                     </div>
                     
                     <Select value={statusFilter} onValueChange={setStatusFilter}>
-                        <SelectTrigger className="w-[130px] bg-[#0A0A14] border-[rgba(244,246,255,0.1)] text-white">
+                        <SelectTrigger className="w-[130px] bg-[#0A0A14] border-[rgba(255,255,255,0.08)] text-white">
                             <SelectValue placeholder="Status" />
                         </SelectTrigger>
                         <SelectContent>
@@ -196,7 +196,7 @@ const ListView: React.FC<ListViewProps> = ({ workItems, onTaskClick }) => {
                     </Select>
                     
                     <Select value={priorityFilter} onValueChange={setPriorityFilter}>
-                        <SelectTrigger className="w-[130px] bg-[#0A0A14] border-[rgba(244,246,255,0.1)] text-white">
+                        <SelectTrigger className="w-[130px] bg-[#0A0A14] border-[rgba(255,255,255,0.08)] text-white">
                             <SelectValue placeholder="Priority" />
                         </SelectTrigger>
                         <SelectContent>
@@ -209,7 +209,7 @@ const ListView: React.FC<ListViewProps> = ({ workItems, onTaskClick }) => {
                     </Select>
                     
                     <Select value={groupBy} onValueChange={setGroupBy}>
-                        <SelectTrigger className="w-[130px] bg-[#0A0A14] border-[rgba(244,246,255,0.1)] text-white">
+                        <SelectTrigger className="w-[130px] bg-[#0A0A14] border-[rgba(255,255,255,0.08)] text-white">
                             <SelectValue placeholder="Group by" />
                         </SelectTrigger>
                         <SelectContent>
@@ -227,14 +227,14 @@ const ListView: React.FC<ListViewProps> = ({ workItems, onTaskClick }) => {
                     <div key={group} className="mb-6 last:mb-0">
                         {groupBy !== 'none' && (
                             <div className="flex items-center gap-2 mb-3">
-                                <Badge variant="outline" className="border-[rgba(244,246,255,0.1)] text-[#8B5CF6]">
+                                <Badge variant="outline" className="border-[rgba(255,255,255,0.08)] text-[#C79E3B]">
                                     {group}
                                 </Badge>
-                                <span className="text-[#64748B] text-sm">{items.length} items</span>
+                                <span className="text-[#737373] text-sm">{items.length} items</span>
                             </div>
                         )}
                         
-                        <div className="overflow-x-auto rounded-lg border border-[rgba(244,246,255,0.06)]">
+                        <div className="overflow-x-auto rounded-lg border border-[rgba(255,255,255,0.05)]">
                             <table className="w-full">
                                 <thead className="bg-[#0A0A14]">
                                     <tr>
@@ -244,25 +244,25 @@ const ListView: React.FC<ListViewProps> = ({ workItems, onTaskClick }) => {
                                         <SortHeader field="priority" label="Priority" />
                                         <SortHeader field="assignee" label="Assignee" />
                                         <SortHeader field="due_date" label="Due Date" />
-                                        <th className="text-left py-3 px-4 text-xs font-medium text-[#64748B] uppercase">Est / Logged</th>
+                                        <th className="text-left py-3 px-4 text-xs font-medium text-[#737373] uppercase">Est / Logged</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {items.map((item) => (
                                         <tr 
                                             key={item.id}
-                                            className="border-t border-[rgba(244,246,255,0.04)] hover:bg-[rgba(244,246,255,0.02)] cursor-pointer transition-colors"
+                                            className="border-t border-[rgba(255,255,255,0.03)] hover:bg-[rgba(255,255,255,0.02)] cursor-pointer transition-colors"
                                             onClick={() => { setSelectedItem(item); onTaskClick?.(item); }}
                                         >
                                             <td className="py-3 px-4">{getStatusIcon(item.status)}</td>
                                             <td className="py-3 px-4">
                                                 <div className="flex flex-col">
                                                     <span className="text-white font-medium">{item.key}</span>
-                                                    <span className="text-[#64748B] text-sm truncate max-w-[300px]">{item.title}</span>
+                                                    <span className="text-[#737373] text-sm truncate max-w-[300px]">{item.title}</span>
                                                 </div>
                                             </td>
                                             <td className="py-3 px-4">
-                                                <Badge variant="outline" className="border-[rgba(244,246,255,0.1)] text-[#94A3B8]">
+                                                <Badge variant="outline" className="border-[rgba(255,255,255,0.08)] text-[#a3a3a3]">
                                                     {item.status.replace('_', ' ')}
                                                 </Badge>
                                             </td>
@@ -271,11 +271,11 @@ const ListView: React.FC<ListViewProps> = ({ workItems, onTaskClick }) => {
                                                     {item.priority}
                                                 </Badge>
                                             </td>
-                                            <td className="py-3 px-4 text-[#94A3B8]">{item.assignee || 'Unassigned'}</td>
-                                            <td className="py-3 px-4 text-[#94A3B8]">
+                                            <td className="py-3 px-4 text-[#a3a3a3]">{item.assignee || 'Unassigned'}</td>
+                                            <td className="py-3 px-4 text-[#a3a3a3]">
                                                 {item.due_date ? new Date(item.due_date).toLocaleDateString() : '-'}
                                             </td>
-                                            <td className="py-3 px-4 text-[#94A3B8]">
+                                            <td className="py-3 px-4 text-[#a3a3a3]">
                                                 {item.estimated_hours || 0}h / {item.logged_hours || 0}h
                                             </td>
                                         </tr>
@@ -288,7 +288,7 @@ const ListView: React.FC<ListViewProps> = ({ workItems, onTaskClick }) => {
                 
                 {filteredAndSortedItems.length === 0 && (
                     <div className="text-center py-12">
-                        <p className="text-[#64748B]">No tasks match your filters</p>
+                        <p className="text-[#737373]">No tasks match your filters</p>
                     </div>
                 )}
             </CardContent>
@@ -300,9 +300,9 @@ const ListView: React.FC<ListViewProps> = ({ workItems, onTaskClick }) => {
                         className="fixed inset-0 bg-black/40 z-40"
                         onClick={() => setSelectedItem(null)}
                     />
-                    <div className="fixed right-0 top-0 bottom-0 w-full max-w-lg bg-[#0B0D14] border-l border-[rgba(244,246,255,0.08)] z-50 flex flex-col shadow-2xl shadow-black/50 overflow-y-auto">
+                    <div className="fixed right-0 top-0 bottom-0 w-full max-w-lg bg-[#080808] border-l border-[rgba(255,255,255,0.07)] z-50 flex flex-col shadow-2xl shadow-black/50 overflow-y-auto">
                         {/* Header */}
-                        <div className="flex items-start justify-between p-5 border-b border-[rgba(244,246,255,0.06)] sticky top-0 bg-[#0B0D14]">
+                        <div className="flex items-start justify-between p-5 border-b border-[rgba(255,255,255,0.05)] sticky top-0 bg-[#080808]">
                             <div className="flex items-center gap-3 flex-1 min-w-0">
                                 {(() => {
                                     const ti = TYPE_CONFIG[selectedItem.type] || TYPE_CONFIG.task;
@@ -316,11 +316,11 @@ const ListView: React.FC<ListViewProps> = ({ workItems, onTaskClick }) => {
                                         </div>
                                     );
                                 })()}
-                                <span className="text-xs font-mono text-[#6366F1]">{selectedItem.key}</span>
+                                <span className="text-xs font-mono text-[#E0B954]">{selectedItem.key}</span>
                             </div>
                             <button
                                 onClick={() => setSelectedItem(null)}
-                                className="p-1.5 rounded-lg hover:bg-[rgba(244,246,255,0.05)] text-[#475569] hover:text-white flex-shrink-0"
+                                className="p-1.5 rounded-lg hover:bg-[rgba(244,246,255,0.05)] text-[#737373] hover:text-white flex-shrink-0"
                             >
                                 <X className="w-4 h-4" />
                             </button>
@@ -336,7 +336,7 @@ const ListView: React.FC<ListViewProps> = ({ workItems, onTaskClick }) => {
                             <div className="flex items-center gap-2 flex-wrap">
                                 <Badge
                                     variant="outline"
-                                    className="border-[rgba(244,246,255,0.1)] text-[#94A3B8] capitalize"
+                                    className="border-[rgba(255,255,255,0.08)] text-[#a3a3a3] capitalize"
                                 >
                                     {selectedItem.status.replace(/_/g, ' ')}
                                 </Badge>
@@ -351,8 +351,8 @@ const ListView: React.FC<ListViewProps> = ({ workItems, onTaskClick }) => {
                             {/* Description */}
                             {selectedItem.description && (
                                 <div>
-                                    <p className="text-xs font-medium text-[#64748B] mb-2">Description</p>
-                                    <p className="text-sm text-[#E2E8F0] leading-relaxed bg-[rgba(244,246,255,0.02)] border border-[rgba(244,246,255,0.06)] rounded-xl p-4">
+                                    <p className="text-xs font-medium text-[#737373] mb-2">Description</p>
+                                    <p className="text-sm text-[#f5f5f5] leading-relaxed bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-xl p-4">
                                         {selectedItem.description}
                                     </p>
                                 </div>
@@ -361,8 +361,8 @@ const ListView: React.FC<ListViewProps> = ({ workItems, onTaskClick }) => {
                             {/* Acceptance Criteria */}
                             {selectedItem.acceptance_criteria && (
                                 <div>
-                                    <p className="text-xs font-medium text-[#64748B] mb-2">Acceptance Criteria</p>
-                                    <p className="text-sm text-[#E2E8F0] leading-relaxed bg-[rgba(244,246,255,0.02)] border border-[rgba(244,246,255,0.06)] rounded-xl p-4">
+                                    <p className="text-xs font-medium text-[#737373] mb-2">Acceptance Criteria</p>
+                                    <p className="text-sm text-[#f5f5f5] leading-relaxed bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-xl p-4">
                                         {selectedItem.acceptance_criteria}
                                     </p>
                                 </div>
@@ -385,9 +385,9 @@ const ListView: React.FC<ListViewProps> = ({ workItems, onTaskClick }) => {
                                 ].map(({ label, value }) => (
                                     <div
                                         key={label}
-                                        className="bg-[rgba(244,246,255,0.03)] rounded-xl p-3"
+                                        className="bg-[rgba(255,255,255,0.025)] rounded-xl p-3"
                                     >
-                                        <p className="text-xs text-[#64748B] mb-1">{label}</p>
+                                        <p className="text-xs text-[#737373] mb-1">{label}</p>
                                         <p className="text-sm font-medium text-white">{value}</p>
                                     </div>
                                 ))}

@@ -174,28 +174,28 @@ const ReviewerView: React.FC<ReviewerViewProps> = ({ workItems, projectId: _proj
 
     if (reviewItems.length === 0) {
         return (
-            <Card className="bg-[#0F0F1A] border-[rgba(244,246,255,0.1)]">
+            <Card className="bg-[#0d0d0d] border-[rgba(255,255,255,0.08)]">
                 <CardHeader>
                     <CardTitle className="text-white flex items-center gap-2">
-                        <Eye className="w-5 h-5 text-[#8B5CF6]" />
+                        <Eye className="w-5 h-5 text-[#C79E3B]" />
                         Review Queue
                     </CardTitle>
                 </CardHeader>
                 <CardContent className="text-center py-12">
-                    <p className="text-[#64748B]">No items in review</p>
-                    <p className="text-[#64748B] text-sm mt-2">Items marked "In Review" will appear here</p>
+                    <p className="text-[#737373]">No items in review</p>
+                    <p className="text-[#737373] text-sm mt-2">Items marked "In Review" will appear here</p>
                 </CardContent>
             </Card>
         );
     }
 
     return (
-        <Card className="bg-[#0F0F1A] border-[rgba(244,246,255,0.1)]">
+        <Card className="bg-[#0d0d0d] border-[rgba(255,255,255,0.08)]">
             <CardHeader>
                 <CardTitle className="text-white flex items-center gap-2">
-                    <Eye className="w-5 h-5 text-[#8B5CF6]" />
+                    <Eye className="w-5 h-5 text-[#C79E3B]" />
                     Review Queue
-                    <Badge className="bg-[#8B5CF6]/20 text-[#8B5CF6] border-[#8B5CF6]/30">
+                    <Badge className="bg-[#C79E3B]/20 text-[#C79E3B] border-[#C79E3B]/30">
                         {reviewItems.length}
                     </Badge>
                 </CardTitle>
@@ -204,19 +204,19 @@ const ReviewerView: React.FC<ReviewerViewProps> = ({ workItems, projectId: _proj
                 {reviewItems.map(item => (
                     <div
                         key={item.id}
-                        className="bg-[#0A0A14] rounded-lg p-4 border border-[rgba(244,246,255,0.06)] hover:border-[rgba(244,246,255,0.1)] transition-colors"
+                        className="bg-[#0A0A14] rounded-lg p-4 border border-[rgba(255,255,255,0.05)] hover:border-[rgba(255,255,255,0.08)] transition-colors"
                     >
                         {/* Header */}
                         <div className="flex items-start justify-between mb-3">
                             <div className="flex-1">
                                 <div className="flex items-center gap-2 mb-1">
-                                    <span className="text-[#8B5CF6] font-mono text-sm">{item.key}</span>
+                                    <span className="text-[#C79E3B] font-mono text-sm">{item.key}</span>
                                     <Badge
                                         variant="outline"
                                         className="text-xs"
                                         style={{
-                                            borderColor: PRIORITY_COLOR[item.priority] || '#64748B',
-                                            color: PRIORITY_COLOR[item.priority] || '#64748B'
+                                            borderColor: PRIORITY_COLOR[item.priority] || '#737373',
+                                            color: PRIORITY_COLOR[item.priority] || '#737373'
                                         }}
                                     >
                                         {item.priority}
@@ -229,7 +229,7 @@ const ReviewerView: React.FC<ReviewerViewProps> = ({ workItems, projectId: _proj
                                     variant="ghost"
                                     size="sm"
                                     onClick={() => setShowLogHours(prev => ({ ...prev, [item.id]: !prev[item.id] }))}
-                                    className="text-[#64748B] hover:text-[#F59E0B] hover:bg-[#F59E0B]/10"
+                                    className="text-[#737373] hover:text-[#F59E0B] hover:bg-[#F59E0B]/10"
                                 >
                                     <Clock className="w-4 h-4 mr-1" />
                                     Log Time
@@ -251,7 +251,7 @@ const ReviewerView: React.FC<ReviewerViewProps> = ({ workItems, projectId: _proj
                         </div>
 
                         {/* Meta */}
-                        <div className="flex items-center gap-4 text-xs text-[#64748B] mb-3">
+                        <div className="flex items-center gap-4 text-xs text-[#737373] mb-3">
                             <div className="flex items-center gap-1">
                                 <User className="w-3.5 h-3.5" />
                                 {item.assignee || 'Unassigned'}
@@ -268,13 +268,13 @@ const ReviewerView: React.FC<ReviewerViewProps> = ({ workItems, projectId: _proj
 
                         {/* Log Hours Input */}
                         {showLogHours[item.id] && (
-                            <div className="flex items-center gap-2 mb-3 p-3 bg-[#0F0F1A] rounded-lg">
+                            <div className="flex items-center gap-2 mb-3 p-3 bg-[#0d0d0d] rounded-lg">
                                 <Input
                                     type="number"
                                     placeholder="Hours"
                                     min="0.5"
                                     step="0.5"
-                                    className="w-24 bg-[#0A0A14] border-[rgba(244,246,255,0.1)] text-white"
+                                    className="w-24 bg-[#0A0A14] border-[rgba(255,255,255,0.08)] text-white"
                                     value={logHoursInput[item.id] || ''}
                                     onChange={(e) => setLogHoursInput(prev => ({ ...prev, [item.id]: e.target.value }))}
                                 />
@@ -294,7 +294,7 @@ const ReviewerView: React.FC<ReviewerViewProps> = ({ workItems, projectId: _proj
                                     variant="ghost"
                                     size="sm"
                                     onClick={() => setShowLogHours(prev => ({ ...prev, [item.id]: false }))}
-                                    className="text-[#64748B]"
+                                    className="text-[#737373]"
                                 >
                                     Cancel
                                 </Button>
@@ -302,8 +302,8 @@ const ReviewerView: React.FC<ReviewerViewProps> = ({ workItems, projectId: _proj
                         )}
 
                         {/* Comments Section */}
-                        <div className="border-t border-[rgba(244,246,255,0.06)] pt-3">
-                            <div className="flex items-center gap-2 mb-2 text-sm text-[#64748B]">
+                        <div className="border-t border-[rgba(255,255,255,0.05)] pt-3">
+                            <div className="flex items-center gap-2 mb-2 text-sm text-[#737373]">
                                 <MessageSquare className="w-4 h-4" />
                                 Comments ({comments[item.id]?.length || 0})
                             </div>
@@ -311,18 +311,18 @@ const ReviewerView: React.FC<ReviewerViewProps> = ({ workItems, projectId: _proj
                             {/* Comment List */}
                             <div className="space-y-2 mb-3 max-h-40 overflow-y-auto">
                                 {comments[item.id]?.map(comment => (
-                                    <div key={comment.id} className="bg-[#0F0F1A] rounded p-2 text-sm">
+                                    <div key={comment.id} className="bg-[#0d0d0d] rounded p-2 text-sm">
                                         <div className="flex items-center gap-2 mb-1">
-                                            <span className="text-[#8B5CF6] font-medium">{comment.author_name}</span>
-                                            <span className="text-[#475569] text-xs">
+                                            <span className="text-[#C79E3B] font-medium">{comment.author_name}</span>
+                                            <span className="text-[#737373] text-xs">
                                                 {new Date(comment.created_at).toLocaleString()}
                                             </span>
                                         </div>
-                                        <p className="text-[#CBD5E1]">{comment.content}</p>
+                                        <p className="text-[#d4d4d4]">{comment.content}</p>
                                     </div>
                                 ))}
                                 {!comments[item.id]?.length && (
-                                    <p className="text-[#475569] text-sm italic">No comments yet</p>
+                                    <p className="text-[#737373] text-sm italic">No comments yet</p>
                                 )}
                             </div>
 
@@ -330,7 +330,7 @@ const ReviewerView: React.FC<ReviewerViewProps> = ({ workItems, projectId: _proj
                             <div className="flex items-start gap-2">
                                 <Textarea
                                     placeholder="Add a review comment..."
-                                    className="flex-1 bg-[#0F0F1A] border-[rgba(244,246,255,0.1)] text-white text-sm min-h-[60px] resize-none"
+                                    className="flex-1 bg-[#0d0d0d] border-[rgba(255,255,255,0.08)] text-white text-sm min-h-[60px] resize-none"
                                     value={newComment[item.id] || ''}
                                     onChange={(e) => setNewComment(prev => ({ ...prev, [item.id]: e.target.value }))}
                                 />
@@ -338,7 +338,7 @@ const ReviewerView: React.FC<ReviewerViewProps> = ({ workItems, projectId: _proj
                                     size="sm"
                                     onClick={() => handleAddComment(item.id)}
                                     disabled={loading[`comment-${item.id}`] || !newComment[item.id]?.trim()}
-                                    className="bg-[#6366F1] hover:bg-[#4F46E5] text-white h-[60px]"
+                                    className="bg-[#E0B954] hover:bg-[#B8872A] text-white h-[60px]"
                                 >
                                     {loading[`comment-${item.id}`] ? (
                                         <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />

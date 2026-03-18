@@ -115,23 +115,23 @@ interface GanttRow {
 }
 
 const TYPE_CONFIG: Record<string, { icon: React.ElementType; color: string; label: string; bg: string }> = {
-    user_story: { icon: BookOpen, color: '#6366F1', label: 'Story', bg: 'rgba(99,102,241,0.15)' },
+    user_story: { icon: BookOpen, color: '#E0B954', label: 'Story', bg: 'rgba(224,185,84,0.15)' },
     task: { icon: ClipboardList, color: '#F59E0B', label: 'Task', bg: 'rgba(245,158,11,0.15)' },
     bug: { icon: Bug, color: '#EF4444', label: 'Bug', bg: 'rgba(239,68,68,0.15)' },
-    epic: { icon: Target, color: '#8B5CF6', label: 'Epic', bg: 'rgba(139,92,246,0.15)' },
+    epic: { icon: Target, color: '#C79E3B', label: 'Epic', bg: 'rgba(199,158,59,0.15)' },
 };
 
 const getPriorityColor = (priority?: string) => {
     if (priority === 'high' || priority === 'critical') return 'border-[#EF4444]/50 text-[#EF4444]';
     if (priority === 'medium') return 'border-[#F59E0B]/50 text-[#F59E0B]';
-    return 'border-[#64748B]/50 text-[#64748B]';
+    return 'border-[#737373]/50 text-[#737373]';
 };
 
 const STATUS_COLOR: Record<string, string> = {
     done: '#10B981',
     in_progress: '#F59E0B',
-    in_review: '#8B5CF6',
-    todo: '#64748B',
+    in_review: '#C79E3B',
+    todo: '#737373',
 };
 
 const TimelineView: React.FC<TimelineViewProps> = ({
@@ -172,7 +172,7 @@ const TimelineView: React.FC<TimelineViewProps> = ({
                 const start = parseLocalDate((item.start_date || item.due_date)!);
                 const end = parseLocalDate((item.due_date || item.start_date)!);
                 const isOverdue = item.due_date && parseLocalDate(item.due_date) < new Date() && item.status !== 'done';
-                const color = isOverdue ? '#EF4444' : (STATUS_COLOR[item.status] || '#6366F1');
+                const color = isOverdue ? '#EF4444' : (STATUS_COLOR[item.status] || '#E0B954');
                 return {
                     id: item.id,
                     label: `${item.key}: ${item.title}`,
@@ -310,7 +310,7 @@ const TimelineView: React.FC<TimelineViewProps> = ({
 
     return (
         <>
-            <Card className="bg-[#0F0F1A] border-[rgba(244,246,255,0.1)]">
+            <Card className="bg-[#0d0d0d] border-[rgba(255,255,255,0.08)]">
                 <CardHeader className="flex flex-row items-center justify-between">
                     <CardTitle className="text-white flex items-center gap-2">
                         Timeline View
@@ -318,7 +318,7 @@ const TimelineView: React.FC<TimelineViewProps> = ({
                     <div className="flex items-center gap-2">
                         {onTaskCreate && (
                             <button
-                                className="px-3 py-1.5 rounded-md bg-indigo-600 text-white hover:bg-indigo-700 transition-colors flex items-center gap-2 text-sm"
+                                className="px-3 py-1.5 rounded-md bg-[#E0B954] text-[#080808] font-semibold hover:opacity-90 transition-colors flex items-center gap-2 text-sm shadow-md shadow-[#E0B954]/20"
                                 onClick={() => setShowAddModal(true)}
                             >
                                 <Plus className="w-4 h-4" />
@@ -369,22 +369,22 @@ const TimelineView: React.FC<TimelineViewProps> = ({
                     <div className="flex" style={{ height: headerHeight + chartHeight }}>
                         {/* Left labels panel */}
                         <div
-                            className="flex-shrink-0 bg-[#0F0F1A] border-r border-[rgba(244,246,255,0.1)] z-10"
+                            className="flex-shrink-0 bg-[#0d0d0d] border-r border-[rgba(255,255,255,0.08)] z-10"
                             style={{ width: LABEL_WIDTH }}
                         >
                             {/* Header spacer */}
-                            <div style={{ height: headerHeight }} className="border-b border-[rgba(244,246,255,0.1)]" />
+                            <div style={{ height: headerHeight }} className="border-b border-[rgba(255,255,255,0.08)]" />
                             {/* Row labels */}
                             {rows.length === 0 ? (
-                                <div className="flex items-center justify-center h-full text-[#64748B] text-sm px-4 text-center">
+                                <div className="flex items-center justify-center h-full text-[#737373] text-sm px-4 text-center">
                                     No tasks with dates.<br />Add dates to see the timeline.
                                 </div>
                             ) : (
                                 rows.map((row) => (
                                     <div
                                         key={row.id}
-                                        className="flex items-center px-3 text-sm truncate cursor-pointer hover:bg-[#1A1A2E] transition-colors"
-                                        style={{ height: ROW_HEIGHT, borderBottom: '1px solid rgba(244,246,255,0.04)' }}
+                                        className="flex items-center px-3 text-sm truncate cursor-pointer hover:bg-[#121212] transition-colors"
+                                        style={{ height: ROW_HEIGHT, borderBottom: '1px solid rgba(255,255,255,0.03)' }}
                                         onClick={() => {
                                             if (row.type === 'task') {
                                                 const item = workItems.find(w => w.id === row.id);
@@ -397,7 +397,7 @@ const TimelineView: React.FC<TimelineViewProps> = ({
                                             className="w-2 h-2 rounded-full flex-shrink-0 mr-2"
                                             style={{ backgroundColor: row.color }}
                                         />
-                                        <span className="text-[#CBD5E1] truncate text-xs">{row.label}</span>
+                                        <span className="text-[#d4d4d4] truncate text-xs">{row.label}</span>
                                     </div>
                                 ))
                             )}
@@ -412,7 +412,7 @@ const TimelineView: React.FC<TimelineViewProps> = ({
                             <div style={{ width: totalWidth, position: 'relative' }}>
                                 {/* Header: month row + date/week row */}
                                 <div
-                                    className="sticky top-0 z-20 bg-[#0F0F1A] border-b border-[rgba(244,246,255,0.1)]"
+                                    className="sticky top-0 z-20 bg-[#0d0d0d] border-b border-[rgba(255,255,255,0.08)]"
                                     style={{ height: headerHeight }}
                                 >
                                     {/* Month labels */}
@@ -435,7 +435,7 @@ const TimelineView: React.FC<TimelineViewProps> = ({
                                             return (
                                                 <div
                                                     key={i}
-                                                    className={`absolute top-0 flex items-center justify-center text-xs border-r border-[rgba(244,246,255,0.04)] ${isToday ? 'text-indigo-400 font-bold' : isWeekend ? 'text-[#4B5563]' : 'text-[#94A3B8]'}`}
+                                                    className={`absolute top-0 flex items-center justify-center text-xs border-r border-[rgba(255,255,255,0.03)] ${isToday ? 'text-indigo-400 font-bold' : isWeekend ? 'text-[#4B5563]' : 'text-[#a3a3a3]'}`}
                                                     style={{ left: i * cw, width: cw, height: 32 }}
                                                 >
                                                     {zoom === 'day'
@@ -464,8 +464,8 @@ const TimelineView: React.FC<TimelineViewProps> = ({
                                                     top: 0,
                                                     width: cw,
                                                     height: chartHeight,
-                                                    backgroundColor: isWeekend ? 'rgba(244,246,255,0.015)' : 'transparent',
-                                                    borderRight: '1px solid rgba(244,246,255,0.04)',
+                                                    backgroundColor: isWeekend ? 'rgba(255,255,255,0.012)' : 'transparent',
+                                                    borderRight: '1px solid rgba(255,255,255,0.03)',
                                                 }}
                                             />
                                         );
@@ -480,8 +480,8 @@ const TimelineView: React.FC<TimelineViewProps> = ({
                                                 top: 0,
                                                 width: cw,
                                                 height: chartHeight,
-                                                backgroundColor: 'rgba(99,102,241,0.08)',
-                                                borderLeft: '2px solid rgba(99,102,241,0.6)',
+                                                backgroundColor: 'rgba(224,185,84,0.08)',
+                                                borderLeft: '2px solid rgba(224,185,84,0.6)',
                                                 pointerEvents: 'none',
                                             }}
                                         />
@@ -497,7 +497,7 @@ const TimelineView: React.FC<TimelineViewProps> = ({
                                                 top: i * ROW_HEIGHT,
                                                 width: totalWidth,
                                                 height: ROW_HEIGHT,
-                                                borderBottom: '1px solid rgba(244,246,255,0.04)',
+                                                borderBottom: '1px solid rgba(255,255,255,0.03)',
                                             }}
                                         />
                                     ))}
@@ -579,19 +579,19 @@ const TimelineView: React.FC<TimelineViewProps> = ({
                     </div>
 
                     {/* Legend */}
-                    <div className="flex items-center gap-4 px-4 py-3 border-t border-[rgba(244,246,255,0.06)] text-xs">
+                    <div className="flex items-center gap-4 px-4 py-3 border-t border-[rgba(255,255,255,0.05)] text-xs">
                         {[
                             { color: '#10B981', label: 'Done' },
                             { color: '#F59E0B', label: 'In Progress' },
-                            { color: '#8B5CF6', label: 'In Review' },
-                            { color: '#64748B', label: 'To Do' },
+                            { color: '#C79E3B', label: 'In Review' },
+                            { color: '#737373', label: 'To Do' },
                             { color: '#EF4444', label: 'Overdue' },
                             { color: '#EC4899', label: 'Milestone' },
                             { color: '#F59E0B', label: 'Goal' },
                         ].map(({ color, label }) => (
                             <div key={label} className="flex items-center gap-1.5">
                                 <div className="w-3 h-3 rounded" style={{ backgroundColor: color }} />
-                                <span className="text-[#64748B]">{label}</span>
+                                <span className="text-[#737373]">{label}</span>
                             </div>
                         ))}
                     </div>
@@ -605,9 +605,9 @@ const TimelineView: React.FC<TimelineViewProps> = ({
                         className="fixed inset-0 bg-black/40 z-40"
                         onClick={() => setSelectedItem(null)}
                     />
-                    <div className="fixed right-0 top-0 bottom-0 w-full max-w-lg bg-[#0B0D14] border-l border-[rgba(244,246,255,0.08)] z-50 flex flex-col shadow-2xl shadow-black/50 overflow-y-auto">
+                    <div className="fixed right-0 top-0 bottom-0 w-full max-w-lg bg-[#080808] border-l border-[rgba(255,255,255,0.07)] z-50 flex flex-col shadow-2xl shadow-black/50 overflow-y-auto">
                         {/* Header */}
-                        <div className="flex items-start justify-between p-5 border-b border-[rgba(244,246,255,0.06)] sticky top-0 bg-[#0B0D14]">
+                        <div className="flex items-start justify-between p-5 border-b border-[rgba(255,255,255,0.05)] sticky top-0 bg-[#080808]">
                             <div className="flex items-center gap-3 flex-1 min-w-0">
                                 {(() => {
                                     const ti = TYPE_CONFIG[selectedItem.type || 'task'] || TYPE_CONFIG.task;
@@ -621,11 +621,11 @@ const TimelineView: React.FC<TimelineViewProps> = ({
                                         </div>
                                     );
                                 })()}
-                                <span className="text-xs font-mono text-[#6366F1]">{selectedItem.key}</span>
+                                <span className="text-xs font-mono text-[#E0B954]">{selectedItem.key}</span>
                             </div>
                             <button
                                 onClick={() => setSelectedItem(null)}
-                                className="p-1.5 rounded-lg hover:bg-[rgba(244,246,255,0.05)] text-[#475569] hover:text-white flex-shrink-0"
+                                className="p-1.5 rounded-lg hover:bg-[rgba(244,246,255,0.05)] text-[#737373] hover:text-white flex-shrink-0"
                             >
                                 <X className="w-4 h-4" />
                             </button>
@@ -639,7 +639,7 @@ const TimelineView: React.FC<TimelineViewProps> = ({
 
                             {/* Status + Priority */}
                             <div className="flex items-center gap-2 flex-wrap">
-                                <Badge variant="outline" className="border-[rgba(244,246,255,0.1)] text-[#94A3B8] capitalize">
+                                <Badge variant="outline" className="border-[rgba(255,255,255,0.08)] text-[#a3a3a3] capitalize">
                                     {selectedItem.status.replace(/_/g, ' ')}
                                 </Badge>
                                 {selectedItem.priority && (
@@ -652,8 +652,8 @@ const TimelineView: React.FC<TimelineViewProps> = ({
                             {/* Description */}
                             {selectedItem.description && (
                                 <div>
-                                    <p className="text-xs font-medium text-[#64748B] mb-2">Description</p>
-                                    <p className="text-sm text-[#E2E8F0] leading-relaxed bg-[rgba(244,246,255,0.02)] border border-[rgba(244,246,255,0.06)] rounded-xl p-4">
+                                    <p className="text-xs font-medium text-[#737373] mb-2">Description</p>
+                                    <p className="text-sm text-[#f5f5f5] leading-relaxed bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-xl p-4">
                                         {selectedItem.description}
                                     </p>
                                 </div>
@@ -662,8 +662,8 @@ const TimelineView: React.FC<TimelineViewProps> = ({
                             {/* Acceptance Criteria */}
                             {selectedItem.acceptance_criteria && (
                                 <div>
-                                    <p className="text-xs font-medium text-[#64748B] mb-2">Acceptance Criteria</p>
-                                    <p className="text-sm text-[#E2E8F0] leading-relaxed bg-[rgba(244,246,255,0.02)] border border-[rgba(244,246,255,0.06)] rounded-xl p-4">
+                                    <p className="text-xs font-medium text-[#737373] mb-2">Acceptance Criteria</p>
+                                    <p className="text-sm text-[#f5f5f5] leading-relaxed bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-xl p-4">
                                         {selectedItem.acceptance_criteria}
                                     </p>
                                 </div>
@@ -690,8 +690,8 @@ const TimelineView: React.FC<TimelineViewProps> = ({
                                             : 'Not set',
                                     },
                                 ].map(({ label, value }) => (
-                                    <div key={label} className="bg-[rgba(244,246,255,0.03)] rounded-xl p-3">
-                                        <p className="text-xs text-[#64748B] mb-1">{label}</p>
+                                    <div key={label} className="bg-[rgba(255,255,255,0.025)] rounded-xl p-3">
+                                        <p className="text-xs text-[#737373] mb-1">{label}</p>
                                         <p className="text-sm font-medium text-white">{value}</p>
                                     </div>
                                 ))}
@@ -704,7 +704,7 @@ const TimelineView: React.FC<TimelineViewProps> = ({
             {/* Add Task Modal */}
             {showAddModal && (
                 <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-                    <div className="bg-[#1A1A2E] rounded-lg p-6 w-full max-w-md border border-[rgba(244,246,255,0.1)]">
+                    <div className="bg-[#121212] rounded-lg p-6 w-full max-w-md border border-[rgba(255,255,255,0.08)]">
                         <div className="flex items-center justify-between mb-4">
                             <h3 className="text-white text-lg font-semibold">Add New Task</h3>
                             <button className="text-gray-400 hover:text-white" onClick={() => setShowAddModal(false)}>
@@ -716,7 +716,7 @@ const TimelineView: React.FC<TimelineViewProps> = ({
                                 <label className="block text-sm text-gray-400 mb-1">Title *</label>
                                 <input
                                     type="text"
-                                    className="w-full px-3 py-2 bg-[#0F0F1A] border border-gray-600 rounded-md text-white focus:outline-none focus:border-indigo-500"
+                                    className="w-full px-3 py-2 bg-[#121212] border border-[#333333] rounded-md text-[#f5f5f5] focus:outline-none focus:border-[#E0B954] focus:ring-1 focus:ring-[#E0B954]/20"
                                     placeholder="Enter task title"
                                     value={newTask.title}
                                     onChange={(e) => setNewTask({ ...newTask, title: e.target.value })}
@@ -727,7 +727,7 @@ const TimelineView: React.FC<TimelineViewProps> = ({
                                     <label className="block text-sm text-gray-400 mb-1">Start Date</label>
                                     <input
                                         type="date"
-                                        className="w-full px-3 py-2 bg-[#0F0F1A] border border-gray-600 rounded-md text-white focus:outline-none focus:border-indigo-500"
+                                        className="w-full px-3 py-2 bg-[#121212] border border-[#333333] rounded-md text-[#f5f5f5] focus:outline-none focus:border-[#E0B954] focus:ring-1 focus:ring-[#E0B954]/20"
                                         value={newTask.start_date}
                                         onChange={(e) => setNewTask({ ...newTask, start_date: e.target.value })}
                                     />
@@ -736,7 +736,7 @@ const TimelineView: React.FC<TimelineViewProps> = ({
                                     <label className="block text-sm text-gray-400 mb-1">Due Date</label>
                                     <input
                                         type="date"
-                                        className="w-full px-3 py-2 bg-[#0F0F1A] border border-gray-600 rounded-md text-white focus:outline-none focus:border-indigo-500"
+                                        className="w-full px-3 py-2 bg-[#121212] border border-[#333333] rounded-md text-[#f5f5f5] focus:outline-none focus:border-[#E0B954] focus:ring-1 focus:ring-[#E0B954]/20"
                                         value={newTask.due_date}
                                         onChange={(e) => setNewTask({ ...newTask, due_date: e.target.value })}
                                     />
@@ -746,7 +746,7 @@ const TimelineView: React.FC<TimelineViewProps> = ({
                                 <label className="block text-sm text-gray-400 mb-1">Estimated Hours</label>
                                 <input
                                     type="number"
-                                    className="w-full px-3 py-2 bg-[#0F0F1A] border border-gray-600 rounded-md text-white focus:outline-none focus:border-indigo-500"
+                                    className="w-full px-3 py-2 bg-[#121212] border border-[#333333] rounded-md text-[#f5f5f5] focus:outline-none focus:border-[#E0B954] focus:ring-1 focus:ring-[#E0B954]/20"
                                     value={newTask.estimated_hours}
                                     onChange={(e) => setNewTask({ ...newTask, estimated_hours: parseInt(e.target.value) || 0 })}
                                 />
@@ -754,7 +754,7 @@ const TimelineView: React.FC<TimelineViewProps> = ({
                             <div>
                                 <label className="block text-sm text-gray-400 mb-1">Assignee</label>
                                 <select
-                                    className="w-full px-3 py-2 bg-[#0F0F1A] border border-gray-600 rounded-md text-white focus:outline-none focus:border-indigo-500"
+                                    className="w-full px-3 py-2 bg-[#121212] border border-[#333333] rounded-md text-[#f5f5f5] focus:outline-none focus:border-[#E0B954] focus:ring-1 focus:ring-[#E0B954]/20"
                                     value={newTask.assignee_id || ''}
                                     onChange={(e) => setNewTask({ ...newTask, assignee_id: e.target.value ? parseInt(e.target.value) : undefined })}
                                 >
@@ -773,7 +773,7 @@ const TimelineView: React.FC<TimelineViewProps> = ({
                                 Cancel
                             </button>
                             <button
-                                className="px-4 py-2 rounded-md bg-indigo-600 text-white hover:bg-indigo-700 transition-colors disabled:opacity-50"
+                                className="px-4 py-2 rounded-md bg-[#E0B954] text-[#080808] font-semibold hover:opacity-90 transition-colors disabled:opacity-50"
                                 onClick={handleAddTask}
                                 disabled={!newTask.title.trim()}
                             >

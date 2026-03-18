@@ -258,35 +258,35 @@ const ProjectsPage = () => {
     };
 
     return (
-        <div className="min-h-screen bg-[#05060B] text-[#F4F6FF]">
+        <div className="min-h-screen bg-[#080808] text-[#F4F6FF]">
             <Toaster position="top-right" theme="dark" richColors />
 
             {/* Header */}
-            <header className="border-b border-[rgba(244,246,255,0.06)] bg-[#05060B]/90 backdrop-blur-xl sticky top-0 z-50">
+            <header className="border-b border-[rgba(255,255,255,0.05)] bg-[#080808]/90 backdrop-blur-xl sticky top-0 z-50">
                 <div className="max-w-[1400px] mx-auto px-8 py-5 flex items-center justify-between">
                     <div className="flex items-center gap-4">
-                        <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-[#6366F1] via-[#4F46E5] to-[#4338CA] flex items-center justify-center shadow-lg shadow-[#4F46E5]/25">
+                        <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-[#E0B954] via-[#B8872A] to-[#4338CA] flex items-center justify-center shadow-lg shadow-[#B8872A]/25">
                             <Layers className="w-5 h-5 text-white" />
                         </div>
                         <div>
                             <h1 className="text-xl font-bold tracking-tight text-white">Arsenal Ops</h1>
-                            <p className="text-xs text-[#64748B] font-medium">Project Management</p>
+                            <p className="text-xs text-[#737373] font-medium">Project Management</p>
                         </div>
                     </div>
                     <div className="flex items-center gap-3">
                         {user && (
                             <div className="flex items-center gap-2 mr-2">
-                                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#6366F1] to-[#4F46E5] flex items-center justify-center text-white text-sm font-medium">
+                                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#E0B954] to-[#B8872A] flex items-center justify-center text-[#080808] text-sm font-medium">
                                     {user.name.charAt(0).toUpperCase()}
                                 </div>
-                                <span className="text-sm text-[#94A3B8] hidden md:block">{user.name}</span>
+                                <span className="text-sm text-[#a3a3a3] hidden md:block">{user.name}</span>
                             </div>
                         )}
                         {user?.role === 'admin' && (
                             <Button
                                 variant="ghost"
                                 onClick={() => navigate('/admin')}
-                                className="text-[#64748B] hover:text-white hover:bg-[rgba(244,246,255,0.05)] rounded-xl px-3"
+                                className="text-[#737373] hover:text-white hover:bg-[rgba(244,246,255,0.05)] rounded-xl px-3"
                             >
                                 <Settings className="w-4 h-4 mr-2" />
                                 Admin
@@ -295,7 +295,7 @@ const ProjectsPage = () => {
                         <Button
                             variant="ghost"
                             onClick={logout}
-                            className="text-[#64748B] hover:text-red-400 hover:bg-red-500/10 rounded-xl px-3"
+                            className="text-[#737373] hover:text-red-400 hover:bg-red-500/10 rounded-xl px-3"
                         >
                             <LogOut className="w-4 h-4 mr-2" />
                             Logout
@@ -312,20 +312,20 @@ const ProjectsPage = () => {
                 {/* Stats Bar */}
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-10">
                     {[
-                        { icon: FolderKanban, label: 'Projects', value: totalStats.projects, color: '#6366F1' },
+                        { icon: FolderKanban, label: 'Projects', value: totalStats.projects, color: '#E0B954' },
                         { icon: Layers, label: 'Total Items', value: totalStats.items, color: '#F59E0B' },
                         { icon: CheckCircle2, label: 'Completed', value: totalStats.completed, color: '#10B981' },
-                        { icon: Zap, label: 'Story Points', value: totalStats.points, color: '#8B5CF6' },
+                        { icon: Zap, label: 'Story Points', value: totalStats.points, color: '#C79E3B' },
                     ].map(stat => (
                         <div key={stat.label} className="relative group">
-                            <div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-[rgba(99,102,241,0.08)] to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-                            <div className="relative bg-[rgba(244,246,255,0.03)] border border-[rgba(244,246,255,0.06)] rounded-2xl p-5 transition-all duration-300 group-hover:border-[rgba(99,102,241,0.2)]">
+                            <div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-[rgba(224,185,84,0.08)] to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+                            <div className="relative bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.05)] rounded-2xl p-5 transition-all duration-300 group-hover:border-[rgba(224,185,84,0.2)]">
                                 <div className="flex items-center justify-between mb-3">
                                     <stat.icon className="w-5 h-5" style={{ color: stat.color }} />
-                                    <TrendingUp className="w-3.5 h-3.5 text-[#334155] group-hover:text-[#64748B] transition-colors" />
+                                    <TrendingUp className="w-3.5 h-3.5 text-[#334155] group-hover:text-[#737373] transition-colors" />
                                 </div>
                                 <div className="text-3xl font-bold text-white tracking-tight">{stat.value}</div>
-                                <div className="text-xs text-[#64748B] font-medium mt-1">{stat.label}</div>
+                                <div className="text-xs text-[#737373] font-medium mt-1">{stat.label}</div>
                             </div>
                         </div>
                     ))}
@@ -334,18 +334,18 @@ const ProjectsPage = () => {
                 {/* Search & Actions */}
                 <div className="flex items-center justify-between mb-8 gap-4">
                     <div className="relative flex-1 max-w-md">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#475569]" />
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#737373]" />
                         <Input
                             placeholder="Search projects..."
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
-                            className="pl-10 bg-[rgba(244,246,255,0.03)] border-[rgba(244,246,255,0.08)] text-[#F4F6FF] rounded-xl h-11 focus:border-[#6366F1]/50 focus:ring-[#6366F1]/20 placeholder:text-[#334155]"
+                            className="pl-10 bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl h-11 focus:border-[#E0B954]/50 focus:ring-[#E0B954]/20 placeholder:text-[#334155]"
                         />
                     </div>
                     {user?.role === 'admin' && (
                         <Button
                             onClick={() => setShowCreateModal(true)}
-                            className="bg-gradient-to-r from-[#6366F1] to-[#4F46E5] hover:from-[#5558E6] hover:to-[#4338CA] text-white rounded-xl h-11 px-6 font-medium shadow-lg shadow-[#4F46E5]/20 transition-all duration-300 hover:shadow-[#4F46E5]/30 hover:scale-[1.02]"
+                            className="bg-gradient-to-r from-[#E0B954] to-[#C79E3B] hover:opacity-90 text-[#080808] font-semibold rounded-xl h-11 px-6 font-medium shadow-lg shadow-[#B8872A]/20 transition-all duration-300 hover:shadow-[#B8872A]/30 hover:scale-[1.02]"
                         >
                             <Plus className="w-4 h-4 mr-2" />
                             New Project
@@ -356,16 +356,16 @@ const ProjectsPage = () => {
                 {/* Projects Grid */}
                 {isLoading ? (
                     <div className="flex items-center justify-center py-32">
-                        <div className="w-8 h-8 border-2 border-[#6366F1]/30 border-t-[#6366F1] rounded-full animate-spin" />
+                        <div className="w-8 h-8 border-2 border-[#E0B954]/30 border-t-[#E0B954] rounded-full animate-spin" />
                     </div>
                 ) : filteredProjects.length === 0 && !searchQuery ? (
                     /* Empty State */
                     <div className="flex flex-col items-center justify-center py-32 text-center">
-                        <div className="w-24 h-24 rounded-3xl bg-gradient-to-br from-[#6366F1]/20 to-[#4F46E5]/10 flex items-center justify-center mb-6 border border-[#6366F1]/20">
-                            <FolderKanban className="w-10 h-10 text-[#6366F1]" />
+                        <div className="w-24 h-24 rounded-3xl bg-gradient-to-br from-[#E0B954]/20 to-[#B8872A]/10 flex items-center justify-center mb-6 border border-[#E0B954]/20">
+                            <FolderKanban className="w-10 h-10 text-[#E0B954]" />
                         </div>
                         <h2 className="text-2xl font-bold text-white mb-2">No projects yet</h2>
-                        <p className="text-[#64748B] max-w-md mb-8">
+                        <p className="text-[#737373] max-w-md mb-8">
                             {user?.role === 'admin' 
                                 ? "Create your first project to get started with AI-powered project management."
                                 : "Contact an admin to create a project for you."
@@ -374,7 +374,7 @@ const ProjectsPage = () => {
                         {user?.role === 'admin' && (
                             <Button
                                 onClick={() => setShowCreateModal(true)}
-                                className="bg-gradient-to-r from-[#6366F1] to-[#4F46E5] hover:from-[#5558E6] hover:to-[#4338CA] text-white rounded-xl h-12 px-8 font-medium shadow-lg shadow-[#4F46E5]/20"
+                                className="bg-gradient-to-r from-[#E0B954] to-[#C79E3B] hover:opacity-90 text-[#080808] font-semibold rounded-xl h-12 px-8 font-medium shadow-lg shadow-[#B8872A]/20"
                             >
                                 <Plus className="w-5 h-5 mr-2" />
                                 Create First Project
@@ -386,14 +386,14 @@ const ProjectsPage = () => {
                         {filteredProjects.map((project, idx) => {
                             const stats = project.work_item_stats;
                             const gradients = [
-                                'from-[#6366F1]/10 to-[#4338CA]/5',
+                                'from-[#E0B954]/10 to-[#4338CA]/5',
                                 'from-[#F59E0B]/10 to-[#D97706]/5',
                                 'from-[#10B981]/10 to-[#059669]/5',
-                                'from-[#8B5CF6]/10 to-[#7C3AED]/5',
+                                'from-[#C79E3B]/10 to-[#7C3AED]/5',
                                 'from-[#EC4899]/10 to-[#DB2777]/5',
                                 'from-[#06B6D4]/10 to-[#0891B2]/5',
                             ];
-                            const accentColors = ['#6366F1', '#F59E0B', '#10B981', '#8B5CF6', '#EC4899', '#06B6D4'];
+                            const accentColors = ['#E0B954', '#F59E0B', '#10B981', '#C79E3B', '#EC4899', '#06B6D4'];
                             const accent = accentColors[idx % accentColors.length];
 
                             return (
@@ -408,7 +408,7 @@ const ProjectsPage = () => {
                                         style={{ background: `linear-gradient(135deg, ${accent}33, transparent)` }}
                                     />
 
-                                    <div className={`relative bg-gradient-to-br ${gradients[idx % gradients.length]} border border-[rgba(244,246,255,0.06)] rounded-2xl p-6 transition-all duration-300 group-hover:border-[rgba(244,246,255,0.12)] group-hover:translate-y-[-2px] overflow-hidden`}>
+                                    <div className={`relative bg-gradient-to-br ${gradients[idx % gradients.length]} border border-[rgba(255,255,255,0.05)] rounded-2xl p-6 transition-all duration-300 group-hover:border-[rgba(244,246,255,0.12)] group-hover:translate-y-[-2px] overflow-hidden`}>
                                         {/* Background pattern */}
                                         <div className="absolute top-0 right-0 w-32 h-32 opacity-[0.03] group-hover:opacity-[0.06] transition-opacity">
                                             <FolderKanban className="w-full h-full" style={{ color: accent }} />
@@ -425,13 +425,13 @@ const ProjectsPage = () => {
                                                 </div>
                                                 <div>
                                                     <h3 className="text-lg font-semibold text-white group-hover:text-white/95 transition-colors line-clamp-1">{project.name}</h3>
-                                                    <span className="text-xs font-mono text-[#475569]">{project.key_prefix}</span>
+                                                    <span className="text-xs font-mono text-[#737373]">{project.key_prefix}</span>
                                                 </div>
                                             </div>
                                             {project.github_repo_url && (
                                                 <button
                                                     onClick={(e) => handleSendGitHubInvites(e, project)}
-                                                    className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-[#6366F1]/10 text-[#475569] hover:text-[#6366F1] mr-1"
+                                                    className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-[#E0B954]/10 text-[#737373] hover:text-[#E0B954] mr-1"
                                                     title="Send GitHub invitations"
                                                 >
                                                     <Github className="w-4 h-4" />
@@ -439,22 +439,22 @@ const ProjectsPage = () => {
                                             )}
                                             <button
                                                 onClick={(e) => handleDeleteProject(e, project.id)}
-                                                className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-red-500/10 text-[#475569] hover:text-red-400"
+                                                className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-red-500/10 text-[#737373] hover:text-red-400"
                                             >
                                                 <X className="w-4 h-4" />
                                             </button>
                                         </div>
 
                                         {/* Description */}
-                                        <p className="text-sm text-[#64748B] mb-5 line-clamp-2 min-h-[40px]">{project.description || 'No description'}</p>
+                                        <p className="text-sm text-[#737373] mb-5 line-clamp-2 min-h-[40px]">{project.description || 'No description'}</p>
 
                                         {/* Progress */}
                                         <div className="mb-5">
                                             <div className="flex items-center justify-between text-xs mb-2">
-                                                <span className="text-[#64748B] font-medium">Progress</span>
+                                                <span className="text-[#737373] font-medium">Progress</span>
                                                 <span className="font-semibold" style={{ color: accent }}>{stats.completion_pct}%</span>
                                             </div>
-                                            <div className="h-1.5 bg-[rgba(244,246,255,0.06)] rounded-full overflow-hidden">
+                                            <div className="h-1.5 bg-[rgba(255,255,255,0.05)] rounded-full overflow-hidden">
                                                 <div
                                                     className="h-full rounded-full transition-all duration-700 ease-out"
                                                     style={{
@@ -470,15 +470,15 @@ const ProjectsPage = () => {
                                         <div className="flex items-center justify-between">
                                             <div className="flex items-center gap-4">
                                                 <div className="flex items-center gap-1.5">
-                                                    <Layers className="w-3.5 h-3.5 text-[#475569]" />
-                                                    <span className="text-xs text-[#64748B] font-medium">{stats.total} items</span>
+                                                    <Layers className="w-3.5 h-3.5 text-[#737373]" />
+                                                    <span className="text-xs text-[#737373] font-medium">{stats.total} items</span>
                                                 </div>
                                                 <div className="flex items-center gap-1.5">
-                                                    <BarChart3 className="w-3.5 h-3.5 text-[#475569]" />
-                                                    <span className="text-xs text-[#64748B] font-medium">{stats.total_points} pts</span>
+                                                    <BarChart3 className="w-3.5 h-3.5 text-[#737373]" />
+                                                    <span className="text-xs text-[#737373] font-medium">{stats.total_points} pts</span>
                                                 </div>
                                             </div>
-                                            <div className="flex items-center gap-1 text-[#475569] group-hover:text-[#6366F1] transition-colors">
+                                            <div className="flex items-center gap-1 text-[#737373] group-hover:text-[#E0B954] transition-colors">
                                                 <span className="text-xs font-medium">Open</span>
                                                 <ArrowRight className="w-3.5 h-3.5" />
                                             </div>
@@ -494,11 +494,11 @@ const ProjectsPage = () => {
                                 className="group cursor-pointer"
                                 onClick={() => setShowCreateModal(true)}
                             >
-                                <div className="border-2 border-dashed border-[rgba(244,246,255,0.08)] rounded-2xl p-6 flex flex-col items-center justify-center min-h-[260px] transition-all duration-300 group-hover:border-[#6366F1]/30 group-hover:bg-[#6366F1]/5">
-                                    <div className="w-14 h-14 rounded-2xl bg-[rgba(244,246,255,0.05)] flex items-center justify-center mb-4 group-hover:bg-[#6366F1]/20 transition-all duration-300 group-hover:scale-110">
-                                        <Plus className="w-6 h-6 text-[#475569] group-hover:text-[#6366F1] transition-colors" />
+                                <div className="border-2 border-dashed border-[rgba(255,255,255,0.07)] rounded-2xl p-6 flex flex-col items-center justify-center min-h-[260px] transition-all duration-300 group-hover:border-[#E0B954]/30 group-hover:bg-[#E0B954]/5">
+                                    <div className="w-14 h-14 rounded-2xl bg-[rgba(244,246,255,0.05)] flex items-center justify-center mb-4 group-hover:bg-[#E0B954]/20 transition-all duration-300 group-hover:scale-110">
+                                        <Plus className="w-6 h-6 text-[#737373] group-hover:text-[#E0B954] transition-colors" />
                                     </div>
-                                    <span className="text-sm font-medium text-[#475569] group-hover:text-[#6366F1] transition-colors">
+                                    <span className="text-sm font-medium text-[#737373] group-hover:text-[#E0B954] transition-colors">
                                         Create New Project
                                     </span>
                                 </div>
@@ -512,23 +512,23 @@ const ProjectsPage = () => {
             {showCreateModal && (
                 <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setShowCreateModal(false)}>
                     <div
-                        className="bg-[#0F1118] border border-[rgba(244,246,255,0.08)] rounded-2xl w-full max-w-lg shadow-2xl shadow-black/50"
+                        className="bg-[#0d0d0d] border border-[rgba(255,255,255,0.07)] rounded-2xl w-full max-w-lg shadow-2xl shadow-black/50"
                         onClick={e => e.stopPropagation()}
                     >
                         {/* Modal Header */}
-                        <div className="flex items-center justify-between p-6 border-b border-[rgba(244,246,255,0.06)]">
+                        <div className="flex items-center justify-between p-6 border-b border-[rgba(255,255,255,0.05)]">
                             <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#6366F1] to-[#4F46E5] flex items-center justify-center">
+                                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#E0B954] to-[#B8872A] flex items-center justify-center">
                                     <FolderKanban className="w-5 h-5 text-white" />
                                 </div>
                                 <div>
                                     <h2 className="text-lg font-bold text-white">New Project</h2>
-                                    <p className="text-xs text-[#64748B]">Create a project to organize your work</p>
+                                    <p className="text-xs text-[#737373]">Create a project to organize your work</p>
                                 </div>
                             </div>
                             <button
                                 onClick={() => setShowCreateModal(false)}
-                                className="p-2 rounded-lg hover:bg-[rgba(244,246,255,0.05)] text-[#475569] hover:text-white transition-colors"
+                                className="p-2 rounded-lg hover:bg-[rgba(244,246,255,0.05)] text-[#737373] hover:text-white transition-colors"
                             >
                                 <X className="w-5 h-5" />
                             </button>
@@ -537,72 +537,72 @@ const ProjectsPage = () => {
                         {/* Modal Body */}
                         <div className="p-6 space-y-5 max-h-[60vh] overflow-y-auto">
                             <div>
-                                <label className="text-sm font-medium text-[#94A3B8] block mb-2">Project Name *</label>
+                                <label className="text-sm font-medium text-[#a3a3a3] block mb-2">Project Name *</label>
                                 <Input
                                     placeholder="e.g. Mobile App Redesign"
                                     value={createForm.name}
                                     onChange={(e) => setCreateForm(prev => ({ ...prev, name: e.target.value }))}
-                                    className="bg-[rgba(244,246,255,0.03)] border-[rgba(244,246,255,0.08)] text-[#F4F6FF] rounded-xl h-11 focus:border-[#6366F1]/50 placeholder:text-[#334155]"
+                                    className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl h-11 focus:border-[#E0B954]/50 placeholder:text-[#334155]"
                                 />
                             </div>
                             <div>
-                                <label className="text-sm font-medium text-[#94A3B8] block mb-2">Description</label>
+                                <label className="text-sm font-medium text-[#a3a3a3] block mb-2">Description</label>
                                 <Textarea
                                     placeholder="Brief description of the project goals..."
                                     value={createForm.description}
                                     onChange={(e) => setCreateForm(prev => ({ ...prev, description: e.target.value }))}
-                                    className="bg-[rgba(244,246,255,0.03)] border-[rgba(244,246,255,0.08)] text-[#F4F6FF] rounded-xl min-h-[80px] focus:border-[#6366F1]/50 placeholder:text-[#334155] resize-none"
+                                    className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl min-h-[80px] focus:border-[#E0B954]/50 placeholder:text-[#334155] resize-none"
                                 />
                             </div>
 
                             {/* GitHub Repository */}
                             <div>
-                                <label className="text-sm font-medium text-[#94A3B8] block mb-2">
+                                <label className="text-sm font-medium text-[#a3a3a3] block mb-2">
                                     GitHub Repository URL
-                                    <span className="text-[#475569] text-xs ml-2">(Optional - for sending invitations)</span>
+                                    <span className="text-[#737373] text-xs ml-2">(Optional - for sending invitations)</span>
                                 </label>
                                 <Input
                                     placeholder="https://github.com/owner/repo"
                                     value={createForm.github_repo_url}
                                     onChange={(e) => setCreateForm(prev => ({ ...prev, github_repo_url: e.target.value }))}
-                                    className="bg-[rgba(244,246,255,0.03)] border-[rgba(244,246,255,0.08)] text-[#F4F6FF] rounded-xl h-11 focus:border-[#6366F1]/50 placeholder:text-[#334155]"
+                                    className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl h-11 focus:border-[#E0B954]/50 placeholder:text-[#334155]"
                                 />
-                                <p className="text-xs text-[#475569] mt-1.5">
+                                <p className="text-xs text-[#737373] mt-1.5">
                                     Enter the GitHub repo URL to automatically send invitations to assigned developers
                                 </p>
                             </div>
 
                             {/* Developer Assignment Section */}
-                            <div className="border-t border-[rgba(244,246,255,0.06)] pt-5">
-                                <label className="text-sm font-medium text-[#94A3B8] block mb-3">Assign Developers</label>
+                            <div className="border-t border-[rgba(255,255,255,0.05)] pt-5">
+                                <label className="text-sm font-medium text-[#a3a3a3] block mb-3">Assign Developers</label>
                                 
                                 {/* Add Developer Form */}
                                 <div className="space-y-3">
                                     <Select value={selectedDeveloperId} onValueChange={setSelectedDeveloperId}>
-                                        <SelectTrigger className="bg-[rgba(244,246,255,0.03)] border-[rgba(244,246,255,0.08)] text-[#F4F6FF] rounded-xl h-11 focus:border-[#6366F1]/50">
+                                        <SelectTrigger className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl h-11 focus:border-[#E0B954]/50">
                                             <SelectValue placeholder="Select a developer" />
                                         </SelectTrigger>
-                                        <SelectContent className="bg-[#1a1d29] border-[rgba(244,246,255,0.08)]">
+                                        <SelectContent className="bg-[#1a1d29] border-[rgba(255,255,255,0.07)]">
                                             {availableDevelopers
                                                 .filter(dev => !selectedDevelopers.find(sd => sd.developer_id === dev.id))
                                                 .map(dev => (
                                                 <SelectItem 
                                                     key={dev.id} 
                                                     value={String(dev.id)}
-                                                    className="text-[#F4F6FF] focus:bg-[rgba(99,102,241,0.2)] focus:text-[#F4F6FF]"
+                                                    className="text-[#F4F6FF] focus:bg-[rgba(224,185,84,0.2)] focus:text-[#F4F6FF]"
                                                 >
                                                     <div className="flex items-center gap-2">
-                                                        <User className="w-4 h-4 text-[#64748B]" />
+                                                        <User className="w-4 h-4 text-[#737373]" />
                                                         <span>{dev.name}</span>
-                                                        <span className="text-[#475569] text-xs">({dev.email})</span>
+                                                        <span className="text-[#737373] text-xs">({dev.email})</span>
                                                         {dev.github_username && (
-                                                            <span className="text-[#6366F1] text-xs ml-1">@{dev.github_username}</span>
+                                                            <span className="text-[#E0B954] text-xs ml-1">@{dev.github_username}</span>
                                                         )}
                                                     </div>
                                                 </SelectItem>
                                             ))}
                                             {availableDevelopers.length === 0 && (
-                                                <SelectItem value="none" disabled className="text-[#64748B]">
+                                                <SelectItem value="none" disabled className="text-[#737373]">
                                                     No developers available
                                                 </SelectItem>
                                             )}
@@ -613,21 +613,21 @@ const ProjectsPage = () => {
                                         placeholder="Role (e.g. Frontend Developer, Tech Lead)"
                                         value={newRole}
                                         onChange={(e) => setNewRole(e.target.value)}
-                                        className="bg-[rgba(244,246,255,0.03)] border-[rgba(244,246,255,0.08)] text-[#F4F6FF] rounded-xl h-11 focus:border-[#6366F1]/50 placeholder:text-[#334155]"
+                                        className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl h-11 focus:border-[#E0B954]/50 placeholder:text-[#334155]"
                                     />
                                     
                                     <Textarea
                                         placeholder="What will they be working on in this project?"
                                         value={newResponsibilities}
                                         onChange={(e) => setNewResponsibilities(e.target.value)}
-                                        className="bg-[rgba(244,246,255,0.03)] border-[rgba(244,246,255,0.08)] text-[#F4F6FF] rounded-xl min-h-[60px] focus:border-[#6366F1]/50 placeholder:text-[#334155] resize-none"
+                                        className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl min-h-[60px] focus:border-[#E0B954]/50 placeholder:text-[#334155] resize-none"
                                     />
                                     
                                     <Button
                                         type="button"
                                         onClick={handleAddDeveloper}
                                         disabled={!selectedDeveloperId || !newRole.trim()}
-                                        className="w-full bg-gradient-to-r from-[#6366F1] to-[#4F46E5] hover:from-[#5558E6] hover:to-[#4338CA] text-white rounded-xl font-medium shadow-lg shadow-[#4F46E5]/20 disabled:opacity-50"
+                                        className="w-full bg-gradient-to-r from-[#E0B954] to-[#C79E3B] hover:opacity-90 text-[#080808] font-semibold rounded-xl font-medium shadow-lg shadow-[#B8872A]/20 disabled:opacity-50"
                                     >
                                         <Plus className="w-4 h-4 mr-2" />
                                         Add Developer
@@ -637,30 +637,30 @@ const ProjectsPage = () => {
                                 {/* Selected Developers List */}
                                 {selectedDevelopers.length > 0 && (
                                     <div className="mt-4 space-y-2">
-                                        <p className="text-xs text-[#64748B] font-medium">Assigned Developers:</p>
+                                        <p className="text-xs text-[#737373] font-medium">Assigned Developers:</p>
                                         {selectedDevelopers.map((dev) => {
                                             const developerInfo = availableDevelopers.find(d => d.id === dev.developer_id);
                                             return (
-                                                <div key={dev.developer_id} className="bg-[rgba(244,246,255,0.03)] border border-[rgba(244,246,255,0.06)] rounded-xl p-3">
+                                                <div key={dev.developer_id} className="bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.05)] rounded-xl p-3">
                                                     <div className="flex items-start justify-between">
                                                         <div className="flex items-center gap-2">
-                                                            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#6366F1]/20 to-[#4F46E5]/10 flex items-center justify-center">
-                                                                <User className="w-4 h-4 text-[#6366F1]" />
+                                                            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#E0B954]/20 to-[#B8872A]/10 flex items-center justify-center">
+                                                                <User className="w-4 h-4 text-[#E0B954]" />
                                                             </div>
                                                             <div>
                                                                 <p className="text-sm font-medium text-[#F4F6FF]">{developerInfo?.name}</p>
-                                                                <p className="text-xs text-[#6366F1]">{dev.role}</p>
+                                                                <p className="text-xs text-[#E0B954]">{dev.role}</p>
                                                             </div>
                                                         </div>
                                                         <button
                                                             onClick={() => handleRemoveDeveloper(dev.developer_id)}
-                                                            className="p-1 rounded hover:bg-red-500/10 text-[#475569] hover:text-red-400 transition-colors"
+                                                            className="p-1 rounded hover:bg-red-500/10 text-[#737373] hover:text-red-400 transition-colors"
                                                         >
                                                             <Trash2 className="w-4 h-4" />
                                                         </button>
                                                     </div>
                                                     {dev.responsibilities && (
-                                                        <p className="text-xs text-[#64748B] mt-2 ml-10">{dev.responsibilities}</p>
+                                                        <p className="text-xs text-[#737373] mt-2 ml-10">{dev.responsibilities}</p>
                                                     )}
                                                 </div>
                                             );
@@ -671,18 +671,18 @@ const ProjectsPage = () => {
                         </div>
 
                         {/* Modal Footer */}
-                        <div className="flex items-center justify-end gap-3 p-6 border-t border-[rgba(244,246,255,0.06)]">
+                        <div className="flex items-center justify-end gap-3 p-6 border-t border-[rgba(255,255,255,0.05)]">
                             <Button
                                 variant="ghost"
                                 onClick={() => setShowCreateModal(false)}
-                                className="text-[#64748B] hover:text-white rounded-xl px-6"
+                                className="text-[#737373] hover:text-white rounded-xl px-6"
                             >
                                 Cancel
                             </Button>
                             <Button
                                 onClick={handleCreateProject}
                                 disabled={isCreating || !createForm.name.trim()}
-                                className="bg-gradient-to-r from-[#6366F1] to-[#4F46E5] hover:from-[#5558E6] hover:to-[#4338CA] text-white rounded-xl px-6 font-medium shadow-lg shadow-[#4F46E5]/20 disabled:opacity-50"
+                                className="bg-gradient-to-r from-[#E0B954] to-[#C79E3B] hover:opacity-90 text-[#080808] font-semibold rounded-xl px-6 font-medium shadow-lg shadow-[#B8872A]/20 disabled:opacity-50"
                             >
                                 {isCreating ? (
                                     <>

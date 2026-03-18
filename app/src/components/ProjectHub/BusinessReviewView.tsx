@@ -134,7 +134,7 @@ const BusinessReviewView: React.FC<BusinessReviewViewProps> = ({
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 {/* Health Score */}
                 <div
-                    className={`bg-[rgba(244,246,255,0.02)] border ${health.borderColor} ${health.bgColor} rounded-2xl p-5 flex flex-col items-center justify-center`}
+                    className={`bg-[rgba(255,255,255,0.02)] border ${health.borderColor} ${health.bgColor} rounded-2xl p-5 flex flex-col items-center justify-center`}
                 >
                     <div className="relative w-20 h-20 mb-3">
                         <svg viewBox="0 0 100 100" className="w-full h-full -rotate-90">
@@ -169,55 +169,55 @@ const BusinessReviewView: React.FC<BusinessReviewViewProps> = ({
                 </div>
 
                 {/* Sprint Velocity */}
-                <div className="bg-[rgba(244,246,255,0.02)] border border-[rgba(244,246,255,0.06)] rounded-2xl p-5">
+                <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-2xl p-5">
                     <div className="flex items-center gap-2 mb-3">
-                        <div className="w-8 h-8 rounded-xl bg-[#6366F1]/10 flex items-center justify-center">
-                            <TrendingUp className="w-4 h-4 text-[#6366F1]" />
+                        <div className="w-8 h-8 rounded-xl bg-[#E0B954]/10 flex items-center justify-center">
+                            <TrendingUp className="w-4 h-4 text-[#E0B954]" />
                         </div>
-                        <span className="text-xs text-[#64748B]">Sprint Velocity</span>
+                        <span className="text-xs text-[#737373]">Sprint Velocity</span>
                     </div>
                     <p className="text-2xl font-bold text-white">{avgVelocity}</p>
-                    <p className="text-xs text-[#64748B] mt-1">pts avg / sprint</p>
+                    <p className="text-xs text-[#737373] mt-1">pts avg / sprint</p>
                 </div>
 
                 {/* On-Time Delivery */}
-                <div className="bg-[rgba(244,246,255,0.02)] border border-[rgba(244,246,255,0.06)] rounded-2xl p-5">
+                <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-2xl p-5">
                     <div className="flex items-center gap-2 mb-3">
                         <div className="w-8 h-8 rounded-xl bg-[#10B981]/10 flex items-center justify-center">
                             <CheckCircle2 className="w-4 h-4 text-[#10B981]" />
                         </div>
-                        <span className="text-xs text-[#64748B]">On-Time Delivery</span>
+                        <span className="text-xs text-[#737373]">On-Time Delivery</span>
                     </div>
                     <p className="text-2xl font-bold text-white">{onTimeDeliveryPct}%</p>
-                    <p className="text-xs text-[#64748B] mt-1">
+                    <p className="text-xs text-[#737373] mt-1">
                         {analytics?.status_distribution?.done || 0} / {analytics?.total_items || 0} done
                     </p>
                 </div>
 
                 {/* Open Bugs */}
-                <div className="bg-[rgba(244,246,255,0.02)] border border-[rgba(244,246,255,0.06)] rounded-2xl p-5">
+                <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-2xl p-5">
                     <div className="flex items-center gap-2 mb-3">
                         <div className="w-8 h-8 rounded-xl bg-[#EF4444]/10 flex items-center justify-center">
                             <AlertCircle className="w-4 h-4 text-[#EF4444]" />
                         </div>
-                        <span className="text-xs text-[#64748B]">Open Bugs</span>
+                        <span className="text-xs text-[#737373]">Open Bugs</span>
                     </div>
                     <p className="text-2xl font-bold text-white">{openBugs}</p>
-                    <p className="text-xs text-[#64748B] mt-1">{overdueItems} items overdue</p>
+                    <p className="text-xs text-[#737373] mt-1">{overdueItems} items overdue</p>
                 </div>
             </div>
 
             {/* Milestone Progress */}
             {milestones.length > 0 && (
-                <div className="bg-[rgba(244,246,255,0.02)] border border-[rgba(244,246,255,0.06)] rounded-2xl p-6">
+                <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-2xl p-6">
                     <div className="flex items-center justify-between mb-5">
                         <div className="flex items-center gap-3">
-                            <div className="w-9 h-9 rounded-xl bg-[#8B5CF6]/10 flex items-center justify-center">
-                                <Target className="w-4 h-4 text-[#8B5CF6]" />
+                            <div className="w-9 h-9 rounded-xl bg-[#C79E3B]/10 flex items-center justify-center">
+                                <Target className="w-4 h-4 text-[#C79E3B]" />
                             </div>
                             <div>
                                 <h3 className="text-sm font-semibold text-white">Milestone Progress</h3>
-                                <p className="text-xs text-[#64748B]">
+                                <p className="text-xs text-[#737373]">
                                     {completedMilestones} of {totalMilestones} completed
                                 </p>
                             </div>
@@ -246,7 +246,7 @@ const BusinessReviewView: React.FC<BusinessReviewViewProps> = ({
                                                 ? 'bg-[#10B981]/20'
                                                 : isOverdue
                                                 ? 'bg-[#EF4444]/20'
-                                                : 'bg-[#64748B]/20'
+                                                : 'bg-[#737373]/20'
                                         }`}
                                     >
                                         {milestone.is_completed ? (
@@ -254,14 +254,14 @@ const BusinessReviewView: React.FC<BusinessReviewViewProps> = ({
                                         ) : isOverdue ? (
                                             <AlertTriangle className="w-3 h-3 text-[#EF4444]" />
                                         ) : (
-                                            <Clock className="w-3 h-3 text-[#64748B]" />
+                                            <Clock className="w-3 h-3 text-[#737373]" />
                                         )}
                                     </div>
                                     <span
                                         className={`text-sm flex-1 ${
                                             milestone.is_completed
-                                                ? 'text-[#64748B] line-through'
-                                                : 'text-[#E2E8F0]'
+                                                ? 'text-[#737373] line-through'
+                                                : 'text-[#f5f5f5]'
                                         }`}
                                     >
                                         {milestone.title}
@@ -269,7 +269,7 @@ const BusinessReviewView: React.FC<BusinessReviewViewProps> = ({
                                     {milestone.due_date && (
                                         <span
                                             className={`text-xs ${
-                                                isOverdue ? 'text-[#EF4444]' : 'text-[#64748B]'
+                                                isOverdue ? 'text-[#EF4444]' : 'text-[#737373]'
                                             }`}
                                         >
                                             {new Date(milestone.due_date).toLocaleDateString()}
@@ -283,7 +283,7 @@ const BusinessReviewView: React.FC<BusinessReviewViewProps> = ({
             )}
 
             {/* Risk Indicators */}
-            <div className="bg-[rgba(244,246,255,0.02)] border border-[rgba(244,246,255,0.06)] rounded-2xl p-6">
+            <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-2xl p-6">
                 <div className="flex items-center gap-3 mb-5">
                     <div className="w-9 h-9 rounded-xl bg-[#F59E0B]/10 flex items-center justify-center">
                         <AlertTriangle className="w-4 h-4 text-[#F59E0B]" />
@@ -307,7 +307,7 @@ const BusinessReviewView: React.FC<BusinessReviewViewProps> = ({
                         {
                             label: 'Unassigned',
                             value: unassigned,
-                            color: unassigned > 5 ? '#F59E0B' : '#64748B',
+                            color: unassigned > 5 ? '#F59E0B' : '#737373',
                             icon: Users,
                         },
                         {
@@ -319,39 +319,39 @@ const BusinessReviewView: React.FC<BusinessReviewViewProps> = ({
                     ].map(({ label, value, color, icon: Icon }) => (
                         <div
                             key={label}
-                            className="bg-[rgba(244,246,255,0.03)] rounded-xl p-4 text-center"
+                            className="bg-[rgba(255,255,255,0.025)] rounded-xl p-4 text-center"
                         >
                             <Icon className="w-5 h-5 mx-auto mb-2" style={{ color }} />
                             <p className="text-xl font-bold text-white">{value}</p>
-                            <p className="text-xs text-[#64748B] mt-1">{label}</p>
+                            <p className="text-xs text-[#737373] mt-1">{label}</p>
                         </div>
                     ))}
                 </div>
             </div>
 
             {/* Stakeholder Summary */}
-            <div className="bg-[rgba(244,246,255,0.02)] border border-[rgba(244,246,255,0.06)] rounded-2xl p-6">
+            <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-2xl p-6">
                 <div className="flex items-center gap-3 mb-5">
-                    <div className="w-9 h-9 rounded-xl bg-[#6366F1]/10 flex items-center justify-center">
-                        <Activity className="w-4 h-4 text-[#6366F1]" />
+                    <div className="w-9 h-9 rounded-xl bg-[#E0B954]/10 flex items-center justify-center">
+                        <Activity className="w-4 h-4 text-[#E0B954]" />
                     </div>
                     <h3 className="text-sm font-semibold text-white">Stakeholder Summary</h3>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     {/* Left column */}
                     <div className="space-y-3">
-                        <div className="bg-[rgba(244,246,255,0.03)] rounded-xl p-4">
-                            <p className="text-xs text-[#64748B] mb-1">Project Status</p>
+                        <div className="bg-[rgba(255,255,255,0.025)] rounded-xl p-4">
+                            <p className="text-xs text-[#737373] mb-1">Project Status</p>
                             <p className="text-sm font-semibold text-white capitalize">
                                 {project?.status || 'Active'}
                             </p>
                         </div>
-                        <div className="bg-[rgba(244,246,255,0.03)] rounded-xl p-4">
-                            <p className="text-xs text-[#64748B] mb-2">Overall Completion</p>
+                        <div className="bg-[rgba(255,255,255,0.025)] rounded-xl p-4">
+                            <p className="text-xs text-[#737373] mb-2">Overall Completion</p>
                             <div className="flex items-center gap-3">
-                                <div className="flex-1 h-2 bg-[rgba(244,246,255,0.06)] rounded-full overflow-hidden">
+                                <div className="flex-1 h-2 bg-[rgba(255,255,255,0.05)] rounded-full overflow-hidden">
                                     <div
-                                        className="h-full bg-gradient-to-r from-[#6366F1] to-[#10B981] rounded-full transition-all"
+                                        className="h-full bg-gradient-to-r from-[#E0B954] to-[#10B981] rounded-full transition-all"
                                         style={{ width: `${completionPct}%` }}
                                     />
                                 </div>
@@ -359,8 +359,8 @@ const BusinessReviewView: React.FC<BusinessReviewViewProps> = ({
                             </div>
                         </div>
                         {activeSprint && (
-                            <div className="bg-[rgba(244,246,255,0.03)] rounded-xl p-4">
-                                <p className="text-xs text-[#64748B] mb-1">Active Sprint</p>
+                            <div className="bg-[rgba(255,255,255,0.025)] rounded-xl p-4">
+                                <p className="text-xs text-[#737373] mb-1">Active Sprint</p>
                                 <p className="text-sm font-semibold text-white">{activeSprint.name}</p>
                                 <p className="text-xs text-[#10B981] mt-1">
                                     {activeSprint.completion_pct}% complete
@@ -370,8 +370,8 @@ const BusinessReviewView: React.FC<BusinessReviewViewProps> = ({
                     </div>
                     {/* Right column */}
                     <div className="space-y-3">
-                        <div className="bg-[rgba(244,246,255,0.03)] rounded-xl p-4">
-                            <p className="text-xs text-[#64748B] mb-2">Key Metrics</p>
+                        <div className="bg-[rgba(255,255,255,0.025)] rounded-xl p-4">
+                            <p className="text-xs text-[#737373] mb-2">Key Metrics</p>
                             <ul className="space-y-2">
                                 {[
                                     { label: 'Total Work Items', value: analytics?.total_items || 0 },
@@ -389,20 +389,20 @@ const BusinessReviewView: React.FC<BusinessReviewViewProps> = ({
                                         key={label}
                                         className="flex items-center justify-between text-sm"
                                     >
-                                        <span className="text-[#94A3B8]">{label}</span>
+                                        <span className="text-[#a3a3a3]">{label}</span>
                                         <span className="text-white font-medium">{value}</span>
                                     </li>
                                 ))}
                             </ul>
                         </div>
-                        <div className="bg-[rgba(244,246,255,0.03)] rounded-xl p-4">
-                            <p className="text-xs text-[#64748B] mb-1">Next Milestone</p>
+                        <div className="bg-[rgba(255,255,255,0.025)] rounded-xl p-4">
+                            <p className="text-xs text-[#737373] mb-1">Next Milestone</p>
                             {milestones.filter(m => !m.is_completed).length > 0 ? (
                                 <>
                                     <p className="text-sm font-semibold text-white">
                                         {milestones.find(m => !m.is_completed)?.title}
                                     </p>
-                                    <p className="text-xs text-[#64748B] mt-1">
+                                    <p className="text-xs text-[#737373] mt-1">
                                         {milestones.find(m => !m.is_completed)?.due_date
                                             ? `Due ${new Date(
                                                   milestones.find(m => !m.is_completed)!.due_date!
@@ -411,7 +411,7 @@ const BusinessReviewView: React.FC<BusinessReviewViewProps> = ({
                                     </p>
                                 </>
                             ) : (
-                                <p className="text-sm text-[#64748B]">All milestones completed</p>
+                                <p className="text-sm text-[#737373]">All milestones completed</p>
                             )}
                         </div>
                     </div>
@@ -420,7 +420,7 @@ const BusinessReviewView: React.FC<BusinessReviewViewProps> = ({
 
             {/* Team Performance (if available) */}
             {analytics?.team_performance && analytics.team_performance.length > 0 && (
-                <div className="bg-[rgba(244,246,255,0.02)] border border-[rgba(244,246,255,0.06)] rounded-2xl p-6">
+                <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-2xl p-6">
                     <div className="flex items-center gap-3 mb-5">
                         <div className="w-9 h-9 rounded-xl bg-[#10B981]/10 flex items-center justify-center">
                             <Users className="w-4 h-4 text-[#10B981]" />
@@ -435,19 +435,19 @@ const BusinessReviewView: React.FC<BusinessReviewViewProps> = ({
                                     : 0;
                             return (
                                 <div key={member.name} className="flex items-center gap-4">
-                                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#6366F1] to-[#4F46E5] flex items-center justify-center text-white text-xs font-semibold flex-shrink-0">
+                                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#E0B954] to-[#B8872A] flex items-center justify-center text-white text-xs font-semibold flex-shrink-0">
                                         {member.name.charAt(0).toUpperCase()}
                                     </div>
                                     <div className="flex-1 min-w-0">
                                         <div className="flex items-center justify-between mb-1">
-                                            <span className="text-sm text-[#E2E8F0] truncate">{member.name}</span>
-                                            <span className="text-xs text-[#64748B] ml-2">
+                                            <span className="text-sm text-[#f5f5f5] truncate">{member.name}</span>
+                                            <span className="text-xs text-[#737373] ml-2">
                                                 {member.completed_items}/{member.total_items}
                                             </span>
                                         </div>
-                                        <div className="h-1.5 bg-[rgba(244,246,255,0.06)] rounded-full overflow-hidden">
+                                        <div className="h-1.5 bg-[rgba(255,255,255,0.05)] rounded-full overflow-hidden">
                                             <div
-                                                className="h-full bg-gradient-to-r from-[#6366F1] to-[#10B981] rounded-full"
+                                                className="h-full bg-gradient-to-r from-[#E0B954] to-[#10B981] rounded-full"
                                                 style={{ width: `${pct}%` }}
                                             />
                                         </div>

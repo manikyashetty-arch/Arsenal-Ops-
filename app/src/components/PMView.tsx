@@ -79,7 +79,7 @@ export default function PMView({ projectId, token }: PMViewProps) {
     if (isLoading) {
         return (
             <div className="flex items-center justify-center h-64">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#6366F1]"></div>
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#E0B954]"></div>
             </div>
         );
     }
@@ -87,7 +87,7 @@ export default function PMView({ projectId, token }: PMViewProps) {
     if (!analytics) {
         return (
             <div className="text-center py-12">
-                <p className="text-[#64748B]">No analytics data available</p>
+                <p className="text-[#737373]">No analytics data available</p>
             </div>
         );
     }
@@ -100,56 +100,56 @@ export default function PMView({ projectId, token }: PMViewProps) {
         <div className="space-y-6">
             {/* Summary Cards */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                <Card className="bg-[rgba(244,246,255,0.02)] border-[rgba(244,246,255,0.06)]">
+                <Card className="bg-[rgba(255,255,255,0.02)] border-[rgba(255,255,255,0.05)]">
                     <CardContent className="p-4">
                         <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-lg bg-[#6366F1]/20 flex items-center justify-center">
-                                <Clock className="w-5 h-5 text-[#6366F1]" />
+                            <div className="w-10 h-10 rounded-lg bg-[#E0B954]/20 flex items-center justify-center">
+                                <Clock className="w-5 h-5 text-[#E0B954]" />
                             </div>
                             <div>
-                                <p className="text-xs text-[#64748B]">Allocated Hours</p>
+                                <p className="text-xs text-[#737373]">Allocated Hours</p>
                                 <p className="text-xl font-bold text-white">{analytics.total_allocated_hours}h</p>
                             </div>
                         </div>
                     </CardContent>
                 </Card>
 
-                <Card className="bg-[rgba(244,246,255,0.02)] border-[rgba(244,246,255,0.06)]">
+                <Card className="bg-[rgba(255,255,255,0.02)] border-[rgba(255,255,255,0.05)]">
                     <CardContent className="p-4">
                         <div className="flex items-center gap-3">
                             <div className="w-10 h-10 rounded-lg bg-[#10B981]/20 flex items-center justify-center">
                                 <TrendingUp className="w-5 h-5 text-[#10B981]" />
                             </div>
                             <div>
-                                <p className="text-xs text-[#64748B]">Logged Hours</p>
+                                <p className="text-xs text-[#737373]">Logged Hours</p>
                                 <p className="text-xl font-bold text-white">{analytics.total_logged_hours}h</p>
                             </div>
                         </div>
                     </CardContent>
                 </Card>
 
-                <Card className="bg-[rgba(244,246,255,0.02)] border-[rgba(244,246,255,0.06)]">
+                <Card className="bg-[rgba(255,255,255,0.02)] border-[rgba(255,255,255,0.05)]">
                     <CardContent className="p-4">
                         <div className="flex items-center gap-3">
                             <div className="w-10 h-10 rounded-lg bg-[#F59E0B]/20 flex items-center justify-center">
                                 <AlertTriangle className="w-5 h-5 text-[#F59E0B]" />
                             </div>
                             <div>
-                                <p className="text-xs text-[#64748B]">Remaining Hours</p>
+                                <p className="text-xs text-[#737373]">Remaining Hours</p>
                                 <p className="text-xl font-bold text-white">{analytics.total_remaining_hours}h</p>
                             </div>
                         </div>
                     </CardContent>
                 </Card>
 
-                <Card className="bg-[rgba(244,246,255,0.02)] border-[rgba(244,246,255,0.06)]">
+                <Card className="bg-[rgba(255,255,255,0.02)] border-[rgba(255,255,255,0.05)]">
                     <CardContent className="p-4">
                         <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-lg bg-[#8B5CF6]/20 flex items-center justify-center">
-                                <Calendar className="w-5 h-5 text-[#8B5CF6]" />
+                            <div className="w-10 h-10 rounded-lg bg-[#C79E3B]/20 flex items-center justify-center">
+                                <Calendar className="w-5 h-5 text-[#C79E3B]" />
                             </div>
                             <div>
-                                <p className="text-xs text-[#64748B]">Progress</p>
+                                <p className="text-xs text-[#737373]">Progress</p>
                                 <p className="text-xl font-bold text-white">{progressPercentage}%</p>
                             </div>
                         </div>
@@ -158,19 +158,19 @@ export default function PMView({ projectId, token }: PMViewProps) {
             </div>
 
             {/* Weekly Hours Table */}
-            <Card className="bg-[rgba(244,246,255,0.02)] border-[rgba(244,246,255,0.06)]">
+            <Card className="bg-[rgba(255,255,255,0.02)] border-[rgba(255,255,255,0.05)]">
                 <CardHeader className="flex flex-row items-center justify-between">
                     <CardTitle className="text-white flex items-center gap-2">
                         <Calendar className="w-5 h-5" />
                         Weekly Hours Breakdown
-                        <span className="text-xs text-[#64748B] font-normal ml-2">(Last 10 weeks)</span>
+                        <span className="text-xs text-[#737373] font-normal ml-2">(Last 10 weeks)</span>
                     </CardTitle>
                     <div className="flex items-center gap-2">
                         <Button
                             variant="outline"
                             size="sm"
                             onClick={() => setWeekFilter(weekFilter === 'all' ? 'with-activity' : 'all')}
-                            className={`border-[rgba(244,246,255,0.1)] text-xs ${weekFilter === 'with-activity' ? 'bg-[#6366F1]/20 text-[#6366F1]' : 'text-[#64748B]'}`}
+                            className={`border-[rgba(255,255,255,0.08)] text-xs ${weekFilter === 'with-activity' ? 'bg-[#E0B954]/20 text-[#E0B954]' : 'text-[#737373]'}`}
                         >
                             <Filter className="w-3 h-3 mr-1" />
                             {weekFilter === 'all' ? 'Show All' : 'With Activity'}
@@ -181,12 +181,12 @@ export default function PMView({ projectId, token }: PMViewProps) {
                     <div className="overflow-x-auto">
                         <table className="w-full">
                             <thead>
-                                <tr className="border-b border-[rgba(244,246,255,0.06)]">
-                                    <th className="text-left py-3 px-4 text-xs font-medium text-[#64748B] uppercase">Week</th>
-                                    <th className="text-left py-3 px-4 text-xs font-medium text-[#64748B] uppercase">Date Range</th>
-                                    <th className="text-right py-3 px-4 text-xs font-medium text-[#64748B] uppercase">Allocated</th>
-                                    <th className="text-right py-3 px-4 text-xs font-medium text-[#64748B] uppercase">Logged</th>
-                                    <th className="text-right py-3 px-4 text-xs font-medium text-[#64748B] uppercase">Completed</th>
+                                <tr className="border-b border-[rgba(255,255,255,0.05)]">
+                                    <th className="text-left py-3 px-4 text-xs font-medium text-[#737373] uppercase">Week</th>
+                                    <th className="text-left py-3 px-4 text-xs font-medium text-[#737373] uppercase">Date Range</th>
+                                    <th className="text-right py-3 px-4 text-xs font-medium text-[#737373] uppercase">Allocated</th>
+                                    <th className="text-right py-3 px-4 text-xs font-medium text-[#737373] uppercase">Logged</th>
+                                    <th className="text-right py-3 px-4 text-xs font-medium text-[#737373] uppercase">Completed</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -194,17 +194,17 @@ export default function PMView({ projectId, token }: PMViewProps) {
                                     .filter(week => weekFilter === 'all' || week.logged_hours > 0 || week.allocated_hours > 0 || week.items_completed > 0)
                                     .slice(0, 10)
                                     .map((week, idx) => (
-                                    <tr key={idx} className={`border-b border-[rgba(244,246,255,0.04)] hover:bg-[rgba(244,246,255,0.02)] ${week.logged_hours > 0 ? 'bg-[#10B981]/5' : ''}`}>
+                                    <tr key={idx} className={`border-b border-[rgba(255,255,255,0.03)] hover:bg-[rgba(255,255,255,0.02)] ${week.logged_hours > 0 ? 'bg-[#10B981]/5' : ''}`}>
                                         <td className="py-3 px-4 text-sm text-white font-medium">{week.week_label}</td>
-                                        <td className="py-3 px-4 text-sm text-[#94A3B8]">{week.week} - {week.week_end}</td>
+                                        <td className="py-3 px-4 text-sm text-[#a3a3a3]">{week.week} - {week.week_end}</td>
                                         <td className="py-3 px-4 text-sm text-right text-white">{week.allocated_hours}h</td>
                                         <td className="py-3 px-4 text-sm text-right">
-                                            <span className={week.logged_hours > 0 ? 'text-[#10B981] font-semibold' : 'text-[#64748B]'}>
+                                            <span className={week.logged_hours > 0 ? 'text-[#10B981] font-semibold' : 'text-[#737373]'}>
                                                 {week.logged_hours}h
                                             </span>
                                         </td>
                                         <td className="py-3 px-4 text-sm text-right">
-                                            <Badge variant="outline" className="border-[rgba(244,246,255,0.1)] text-[#94A3B8]">
+                                            <Badge variant="outline" className="border-[rgba(255,255,255,0.08)] text-[#a3a3a3]">
                                                 {week.items_completed}
                                             </Badge>
                                         </td>
@@ -213,7 +213,7 @@ export default function PMView({ projectId, token }: PMViewProps) {
                             </tbody>
                         </table>
                         {analytics.weekly_hours.length === 0 && (
-                            <div className="text-center py-8 text-[#64748B]">
+                            <div className="text-center py-8 text-[#737373]">
                                 <p>No sprints created yet. Weeks will appear once sprints are started.</p>
                             </div>
                         )}
@@ -222,7 +222,7 @@ export default function PMView({ projectId, token }: PMViewProps) {
             </Card>
 
             {/* Developer Hours Table */}
-            <Card className="bg-[rgba(244,246,255,0.02)] border-[rgba(244,246,255,0.06)]">
+            <Card className="bg-[rgba(255,255,255,0.02)] border-[rgba(255,255,255,0.05)]">
                 <CardHeader>
                     <CardTitle className="text-white flex items-center gap-2">
                         <Users className="w-5 h-5" />
@@ -233,57 +233,57 @@ export default function PMView({ projectId, token }: PMViewProps) {
                     <div className="overflow-x-auto">
                         <table className="w-full">
                             <thead>
-                                <tr className="border-b border-[rgba(244,246,255,0.06)]">
-                                    <th className="text-left py-3 px-4 text-xs font-medium text-[#64748B] uppercase">Developer</th>
-                                    <th className="text-left py-3 px-4 text-xs font-medium text-[#64748B] uppercase">Role</th>
-                                    <th className="text-right py-3 px-4 text-xs font-medium text-[#64748B] uppercase">Allocated</th>
-                                    <th className="text-right py-3 px-4 text-xs font-medium text-[#64748B] uppercase">Logged</th>
-                                    <th className="text-right py-3 px-4 text-xs font-medium text-[#8B5CF6] uppercase">This Week</th>
-                                    <th className="text-right py-3 px-4 text-xs font-medium text-[#64748B] uppercase">Remaining</th>
-                                    <th className="text-right py-3 px-4 text-xs font-medium text-[#64748B] uppercase">Items</th>
-                                    <th className="text-right py-3 px-4 text-xs font-medium text-[#64748B] uppercase">Completed</th>
+                                <tr className="border-b border-[rgba(255,255,255,0.05)]">
+                                    <th className="text-left py-3 px-4 text-xs font-medium text-[#737373] uppercase">Developer</th>
+                                    <th className="text-left py-3 px-4 text-xs font-medium text-[#737373] uppercase">Role</th>
+                                    <th className="text-right py-3 px-4 text-xs font-medium text-[#737373] uppercase">Allocated</th>
+                                    <th className="text-right py-3 px-4 text-xs font-medium text-[#737373] uppercase">Logged</th>
+                                    <th className="text-right py-3 px-4 text-xs font-medium text-[#C79E3B] uppercase">This Week</th>
+                                    <th className="text-right py-3 px-4 text-xs font-medium text-[#737373] uppercase">Remaining</th>
+                                    <th className="text-right py-3 px-4 text-xs font-medium text-[#737373] uppercase">Items</th>
+                                    <th className="text-right py-3 px-4 text-xs font-medium text-[#737373] uppercase">Completed</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {analytics.developer_hours.length === 0 ? (
                                     <tr>
-                                        <td colSpan={8} className="py-8 text-center text-[#64748B]">
+                                        <td colSpan={8} className="py-8 text-center text-[#737373]">
                                             No developers assigned to this project
                                         </td>
                                     </tr>
                                 ) : (
                                     analytics.developer_hours.map((dev) => {
                                         return (
-                                            <tr key={dev.developer_id} className="border-b border-[rgba(244,246,255,0.04)] hover:bg-[rgba(244,246,255,0.02)]">
+                                            <tr key={dev.developer_id} className="border-b border-[rgba(255,255,255,0.03)] hover:bg-[rgba(255,255,255,0.02)]">
                                                 <td className="py-3 px-4">
                                                     <div className="flex items-center gap-3">
-                                                        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#6366F1] to-[#4F46E5] flex items-center justify-center text-white text-sm font-semibold">
+                                                        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#E0B954] to-[#B8872A] flex items-center justify-center text-white text-sm font-semibold">
                                                             {dev.developer_name.charAt(0).toUpperCase()}
                                                         </div>
                                                         <div>
                                                             <p className="text-sm text-white">{dev.developer_name}</p>
-                                                            <p className="text-xs text-[#64748B]">{dev.developer_email}</p>
+                                                            <p className="text-xs text-[#737373]">{dev.developer_email}</p>
                                                         </div>
                                                     </div>
                                                 </td>
                                                 <td className="py-3 px-4">
-                                                    <Badge variant="outline" className="border-[rgba(244,246,255,0.1)] text-[#94A3B8]">
+                                                    <Badge variant="outline" className="border-[rgba(255,255,255,0.08)] text-[#a3a3a3]">
                                                         {dev.role}
                                                     </Badge>
                                                 </td>
                                                 <td className="py-3 px-4 text-sm text-right text-white">{dev.allocated_hours}h</td>
                                                 <td className="py-3 px-4 text-sm text-right">
-                                                    <span className={dev.logged_hours > 0 ? 'text-[#10B981]' : 'text-[#64748B]'}>
+                                                    <span className={dev.logged_hours > 0 ? 'text-[#10B981]' : 'text-[#737373]'}>
                                                         {dev.logged_hours}h
                                                     </span>
                                                 </td>
                                                 <td className="py-3 px-4 text-sm text-right">
-                                                    <span className={dev.current_week_logged > 0 ? 'text-[#8B5CF6] font-semibold' : 'text-[#64748B]'}>
+                                                    <span className={dev.current_week_logged > 0 ? 'text-[#C79E3B] font-semibold' : 'text-[#737373]'}>
                                                         {dev.current_week_logged}h
                                                     </span>
                                                 </td>
                                                 <td className="py-3 px-4 text-sm text-right">
-                                                    <span className={dev.remaining_hours > 0 ? 'text-[#F59E0B]' : 'text-[#64748B]'}>
+                                                    <span className={dev.remaining_hours > 0 ? 'text-[#F59E0B]' : 'text-[#737373]'}>
                                                         {dev.remaining_hours}h
                                                     </span>
                                                 </td>
@@ -304,7 +304,7 @@ export default function PMView({ projectId, token }: PMViewProps) {
             </Card>
 
             {/* Sprint Hours Table */}
-            <Card className="bg-[rgba(244,246,255,0.02)] border-[rgba(244,246,255,0.06)]">
+            <Card className="bg-[rgba(255,255,255,0.02)] border-[rgba(255,255,255,0.05)]">
                 <CardHeader>
                     <CardTitle className="text-white flex items-center gap-2">
                         <Clock className="w-5 h-5" />
@@ -315,43 +315,43 @@ export default function PMView({ projectId, token }: PMViewProps) {
                     <div className="overflow-x-auto">
                         <table className="w-full">
                             <thead>
-                                <tr className="border-b border-[rgba(244,246,255,0.06)]">
-                                    <th className="text-left py-3 px-4 text-xs font-medium text-[#64748B] uppercase">Sprint</th>
-                                    <th className="text-left py-3 px-4 text-xs font-medium text-[#64748B] uppercase">Status</th>
-                                    <th className="text-right py-3 px-4 text-xs font-medium text-[#64748B] uppercase">Allocated</th>
-                                    <th className="text-right py-3 px-4 text-xs font-medium text-[#64748B] uppercase">Logged</th>
-                                    <th className="text-right py-3 px-4 text-xs font-medium text-[#64748B] uppercase">Remaining</th>
-                                    <th className="text-right py-3 px-4 text-xs font-medium text-[#64748B] uppercase">Items</th>
+                                <tr className="border-b border-[rgba(255,255,255,0.05)]">
+                                    <th className="text-left py-3 px-4 text-xs font-medium text-[#737373] uppercase">Sprint</th>
+                                    <th className="text-left py-3 px-4 text-xs font-medium text-[#737373] uppercase">Status</th>
+                                    <th className="text-right py-3 px-4 text-xs font-medium text-[#737373] uppercase">Allocated</th>
+                                    <th className="text-right py-3 px-4 text-xs font-medium text-[#737373] uppercase">Logged</th>
+                                    <th className="text-right py-3 px-4 text-xs font-medium text-[#737373] uppercase">Remaining</th>
+                                    <th className="text-right py-3 px-4 text-xs font-medium text-[#737373] uppercase">Items</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {analytics.sprint_hours.length === 0 ? (
                                     <tr>
-                                        <td colSpan={6} className="py-8 text-center text-[#64748B]">
+                                        <td colSpan={6} className="py-8 text-center text-[#737373]">
                                             No sprints created for this project
                                         </td>
                                     </tr>
                                 ) : (
                                     analytics.sprint_hours.map((sprint) => (
-                                        <tr key={sprint.sprint_id} className="border-b border-[rgba(244,246,255,0.04)] hover:bg-[rgba(244,246,255,0.02)]">
+                                        <tr key={sprint.sprint_id} className="border-b border-[rgba(255,255,255,0.03)] hover:bg-[rgba(255,255,255,0.02)]">
                                             <td className="py-3 px-4 text-sm text-white">{sprint.sprint_name}</td>
                                             <td className="py-3 px-4">
                                                 <Badge className={
                                                     sprint.status === 'completed' ? 'bg-[#10B981]/20 text-[#10B981] border-0' :
-                                                    sprint.status === 'active' ? 'bg-[#6366F1]/20 text-[#6366F1] border-0' :
-                                                    'bg-[#64748B]/20 text-[#94A3B8] border-0'
+                                                    sprint.status === 'active' ? 'bg-[#E0B954]/20 text-[#E0B954] border-0' :
+                                                    'bg-[#737373]/20 text-[#a3a3a3] border-0'
                                                 }>
                                                     {sprint.status}
                                                 </Badge>
                                             </td>
                                             <td className="py-3 px-4 text-sm text-right text-white">{sprint.allocated_hours}h</td>
                                             <td className="py-3 px-4 text-sm text-right">
-                                                <span className={sprint.logged_hours > 0 ? 'text-[#10B981]' : 'text-[#64748B]'}>
+                                                <span className={sprint.logged_hours > 0 ? 'text-[#10B981]' : 'text-[#737373]'}>
                                                     {sprint.logged_hours}h
                                                 </span>
                                             </td>
                                             <td className="py-3 px-4 text-sm text-right">
-                                                <span className={sprint.remaining_hours > 0 ? 'text-[#F59E0B]' : 'text-[#64748B]'}>
+                                                <span className={sprint.remaining_hours > 0 ? 'text-[#F59E0B]' : 'text-[#737373]'}>
                                                     {sprint.remaining_hours}h
                                                 </span>
                                             </td>

@@ -28,17 +28,17 @@ const MermaidRenderer = ({ code, className = '', showControls = true }: MermaidR
             theme: 'dark',
             themeVariables: {
                 darkMode: true,
-                primaryColor: '#6366F1',
+                primaryColor: '#E0B954',
                 primaryTextColor: '#F4F6FF',
-                primaryBorderColor: '#6366F1',
-                lineColor: '#64748B',
+                primaryBorderColor: '#E0B954',
+                lineColor: '#737373',
                 secondaryColor: '#1E293B',
                 tertiaryColor: '#0F172A',
-                background: '#0B0D14',
+                background: '#080808',
                 mainBkg: '#1E293B',
-                nodeBorder: '#6366F1',
-                clusterBkg: 'rgba(99, 102, 241, 0.1)',
-                clusterBorder: '#6366F1',
+                nodeBorder: '#E0B954',
+                clusterBkg: 'rgba(224, 185, 84, 0.1)',
+                clusterBorder: '#E0B954',
                 titleColor: '#F4F6FF',
                 edgeLabelBackground: '#1E293B',
             },
@@ -163,9 +163,9 @@ const MermaidRenderer = ({ code, className = '', showControls = true }: MermaidR
 
     if (isRendering || !svgContent) {
         return (
-            <div className={`flex flex-col items-center justify-center p-8 bg-[rgba(244,246,255,0.02)] rounded-xl ${className}`}>
-                <div className="w-8 h-8 border-2 border-[#6366F1]/30 border-t-[#6366F1] rounded-full animate-spin mb-2" />
-                <p className="text-xs text-[#64748B]">Rendering diagram...</p>
+            <div className={`flex flex-col items-center justify-center p-8 bg-[rgba(255,255,255,0.02)] rounded-xl ${className}`}>
+                <div className="w-8 h-8 border-2 border-[#E0B954]/30 border-t-[#E0B954] rounded-full animate-spin mb-2" />
+                <p className="text-xs text-[#737373]">Rendering diagram...</p>
             </div>
         );
     }
@@ -174,35 +174,35 @@ const MermaidRenderer = ({ code, className = '', showControls = true }: MermaidR
         <div className="relative w-full h-full">
             {/* Zoom Controls */}
             {showControls && (
-                <div className="absolute top-2 right-2 z-10 flex gap-1 bg-[#0B0D14]/90 backdrop-blur-sm border border-[rgba(244,246,255,0.1)] rounded-lg p-1">
+                <div className="absolute top-2 right-2 z-10 flex gap-1 bg-[#080808]/90 backdrop-blur-sm border border-[rgba(255,255,255,0.08)] rounded-lg p-1">
                     <button
                         onClick={handleZoomOut}
-                        className="p-1.5 rounded hover:bg-[rgba(244,246,255,0.1)] text-[#64748B] hover:text-white transition-colors"
+                        className="p-1.5 rounded hover:bg-[rgba(255,255,255,0.08)] text-[#737373] hover:text-white transition-colors"
                         title="Zoom Out"
                     >
                         <ZoomOut className="w-4 h-4" />
                     </button>
-                    <span className="px-2 text-xs text-[#64748B] flex items-center min-w-[50px] justify-center">
+                    <span className="px-2 text-xs text-[#737373] flex items-center min-w-[50px] justify-center">
                         {Math.round(scale * 100)}%
                     </span>
                     <button
                         onClick={handleZoomIn}
-                        className="p-1.5 rounded hover:bg-[rgba(244,246,255,0.1)] text-[#64748B] hover:text-white transition-colors"
+                        className="p-1.5 rounded hover:bg-[rgba(255,255,255,0.08)] text-[#737373] hover:text-white transition-colors"
                         title="Zoom In"
                     >
                         <ZoomIn className="w-4 h-4" />
                     </button>
-                    <div className="w-px bg-[rgba(244,246,255,0.1)]" />
+                    <div className="w-px bg-[rgba(255,255,255,0.08)]" />
                     <button
                         onClick={handleFit}
-                        className="p-1.5 rounded hover:bg-[rgba(244,246,255,0.1)] text-[#64748B] hover:text-white transition-colors"
+                        className="p-1.5 rounded hover:bg-[rgba(255,255,255,0.08)] text-[#737373] hover:text-white transition-colors"
                         title="Fit to Screen"
                     >
                         <Maximize2 className="w-4 h-4" />
                     </button>
                     <button
                         onClick={handleReset}
-                        className="p-1.5 rounded hover:bg-[rgba(244,246,255,0.1)] text-[#64748B] hover:text-white transition-colors"
+                        className="p-1.5 rounded hover:bg-[rgba(255,255,255,0.08)] text-[#737373] hover:text-white transition-colors"
                         title="Reset View"
                     >
                         <RotateCcw className="w-4 h-4" />

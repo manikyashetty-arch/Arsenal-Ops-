@@ -152,18 +152,18 @@ interface Sprint {
 type AIStep = 'upload' | 'analyzing' | 'architectures' | 'preview' | 'committing' | 'done';
 
 const STATUS_CONFIG = {
-    backlog: { label: 'Backlog', color: '#64748B', icon: Inbox, gradient: 'from-[#64748B]/10' },
-    todo: { label: 'To Do', color: '#6366F1', icon: Plus, gradient: 'from-[#6366F1]/10' },
+    backlog: { label: 'Backlog', color: '#737373', icon: Inbox, gradient: 'from-[#737373]/10' },
+    todo: { label: 'To Do', color: '#E0B954', icon: Plus, gradient: 'from-[#E0B954]/10' },
     in_progress: { label: 'In Progress', color: '#F59E0B', icon: Clock, gradient: 'from-[#F59E0B]/10' },
-    in_review: { label: 'In Review', color: '#8B5CF6', icon: AlertCircle, gradient: 'from-[#8B5CF6]/10' },
+    in_review: { label: 'In Review', color: '#C79E3B', icon: AlertCircle, gradient: 'from-[#C79E3B]/10' },
     done: { label: 'Done', color: '#10B981', icon: CheckCircle2, gradient: 'from-[#10B981]/10' },
 } as const;
 
 const TYPE_CONFIG = {
-    user_story: { icon: BookOpen, color: '#6366F1', label: 'Story', bg: 'rgba(99,102,241,0.15)' },
+    user_story: { icon: BookOpen, color: '#E0B954', label: 'Story', bg: 'rgba(224,185,84,0.15)' },
     task: { icon: ClipboardList, color: '#F59E0B', label: 'Task', bg: 'rgba(245,158,11,0.15)' },
     bug: { icon: Bug, color: '#EF4444', label: 'Bug', bg: 'rgba(239,68,68,0.15)' },
-    epic: { icon: Target, color: '#8B5CF6', label: 'Epic', bg: 'rgba(139,92,246,0.15)' },
+    epic: { icon: Target, color: '#C79E3B', label: 'Epic', bg: 'rgba(199,158,59,0.15)' },
 };
 
 const PRIORITY_COLORS = {
@@ -532,7 +532,7 @@ const ProjectBoard = () => {
                 const devId = parseInt(part.substring(1));
                 const dev = allDevelopers.find(d => d.id === devId);
                 return (
-                    <span key={index} className="bg-[rgba(99,102,241,0.2)] text-[#818CF8] px-1.5 py-0.5 rounded-md font-medium">
+                    <span key={index} className="bg-[rgba(224,185,84,0.2)] text-[#818CF8] px-1.5 py-0.5 rounded-md font-medium">
                         @{dev?.name || devId}
                     </span>
                 );
@@ -839,17 +839,17 @@ const ProjectBoard = () => {
 
     if (isLoading) {
         return (
-            <div className="min-h-screen bg-[#05060B] flex items-center justify-center">
-                <div className="w-10 h-10 border-2 border-[#6366F1]/30 border-t-[#6366F1] rounded-full animate-spin" />
+            <div className="min-h-screen bg-[#080808] flex items-center justify-center">
+                <div className="w-10 h-10 border-2 border-[#E0B954]/30 border-t-[#E0B954] rounded-full animate-spin" />
             </div>
         );
     }
 
     if (!project) {
         return (
-            <div className="min-h-screen bg-[#05060B] flex flex-col items-center justify-center text-center">
+            <div className="min-h-screen bg-[#080808] flex flex-col items-center justify-center text-center">
                 <h2 className="text-xl font-bold text-white mb-2">Project not found</h2>
-                <Button onClick={() => navigate('/')} variant="ghost" className="text-[#6366F1]">
+                <Button onClick={() => navigate('/')} variant="ghost" className="text-[#E0B954]">
                     <ArrowLeft className="w-4 h-4 mr-2" />
                     Back to Projects
                 </Button>
@@ -863,30 +863,30 @@ const ProjectBoard = () => {
     const remainingHours = workItems.filter(i => i.status !== 'done').reduce((sum, i) => sum + i.remaining_hours, 0);
 
     return (
-        <div className="min-h-screen bg-[#05060B] text-[#F4F6FF] flex flex-col">
+        <div className="min-h-screen bg-[#080808] text-[#F4F6FF] flex flex-col">
             <Toaster position="top-right" theme="dark" richColors />
 
             {/* Top Header */}
-            <header className="border-b border-[rgba(244,246,255,0.06)] bg-[#05060B]/90 backdrop-blur-xl sticky top-0 z-40">
+            <header className="border-b border-[rgba(255,255,255,0.05)] bg-[#080808]/90 backdrop-blur-xl sticky top-0 z-40">
                 <div className="px-6 py-3 flex items-center justify-between">
                     <div className="flex items-center gap-4">
                         <Button
                             variant="ghost"
                             size="sm"
                             onClick={() => navigate('/')}
-                            className="text-[#64748B] hover:text-white hover:bg-[rgba(244,246,255,0.05)] rounded-lg gap-2"
+                            className="text-[#737373] hover:text-white hover:bg-[rgba(244,246,255,0.05)] rounded-lg gap-2"
                         >
                             <ArrowLeft className="w-4 h-4" />
                             Projects
                         </Button>
-                        <div className="w-px h-6 bg-[rgba(244,246,255,0.08)]" />
+                        <div className="w-px h-6 bg-[rgba(255,255,255,0.07)]" />
                         <div className="flex items-center gap-3">
-                            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#6366F1] to-[#4F46E5] flex items-center justify-center text-xs font-bold text-white">
+                            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#E0B954] to-[#B8872A] flex items-center justify-center text-xs font-bold text-white">
                                 {project.key_prefix.substring(0, 2)}
                             </div>
                             <div>
                                 <h1 className="text-base font-semibold text-white">{project.name}</h1>
-                                <p className="text-xs text-[#475569] font-mono">{project.key_prefix}</p>
+                                <p className="text-xs text-[#737373] font-mono">{project.key_prefix}</p>
                             </div>
                         </div>
                     </div>
@@ -895,7 +895,7 @@ const ProjectBoard = () => {
                             variant="ghost"
                             size="sm"
                             onClick={() => navigate(`/project/${id}`)}
-                            className="text-[#64748B] hover:text-white hover:bg-[rgba(244,246,255,0.05)] rounded-lg"
+                            className="text-[#737373] hover:text-white hover:bg-[rgba(244,246,255,0.05)] rounded-lg"
                             title="Back to Project Overview"
                         >
                             <X className="w-4 h-4" />
@@ -904,7 +904,7 @@ const ProjectBoard = () => {
                             variant="ghost"
                             size="sm"
                             onClick={() => setShowReviewer(v => !v)}
-                            className={`text-[#64748B] hover:text-white hover:bg-[rgba(244,246,255,0.05)] rounded-lg gap-2 h-9 px-3 ${showReviewer ? 'bg-[rgba(99,102,241,0.1)] text-[#6366F1]' : ''}`}
+                            className={`text-[#737373] hover:text-white hover:bg-[rgba(244,246,255,0.05)] rounded-lg gap-2 h-9 px-3 ${showReviewer ? 'bg-[rgba(224,185,84,0.1)] text-[#E0B954]' : ''}`}
                             title="Review Mode"
                         >
                             <Eye className="w-3.5 h-3.5" />
@@ -914,7 +914,7 @@ const ProjectBoard = () => {
                             onClick={handleAIGenerate}
                             disabled={isGenerating}
                             size="sm"
-                            className="bg-gradient-to-r from-[#6366F1] to-[#4F46E5] hover:from-[#5558E6] hover:to-[#4338CA] text-white rounded-lg font-medium shadow-lg shadow-[#4F46E5]/20 h-9"
+                            className="bg-gradient-to-r from-[#E0B954] to-[#B8872A] hover:from-[#5558E6] hover:to-[#4338CA] text-white rounded-lg font-medium shadow-lg shadow-[#B8872A]/20 h-9"
                         >
                             {isGenerating ? (
                                 <>
@@ -931,7 +931,7 @@ const ProjectBoard = () => {
                         <Button
                             onClick={() => setShowCreateForm(true)}
                             size="sm"
-                            className="bg-gradient-to-r from-[#6366F1] to-[#4F46E5] hover:from-[#5558E6] hover:to-[#4338CA] text-white rounded-lg font-medium shadow-lg shadow-[#4F46E5]/20 h-9"
+                            className="bg-gradient-to-r from-[#E0B954] to-[#B8872A] hover:from-[#5558E6] hover:to-[#4338CA] text-white rounded-lg font-medium shadow-lg shadow-[#B8872A]/20 h-9"
                         >
                             <Plus className="w-3.5 h-3.5 mr-2" />
                             New Item
@@ -940,7 +940,7 @@ const ProjectBoard = () => {
                 </div>
 
                 {/* Stats + Filters Bar */}
-                <div className="px-6 py-2.5 flex items-center justify-between border-t border-[rgba(244,246,255,0.04)]">
+                <div className="px-6 py-2.5 flex items-center justify-between border-t border-[rgba(255,255,255,0.03)]">
                     <div className="flex items-center gap-6">
                         {[
                             { label: 'Items', value: workItems.length, icon: Layers },
@@ -949,8 +949,8 @@ const ProjectBoard = () => {
                             { label: 'Hours Left', value: `${remainingHours}h`, icon: Clock },
                         ].map(s => (
                             <div key={s.label} className="flex items-center gap-2 text-xs">
-                                <s.icon className="w-3.5 h-3.5 text-[#475569]" />
-                                <span className="text-[#64748B]">{s.label}</span>
+                                <s.icon className="w-3.5 h-3.5 text-[#737373]" />
+                                <span className="text-[#737373]">{s.label}</span>
                                 <span className="text-white font-semibold">{s.value}</span>
                             </div>
                         ))}
@@ -958,19 +958,19 @@ const ProjectBoard = () => {
                     <div className="flex items-center gap-3">
                         {/* Search */}
                         <div className="relative">
-                            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#475569]" />
+                            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#737373]" />
                             <Input
                                 placeholder="Search items..."
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
-                                className="pl-8 h-8 w-48 text-xs bg-[rgba(244,246,255,0.03)] border-[rgba(244,246,255,0.06)] text-[#F4F6FF] rounded-lg focus:border-[#6366F1]/50 placeholder:text-[#334155]"
+                                className="pl-8 h-8 w-48 text-xs bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.05)] text-[#F4F6FF] rounded-lg focus:border-[#E0B954]/50 placeholder:text-[#334155]"
                             />
                         </div>
                         {/* Type Filter */}
                         <select
                             value={filterType}
                             onChange={(e) => setFilterType(e.target.value)}
-                            className="h-8 text-xs bg-[rgba(244,246,255,0.03)] border border-[rgba(244,246,255,0.06)] text-[#94A3B8] rounded-lg px-2 appearance-none cursor-pointer hover:border-[rgba(244,246,255,0.12)] transition-colors"
+                            className="h-8 text-xs bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.05)] text-[#a3a3a3] rounded-lg px-2 appearance-none cursor-pointer hover:border-[rgba(244,246,255,0.12)] transition-colors"
                         >
                             <option value="all">All Types</option>
                             <option value="user_story">Stories</option>
@@ -982,7 +982,7 @@ const ProjectBoard = () => {
                         <select
                             value={filterPriority}
                             onChange={(e) => setFilterPriority(e.target.value)}
-                            className="h-8 text-xs bg-[rgba(244,246,255,0.03)] border border-[rgba(244,246,255,0.06)] text-[#94A3B8] rounded-lg px-2 appearance-none cursor-pointer hover:border-[rgba(244,246,255,0.12)] transition-colors"
+                            className="h-8 text-xs bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.05)] text-[#a3a3a3] rounded-lg px-2 appearance-none cursor-pointer hover:border-[rgba(244,246,255,0.12)] transition-colors"
                         >
                             <option value="all">All Priorities</option>
                             <option value="critical">Critical</option>
@@ -995,7 +995,7 @@ const ProjectBoard = () => {
                             <select
                                 value={selectedSprintId}
                                 onChange={(e) => setSelectedSprintId(e.target.value === 'all' ? 'all' : e.target.value === 'backlog' ? 'backlog' : parseInt(e.target.value))}
-                                className="h-8 text-xs bg-[rgba(244,246,255,0.03)] border border-[rgba(244,246,255,0.06)] text-[#94A3B8] rounded-lg px-2 appearance-none cursor-pointer hover:border-[rgba(244,246,255,0.12)] transition-colors"
+                                className="h-8 text-xs bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.05)] text-[#a3a3a3] rounded-lg px-2 appearance-none cursor-pointer hover:border-[rgba(244,246,255,0.12)] transition-colors"
                             >
                                 <option value="all">All Items</option>
                                 <option value="backlog">📋 Backlog (No Sprint)</option>
@@ -1008,23 +1008,23 @@ const ProjectBoard = () => {
                             <Button
                                 onClick={() => setShowCreateSprintModal(true)}
                                 size="sm"
-                                className="bg-gradient-to-r from-[#6366F1] to-[#4F46E5] hover:from-[#5558E6] hover:to-[#4338CA] text-white rounded-lg font-medium shadow-lg shadow-[#4F46E5]/20 h-8 px-3 text-xs"
+                                className="bg-gradient-to-r from-[#E0B954] to-[#B8872A] hover:from-[#5558E6] hover:to-[#4338CA] text-white rounded-lg font-medium shadow-lg shadow-[#B8872A]/20 h-8 px-3 text-xs"
                             >
                                 <Plus className="w-3 h-3 mr-1" />
                                 New Sprint
                             </Button>
                         </div>
                         {/* View Toggle */}
-                        <div className="flex bg-[rgba(244,246,255,0.03)] border border-[rgba(244,246,255,0.06)] rounded-lg p-0.5">
+                        <div className="flex bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.05)] rounded-lg p-0.5">
                             <button
                                 onClick={() => setViewMode('board')}
-                                className={`p-1.5 rounded-md transition-colors ${viewMode === 'board' ? 'bg-[#6366F1] text-white' : 'text-[#475569] hover:text-white'}`}
+                                className={`p-1.5 rounded-md transition-colors ${viewMode === 'board' ? 'bg-[#E0B954] text-white' : 'text-[#737373] hover:text-white'}`}
                             >
                                 <LayoutGrid className="w-3.5 h-3.5" />
                             </button>
                             <button
                                 onClick={() => setViewMode('list')}
-                                className={`p-1.5 rounded-md transition-colors ${viewMode === 'list' ? 'bg-[#6366F1] text-white' : 'text-[#475569] hover:text-white'}`}
+                                className={`p-1.5 rounded-md transition-colors ${viewMode === 'list' ? 'bg-[#E0B954] text-white' : 'text-[#737373] hover:text-white'}`}
                             >
                                 <List className="w-3.5 h-3.5" />
                             </button>
@@ -1047,20 +1047,20 @@ const ProjectBoard = () => {
                                 <div
                                     key={status}
                                     className={`flex-1 min-w-[280px] max-w-[360px] flex flex-col rounded-2xl border transition-all duration-200 ${isDropTarget
-                                        ? 'border-[#6366F1]/40 bg-[#6366F1]/5 shadow-lg shadow-[#6366F1]/10'
-                                        : 'border-[rgba(244,246,255,0.06)] bg-[rgba(244,246,255,0.02)]'
+                                        ? 'border-[#E0B954]/40 bg-[#E0B954]/5 shadow-lg shadow-[#E0B954]/10'
+                                        : 'border-[rgba(255,255,255,0.05)] bg-[rgba(255,255,255,0.02)]'
                                         }`}
                                     onDragOver={(e) => handleDragOver(e, status)}
                                     onDragLeave={handleDragLeave}
                                     onDrop={(e) => handleDrop(e, status)}
                                 >
                                     {/* Column Header */}
-                                    <div className="px-4 py-3 border-b border-[rgba(244,246,255,0.06)] flex items-center justify-between flex-shrink-0">
+                                    <div className="px-4 py-3 border-b border-[rgba(255,255,255,0.05)] flex items-center justify-between flex-shrink-0">
                                         <div className="flex items-center gap-2.5">
                                             <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: config.color, boxShadow: `0 0 8px ${config.color}44` }} />
                                             <span className="font-semibold text-sm text-white">{config.label}</span>
                                         </div>
-                                        <Badge className="bg-[rgba(244,246,255,0.06)] text-[#64748B] border-0 text-xs font-medium px-2 py-0.5">
+                                        <Badge className="bg-[rgba(255,255,255,0.05)] text-[#737373] border-0 text-xs font-medium px-2 py-0.5">
                                             {columnItems.length}
                                         </Badge>
                                     </div>
@@ -1081,7 +1081,7 @@ const ProjectBoard = () => {
                                                     draggable
                                                     onDragStart={() => handleDragStart(item.id)}
                                                     onClick={() => { setSelectedItem(item); setIsEditing(false); setEditForm({}); }}
-                                                    className={`group bg-[rgba(244,246,255,0.03)] rounded-xl border border-[rgba(244,246,255,0.06)] p-3.5 cursor-pointer transition-all duration-200 hover:border-[rgba(244,246,255,0.15)] hover:bg-[rgba(244,246,255,0.05)] hover:shadow-lg hover:shadow-black/20 ${draggedItem === item.id ? 'opacity-40 scale-95' : ''
+                                                    className={`group bg-[rgba(255,255,255,0.025)] rounded-xl border border-[rgba(255,255,255,0.05)] p-3.5 cursor-pointer transition-all duration-200 hover:border-[rgba(244,246,255,0.15)] hover:bg-[rgba(244,246,255,0.05)] hover:shadow-lg hover:shadow-black/20 ${draggedItem === item.id ? 'opacity-40 scale-95' : ''
                                                         }`}
                                                 >
                                                     {/* Type + Key */}
@@ -1093,17 +1093,17 @@ const ProjectBoard = () => {
                                                             <TypeIcon className="w-3 h-3" />
                                                             {typeInfo.label}
                                                         </div>
-                                                        <span className="text-[10px] text-[#6366F1] font-mono font-medium">{item.key}</span>
+                                                        <span className="text-[10px] text-[#E0B954] font-mono font-medium">{item.key}</span>
                                                     </div>
 
                                                     {/* Title */}
-                                                    <h4 className="text-sm font-medium text-[#E2E8F0] mb-3 line-clamp-2 leading-snug">
+                                                    <h4 className="text-sm font-medium text-[#f5f5f5] mb-3 line-clamp-2 leading-snug">
                                                         {item.title}
                                                     </h4>
 
                                                     {/* Progress Bar */}
                                                     <div className="mb-3">
-                                                        <div className="flex justify-between text-[10px] text-[#475569] mb-1">
+                                                        <div className="flex justify-between text-[10px] text-[#737373] mb-1">
                                                             <span className="flex items-center gap-1">
                                                                 <Clock className="w-2.5 h-2.5" />
                                                                 {item.remaining_hours}h left
@@ -1113,7 +1113,7 @@ const ProjectBoard = () => {
                                                                 <span>/ {item.assigned_hours}h</span>
                                                             </span>
                                                         </div>
-                                                        <div className="h-1 bg-[rgba(244,246,255,0.06)] rounded-full overflow-hidden">
+                                                        <div className="h-1 bg-[rgba(255,255,255,0.05)] rounded-full overflow-hidden">
                                                             <div
                                                                 className="h-full rounded-full transition-all duration-500"
                                                                 style={{
@@ -1127,8 +1127,8 @@ const ProjectBoard = () => {
                                                     {/* Bottom: Points + Priority + Assignee */}
                                                     <div className="flex items-center justify-between">
                                                         <div className="flex items-center gap-2">
-                                                            <div className="w-6 h-6 rounded-md bg-[#6366F1]/15 flex items-center justify-center">
-                                                                <span className="text-[10px] font-bold text-[#6366F1]">{item.story_points}</span>
+                                                            <div className="w-6 h-6 rounded-md bg-[#E0B954]/15 flex items-center justify-center">
+                                                                <span className="text-[10px] font-bold text-[#E0B954]">{item.story_points}</span>
                                                             </div>
                                                             <Badge
                                                                 variant="outline"
@@ -1138,7 +1138,7 @@ const ProjectBoard = () => {
                                                             </Badge>
                                                         </div>
                                                         {item.assignee && item.assignee !== 'Unassigned' && (
-                                                            <div className="w-6 h-6 rounded-full bg-gradient-to-br from-[#6366F1] to-[#4F46E5] flex items-center justify-center" title={item.assignee}>
+                                                            <div className="w-6 h-6 rounded-full bg-gradient-to-br from-[#E0B954] to-[#B8872A] flex items-center justify-center" title={item.assignee}>
                                                                 <span className="text-[10px] font-semibold text-white">
                                                                     {item.assignee?.charAt?.(0)?.toUpperCase() || '?'}
                                                                 </span>
@@ -1150,10 +1150,10 @@ const ProjectBoard = () => {
                                                     {item.tags.length > 0 && (
                                                         <div className="flex flex-wrap gap-1 mt-2">
                                                             {item.tags.slice(0, 2).map(tag => (
-                                                                <span key={tag} className="text-[9px] px-1.5 py-0.5 rounded-md bg-[rgba(244,246,255,0.06)] text-[#64748B]">{tag}</span>
+                                                                <span key={tag} className="text-[9px] px-1.5 py-0.5 rounded-md bg-[rgba(255,255,255,0.05)] text-[#737373]">{tag}</span>
                                                             ))}
                                                             {item.tags.length > 2 && (
-                                                                <span className="text-[9px] text-[#475569]">+{item.tags.length - 2}</span>
+                                                                <span className="text-[9px] text-[#737373]">+{item.tags.length - 2}</span>
                                                             )}
                                                         </div>
                                                     )}
@@ -1164,7 +1164,7 @@ const ProjectBoard = () => {
                                         {/* Empty state */}
                                         {columnItems.length === 0 && (
                                             <div className="flex flex-col items-center justify-center py-12 text-center">
-                                                <div className="w-10 h-10 rounded-xl bg-[rgba(244,246,255,0.04)] flex items-center justify-center mb-2">
+                                                <div className="w-10 h-10 rounded-xl bg-[rgba(255,255,255,0.03)] flex items-center justify-center mb-2">
                                                     <config.icon className="w-5 h-5 text-[#334155]" />
                                                 </div>
                                                 <p className="text-xs text-[#334155]">No items</p>
@@ -1178,9 +1178,9 @@ const ProjectBoard = () => {
                 ) : (
                     /* LIST VIEW */
                     <div className="p-6">
-                        <div className="bg-[rgba(244,246,255,0.02)] border border-[rgba(244,246,255,0.06)] rounded-2xl overflow-hidden">
+                        <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-2xl overflow-hidden">
                             {/* Table Header */}
-                            <div className="grid grid-cols-[1fr_120px_100px_100px_100px_120px] gap-4 px-5 py-3 border-b border-[rgba(244,246,255,0.06)] text-xs text-[#475569] font-semibold uppercase tracking-wider">
+                            <div className="grid grid-cols-[1fr_120px_100px_100px_100px_120px] gap-4 px-5 py-3 border-b border-[rgba(255,255,255,0.05)] text-xs text-[#737373] font-semibold uppercase tracking-wider">
                                 <span>Title</span>
                                 <span>Type</span>
                                 <span>Status</span>
@@ -1190,7 +1190,7 @@ const ProjectBoard = () => {
                             </div>
                             {/* Table Rows */}
                             {filteredItems.length === 0 ? (
-                                <div className="py-16 text-center text-[#475569] text-sm">No items found</div>
+                                <div className="py-16 text-center text-[#737373] text-sm">No items found</div>
                             ) : (
                                 filteredItems.map(item => {
                                     const typeInfo = TYPE_CONFIG[item.type] || TYPE_CONFIG.task;
@@ -1202,11 +1202,11 @@ const ProjectBoard = () => {
                                         <div
                                             key={item.id}
                                             onClick={() => { setSelectedItem(item); setIsEditing(false); setEditForm({}); }}
-                                            className="grid grid-cols-[1fr_120px_100px_100px_100px_120px] gap-4 px-5 py-3.5 border-b border-[rgba(244,246,255,0.04)] hover:bg-[rgba(244,246,255,0.03)] cursor-pointer transition-colors group"
+                                            className="grid grid-cols-[1fr_120px_100px_100px_100px_120px] gap-4 px-5 py-3.5 border-b border-[rgba(255,255,255,0.03)] hover:bg-[rgba(255,255,255,0.025)] cursor-pointer transition-colors group"
                                         >
                                             <div className="flex items-center gap-3 min-w-0">
-                                                <span className="text-[10px] text-[#6366F1] font-mono font-medium shrink-0">{item.key}</span>
-                                                <span className="text-sm text-[#E2E8F0] truncate group-hover:text-white transition-colors">{item.title}</span>
+                                                <span className="text-[10px] text-[#E0B954] font-mono font-medium shrink-0">{item.key}</span>
+                                                <span className="text-sm text-[#f5f5f5] truncate group-hover:text-white transition-colors">{item.title}</span>
                                             </div>
                                             <div className="flex items-center">
                                                 <div className="flex items-center gap-1.5 px-2 py-1 rounded-md text-xs" style={{ backgroundColor: typeInfo.bg, color: typeInfo.color }}>
@@ -1217,7 +1217,7 @@ const ProjectBoard = () => {
                                             <div className="flex items-center">
                                                 <div className="flex items-center gap-1.5">
                                                     <div className="w-2 h-2 rounded-full" style={{ backgroundColor: statusConf.color }} />
-                                                    <span className="text-xs text-[#94A3B8]">{statusConf.label}</span>
+                                                    <span className="text-xs text-[#a3a3a3]">{statusConf.label}</span>
                                                 </div>
                                             </div>
                                             <div className="flex items-center">
@@ -1226,10 +1226,10 @@ const ProjectBoard = () => {
                                                 </Badge>
                                             </div>
                                             <div className="flex items-center">
-                                                <span className="text-sm font-semibold text-[#6366F1]">{item.story_points}</span>
+                                                <span className="text-sm font-semibold text-[#E0B954]">{item.story_points}</span>
                                             </div>
                                             <div className="flex items-center">
-                                                <span className="text-xs text-[#64748B] truncate">{item.assignee}</span>
+                                                <span className="text-xs text-[#737373] truncate">{item.assignee}</span>
                                             </div>
                                         </div>
                                     );
@@ -1244,9 +1244,9 @@ const ProjectBoard = () => {
             {selectedItem && (
                 <>
                     <div className="fixed inset-0 bg-black/40 z-40" onClick={() => setSelectedItem(null)} />
-                    <div className="fixed right-0 top-0 bottom-0 w-full max-w-xl bg-[#0B0D14] border-l border-[rgba(244,246,255,0.08)] z-50 flex flex-col shadow-2xl shadow-black/50 animate-in slide-in-from-right duration-300">
+                    <div className="fixed right-0 top-0 bottom-0 w-full max-w-xl bg-[#080808] border-l border-[rgba(255,255,255,0.07)] z-50 flex flex-col shadow-2xl shadow-black/50 animate-in slide-in-from-right duration-300">
                         {/* Drawer Header */}
-                        <div className="flex items-center justify-between p-5 border-b border-[rgba(244,246,255,0.06)]">
+                        <div className="flex items-center justify-between p-5 border-b border-[rgba(255,255,255,0.05)]">
                             <div className="flex items-center gap-3">
                                 {(() => {
                                     const ti = TYPE_CONFIG[selectedItem.type] || TYPE_CONFIG.task;
@@ -1258,11 +1258,11 @@ const ProjectBoard = () => {
                                         </div>
                                     );
                                 })()}
-                                <span className="text-sm text-[#475569] font-mono">{selectedItem.id}</span>
+                                <span className="text-sm text-[#737373] font-mono">{selectedItem.id}</span>
                             </div>
                             <div className="flex items-center gap-1.5">
                                 <Button size="sm" variant="ghost" onClick={() => { setIsEditing(!isEditing); if (!isEditing) setEditForm(selectedItem); }}
-                                    className="text-[#64748B] hover:text-white rounded-lg h-8 px-2.5">
+                                    className="text-[#737373] hover:text-white rounded-lg h-8 px-2.5">
                                     <Pencil className="w-3.5 h-3.5 mr-1" />{isEditing ? 'Cancel' : 'Edit'}
                                 </Button>
                                 <Button size="sm" variant="ghost" onClick={() => handleDeleteItem(selectedItem.id)}
@@ -1270,7 +1270,7 @@ const ProjectBoard = () => {
                                     <Trash2 className="w-3.5 h-3.5" />
                                 </Button>
                                 <Button size="sm" variant="ghost" onClick={() => setSelectedItem(null)}
-                                    className="text-[#64748B] hover:text-white rounded-lg h-8 px-2.5">
+                                    className="text-[#737373] hover:text-white rounded-lg h-8 px-2.5">
                                     <X className="w-4 h-4" />
                                 </Button>
                             </div>
@@ -1282,20 +1282,20 @@ const ProjectBoard = () => {
                                 /* Edit Form */
                                 <div className="space-y-4">
                                     <div>
-                                        <label className="text-xs font-medium text-[#64748B] block mb-1.5">Title</label>
+                                        <label className="text-xs font-medium text-[#737373] block mb-1.5">Title</label>
                                         <Input defaultValue={selectedItem.title} onChange={e => setEditForm(f => ({ ...f, title: e.target.value }))}
-                                            className="bg-[rgba(244,246,255,0.03)] border-[rgba(244,246,255,0.08)] text-[#F4F6FF] rounded-xl" />
+                                            className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl" />
                                     </div>
                                     <div>
-                                        <label className="text-xs font-medium text-[#64748B] block mb-1.5">Description</label>
+                                        <label className="text-xs font-medium text-[#737373] block mb-1.5">Description</label>
                                         <Textarea defaultValue={selectedItem.description} onChange={e => setEditForm(f => ({ ...f, description: e.target.value }))}
-                                            className="bg-[rgba(244,246,255,0.03)] border-[rgba(244,246,255,0.08)] text-[#F4F6FF] rounded-xl min-h-[120px] resize-none" />
+                                            className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl min-h-[120px] resize-none" />
                                     </div>
                                     <div className="grid grid-cols-2 gap-3">
                                         <div>
-                                            <label className="text-xs font-medium text-[#64748B] block mb-1.5">Type</label>
+                                            <label className="text-xs font-medium text-[#737373] block mb-1.5">Type</label>
                                             <select defaultValue={selectedItem.type} onChange={e => setEditForm(f => ({ ...f, type: e.target.value as WorkItem['type'] }))}
-                                                className="w-full h-10 bg-[rgba(244,246,255,0.03)] border border-[rgba(244,246,255,0.08)] text-[#E2E8F0] rounded-xl px-3 text-sm">
+                                                className="w-full h-10 bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.07)] text-[#f5f5f5] rounded-xl px-3 text-sm">
                                                 <option value="user_story">Story</option>
                                                 <option value="task">Task</option>
                                                 <option value="bug">Bug</option>
@@ -1303,9 +1303,9 @@ const ProjectBoard = () => {
                                             </select>
                                         </div>
                                         <div>
-                                            <label className="text-xs font-medium text-[#64748B] block mb-1.5">Priority</label>
+                                            <label className="text-xs font-medium text-[#737373] block mb-1.5">Priority</label>
                                             <select defaultValue={selectedItem.priority} onChange={e => setEditForm(f => ({ ...f, priority: e.target.value as WorkItem['priority'] }))}
-                                                className="w-full h-10 bg-[rgba(244,246,255,0.03)] border border-[rgba(244,246,255,0.08)] text-[#E2E8F0] rounded-xl px-3 text-sm">
+                                                className="w-full h-10 bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.07)] text-[#f5f5f5] rounded-xl px-3 text-sm">
                                                 <option value="critical">Critical</option>
                                                 <option value="high">High</option>
                                                 <option value="medium">Medium</option>
@@ -1315,34 +1315,34 @@ const ProjectBoard = () => {
                                     </div>
                                     <div className="grid grid-cols-2 gap-3">
                                         <div>
-                                            <label className="text-xs font-medium text-[#64748B] block mb-1.5">Story Points</label>
+                                            <label className="text-xs font-medium text-[#737373] block mb-1.5">Story Points</label>
                                             <Input type="number" defaultValue={selectedItem.story_points} onChange={e => setEditForm(f => ({ ...f, story_points: parseInt(e.target.value) || 0 }))}
-                                                className="bg-[rgba(244,246,255,0.03)] border-[rgba(244,246,255,0.08)] text-[#F4F6FF] rounded-xl" />
+                                                className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl" />
                                         </div>
                                         <div>
-                                            <label className="text-xs font-medium text-[#64748B] block mb-1.5">Allocated Hours</label>
+                                            <label className="text-xs font-medium text-[#737373] block mb-1.5">Allocated Hours</label>
                                             <Input type="number" defaultValue={selectedItem.assigned_hours} onChange={e => setEditForm(f => ({ ...f, assigned_hours: parseInt(e.target.value) || 0 }))}
-                                                className="bg-[rgba(244,246,255,0.03)] border-[rgba(244,246,255,0.08)] text-[#F4F6FF] rounded-xl" />
+                                                className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl" />
                                         </div>
                                     </div>
                                     <div className="grid grid-cols-2 gap-3">
                                         <div>
-                                            <label className="text-xs font-medium text-[#64748B] block mb-1.5">Logged Hours</label>
+                                            <label className="text-xs font-medium text-[#737373] block mb-1.5">Logged Hours</label>
                                             <Input type="number" defaultValue={selectedItem.logged_hours || 0} onChange={e => setEditForm(f => ({ ...f, logged_hours: parseInt(e.target.value) || 0 }))}
-                                                className="bg-[rgba(244,246,255,0.03)] border-[rgba(244,246,255,0.08)] text-[#F4F6FF] rounded-xl" />
+                                                className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl" />
                                         </div>
                                         <div>
-                                            <label className="text-xs font-medium text-[#64748B] block mb-1.5">Remaining Hours</label>
+                                            <label className="text-xs font-medium text-[#737373] block mb-1.5">Remaining Hours</label>
                                             <Input type="number" defaultValue={selectedItem.remaining_hours} onChange={e => setEditForm(f => ({ ...f, remaining_hours: parseInt(e.target.value) || 0 }))}
-                                                className="bg-[rgba(244,246,255,0.03)] border-[rgba(244,246,255,0.08)] text-[#F4F6FF] rounded-xl" />
+                                                className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl" />
                                         </div>
                                     </div>
                                     <div>
-                                        <label className="text-xs font-medium text-[#64748B] block mb-1.5">Assignee</label>
+                                        <label className="text-xs font-medium text-[#737373] block mb-1.5">Assignee</label>
                                         <select
                                             value={editForm.assignee_id ?? selectedItem.assignee_id ?? ''}
                                             onChange={e => setEditForm(f => ({ ...f, assignee_id: e.target.value ? parseInt(e.target.value) : null }))}
-                                            className="w-full h-10 bg-[rgba(244,246,255,0.03)] border border-[rgba(244,246,255,0.08)] text-[#F4F6FF] rounded-xl px-3 text-sm"
+                                            className="w-full h-10 bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl px-3 text-sm"
                                         >
                                             <option value="">Unassigned</option>
                                             {project?.developers?.map(dev => (
@@ -1353,11 +1353,11 @@ const ProjectBoard = () => {
                                         </select>
                                     </div>
                                     <div>
-                                        <label className="text-xs font-medium text-[#64748B] block mb-1.5">Sprint</label>
+                                        <label className="text-xs font-medium text-[#737373] block mb-1.5">Sprint</label>
                                         <Input defaultValue={selectedItem.sprint} onChange={e => setEditForm(f => ({ ...f, sprint: e.target.value }))}
-                                            className="bg-[rgba(244,246,255,0.03)] border-[rgba(244,246,255,0.08)] text-[#F4F6FF] rounded-xl" />
+                                            className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl" />
                                     </div>
-                                    <Button onClick={handleSaveEdit} className="bg-gradient-to-r from-[#6366F1] to-[#4F46E5] text-white rounded-xl w-full h-10">
+                                    <Button onClick={handleSaveEdit} className="bg-gradient-to-r from-[#E0B954] to-[#B8872A] text-white rounded-xl w-full h-10">
                                         <Save className="w-4 h-4 mr-2" /> Save Changes
                                     </Button>
                                 </div>
@@ -1366,21 +1366,21 @@ const ProjectBoard = () => {
                                 <>
                                     <div>
                                         <h2 className="text-xl font-bold text-white mb-3">{selectedItem.title}</h2>
-                                        <p className="text-sm text-[#94A3B8] leading-relaxed">{selectedItem.description || 'No description provided.'}</p>
+                                        <p className="text-sm text-[#a3a3a3] leading-relaxed">{selectedItem.description || 'No description provided.'}</p>
                                     </div>
 
                                     {/* Detail Stats */}
                                     <div className="grid grid-cols-2 gap-3">
                                         {[
-                                            { label: 'Story Points', value: selectedItem.story_points, color: '#6366F1' },
-                                            { label: 'Allocated Hours', value: `${selectedItem.assigned_hours}h`, color: '#6366F1' },
+                                            { label: 'Story Points', value: selectedItem.story_points, color: '#E0B954' },
+                                            { label: 'Allocated Hours', value: `${selectedItem.assigned_hours}h`, color: '#E0B954' },
                                             { label: 'Logged Hours', value: `${selectedItem.logged_hours || 0}h`, color: '#10B981' },
                                             { label: 'Remaining Hours', value: `${selectedItem.remaining_hours}h`, color: '#F59E0B' },
                                             { label: 'Status', value: (STATUS_CONFIG[selectedItem.status] || STATUS_CONFIG.todo).label, color: (STATUS_CONFIG[selectedItem.status] || STATUS_CONFIG.todo).color },
                                             { label: 'Priority', value: selectedItem.priority.charAt(0).toUpperCase() + selectedItem.priority.slice(1), color: (PRIORITY_COLORS[selectedItem.priority] || PRIORITY_COLORS.medium).text.replace('text-', '').includes('red') ? '#EF4444' : (PRIORITY_COLORS[selectedItem.priority] || PRIORITY_COLORS.medium).text.includes('orange') ? '#F97316' : (PRIORITY_COLORS[selectedItem.priority] || PRIORITY_COLORS.medium).text.includes('yellow') ? '#F59E0B' : '#10B981' },
                                         ].map(d => (
-                                            <div key={d.label} className="bg-[rgba(244,246,255,0.03)] border border-[rgba(244,246,255,0.06)] rounded-xl p-3.5">
-                                                <div className="text-[10px] text-[#475569] font-medium uppercase tracking-wider mb-1">{d.label}</div>
+                                            <div key={d.label} className="bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.05)] rounded-xl p-3.5">
+                                                <div className="text-[10px] text-[#737373] font-medium uppercase tracking-wider mb-1">{d.label}</div>
                                                 <div className="text-lg font-bold" style={{ color: d.color }}>{d.value}</div>
                                             </div>
                                         ))}
@@ -1393,9 +1393,9 @@ const ProjectBoard = () => {
                                             { label: 'Sprint', value: selectedItem.sprint },
                                             ...(selectedItem.epic ? [{ label: 'Epic', value: selectedItem.epic }] : []),
                                         ].map(m => (
-                                            <div key={m.label} className="flex items-center justify-between py-2 border-b border-[rgba(244,246,255,0.04)]">
-                                                <span className="text-xs text-[#475569]">{m.label}</span>
-                                                <span className="text-sm text-[#E2E8F0]">{m.value}</span>
+                                            <div key={m.label} className="flex items-center justify-between py-2 border-b border-[rgba(255,255,255,0.03)]">
+                                                <span className="text-xs text-[#737373]">{m.label}</span>
+                                                <span className="text-sm text-[#f5f5f5]">{m.value}</span>
                                             </div>
                                         ))}
                                     </div>
@@ -1403,24 +1403,24 @@ const ProjectBoard = () => {
                                     {/* Tags */}
                                     {selectedItem.tags.length > 0 && (
                                         <div>
-                                            <div className="text-xs text-[#475569] mb-2 font-medium">Tags</div>
+                                            <div className="text-xs text-[#737373] mb-2 font-medium">Tags</div>
                                             <div className="flex flex-wrap gap-2">
                                                 {selectedItem.tags.map(tag => (
-                                                    <span key={tag} className="px-2.5 py-1 rounded-lg bg-[rgba(244,246,255,0.06)] text-[#94A3B8] text-xs">{tag}</span>
+                                                    <span key={tag} className="px-2.5 py-1 rounded-lg bg-[rgba(255,255,255,0.05)] text-[#a3a3a3] text-xs">{tag}</span>
                                                 ))}
                                             </div>
                                         </div>
                                     )}
 
                                     {/* Log Hours Section */}
-                                    <div className="pt-4 border-t border-[rgba(244,246,255,0.06)]">
-                                        <div className="text-xs text-[#475569] mb-3 font-medium">Log Work Hours</div>
+                                    <div className="pt-4 border-t border-[rgba(255,255,255,0.05)]">
+                                        <div className="text-xs text-[#737373] mb-3 font-medium">Log Work Hours</div>
                                         <div className="flex items-center gap-3">
                                             <Input
                                                 type="number"
                                                 placeholder="Hours"
                                                 min="0"
-                                                className="w-24 h-9 bg-[rgba(244,246,255,0.03)] border-[rgba(244,246,255,0.08)] text-[#F4F6FF] rounded-xl"
+                                                className="w-24 h-9 bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl"
                                                 id="log-hours-input"
                                             />
                                             <Button
@@ -1439,14 +1439,14 @@ const ProjectBoard = () => {
                                                 Log Hours
                                             </Button>
                                         </div>
-                                        <p className="text-[10px] text-[#475569] mt-2">
+                                        <p className="text-[10px] text-[#737373] mt-2">
                                             Current: {selectedItem.logged_hours || 0}h logged · {selectedItem.remaining_hours}h remaining
                                         </p>
                                     </div>
 
                                     {/* Status Buttons */}
-                                    <div className="pt-4 border-t border-[rgba(244,246,255,0.06)]">
-                                        <div className="text-xs text-[#475569] mb-3 font-medium">Move to</div>
+                                    <div className="pt-4 border-t border-[rgba(255,255,255,0.05)]">
+                                        <div className="text-xs text-[#737373] mb-3 font-medium">Move to</div>
                                         <div className="grid grid-cols-4 gap-2">
                                             {(Object.keys(STATUS_CONFIG) as Array<keyof typeof STATUS_CONFIG>).map(status => (
                                                 <Button
@@ -1455,7 +1455,7 @@ const ProjectBoard = () => {
                                                     onClick={() => handleStatusChange(selectedItem, status)}
                                                     className={`rounded-lg text-xs h-9 transition-all ${selectedItem.status === status
                                                         ? 'text-white shadow-lg'
-                                                        : 'bg-transparent border border-[rgba(244,246,255,0.08)] text-[#64748B] hover:text-white hover:border-[rgba(244,246,255,0.15)]'
+                                                        : 'bg-transparent border border-[rgba(255,255,255,0.07)] text-[#737373] hover:text-white hover:border-[rgba(244,246,255,0.15)]'
                                                         }`}
                                                     style={selectedItem.status === status ? { backgroundColor: STATUS_CONFIG[status].color, boxShadow: `0 4px 12px ${STATUS_CONFIG[status].color}33` } : {}}
                                                 >
@@ -1467,8 +1467,8 @@ const ProjectBoard = () => {
 
                                     {/* Sprint Movement */}
                                     {sprints.length > 0 && (
-                                        <div className="pt-4 border-t border-[rgba(244,246,255,0.06)]">
-                                            <div className="text-xs text-[#475569] mb-3 font-medium">Sprint Actions</div>
+                                        <div className="pt-4 border-t border-[rgba(255,255,255,0.05)]">
+                                            <div className="text-xs text-[#737373] mb-3 font-medium">Sprint Actions</div>
                                             <div className="flex flex-wrap gap-2">
                                                 {/* Move to next sprint */}
                                                 {selectedItem.sprint_id && getNextSprint(selectedItem.sprint_id) && selectedItem.status !== 'done' && (
@@ -1486,7 +1486,7 @@ const ProjectBoard = () => {
                                                     <Button
                                                         size="sm"
                                                         onClick={() => handleMoveToSprint(selectedItem.id, null)}
-                                                        className="rounded-lg text-xs h-9 bg-transparent border border-[rgba(244,246,255,0.08)] text-[#64748B] hover:text-white hover:border-[rgba(244,246,255,0.15)]"
+                                                        className="rounded-lg text-xs h-9 bg-transparent border border-[rgba(255,255,255,0.07)] text-[#737373] hover:text-white hover:border-[rgba(244,246,255,0.15)]"
                                                     >
                                                         <Inbox className="w-3 h-3 mr-1" />
                                                         Move to Backlog
@@ -1501,7 +1501,7 @@ const ProjectBoard = () => {
                                                                 e.target.value = '';
                                                             }
                                                         }}
-                                                        className="h-9 text-xs bg-[rgba(244,246,255,0.03)] border border-[rgba(244,246,255,0.08)] text-[#94A3B8] rounded-lg px-3 appearance-none cursor-pointer hover:border-[rgba(244,246,255,0.15)]"
+                                                        className="h-9 text-xs bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.07)] text-[#a3a3a3] rounded-lg px-3 appearance-none cursor-pointer hover:border-[rgba(244,246,255,0.15)]"
                                                         defaultValue=""
                                                     >
                                                         <option value="">Add to Sprint...</option>
@@ -1515,8 +1515,8 @@ const ProjectBoard = () => {
                                     )}
 
                                     {/* Comments Section */}
-                                    <div className="pt-4 border-t border-[rgba(244,246,255,0.06)]">
-                                        <div className="text-xs text-[#475569] mb-3 font-medium">Activity & Comments</div>
+                                    <div className="pt-4 border-t border-[rgba(255,255,255,0.05)]">
+                                        <div className="text-xs text-[#737373] mb-3 font-medium">Activity & Comments</div>
                                         
                                         {/* Comment Input */}
                                         <div className="relative mb-4">
@@ -1524,11 +1524,11 @@ const ProjectBoard = () => {
                                                 value={newComment}
                                                 onChange={handleCommentChange}
                                                 placeholder="Add a comment... Use @ to mention someone"
-                                                className="bg-[rgba(244,246,255,0.03)] border-[rgba(244,246,255,0.08)] text-[#F4F6FF] rounded-xl min-h-[80px] placeholder:text-[#334155] resize-none pr-20"
+                                                className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl min-h-[80px] placeholder:text-[#334155] resize-none pr-20"
                                             />
                                             {/* @Mentions Dropdown */}
                                             {showMentions && (
-                                                <div className="absolute left-0 right-0 top-full mt-1 bg-[#1A1D26] border border-[rgba(244,246,255,0.1)] rounded-xl shadow-xl z-10 max-h-48 overflow-y-auto">
+                                                <div className="absolute left-0 right-0 top-full mt-1 bg-[#1A1D26] border border-[rgba(255,255,255,0.08)] rounded-xl shadow-xl z-10 max-h-48 overflow-y-auto">
                                                     {allDevelopers
                                                         .filter(d => d.name.toLowerCase().includes(mentionFilter.toLowerCase()))
                                                         .slice(0, 5)
@@ -1536,17 +1536,17 @@ const ProjectBoard = () => {
                                                             <button
                                                                 key={dev.id}
                                                                 onClick={() => insertMention(dev)}
-                                                                className="w-full px-3 py-2 text-left text-sm text-[#E2E8F0] hover:bg-[rgba(99,102,241,0.1)] flex items-center gap-2"
+                                                                className="w-full px-3 py-2 text-left text-sm text-[#f5f5f5] hover:bg-[rgba(224,185,84,0.1)] flex items-center gap-2"
                                                             >
-                                                                <div className="w-6 h-6 rounded-full bg-[rgba(99,102,241,0.2)] flex items-center justify-center text-xs text-[#818CF8]">
+                                                                <div className="w-6 h-6 rounded-full bg-[rgba(224,185,84,0.2)] flex items-center justify-center text-xs text-[#818CF8]">
                                                                     {dev.name.charAt(0).toUpperCase()}
                                                                 </div>
                                                                 <span>{dev.name}</span>
-                                                                <span className="text-[#475569] text-xs ml-auto">{dev.email}</span>
+                                                                <span className="text-[#737373] text-xs ml-auto">{dev.email}</span>
                                                             </button>
                                                         ))}
                                                     {allDevelopers.filter(d => d.name.toLowerCase().includes(mentionFilter.toLowerCase())).length === 0 && (
-                                                        <div className="px-3 py-2 text-sm text-[#475569]">No matching developers</div>
+                                                        <div className="px-3 py-2 text-sm text-[#737373]">No matching developers</div>
                                                     )}
                                                 </div>
                                             )}
@@ -1555,7 +1555,7 @@ const ProjectBoard = () => {
                                                     size="sm"
                                                     onClick={() => handleSubmitComment(false)}
                                                     disabled={!newComment.trim()}
-                                                    className="bg-[rgba(99,102,241,0.1)] border border-[rgba(99,102,241,0.3)] text-[#6366F1] hover:bg-[rgba(99,102,241,0.2)] rounded-lg text-xs h-8"
+                                                    className="bg-[rgba(224,185,84,0.1)] border border-[rgba(224,185,84,0.3)] text-[#E0B954] hover:bg-[rgba(224,185,84,0.2)] rounded-lg text-xs h-8"
                                                 >
                                                     <MessageSquare className="w-3 h-3 mr-1" />
                                                     Comment
@@ -1575,7 +1575,7 @@ const ProjectBoard = () => {
                                         {/* Comments List */}
                                         <div className="space-y-3 max-h-64 overflow-y-auto">
                                             {comments.length === 0 ? (
-                                                <div className="text-center py-6 text-[#475569] text-sm">
+                                                <div className="text-center py-6 text-[#737373] text-sm">
                                                     No comments yet. Be the first to comment!
                                                 </div>
                                             ) : (
@@ -1583,25 +1583,25 @@ const ProjectBoard = () => {
                                                     <div key={comment.id} className={`p-3 rounded-xl ${
                                                         comment.comment_type === 'blocker' 
                                                             ? 'bg-[rgba(239,68,68,0.05)] border border-[rgba(239,68,68,0.2)]' 
-                                                            : 'bg-[rgba(244,246,255,0.02)] border border-[rgba(244,246,255,0.06)]'
+                                                            : 'bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)]'
                                                     }`}>
                                                         <div className="flex items-center gap-2 mb-2">
                                                             <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs ${
                                                                 comment.comment_type === 'blocker' 
                                                                     ? 'bg-[rgba(239,68,68,0.2)] text-[#EF4444]' 
-                                                                    : 'bg-[rgba(99,102,241,0.2)] text-[#818CF8]'
+                                                                    : 'bg-[rgba(224,185,84,0.2)] text-[#818CF8]'
                                                             }`}>
                                                                 {comment.author_name?.charAt?.(0)?.toUpperCase() || '?'}
                                                             </div>
-                                                            <span className="text-sm font-medium text-[#E2E8F0]">{comment.author_name}</span>
+                                                            <span className="text-sm font-medium text-[#f5f5f5]">{comment.author_name}</span>
                                                             {comment.comment_type === 'blocker' && (
                                                                 <span className="px-1.5 py-0.5 rounded-md bg-[rgba(239,68,68,0.2)] text-[#EF4444] text-[10px] font-medium">BLOCKER</span>
                                                             )}
-                                                            <span className="text-xs text-[#475569] ml-auto">
+                                                            <span className="text-xs text-[#737373] ml-auto">
                                                                 {new Date(comment.created_at).toLocaleDateString()}
                                                             </span>
                                                         </div>
-                                                        <p className="text-sm text-[#94A3B8] leading-relaxed">
+                                                        <p className="text-sm text-[#a3a3a3] leading-relaxed">
                                                             {renderCommentContent(comment.content)}
                                                         </p>
                                                     </div>
@@ -1619,18 +1619,18 @@ const ProjectBoard = () => {
             {/* Create Item Modal */}
             {showCreateForm && (
                 <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setShowCreateForm(false)}>
-                    <div className="bg-[#0F1118] border border-[rgba(244,246,255,0.08)] rounded-2xl w-full max-w-lg shadow-2xl" onClick={e => e.stopPropagation()}>
-                        <div className="flex items-center justify-between p-5 border-b border-[rgba(244,246,255,0.06)]">
+                    <div className="bg-[#0d0d0d] border border-[rgba(255,255,255,0.07)] rounded-2xl w-full max-w-lg shadow-2xl" onClick={e => e.stopPropagation()}>
+                        <div className="flex items-center justify-between p-5 border-b border-[rgba(255,255,255,0.05)]">
                             <h2 className="text-lg font-bold text-white">Create Work Item</h2>
-                            <button onClick={() => setShowCreateForm(false)} className="p-2 rounded-lg hover:bg-[rgba(244,246,255,0.05)] text-[#475569] hover:text-white">
+                            <button onClick={() => setShowCreateForm(false)} className="p-2 rounded-lg hover:bg-[rgba(244,246,255,0.05)] text-[#737373] hover:text-white">
                                 <X className="w-5 h-5" />
                             </button>
                         </div>
                         <div className="p-5 space-y-4">
                             <div>
-                                <label className="text-xs font-medium text-[#64748B] block mb-1.5">Type</label>
+                                <label className="text-xs font-medium text-[#737373] block mb-1.5">Type</label>
                                 <select value={createForm.type} onChange={e => setCreateForm(f => ({ ...f, type: e.target.value }))}
-                                    className="w-full h-10 bg-[rgba(244,246,255,0.03)] border border-[rgba(244,246,255,0.08)] text-[#E2E8F0] rounded-xl px-3 text-sm">
+                                    className="w-full h-10 bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.07)] text-[#f5f5f5] rounded-xl px-3 text-sm">
                                     <option value="user_story">User Story</option>
                                     <option value="task">Task</option>
                                     <option value="bug">Bug</option>
@@ -1638,22 +1638,22 @@ const ProjectBoard = () => {
                                 </select>
                             </div>
                             <div>
-                                <label className="text-xs font-medium text-[#64748B] block mb-1.5">Title *</label>
+                                <label className="text-xs font-medium text-[#737373] block mb-1.5">Title *</label>
                                 <Input value={createForm.title} onChange={e => setCreateForm(f => ({ ...f, title: e.target.value }))}
                                     placeholder="Enter a concise title..."
-                                    className="bg-[rgba(244,246,255,0.03)] border-[rgba(244,246,255,0.08)] text-[#F4F6FF] rounded-xl h-10 placeholder:text-[#334155]" />
+                                    className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl h-10 placeholder:text-[#334155]" />
                             </div>
                             <div>
-                                <label className="text-xs font-medium text-[#64748B] block mb-1.5">Description</label>
+                                <label className="text-xs font-medium text-[#737373] block mb-1.5">Description</label>
                                 <Textarea value={createForm.description} onChange={e => setCreateForm(f => ({ ...f, description: e.target.value }))}
                                     placeholder="Describe the requirements..."
-                                    className="bg-[rgba(244,246,255,0.03)] border-[rgba(244,246,255,0.08)] text-[#F4F6FF] rounded-xl min-h-[100px] placeholder:text-[#334155] resize-none" />
+                                    className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl min-h-[100px] placeholder:text-[#334155] resize-none" />
                             </div>
                             <div className="grid grid-cols-3 gap-3">
                                 <div>
-                                    <label className="text-xs font-medium text-[#64748B] block mb-1.5">Priority</label>
+                                    <label className="text-xs font-medium text-[#737373] block mb-1.5">Priority</label>
                                     <select value={createForm.priority} onChange={e => setCreateForm(f => ({ ...f, priority: e.target.value }))}
-                                        className="w-full h-10 bg-[rgba(244,246,255,0.03)] border border-[rgba(244,246,255,0.08)] text-[#E2E8F0] rounded-xl px-3 text-sm">
+                                        className="w-full h-10 bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.07)] text-[#f5f5f5] rounded-xl px-3 text-sm">
                                         <option value="critical">Critical</option>
                                         <option value="high">High</option>
                                         <option value="medium">Medium</option>
@@ -1661,16 +1661,16 @@ const ProjectBoard = () => {
                                     </select>
                                 </div>
                                 <div>
-                                    <label className="text-xs font-medium text-[#64748B] block mb-1.5">Points</label>
+                                    <label className="text-xs font-medium text-[#737373] block mb-1.5">Points</label>
                                     <Input type="number" value={createForm.story_points} onChange={e => setCreateForm(f => ({ ...f, story_points: parseInt(e.target.value) || 0 }))}
-                                        className="bg-[rgba(244,246,255,0.03)] border-[rgba(244,246,255,0.08)] text-[#F4F6FF] rounded-xl h-10" />
+                                        className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl h-10" />
                                 </div>
                                 <div>
-                                    <label className="text-xs font-medium text-[#64748B] block mb-1.5">Assignee</label>
+                                    <label className="text-xs font-medium text-[#737373] block mb-1.5">Assignee</label>
                                     <select
                                         value={createForm.assignee_id || ''}
                                         onChange={e => setCreateForm(f => ({ ...f, assignee_id: e.target.value ? parseInt(e.target.value) : null }))}
-                                        className="w-full h-10 bg-[rgba(244,246,255,0.03)] border border-[rgba(244,246,255,0.08)] text-[#F4F6FF] rounded-xl px-3 text-sm"
+                                        className="w-full h-10 bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl px-3 text-sm"
                                     >
                                         <option value="">Unassigned</option>
                                         {project?.developers?.map(dev => (
@@ -1682,10 +1682,10 @@ const ProjectBoard = () => {
                                 </div>
                             </div>
                         </div>
-                        <div className="flex justify-end gap-3 p-5 border-t border-[rgba(244,246,255,0.06)]">
-                            <Button variant="ghost" onClick={() => setShowCreateForm(false)} className="text-[#64748B] rounded-xl px-5">Cancel</Button>
+                        <div className="flex justify-end gap-3 p-5 border-t border-[rgba(255,255,255,0.05)]">
+                            <Button variant="ghost" onClick={() => setShowCreateForm(false)} className="text-[#737373] rounded-xl px-5">Cancel</Button>
                             <Button onClick={handleCreateItem} disabled={!createForm.title.trim()}
-                                className="bg-gradient-to-r from-[#6366F1] to-[#4F46E5] text-white rounded-xl px-6 font-medium shadow-lg shadow-[#4F46E5]/20 disabled:opacity-50">
+                                className="bg-gradient-to-r from-[#E0B954] to-[#B8872A] text-white rounded-xl px-6 font-medium shadow-lg shadow-[#B8872A]/20 disabled:opacity-50">
                                 <Plus className="w-4 h-4 mr-2" /> Create Item
                             </Button>
                         </div>
@@ -1696,16 +1696,16 @@ const ProjectBoard = () => {
             {/* AI Planning Modal */}
             {showAIModal && (
                 <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-                    <div className="bg-[#0F1118] border border-[rgba(244,246,255,0.08)] rounded-2xl w-full max-w-4xl max-h-[90vh] shadow-2xl flex flex-col" onClick={e => e.stopPropagation()}>
+                    <div className="bg-[#0d0d0d] border border-[rgba(255,255,255,0.07)] rounded-2xl w-full max-w-4xl max-h-[90vh] shadow-2xl flex flex-col" onClick={e => e.stopPropagation()}>
                         {/* Modal Header */}
-                        <div className="flex items-center justify-between p-5 border-b border-[rgba(244,246,255,0.06)] flex-shrink-0">
+                        <div className="flex items-center justify-between p-5 border-b border-[rgba(255,255,255,0.05)] flex-shrink-0">
                             <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#6366F1] to-[#4F46E5] flex items-center justify-center">
+                                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#E0B954] to-[#B8872A] flex items-center justify-center">
                                     <Sparkles className="w-5 h-5 text-white" />
                                 </div>
                                 <div>
                                     <h2 className="text-lg font-bold text-white">AI Project Planning</h2>
-                                    <p className="text-xs text-[#64748B]">
+                                    <p className="text-xs text-[#737373]">
                                         {aiStep === 'upload' && 'Upload PRD or enter project details'}
                                         {aiStep === 'analyzing' && 'Analyzing project requirements...'}
                                         {aiStep === 'architectures' && 'Select your preferred architecture'}
@@ -1717,7 +1717,7 @@ const ProjectBoard = () => {
                             </div>
                             <button 
                                 onClick={() => setShowAIModal(false)} 
-                                className="p-2 rounded-lg hover:bg-[rgba(244,246,255,0.05)] text-[#475569] hover:text-white"
+                                className="p-2 rounded-lg hover:bg-[rgba(244,246,255,0.05)] text-[#737373] hover:text-white"
                             >
                                 <X className="w-5 h-5" />
                             </button>
@@ -1730,13 +1730,13 @@ const ProjectBoard = () => {
                                 <div className="space-y-6">
                                     {/* File Upload Zone */}
                                     <div>
-                                        <label className="text-sm font-medium text-[#94A3B8] block mb-3">Upload PRD Document</label>
+                                        <label className="text-sm font-medium text-[#a3a3a3] block mb-3">Upload PRD Document</label>
                                         <div 
                                             onClick={() => fileInputRef.current?.click()}
                                             className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all ${
                                                 prdFile 
-                                                    ? 'border-[#6366F1] bg-[#6366F1]/5' 
-                                                    : 'border-[rgba(244,246,255,0.1)] hover:border-[#6366F1]/50 hover:bg-[rgba(244,246,255,0.02)]'
+                                                    ? 'border-[#E0B954] bg-[#E0B954]/5' 
+                                                    : 'border-[rgba(255,255,255,0.08)] hover:border-[#E0B954]/50 hover:bg-[rgba(255,255,255,0.02)]'
                                             }`}
                                         >
                                             <input
@@ -1748,25 +1748,25 @@ const ProjectBoard = () => {
                                             />
                                             {prdFile ? (
                                                 <div className="flex items-center justify-center gap-3">
-                                                    <div className="w-12 h-12 rounded-xl bg-[#6366F1]/20 flex items-center justify-center">
-                                                        <FileText className="w-6 h-6 text-[#6366F1]" />
+                                                    <div className="w-12 h-12 rounded-xl bg-[#E0B954]/20 flex items-center justify-center">
+                                                        <FileText className="w-6 h-6 text-[#E0B954]" />
                                                     </div>
                                                     <div className="text-left">
                                                         <p className="text-white font-medium">{prdFile.name}</p>
-                                                        <p className="text-xs text-[#64748B]">{(prdFile.size / 1024).toFixed(1)} KB</p>
+                                                        <p className="text-xs text-[#737373]">{(prdFile.size / 1024).toFixed(1)} KB</p>
                                                     </div>
                                                     <button 
                                                         onClick={(e) => { e.stopPropagation(); setPrdFile(null); }}
-                                                        className="p-2 rounded-lg hover:bg-[rgba(244,246,255,0.1)] text-[#64748B] hover:text-red-400"
+                                                        className="p-2 rounded-lg hover:bg-[rgba(255,255,255,0.08)] text-[#737373] hover:text-red-400"
                                                     >
                                                         <X className="w-4 h-4" />
                                                     </button>
                                                 </div>
                                             ) : (
                                                 <>
-                                                    <Upload className="w-10 h-10 text-[#475569] mx-auto mb-3" />
-                                                    <p className="text-[#94A3B8] mb-1">Click to upload or drag and drop</p>
-                                                    <p className="text-xs text-[#475569]">PDF, Word, or Text files</p>
+                                                    <Upload className="w-10 h-10 text-[#737373] mx-auto mb-3" />
+                                                    <p className="text-[#a3a3a3] mb-1">Click to upload or drag and drop</p>
+                                                    <p className="text-xs text-[#737373]">PDF, Word, or Text files</p>
                                                 </>
                                             )}
                                         </div>
@@ -1774,61 +1774,61 @@ const ProjectBoard = () => {
 
                                     {/* OR Divider */}
                                     <div className="flex items-center gap-4">
-                                        <div className="flex-1 h-px bg-[rgba(244,246,255,0.08)]" />
-                                        <span className="text-xs text-[#475569] font-medium">OR</span>
-                                        <div className="flex-1 h-px bg-[rgba(244,246,255,0.08)]" />
+                                        <div className="flex-1 h-px bg-[rgba(255,255,255,0.07)]" />
+                                        <span className="text-xs text-[#737373] font-medium">OR</span>
+                                        <div className="flex-1 h-px bg-[rgba(255,255,255,0.07)]" />
                                     </div>
 
                                     {/* Text Input */}
                                     <div>
-                                        <label className="text-sm font-medium text-[#94A3B8] block mb-3">Enter PRD Content Manually</label>
+                                        <label className="text-sm font-medium text-[#a3a3a3] block mb-3">Enter PRD Content Manually</label>
                                         <Textarea
                                             value={prdText}
                                             onChange={(e) => setPrdText(e.target.value)}
                                             placeholder="Describe your project requirements, features, user stories, technical specifications..."
-                                            className="bg-[rgba(244,246,255,0.03)] border-[rgba(244,246,255,0.08)] text-[#F4F6FF] rounded-xl min-h-[180px] placeholder:text-[#334155] resize-none"
+                                            className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl min-h-[180px] placeholder:text-[#334155] resize-none"
                                         />
                                     </div>
 
                                     {/* Additional Context */}
                                     <div>
-                                        <label className="text-sm font-medium text-[#94A3B8] block mb-3">Additional Context (Optional)</label>
+                                        <label className="text-sm font-medium text-[#a3a3a3] block mb-3">Additional Context (Optional)</label>
                                         <Textarea
                                             value={additionalContext}
                                             onChange={(e) => setAdditionalContext(e.target.value)}
                                             placeholder="Budget constraints, team size, timeline, preferred technologies, existing infrastructure..."
-                                            className="bg-[rgba(244,246,255,0.03)] border-[rgba(244,246,255,0.08)] text-[#F4F6FF] rounded-xl min-h-[100px] placeholder:text-[#334155] resize-none"
+                                            className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl min-h-[100px] placeholder:text-[#334155] resize-none"
                                         />
                                     </div>
 
                                     {/* Timeline */}
                                     <div>
-                                        <label className="text-sm font-medium text-[#94A3B8] block mb-3">
+                                        <label className="text-sm font-medium text-[#a3a3a3] block mb-3">
                                             <Calendar className="w-4 h-4 inline mr-2" />
                                             Project Timeline (Optional)
                                         </label>
                                         <div className="grid grid-cols-2 gap-4">
                                             <div>
-                                                <label className="text-xs text-[#64748B] block mb-1.5">Start Date</label>
+                                                <label className="text-xs text-[#737373] block mb-1.5">Start Date</label>
                                                 <Input
                                                     type="date"
                                                     value={startDate}
                                                     onChange={(e) => setStartDate(e.target.value)}
-                                                    className="bg-[rgba(244,246,255,0.03)] border-[rgba(244,246,255,0.08)] text-[#F4F6FF] rounded-xl h-10"
+                                                    className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl h-10"
                                                 />
                                             </div>
                                             <div>
-                                                <label className="text-xs text-[#64748B] block mb-1.5">End Date</label>
+                                                <label className="text-xs text-[#737373] block mb-1.5">End Date</label>
                                                 <Input
                                                     type="date"
                                                     value={endDate}
                                                     onChange={(e) => setEndDate(e.target.value)}
-                                                    className="bg-[rgba(244,246,255,0.03)] border-[rgba(244,246,255,0.08)] text-[#F4F6FF] rounded-xl h-10"
+                                                    className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl h-10"
                                                 />
                                             </div>
                                         </div>
                                         {startDate && endDate && (
-                                            <p className="text-xs text-[#64748B] mt-2">
+                                            <p className="text-xs text-[#737373] mt-2">
                                                 {Math.ceil((new Date(endDate).getTime() - new Date(startDate).getTime()) / (1000 * 60 * 60 * 24 * 7))} weeks 
                                                 = ~{Math.max(1, Math.ceil((new Date(endDate).getTime() - new Date(startDate).getTime()) / (1000 * 60 * 60 * 24 * 14)))} sprints (2-week each)
                                             </p>
@@ -1840,12 +1840,12 @@ const ProjectBoard = () => {
                             {/* Step: Analyzing */}
                             {aiStep === 'analyzing' && (
                                 <div className="flex flex-col items-center justify-center py-16">
-                                    <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-[#6366F1] to-[#4F46E5] flex items-center justify-center mb-6 animate-pulse">
+                                    <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-[#E0B954] to-[#B8872A] flex items-center justify-center mb-6 animate-pulse">
                                         <Sparkles className="w-8 h-8 text-white" />
                                     </div>
-                                    <div className="w-12 h-12 border-3 border-[#6366F1]/30 border-t-[#6366F1] rounded-full animate-spin mb-6" />
+                                    <div className="w-12 h-12 border-3 border-[#E0B954]/30 border-t-[#E0B954] rounded-full animate-spin mb-6" />
                                     <h3 className="text-xl font-semibold text-white mb-2">AI is analyzing your project</h3>
-                                    <p className="text-[#64748B] text-center max-w-md">
+                                    <p className="text-[#737373] text-center max-w-md">
                                         Performing cost analysis, recommending tools, and generating architecture options...
                                     </p>
                                 </div>
@@ -1856,19 +1856,19 @@ const ProjectBoard = () => {
                                 <div className="space-y-6">
                                     {/* Analysis Summary */}
                                     {analysis && (
-                                        <div className="bg-[rgba(244,246,255,0.03)] border border-[rgba(244,246,255,0.08)] rounded-xl p-5">
+                                        <div className="bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.07)] rounded-xl p-5">
                                             <h3 className="text-sm font-semibold text-white mb-3 flex items-center gap-2">
-                                                <Target className="w-4 h-4 text-[#6366F1]" />
+                                                <Target className="w-4 h-4 text-[#E0B954]" />
                                                 PRD Analysis Summary
                                             </h3>
-                                            <p className="text-sm text-[#94A3B8] mb-4">{analysis.summary}</p>
+                                            <p className="text-sm text-[#a3a3a3] mb-4">{analysis.summary}</p>
                                             
                                             {analysis.key_features && analysis.key_features.length > 0 && (
                                                 <div className="mb-4">
-                                                    <p className="text-xs text-[#64748B] font-medium mb-2">Key Features</p>
+                                                    <p className="text-xs text-[#737373] font-medium mb-2">Key Features</p>
                                                     <div className="flex flex-wrap gap-2">
                                                         {analysis.key_features.slice(0, 6).map((feature, i) => (
-                                                            <span key={i} className="px-2.5 py-1 rounded-lg bg-[#6366F1]/10 text-[#6366F1] text-xs">
+                                                            <span key={i} className="px-2.5 py-1 rounded-lg bg-[#E0B954]/10 text-[#E0B954] text-xs">
                                                                 {feature}
                                                             </span>
                                                         ))}
@@ -1878,10 +1878,10 @@ const ProjectBoard = () => {
 
                                             {analysis.recommended_tools && (
                                                 <div>
-                                                    <p className="text-xs text-[#64748B] font-medium mb-2">Recommended Tools</p>
+                                                    <p className="text-xs text-[#737373] font-medium mb-2">Recommended Tools</p>
                                                     <div className="flex flex-wrap gap-2">
                                                         {Object.entries(analysis.recommended_tools).slice(0, 6).map(([category, tool]) => (
-                                                            <span key={category} className="px-2.5 py-1 rounded-lg bg-[rgba(244,246,255,0.06)] text-[#94A3B8] text-xs">
+                                                            <span key={category} className="px-2.5 py-1 rounded-lg bg-[rgba(255,255,255,0.05)] text-[#a3a3a3] text-xs">
                                                                 {category}: {String(tool)}
                                                             </span>
                                                         ))}
@@ -1915,33 +1915,33 @@ const ProjectBoard = () => {
                                     {/* Summary Stats */}
                                     {ticketsSummary && (
                                         <div className="grid grid-cols-3 gap-4">
-                                            <div className="bg-[rgba(244,246,255,0.03)] border border-[rgba(244,246,255,0.08)] rounded-xl p-4 text-center">
-                                                <p className="text-2xl font-bold text-[#6366F1]">{generatedTickets.length}</p>
-                                                <p className="text-xs text-[#64748B]">Tickets</p>
+                                            <div className="bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.07)] rounded-xl p-4 text-center">
+                                                <p className="text-2xl font-bold text-[#E0B954]">{generatedTickets.length}</p>
+                                                <p className="text-xs text-[#737373]">Tickets</p>
                                             </div>
-                                            <div className="bg-[rgba(244,246,255,0.03)] border border-[rgba(244,246,255,0.08)] rounded-xl p-4 text-center">
+                                            <div className="bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.07)] rounded-xl p-4 text-center">
                                                 <p className="text-2xl font-bold text-[#F59E0B]">{ticketsSummary.total_story_points}</p>
-                                                <p className="text-xs text-[#64748B]">Total Points</p>
+                                                <p className="text-xs text-[#737373]">Total Points</p>
                                             </div>
-                                            <div className="bg-[rgba(244,246,255,0.03)] border border-[rgba(244,246,255,0.08)] rounded-xl p-4 text-center">
+                                            <div className="bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.07)] rounded-xl p-4 text-center">
                                                 <p className="text-2xl font-bold text-[#10B981]">{ticketsSummary.total_estimated_hours}h</p>
-                                                <p className="text-xs text-[#64748B]">Estimated Hours</p>
+                                                <p className="text-xs text-[#737373]">Estimated Hours</p>
                                             </div>
                                         </div>
                                     )}
 
                                     {/* Sprint Recommendation */}
                                     {ticketsSummary?.sprint_recommendation && (
-                                        <div className="bg-[#6366F1]/10 border border-[#6366F1]/20 rounded-xl p-4">
-                                            <p className="text-sm text-[#6366F1] font-medium">Sprint Recommendation</p>
-                                            <p className="text-xs text-[#94A3B8] mt-1">{ticketsSummary.sprint_recommendation}</p>
+                                        <div className="bg-[#E0B954]/10 border border-[#E0B954]/20 rounded-xl p-4">
+                                            <p className="text-sm text-[#E0B954] font-medium">Sprint Recommendation</p>
+                                            <p className="text-xs text-[#a3a3a3] mt-1">{ticketsSummary.sprint_recommendation}</p>
                                         </div>
                                     )}
 
                                     {/* Tickets List */}
                                     <div>
                                         <h3 className="text-sm font-semibold text-white mb-4 flex items-center gap-2">
-                                            <ClipboardList className="w-4 h-4 text-[#6366F1]" />
+                                            <ClipboardList className="w-4 h-4 text-[#E0B954]" />
                                             Generated Tickets
                                         </h3>
                                         <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2">
@@ -1949,7 +1949,7 @@ const ProjectBoard = () => {
                                                 const typeInfo = TYPE_CONFIG[ticket.type as keyof typeof TYPE_CONFIG] || TYPE_CONFIG.task;
                                                 const TypeIcon = typeInfo.icon;
                                                 return (
-                                                    <div key={index} className="bg-[rgba(244,246,255,0.03)] border border-[rgba(244,246,255,0.08)] rounded-xl p-4">
+                                                    <div key={index} className="bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.07)] rounded-xl p-4">
                                                         <div className="flex items-start justify-between gap-4">
                                                             <div className="flex-1 min-w-0">
                                                                 <div className="flex items-center gap-2 mb-2">
@@ -1967,28 +1967,28 @@ const ProjectBoard = () => {
                                                                     </Badge>
                                                                 </div>
                                                                 <h4 className="text-sm font-medium text-white mb-1">{ticket.title}</h4>
-                                                                <p className="text-xs text-[#64748B] line-clamp-2">{ticket.description}</p>
+                                                                <p className="text-xs text-[#737373] line-clamp-2">{ticket.description}</p>
                                                             </div>
                                                             <div className="flex flex-col items-end gap-2 flex-shrink-0">
                                                                 <div className="flex items-center gap-2">
-                                                                    <span className="text-xs text-[#64748B]">{ticket.story_points} pts</span>
-                                                                    <span className="text-xs text-[#64748B]">{ticket.estimated_hours}h</span>
+                                                                    <span className="text-xs text-[#737373]">{ticket.story_points} pts</span>
+                                                                    <span className="text-xs text-[#737373]">{ticket.estimated_hours}h</span>
                                                                 </div>
                                                                 {ticket.assignee_name && (
                                                                     <div className="flex items-center gap-2 bg-[rgba(244,246,255,0.05)] rounded-lg px-2 py-1">
-                                                                        <Users className="w-3 h-3 text-[#6366F1]" />
-                                                                        <span className="text-xs text-[#94A3B8]">{ticket.assignee_name}</span>
+                                                                        <Users className="w-3 h-3 text-[#E0B954]" />
+                                                                        <span className="text-xs text-[#a3a3a3]">{ticket.assignee_name}</span>
                                                                     </div>
                                                                 )}
                                                             </div>
                                                         </div>
                                                         {ticket.assignee_reasoning && (
-                                                            <p className="text-[10px] text-[#475569] mt-2 italic">Assignment: {ticket.assignee_reasoning}</p>
+                                                            <p className="text-[10px] text-[#737373] mt-2 italic">Assignment: {ticket.assignee_reasoning}</p>
                                                         )}
                                                         {ticket.tags && ticket.tags.length > 0 && (
                                                             <div className="flex flex-wrap gap-1 mt-2">
                                                                 {ticket.tags.map(tag => (
-                                                                    <span key={tag} className="text-[10px] px-1.5 py-0.5 rounded-md bg-[rgba(244,246,255,0.06)] text-[#64748B]">{tag}</span>
+                                                                    <span key={tag} className="text-[10px] px-1.5 py-0.5 rounded-md bg-[rgba(255,255,255,0.05)] text-[#737373]">{tag}</span>
                                                                 ))}
                                                             </div>
                                                         )}
@@ -2003,12 +2003,12 @@ const ProjectBoard = () => {
                             {/* Step: Committing */}
                             {aiStep === 'committing' && (
                                 <div className="flex flex-col items-center justify-center py-16">
-                                    <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-[#6366F1] to-[#4F46E5] flex items-center justify-center mb-6">
+                                    <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-[#E0B954] to-[#B8872A] flex items-center justify-center mb-6">
                                         <GitCommit className="w-8 h-8 text-white" />
                                     </div>
-                                    <div className="w-12 h-12 border-3 border-[#6366F1]/30 border-t-[#6366F1] rounded-full animate-spin mb-6" />
+                                    <div className="w-12 h-12 border-3 border-[#E0B954]/30 border-t-[#E0B954] rounded-full animate-spin mb-6" />
                                     <h3 className="text-xl font-semibold text-white mb-2">Creating Tickets</h3>
-                                    <p className="text-[#64748B] text-center max-w-md">
+                                    <p className="text-[#737373] text-center max-w-md">
                                         Adding tickets to your board and assigning to team members...
                                     </p>
                                 </div>
@@ -2021,12 +2021,12 @@ const ProjectBoard = () => {
                                         <CheckCircle2 className="w-10 h-10 text-[#10B981]" />
                                     </div>
                                     <h3 className="text-2xl font-bold text-white mb-2">All Done!</h3>
-                                    <p className="text-[#64748B] text-center max-w-md mb-6">
+                                    <p className="text-[#737373] text-center max-w-md mb-6">
                                         {generatedTickets.length} tickets have been created and assigned to your team.
                                     </p>
                                     <Button
                                         onClick={() => setShowAIModal(false)}
-                                        className="bg-gradient-to-r from-[#6366F1] to-[#4F46E5] text-white rounded-xl px-8"
+                                        className="bg-gradient-to-r from-[#E0B954] to-[#B8872A] text-white rounded-xl px-8"
                                     >
                                         View Board
                                     </Button>
@@ -2036,7 +2036,7 @@ const ProjectBoard = () => {
 
                         {/* Modal Footer */}
                         {(aiStep === 'upload' || aiStep === 'architectures' || aiStep === 'preview') && (
-                            <div className="flex items-center justify-between p-5 border-t border-[rgba(244,246,255,0.06)] flex-shrink-0">
+                            <div className="flex items-center justify-between p-5 border-t border-[rgba(255,255,255,0.05)] flex-shrink-0">
                                 <Button
                                     variant="ghost"
                                     onClick={() => {
@@ -2044,7 +2044,7 @@ const ProjectBoard = () => {
                                         else if (aiStep === 'preview') setAiStep('architectures');
                                         else setShowAIModal(false);
                                     }}
-                                    className="text-[#64748B] rounded-xl"
+                                    className="text-[#737373] rounded-xl"
                                 >
                                     {aiStep === 'upload' ? 'Cancel' : 'Back'}
                                 </Button>
@@ -2053,7 +2053,7 @@ const ProjectBoard = () => {
                                     <Button
                                         onClick={handleAnalyzePRD}
                                         disabled={!prdFile && !prdText.trim()}
-                                        className="bg-gradient-to-r from-[#6366F1] to-[#4F46E5] text-white rounded-xl px-6 font-medium shadow-lg shadow-[#4F46E5]/20 disabled:opacity-50"
+                                        className="bg-gradient-to-r from-[#E0B954] to-[#B8872A] text-white rounded-xl px-6 font-medium shadow-lg shadow-[#B8872A]/20 disabled:opacity-50"
                                     >
                                         <Sparkles className="w-4 h-4 mr-2" />
                                         Analyze PRD
@@ -2064,7 +2064,7 @@ const ProjectBoard = () => {
                                     <Button
                                         onClick={handlePreviewTickets}
                                         disabled={!selectedArchitectureId}
-                                        className="bg-gradient-to-r from-[#6366F1] to-[#4F46E5] text-white rounded-xl px-6 font-medium shadow-lg shadow-[#4F46E5]/20 disabled:opacity-50"
+                                        className="bg-gradient-to-r from-[#E0B954] to-[#B8872A] text-white rounded-xl px-6 font-medium shadow-lg shadow-[#B8872A]/20 disabled:opacity-50"
                                     >
                                         <ArrowRight className="w-4 h-4 mr-2" />
                                         Preview Tickets
@@ -2089,59 +2089,59 @@ const ProjectBoard = () => {
             {/* Create Sprint Modal */}
             {showCreateSprintModal && (
                 <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setShowCreateSprintModal(false)}>
-                    <div className="bg-[#0F1118] border border-[rgba(244,246,255,0.08)] rounded-2xl w-full max-w-md shadow-2xl" onClick={e => e.stopPropagation()}>
-                        <div className="flex items-center justify-between p-5 border-b border-[rgba(244,246,255,0.06)]">
+                    <div className="bg-[#0d0d0d] border border-[rgba(255,255,255,0.07)] rounded-2xl w-full max-w-md shadow-2xl" onClick={e => e.stopPropagation()}>
+                        <div className="flex items-center justify-between p-5 border-b border-[rgba(255,255,255,0.05)]">
                             <h2 className="text-lg font-bold text-white">Create New Sprint</h2>
-                            <button onClick={() => setShowCreateSprintModal(false)} className="p-2 rounded-lg hover:bg-[rgba(244,246,255,0.05)] text-[#475569] hover:text-white">
+                            <button onClick={() => setShowCreateSprintModal(false)} className="p-2 rounded-lg hover:bg-[rgba(244,246,255,0.05)] text-[#737373] hover:text-white">
                                 <X className="w-5 h-5" />
                             </button>
                         </div>
                         <div className="p-5 space-y-4">
                             <div>
-                                <label className="text-xs font-medium text-[#64748B] block mb-1.5">Sprint Name *</label>
+                                <label className="text-xs font-medium text-[#737373] block mb-1.5">Sprint Name *</label>
                                 <Input
                                     value={newSprint.name}
                                     onChange={(e) => setNewSprint(f => ({ ...f, name: e.target.value }))}
                                     placeholder="e.g., Sprint 1: Foundation"
-                                    className="bg-[rgba(244,246,255,0.03)] border-[rgba(244,246,255,0.08)] text-[#F4F6FF] rounded-xl h-10 placeholder:text-[#334155]"
+                                    className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl h-10 placeholder:text-[#334155]"
                                 />
                             </div>
                             <div>
-                                <label className="text-xs font-medium text-[#64748B] block mb-1.5">Sprint Goal</label>
+                                <label className="text-xs font-medium text-[#737373] block mb-1.5">Sprint Goal</label>
                                 <Textarea
                                     value={newSprint.goal}
                                     onChange={(e) => setNewSprint(f => ({ ...f, goal: e.target.value }))}
                                     placeholder="What do we want to achieve in this sprint?"
-                                    className="bg-[rgba(244,246,255,0.03)] border-[rgba(244,246,255,0.08)] text-[#F4F6FF] rounded-xl min-h-[80px] placeholder:text-[#334155] resize-none"
+                                    className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl min-h-[80px] placeholder:text-[#334155] resize-none"
                                 />
                             </div>
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
-                                    <label className="text-xs font-medium text-[#64748B] block mb-1.5">Start Date</label>
+                                    <label className="text-xs font-medium text-[#737373] block mb-1.5">Start Date</label>
                                     <Input
                                         type="date"
                                         value={newSprint.start_date}
                                         onChange={(e) => setNewSprint(f => ({ ...f, start_date: e.target.value }))}
-                                        className="bg-[rgba(244,246,255,0.03)] border-[rgba(244,246,255,0.08)] text-[#F4F6FF] rounded-xl h-10"
+                                        className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl h-10"
                                     />
                                 </div>
                                 <div>
-                                    <label className="text-xs font-medium text-[#64748B] block mb-1.5">End Date</label>
+                                    <label className="text-xs font-medium text-[#737373] block mb-1.5">End Date</label>
                                     <Input
                                         type="date"
                                         value={newSprint.end_date}
                                         onChange={(e) => setNewSprint(f => ({ ...f, end_date: e.target.value }))}
-                                        className="bg-[rgba(244,246,255,0.03)] border-[rgba(244,246,255,0.08)] text-[#F4F6FF] rounded-xl h-10"
+                                        className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl h-10"
                                     />
                                 </div>
                             </div>
                         </div>
-                        <div className="flex justify-end gap-3 p-5 border-t border-[rgba(244,246,255,0.06)]">
-                            <Button variant="ghost" onClick={() => setShowCreateSprintModal(false)} className="text-[#64748B] rounded-xl px-5">Cancel</Button>
+                        <div className="flex justify-end gap-3 p-5 border-t border-[rgba(255,255,255,0.05)]">
+                            <Button variant="ghost" onClick={() => setShowCreateSprintModal(false)} className="text-[#737373] rounded-xl px-5">Cancel</Button>
                             <Button
                                 onClick={handleCreateSprint}
                                 disabled={!newSprint.name.trim()}
-                                className="bg-gradient-to-r from-[#6366F1] to-[#4F46E5] text-white rounded-xl px-6 font-medium shadow-lg shadow-[#4F46E5]/20 disabled:opacity-50"
+                                className="bg-gradient-to-r from-[#E0B954] to-[#B8872A] text-white rounded-xl px-6 font-medium shadow-lg shadow-[#B8872A]/20 disabled:opacity-50"
                             >
                                 <Plus className="w-4 h-4 mr-2" />
                                 Create Sprint
@@ -2153,20 +2153,20 @@ const ProjectBoard = () => {
 
             {/* Reviewer Panel - slide in from right */}
             {showReviewer && (
-                <div className="fixed inset-y-0 right-0 w-[480px] max-w-full bg-[#0B0D14] border-l border-[rgba(244,246,255,0.08)] shadow-2xl z-50 flex flex-col">
-                    <div className="flex items-center justify-between px-5 py-4 border-b border-[rgba(244,246,255,0.06)] flex-shrink-0">
+                <div className="fixed inset-y-0 right-0 w-[480px] max-w-full bg-[#080808] border-l border-[rgba(255,255,255,0.07)] shadow-2xl z-50 flex flex-col">
+                    <div className="flex items-center justify-between px-5 py-4 border-b border-[rgba(255,255,255,0.05)] flex-shrink-0">
                         <div className="flex items-center gap-3">
-                            <div className="w-8 h-8 rounded-lg bg-[#6366F1]/10 flex items-center justify-center">
-                                <Eye className="w-4 h-4 text-[#6366F1]" />
+                            <div className="w-8 h-8 rounded-lg bg-[#E0B954]/10 flex items-center justify-center">
+                                <Eye className="w-4 h-4 text-[#E0B954]" />
                             </div>
                             <div>
                                 <h2 className="text-sm font-semibold text-white">Review Queue</h2>
-                                <p className="text-xs text-[#64748B]">Items pending review</p>
+                                <p className="text-xs text-[#737373]">Items pending review</p>
                             </div>
                         </div>
                         <button
                             onClick={() => setShowReviewer(false)}
-                            className="p-1.5 rounded-lg hover:bg-[rgba(244,246,255,0.05)] text-[#475569] hover:text-white"
+                            className="p-1.5 rounded-lg hover:bg-[rgba(244,246,255,0.05)] text-[#737373] hover:text-white"
                         >
                             <X className="w-4 h-4" />
                         </button>

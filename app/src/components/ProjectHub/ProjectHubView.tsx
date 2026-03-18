@@ -384,7 +384,7 @@ const ProjectHubView: React.FC<ProjectHubViewProps> = ({ projectId, token, proje
     if (isLoading) {
         return (
             <div className="flex items-center justify-center py-12">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#6366F1]"></div>
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#E0B954]"></div>
             </div>
         );
     }
@@ -393,14 +393,14 @@ const ProjectHubView: React.FC<ProjectHubViewProps> = ({ projectId, token, proje
         <div className="space-y-6">
             {/* Sub-navigation */}
             <Tabs value={activeView} onValueChange={setActiveView}>
-                <TabsList className="bg-[#0A0A14] border border-[rgba(244,246,255,0.06)] p-1">
+                <TabsList className="bg-[#0A0A14] border border-[rgba(255,255,255,0.05)] p-1">
                     {views.map((view) => {
                         const Icon = view.icon;
                         return (
                             <TabsTrigger
                                 key={view.id}
                                 value={view.id}
-                                className="data-[state=active]:bg-[#6366F1] data-[state=active]:text-white text-[#64748B] px-4 py-2"
+                                className="data-[state=active]:bg-[#E0B954] data-[state=active]:text-white text-[#737373] px-4 py-2"
                             >
                                 <Icon className="w-4 h-4 mr-2" />
                                 {view.label}

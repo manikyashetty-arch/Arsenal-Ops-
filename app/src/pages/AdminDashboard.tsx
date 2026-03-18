@@ -396,23 +396,23 @@ const AdminDashboard = () => {
     };
 
     return (
-        <div className="min-h-screen bg-[#0B0D14] text-white">
+        <div className="min-h-screen bg-[#080808] text-white">
             <Toaster position="top-right" theme="dark" />
             
             {/* Header */}
-            <div className="border-b border-[rgba(244,246,255,0.06)] bg-[#0F1118]">
+            <div className="border-b border-[rgba(255,255,255,0.05)] bg-[#0d0d0d]">
                 <div className="max-w-7xl mx-auto px-6 py-4">
                     <div className="flex items-center justify-between">
                         <div className="flex items-center gap-4">
                             <Button
                                 variant="ghost"
                                 onClick={() => navigate('/')}
-                                className="text-[#64748B] hover:text-white"
+                                className="text-[#737373] hover:text-white"
                             >
                                 <ArrowLeft className="w-4 h-4 mr-2" />
                                 Back to Projects
                             </Button>
-                            <div className="h-6 w-px bg-[rgba(244,246,255,0.1)]" />
+                            <div className="h-6 w-px bg-[rgba(255,255,255,0.08)]" />
                             <h1 className="text-xl font-bold text-white">Admin Dashboard</h1>
                         </div>
                     </div>
@@ -420,7 +420,7 @@ const AdminDashboard = () => {
             </div>
 
             {/* Tabs */}
-            <div className="border-b border-[rgba(244,246,255,0.06)]">
+            <div className="border-b border-[rgba(255,255,255,0.05)]">
                 <div className="max-w-7xl mx-auto px-6">
                     <div className="flex gap-1">
                         {[
@@ -434,8 +434,8 @@ const AdminDashboard = () => {
                                 onClick={() => setActiveTab(tab.id as typeof activeTab)}
                                 className={`px-4 py-3 flex items-center gap-2 text-sm font-medium border-b-2 transition-colors ${
                                     activeTab === tab.id
-                                        ? 'border-[#6366F1] text-white'
-                                        : 'border-transparent text-[#64748B] hover:text-white'
+                                        ? 'border-[#E0B954] text-white'
+                                        : 'border-transparent text-[#737373] hover:text-white'
                                 }`}
                             >
                                 <tab.icon className="w-4 h-4" />
@@ -450,7 +450,7 @@ const AdminDashboard = () => {
             <div className="max-w-7xl mx-auto px-6 py-6">
                 {loading ? (
                     <div className="flex items-center justify-center h-64">
-                        <div className="animate-spin w-8 h-8 border-2 border-[#6366F1] border-t-transparent rounded-full" />
+                        <div className="animate-spin w-8 h-8 border-2 border-[#E0B954] border-t-transparent rounded-full" />
                     </div>
                 ) : (
                     <>
@@ -460,19 +460,19 @@ const AdminDashboard = () => {
                                 {/* Stats Cards */}
                                 <div className="grid grid-cols-4 gap-4">
                                     {[
-                                        { label: 'Total Employees', value: stats.total_employees, icon: Users, color: '#6366F1' },
+                                        { label: 'Total Employees', value: stats.total_employees, icon: Users, color: '#E0B954' },
                                         { label: 'Total Projects', value: stats.total_projects, icon: FolderKanban, color: '#10B981' },
                                         { label: 'Total Tickets', value: stats.total_tickets, icon: Ticket, color: '#F59E0B' },
                                         { label: 'Active Sprints', value: stats.active_sprints, icon: Calendar, color: '#EC4899' },
                                     ].map((stat, i) => (
-                                        <div key={i} className="bg-[#0F1118] border border-[rgba(244,246,255,0.06)] rounded-xl p-5">
+                                        <div key={i} className="bg-[#0d0d0d] border border-[rgba(255,255,255,0.05)] rounded-xl p-5">
                                             <div className="flex items-center justify-between mb-3">
                                                 <div className="p-2 rounded-lg" style={{ backgroundColor: `${stat.color}20` }}>
                                                     <stat.icon className="w-5 h-5" style={{ color: stat.color }} />
                                                 </div>
                                             </div>
                                             <div className="text-2xl font-bold text-white">{stat.value}</div>
-                                            <div className="text-sm text-[#64748B]">{stat.label}</div>
+                                            <div className="text-sm text-[#737373]">{stat.label}</div>
                                         </div>
                                     ))}
                                 </div>
@@ -480,32 +480,32 @@ const AdminDashboard = () => {
                                 {/* Charts */}
                                 <div className="grid grid-cols-2 gap-6">
                                     {/* Tickets by Status */}
-                                    <div className="bg-[#0F1118] border border-[rgba(244,246,255,0.06)] rounded-xl p-5">
+                                    <div className="bg-[#0d0d0d] border border-[rgba(255,255,255,0.05)] rounded-xl p-5">
                                         <h3 className="text-lg font-semibold text-white mb-4">Tickets by Status</h3>
                                         <div className="space-y-3">
                                             {Object.entries(stats.tickets_by_status).map(([status, count]) => (
                                                 <div key={status} className="flex items-center gap-3">
-                                                    <div className="w-24 text-sm text-[#94A3B8] capitalize">{status.replace('_', ' ')}</div>
-                                                    <div className="flex-1 h-2 bg-[rgba(244,246,255,0.06)] rounded-full overflow-hidden">
+                                                    <div className="w-24 text-sm text-[#a3a3a3] capitalize">{status.replace('_', ' ')}</div>
+                                                    <div className="flex-1 h-2 bg-[rgba(255,255,255,0.05)] rounded-full overflow-hidden">
                                                         <div
-                                                            className="h-full bg-[#6366F1] rounded-full"
+                                                            className="h-full bg-[#E0B954] rounded-full"
                                                             style={{ width: `${stats.total_tickets ? (count / stats.total_tickets) * 100 : 0}%` }}
                                                         />
                                                     </div>
-                                                    <div className="w-12 text-sm text-[#94A3B8] text-right">{count}</div>
+                                                    <div className="w-12 text-sm text-[#a3a3a3] text-right">{count}</div>
                                                 </div>
                                             ))}
                                         </div>
                                     </div>
 
                                     {/* Tickets by Priority */}
-                                    <div className="bg-[#0F1118] border border-[rgba(244,246,255,0.06)] rounded-xl p-5">
+                                    <div className="bg-[#0d0d0d] border border-[rgba(255,255,255,0.05)] rounded-xl p-5">
                                         <h3 className="text-lg font-semibold text-white mb-4">Tickets by Priority</h3>
                                         <div className="space-y-3">
                                             {Object.entries(stats.tickets_by_priority).map(([priority, count]) => (
                                                 <div key={priority} className="flex items-center gap-3">
-                                                    <div className="w-24 text-sm text-[#94A3B8] capitalize">{priority}</div>
-                                                    <div className="flex-1 h-2 bg-[rgba(244,246,255,0.06)] rounded-full overflow-hidden">
+                                                    <div className="w-24 text-sm text-[#a3a3a3] capitalize">{priority}</div>
+                                                    <div className="flex-1 h-2 bg-[rgba(255,255,255,0.05)] rounded-full overflow-hidden">
                                                         <div
                                                             className="h-full rounded-full"
                                                             style={{
@@ -514,7 +514,7 @@ const AdminDashboard = () => {
                                                             }}
                                                         />
                                                     </div>
-                                                    <div className="w-12 text-sm text-[#94A3B8] text-right">{count}</div>
+                                                    <div className="w-12 text-sm text-[#a3a3a3] text-right">{count}</div>
                                                 </div>
                                             ))}
                                         </div>
@@ -530,52 +530,52 @@ const AdminDashboard = () => {
                                     <h2 className="text-lg font-semibold text-white">Team Members</h2>
                                     <Button
                                         onClick={handleCreateEmployee}
-                                        className="bg-gradient-to-r from-[#6366F1] to-[#4F46E5] text-white rounded-xl"
+                                        className="bg-gradient-to-r from-[#E0B954] to-[#B8872A] text-white rounded-xl"
                                     >
                                         <Plus className="w-4 h-4 mr-2" />
                                         Add Employee
                                     </Button>
                                 </div>
 
-                                <div className="bg-[#0F1118] border border-[rgba(244,246,255,0.06)] rounded-xl overflow-hidden">
+                                <div className="bg-[#0d0d0d] border border-[rgba(255,255,255,0.05)] rounded-xl overflow-hidden">
                                     <table className="w-full">
                                         <thead>
-                                            <tr className="border-b border-[rgba(244,246,255,0.06)]">
-                                                <th className="text-left text-xs font-medium text-[#64748B] uppercase tracking-wider px-5 py-3">Name</th>
-                                                <th className="text-left text-xs font-medium text-[#64748B] uppercase tracking-wider px-5 py-3">Email</th>
-                                                <th className="text-left text-xs font-medium text-[#64748B] uppercase tracking-wider px-5 py-3">GitHub</th>
-                                                <th className="text-left text-xs font-medium text-[#64748B] uppercase tracking-wider px-5 py-3">Projects</th>
-                                                <th className="text-left text-xs font-medium text-[#64748B] uppercase tracking-wider px-5 py-3">Assigned</th>
-                                                <th className="text-right text-xs font-medium text-[#64748B] uppercase tracking-wider px-5 py-3">Actions</th>
+                                            <tr className="border-b border-[rgba(255,255,255,0.05)]">
+                                                <th className="text-left text-xs font-medium text-[#737373] uppercase tracking-wider px-5 py-3">Name</th>
+                                                <th className="text-left text-xs font-medium text-[#737373] uppercase tracking-wider px-5 py-3">Email</th>
+                                                <th className="text-left text-xs font-medium text-[#737373] uppercase tracking-wider px-5 py-3">GitHub</th>
+                                                <th className="text-left text-xs font-medium text-[#737373] uppercase tracking-wider px-5 py-3">Projects</th>
+                                                <th className="text-left text-xs font-medium text-[#737373] uppercase tracking-wider px-5 py-3">Assigned</th>
+                                                <th className="text-right text-xs font-medium text-[#737373] uppercase tracking-wider px-5 py-3">Actions</th>
                                             </tr>
                                         </thead>
                                         <tbody>
                                             {employees.map(emp => (
-                                                <tr key={emp.id} className="border-b border-[rgba(244,246,255,0.04)] hover:bg-[rgba(244,246,255,0.02)]">
+                                                <tr key={emp.id} className="border-b border-[rgba(255,255,255,0.03)] hover:bg-[rgba(255,255,255,0.02)]">
                                                     <td className="px-5 py-4">
                                                         <div className="flex items-center gap-3">
-                                                            <div className="w-8 h-8 rounded-full bg-[rgba(99,102,241,0.2)] flex items-center justify-center text-sm font-medium text-[#818CF8]">
+                                                            <div className="w-8 h-8 rounded-full bg-[rgba(224,185,84,0.2)] flex items-center justify-center text-sm font-medium text-[#818CF8]">
                                                                 {emp.name.charAt(0).toUpperCase()}
                                                             </div>
                                                             <div>
                                                                 <div className="text-sm font-medium text-white">{emp.name}</div>
                                                                 {emp.specialization && (
-                                                                    <div className="text-xs text-[#64748B] capitalize">{emp.specialization}</div>
+                                                                    <div className="text-xs text-[#737373] capitalize">{emp.specialization}</div>
                                                                 )}
                                                             </div>
                                                         </div>
                                                     </td>
-                                                    <td className="px-5 py-4 text-sm text-[#94A3B8]">{emp.email}</td>
-                                                    <td className="px-5 py-4 text-sm text-[#64748B]">{emp.github_username || '-'}</td>
-                                                    <td className="px-5 py-4 text-sm text-[#94A3B8]">{emp.project_count}</td>
-                                                    <td className="px-5 py-4 text-sm text-[#94A3B8]">{emp.assigned_items_count}</td>
+                                                    <td className="px-5 py-4 text-sm text-[#a3a3a3]">{emp.email}</td>
+                                                    <td className="px-5 py-4 text-sm text-[#737373]">{emp.github_username || '-'}</td>
+                                                    <td className="px-5 py-4 text-sm text-[#a3a3a3]">{emp.project_count}</td>
+                                                    <td className="px-5 py-4 text-sm text-[#a3a3a3]">{emp.assigned_items_count}</td>
                                                     <td className="px-5 py-4">
                                                         <div className="flex justify-end gap-2">
                                                             <Button
                                                                 variant="ghost"
                                                                 size="sm"
                                                                 onClick={() => handleEditEmployee(emp)}
-                                                                className="text-[#64748B] hover:text-white h-8 w-8 p-0"
+                                                                className="text-[#737373] hover:text-white h-8 w-8 p-0"
                                                             >
                                                                 <Pencil className="w-4 h-4" />
                                                             </Button>
@@ -594,7 +594,7 @@ const AdminDashboard = () => {
                                         </tbody>
                                     </table>
                                     {employees.length === 0 && (
-                                        <div className="text-center py-12 text-[#64748B]">
+                                        <div className="text-center py-12 text-[#737373]">
                                             No employees yet. Click "Add Employee" to get started.
                                         </div>
                                     )}
@@ -610,27 +610,27 @@ const AdminDashboard = () => {
                                     {projects.map(project => (
                                         <div
                                             key={project.id}
-                                            className="bg-[#0F1118] border border-[rgba(244,246,255,0.06)] rounded-xl p-5 hover:border-[rgba(99,102,241,0.3)] transition-colors"
+                                            className="bg-[#0d0d0d] border border-[rgba(255,255,255,0.05)] rounded-xl p-5 hover:border-[rgba(224,185,84,0.3)] transition-colors"
                                         >
                                             <div className="flex items-start justify-between mb-3">
                                                 <div className="cursor-pointer flex-1" onClick={() => navigate(`/project/${project.id}`)}>
                                                     <h3 className="text-sm font-semibold text-white">{project.name}</h3>
-                                                    <div className="text-xs text-[#64748B] mt-0.5">{project.status}</div>
+                                                    <div className="text-xs text-[#737373] mt-0.5">{project.status}</div>
                                                 </div>
                                                 <Button
                                                     variant="ghost"
                                                     size="sm"
                                                     onClick={(e) => handleEditGitHubSettings(project, e)}
-                                                    className="text-[#64748B] hover:text-white h-7 w-7 p-0"
+                                                    className="text-[#737373] hover:text-white h-7 w-7 p-0"
                                                 >
                                                     <Settings className="w-3.5 h-3.5" />
                                                 </Button>
                                             </div>
                                             {/* GitHub Info + Invite */}
                                             {project.github_repo_url && (
-                                                <div className="mb-3 p-2 rounded-lg bg-[rgba(244,246,255,0.02)] border border-[rgba(244,246,255,0.04)]">
+                                                <div className="mb-3 p-2 rounded-lg bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.03)]">
                                                     <div className="flex items-center gap-2 mb-2">
-                                                        <Github className="w-3.5 h-3.5 text-[#64748B]" />
+                                                        <Github className="w-3.5 h-3.5 text-[#737373]" />
                                                         <a
                                                             href={project.github_repo_url}
                                                             target="_blank"
@@ -651,7 +651,7 @@ const AdminDashboard = () => {
                                                         size="sm"
                                                         onClick={(e) => handleSendGitHubInvites(project, e)}
                                                         disabled={invitingProjectId === project.id}
-                                                        className="w-full h-7 text-[10px] bg-gradient-to-r from-[#6366F1] to-[#4F46E5] hover:from-[#5558E6] hover:to-[#4338CA] text-white rounded-lg font-medium shadow-sm disabled:opacity-50"
+                                                        className="w-full h-7 text-[10px] bg-gradient-to-r from-[#E0B954] to-[#B8872A] hover:from-[#5558E6] hover:to-[#4338CA] text-white rounded-lg font-medium shadow-sm disabled:opacity-50"
                                                     >
                                                         {invitingProjectId === project.id ? (
                                                             <>
@@ -668,12 +668,12 @@ const AdminDashboard = () => {
                                                 </div>
                                             )}
                                             {!project.github_repo_url && (
-                                                <div className="mb-3 p-2 rounded-lg bg-[rgba(244,246,255,0.02)] border border-[rgba(244,246,255,0.04)] flex items-center gap-2">
-                                                    <AlertCircle className="w-3.5 h-3.5 text-[#475569]" />
-                                                    <span className="text-[10px] text-[#475569]">No GitHub repo configured</span>
+                                                <div className="mb-3 p-2 rounded-lg bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.03)] flex items-center gap-2">
+                                                    <AlertCircle className="w-3.5 h-3.5 text-[#737373]" />
+                                                    <span className="text-[10px] text-[#737373]">No GitHub repo configured</span>
                                                 </div>
                                             )}
-                                            <div className="flex items-center gap-4 mt-4 text-xs text-[#64748B]">
+                                            <div className="flex items-center gap-4 mt-4 text-xs text-[#737373]">
                                                 <div className="flex items-center gap-1">
                                                     <Users className="w-3.5 h-3.5" />
                                                     {project.developer_count}
@@ -685,12 +685,12 @@ const AdminDashboard = () => {
                                             </div>
                                             <div className="mt-4">
                                                 <div className="flex justify-between text-xs mb-1">
-                                                    <span className="text-[#64748B]">Progress</span>
-                                                    <span className="text-[#94A3B8]">{project.completion_pct}%</span>
+                                                    <span className="text-[#737373]">Progress</span>
+                                                    <span className="text-[#a3a3a3]">{project.completion_pct}%</span>
                                                 </div>
-                                                <div className="h-1.5 bg-[rgba(244,246,255,0.06)] rounded-full overflow-hidden">
+                                                <div className="h-1.5 bg-[rgba(255,255,255,0.05)] rounded-full overflow-hidden">
                                                     <div
-                                                        className="h-full bg-gradient-to-r from-[#6366F1] to-[#4F46E5] rounded-full"
+                                                        className="h-full bg-gradient-to-r from-[#E0B954] to-[#B8872A] rounded-full"
                                                         style={{ width: `${project.completion_pct}%` }}
                                                     />
                                                 </div>
@@ -707,34 +707,34 @@ const AdminDashboard = () => {
                                     <h2 className="text-lg font-semibold text-white">User Management</h2>
                                     <Button
                                         onClick={handleCreateUser}
-                                        className="bg-gradient-to-r from-[#6366F1] to-[#4F46E5] hover:from-[#5558E6] hover:to-[#4338CA] text-white rounded-xl h-10 px-4"
+                                        className="bg-gradient-to-r from-[#E0B954] to-[#B8872A] hover:from-[#5558E6] hover:to-[#4338CA] text-white rounded-xl h-10 px-4"
                                     >
                                         <Plus className="w-4 h-4 mr-2" />
                                         Add User
                                     </Button>
                                 </div>
-                                <div className="bg-[#0F1118] border border-[rgba(244,246,255,0.06)] rounded-xl overflow-hidden">
+                                <div className="bg-[#0d0d0d] border border-[rgba(255,255,255,0.05)] rounded-xl overflow-hidden">
                                     <table className="w-full">
-                                        <thead className="bg-[rgba(244,246,255,0.02)]">
+                                        <thead className="bg-[rgba(255,255,255,0.02)]">
                                             <tr>
-                                                <th className="text-left text-xs font-medium text-[#64748B] py-3 px-4">User</th>
-                                                <th className="text-left text-xs font-medium text-[#64748B] py-3 px-4">Role</th>
-                                                <th className="text-left text-xs font-medium text-[#64748B] py-3 px-4">Status</th>
-                                                <th className="text-left text-xs font-medium text-[#64748B] py-3 px-4">Last Login</th>
-                                                <th className="text-right text-xs font-medium text-[#64748B] py-3 px-4">Actions</th>
+                                                <th className="text-left text-xs font-medium text-[#737373] py-3 px-4">User</th>
+                                                <th className="text-left text-xs font-medium text-[#737373] py-3 px-4">Role</th>
+                                                <th className="text-left text-xs font-medium text-[#737373] py-3 px-4">Status</th>
+                                                <th className="text-left text-xs font-medium text-[#737373] py-3 px-4">Last Login</th>
+                                                <th className="text-right text-xs font-medium text-[#737373] py-3 px-4">Actions</th>
                                             </tr>
                                         </thead>
-                                        <tbody className="divide-y divide-[rgba(244,246,255,0.04)]">
+                                        <tbody className="divide-y divide-[rgba(255,255,255,0.03)]">
                                             {users.map(user => (
-                                                <tr key={user.id} className="hover:bg-[rgba(244,246,255,0.02)]">
+                                                <tr key={user.id} className="hover:bg-[rgba(255,255,255,0.02)]">
                                                     <td className="py-3 px-4">
                                                         <div className="flex items-center gap-3">
-                                                            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#6366F1] to-[#4F46E5] flex items-center justify-center text-white text-sm font-medium">
+                                                            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#E0B954] to-[#B8872A] flex items-center justify-center text-white text-sm font-medium">
                                                                 {user.name.charAt(0).toUpperCase()}
                                                             </div>
                                                             <div>
                                                                 <div className="text-sm text-white">{user.name}</div>
-                                                                <div className="text-xs text-[#64748B]">{user.email}</div>
+                                                                <div className="text-xs text-[#737373]">{user.email}</div>
                                                             </div>
                                                         </div>
                                                     </td>
@@ -743,10 +743,10 @@ const AdminDashboard = () => {
                                                             {user.role.split(',').map((r, i) => (
                                                                 <span key={i} className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs ${
                                                                     r.trim() === 'admin' 
-                                                                        ? 'bg-[#6366F1]/20 text-[#818CF8] border border-[#6366F1]/30' 
+                                                                        ? 'bg-[#E0B954]/20 text-[#818CF8] border border-[#E0B954]/30' 
                                                                         : r.trim() === 'project_manager'
-                                                                        ? 'bg-[#8B5CF6]/20 text-[#A78BFA] border border-[#8B5CF6]/30'
-                                                                        : 'bg-[rgba(244,246,255,0.06)] text-[#94A3B8]'
+                                                                        ? 'bg-[#C79E3B]/20 text-[#A78BFA] border border-[#C79E3B]/30'
+                                                                        : 'bg-[rgba(255,255,255,0.05)] text-[#a3a3a3]'
                                                                 }`}>
                                                                     {r.trim() === 'admin' && <Shield className="w-3 h-3" />}
                                                                     {r.trim() === 'project_manager' && <UserCog className="w-3 h-3" />}
@@ -763,8 +763,8 @@ const AdminDashboard = () => {
                                                                 Active
                                                             </span>
                                                         ) : (
-                                                            <span className="inline-flex items-center gap-1 text-xs text-[#64748B]">
-                                                                <span className="w-1.5 h-1.5 rounded-full bg-[#64748B]" />
+                                                            <span className="inline-flex items-center gap-1 text-xs text-[#737373]">
+                                                                <span className="w-1.5 h-1.5 rounded-full bg-[#737373]" />
                                                                 Inactive
                                                             </span>
                                                         )}
@@ -772,7 +772,7 @@ const AdminDashboard = () => {
                                                             <span className="ml-2 text-[10px] text-[#F59E0B]">(First Login)</span>
                                                         )}
                                                     </td>
-                                                    <td className="py-3 px-4 text-sm text-[#64748B]">
+                                                    <td className="py-3 px-4 text-sm text-[#737373]">
                                                         {user.last_login_at 
                                                             ? new Date(user.last_login_at).toLocaleDateString() 
                                                             : 'Never'
@@ -784,7 +784,7 @@ const AdminDashboard = () => {
                                                                 variant="ghost"
                                                                 size="sm"
                                                                 onClick={() => handleToggleUserRole(user, 'admin')}
-                                                                className={`h-8 ${user.role.includes('admin') ? 'text-[#6366F1]' : 'text-[#64748B]'}`}
+                                                                className={`h-8 ${user.role.includes('admin') ? 'text-[#E0B954]' : 'text-[#737373]'}`}
                                                             >
                                                                 <Shield className="w-3.5 h-3.5 mr-1" />
                                                                 {user.role.includes('admin') ? 'Remove Admin' : 'Add Admin'}
@@ -793,7 +793,7 @@ const AdminDashboard = () => {
                                                                 variant="ghost"
                                                                 size="sm"
                                                                 onClick={() => handleToggleUserRole(user, 'project_manager')}
-                                                                className={`h-8 ${user.role.includes('project_manager') ? 'text-[#8B5CF6]' : 'text-[#64748B]'}`}
+                                                                className={`h-8 ${user.role.includes('project_manager') ? 'text-[#C79E3B]' : 'text-[#737373]'}`}
                                                             >
                                                                 <UserCog className="w-3.5 h-3.5 mr-1" />
                                                                 {user.role.includes('project_manager') ? 'Remove PM' : 'Add PM'}
@@ -802,7 +802,7 @@ const AdminDashboard = () => {
                                                                 variant="ghost"
                                                                 size="sm"
                                                                 onClick={() => handleResetPassword(user)}
-                                                                className="text-[#64748B] hover:text-[#F59E0B] h-8"
+                                                                className="text-[#737373] hover:text-[#F59E0B] h-8"
                                                             >
                                                                 <Key className="w-3.5 h-3.5 mr-1" />
                                                                 Reset
@@ -811,7 +811,7 @@ const AdminDashboard = () => {
                                                                 variant="ghost"
                                                                 size="sm"
                                                                 onClick={() => handleDeleteUser(user)}
-                                                                className="text-[#64748B] hover:text-red-400 h-8"
+                                                                className="text-[#737373] hover:text-red-400 h-8"
                                                             >
                                                                 <Trash2 className="w-3.5 h-3.5 mr-1" />
                                                                 Delete
@@ -823,7 +823,7 @@ const AdminDashboard = () => {
                                         </tbody>
                                     </table>
                                     {users.length === 0 && (
-                                        <div className="text-center py-12 text-[#64748B]">
+                                        <div className="text-center py-12 text-[#737373]">
                                             No users yet. Click "Add User" to create one.
                                         </div>
                                     )}
@@ -837,50 +837,50 @@ const AdminDashboard = () => {
             {/* Employee Modal */}
             {showEmployeeModal && (
                 <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setShowEmployeeModal(false)}>
-                    <div className="bg-[#0F1118] border border-[rgba(244,246,255,0.08)] rounded-2xl w-full max-w-md shadow-2xl" onClick={e => e.stopPropagation()}>
-                        <div className="flex items-center justify-between p-5 border-b border-[rgba(244,246,255,0.06)]">
+                    <div className="bg-[#0d0d0d] border border-[rgba(255,255,255,0.07)] rounded-2xl w-full max-w-md shadow-2xl" onClick={e => e.stopPropagation()}>
+                        <div className="flex items-center justify-between p-5 border-b border-[rgba(255,255,255,0.05)]">
                             <h2 className="text-lg font-bold text-white">
                                 {editingEmployee ? 'Edit Employee' : 'Add Employee'}
                             </h2>
-                            <button onClick={() => setShowEmployeeModal(false)} className="p-2 rounded-lg hover:bg-[rgba(244,246,255,0.05)] text-[#475569] hover:text-white">
+                            <button onClick={() => setShowEmployeeModal(false)} className="p-2 rounded-lg hover:bg-[rgba(244,246,255,0.05)] text-[#737373] hover:text-white">
                                 <X className="w-5 h-5" />
                             </button>
                         </div>
                         <div className="p-5 space-y-4">
                             <div>
-                                <label className="text-xs font-medium text-[#64748B] block mb-1.5">Name *</label>
+                                <label className="text-xs font-medium text-[#737373] block mb-1.5">Name *</label>
                                 <Input
                                     value={employeeForm.name}
                                     onChange={e => setEmployeeForm(f => ({ ...f, name: e.target.value }))}
                                     placeholder="John Doe"
-                                    className="bg-[rgba(244,246,255,0.03)] border-[rgba(244,246,255,0.08)] text-[#F4F6FF] rounded-xl h-10"
+                                    className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl h-10"
                                 />
                             </div>
                             <div>
-                                <label className="text-xs font-medium text-[#64748B] block mb-1.5">Email *</label>
+                                <label className="text-xs font-medium text-[#737373] block mb-1.5">Email *</label>
                                 <Input
                                     type="email"
                                     value={employeeForm.email}
                                     onChange={e => setEmployeeForm(f => ({ ...f, email: e.target.value }))}
                                     placeholder="john@company.com"
-                                    className="bg-[rgba(244,246,255,0.03)] border-[rgba(244,246,255,0.08)] text-[#F4F6FF] rounded-xl h-10"
+                                    className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl h-10"
                                 />
                             </div>
                             <div>
-                                <label className="text-xs font-medium text-[#64748B] block mb-1.5">GitHub Username</label>
+                                <label className="text-xs font-medium text-[#737373] block mb-1.5">GitHub Username</label>
                                 <Input
                                     value={employeeForm.github_username}
                                     onChange={e => setEmployeeForm(f => ({ ...f, github_username: e.target.value }))}
                                     placeholder="johndoe"
-                                    className="bg-[rgba(244,246,255,0.03)] border-[rgba(244,246,255,0.08)] text-[#F4F6FF] rounded-xl h-10"
+                                    className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl h-10"
                                 />
                             </div>
                             <div>
-                                <label className="text-xs font-medium text-[#64748B] block mb-1.5">Specialization</label>
+                                <label className="text-xs font-medium text-[#737373] block mb-1.5">Specialization</label>
                                 <select
                                     value={employeeForm.specialization}
                                     onChange={e => setEmployeeForm(f => ({ ...f, specialization: e.target.value }))}
-                                    className="w-full h-10 bg-[rgba(244,246,255,0.03)] border border-[rgba(244,246,255,0.08)] text-[#E2E8F0] rounded-xl px-3 text-sm"
+                                    className="w-full h-10 bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.07)] text-[#f5f5f5] rounded-xl px-3 text-sm"
                                 >
                                     <option value="">Select specialization</option>
                                     <option value="frontend">Frontend</option>
@@ -896,11 +896,11 @@ const AdminDashboard = () => {
                                 </select>
                             </div>
                         </div>
-                        <div className="flex justify-end gap-3 p-5 border-t border-[rgba(244,246,255,0.06)]">
-                            <Button variant="ghost" onClick={() => setShowEmployeeModal(false)} className="text-[#64748B] rounded-xl px-5">Cancel</Button>
+                        <div className="flex justify-end gap-3 p-5 border-t border-[rgba(255,255,255,0.05)]">
+                            <Button variant="ghost" onClick={() => setShowEmployeeModal(false)} className="text-[#737373] rounded-xl px-5">Cancel</Button>
                             <Button
                                 onClick={handleSaveEmployee}
-                                className="bg-gradient-to-r from-[#6366F1] to-[#4F46E5] text-white rounded-xl px-6 font-medium shadow-lg shadow-[#4F46E5]/20"
+                                className="bg-gradient-to-r from-[#E0B954] to-[#B8872A] text-white rounded-xl px-6 font-medium shadow-lg shadow-[#B8872A]/20"
                             >
                                 <Save className="w-4 h-4 mr-2" />
                                 {editingEmployee ? 'Update' : 'Create'}
@@ -913,10 +913,10 @@ const AdminDashboard = () => {
             {/* User Modal */}
             {showUserModal && (
                 <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setShowUserModal(false)}>
-                    <div className="bg-[#0F1118] border border-[rgba(244,246,255,0.08)] rounded-2xl w-full max-w-md shadow-2xl" onClick={e => e.stopPropagation()}>
-                        <div className="flex items-center justify-between p-5 border-b border-[rgba(244,246,255,0.06)]">
+                    <div className="bg-[#0d0d0d] border border-[rgba(255,255,255,0.07)] rounded-2xl w-full max-w-md shadow-2xl" onClick={e => e.stopPropagation()}>
+                        <div className="flex items-center justify-between p-5 border-b border-[rgba(255,255,255,0.05)]">
                             <h2 className="text-lg font-bold text-white">Add New User</h2>
-                            <button onClick={() => setShowUserModal(false)} className="p-2 rounded-lg hover:bg-[rgba(244,246,255,0.05)] text-[#475569] hover:text-white">
+                            <button onClick={() => setShowUserModal(false)} className="p-2 rounded-lg hover:bg-[rgba(244,246,255,0.05)] text-[#737373] hover:text-white">
                                 <X className="w-5 h-5" />
                             </button>
                         </div>
@@ -925,7 +925,7 @@ const AdminDashboard = () => {
                                 <div className="space-y-4">
                                     <div className="p-4 bg-[rgba(16,185,129,0.1)] border border-[rgba(16,185,129,0.2)] rounded-xl">
                                         <p className="text-sm text-[#10B981] font-medium mb-2">User Created Successfully!</p>
-                                        <p className="text-xs text-[#94A3B8] mb-2">Share this temporary password with the user:</p>
+                                        <p className="text-xs text-[#a3a3a3] mb-2">Share this temporary password with the user:</p>
                                         <div className="flex items-center gap-2">
                                             <code className="flex-1 bg-[rgba(244,246,255,0.05)] px-3 py-2 rounded-lg text-sm text-white font-mono">
                                                 {generatedPassword}
@@ -937,90 +937,90 @@ const AdminDashboard = () => {
                                                     navigator.clipboard.writeText(generatedPassword);
                                                     toast.success('Copied to clipboard');
                                                 }}
-                                                className="text-[#64748B] hover:text-white"
+                                                className="text-[#737373] hover:text-white"
                                             >
                                                 Copy
                                             </Button>
                                         </div>
                                     </div>
-                                    <p className="text-xs text-[#64748B]">
+                                    <p className="text-xs text-[#737373]">
                                         They will be required to change this password on first login.
                                     </p>
                                 </div>
                             ) : (
                                 <>
                                     <div>
-                                        <label className="text-xs font-medium text-[#64748B] block mb-1.5">Name *</label>
+                                        <label className="text-xs font-medium text-[#737373] block mb-1.5">Name *</label>
                                         <Input
                                             value={userForm.name}
                                             onChange={e => setUserForm(f => ({ ...f, name: e.target.value }))}
                                             placeholder="John Doe"
-                                            className="bg-[rgba(244,246,255,0.03)] border-[rgba(244,246,255,0.08)] text-[#F4F6FF] rounded-xl h-10"
+                                            className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl h-10"
                                         />
                                     </div>
                                     <div>
-                                        <label className="text-xs font-medium text-[#64748B] block mb-1.5">Email *</label>
+                                        <label className="text-xs font-medium text-[#737373] block mb-1.5">Email *</label>
                                         <Input
                                             type="email"
                                             value={userForm.email}
                                             onChange={e => setUserForm(f => ({ ...f, email: e.target.value }))}
                                             placeholder="john@company.com"
-                                            className="bg-[rgba(244,246,255,0.03)] border-[rgba(244,246,255,0.08)] text-[#F4F6FF] rounded-xl h-10"
+                                            className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl h-10"
                                         />
                                     </div>
                                     <div>
-                                        <label className="text-xs font-medium text-[#64748B] block mb-2">Roles</label>
+                                        <label className="text-xs font-medium text-[#737373] block mb-2">Roles</label>
                                         <div className="space-y-2">
                                             <label className="flex items-center gap-2 cursor-pointer">
                                                 <input
                                                     type="checkbox"
                                                     checked={userForm.roles.includes('admin')}
                                                     onChange={() => handleRoleToggle('admin')}
-                                                    className="w-4 h-4 rounded border-[rgba(244,246,255,0.2)] bg-[rgba(244,246,255,0.03)] text-[#6366F1] focus:ring-[#6366F1]"
+                                                    className="w-4 h-4 rounded border-[rgba(244,246,255,0.2)] bg-[rgba(255,255,255,0.025)] text-[#E0B954] focus:ring-[#E0B954]"
                                                 />
-                                                <span className="text-sm text-[#E2E8F0]">Admin</span>
-                                                <span className="text-xs text-[#64748B]">(Full access)</span>
+                                                <span className="text-sm text-[#f5f5f5]">Admin</span>
+                                                <span className="text-xs text-[#737373]">(Full access)</span>
                                             </label>
                                             <label className="flex items-center gap-2 cursor-pointer">
                                                 <input
                                                     type="checkbox"
                                                     checked={userForm.roles.includes('project_manager')}
                                                     onChange={() => handleRoleToggle('project_manager')}
-                                                    className="w-4 h-4 rounded border-[rgba(244,246,255,0.2)] bg-[rgba(244,246,255,0.03)] text-[#8B5CF6] focus:ring-[#8B5CF6]"
+                                                    className="w-4 h-4 rounded border-[rgba(244,246,255,0.2)] bg-[rgba(255,255,255,0.025)] text-[#C79E3B] focus:ring-[#C79E3B]"
                                                 />
-                                                <span className="text-sm text-[#E2E8F0]">Project Manager</span>
-                                                <span className="text-xs text-[#64748B]">(PM tab access)</span>
+                                                <span className="text-sm text-[#f5f5f5]">Project Manager</span>
+                                                <span className="text-xs text-[#737373]">(PM tab access)</span>
                                             </label>
                                             <label className="flex items-center gap-2 cursor-pointer">
                                                 <input
                                                     type="checkbox"
                                                     checked={userForm.roles.includes('developer')}
                                                     onChange={() => handleRoleToggle('developer')}
-                                                    className="w-4 h-4 rounded border-[rgba(244,246,255,0.2)] bg-[rgba(244,246,255,0.03)] text-[#10B981] focus:ring-[#10B981]"
+                                                    className="w-4 h-4 rounded border-[rgba(244,246,255,0.2)] bg-[rgba(255,255,255,0.025)] text-[#10B981] focus:ring-[#10B981]"
                                                 />
-                                                <span className="text-sm text-[#E2E8F0]">Developer</span>
-                                                <span className="text-xs text-[#64748B]">(Project access)</span>
+                                                <span className="text-sm text-[#f5f5f5]">Developer</span>
+                                                <span className="text-xs text-[#737373]">(Project access)</span>
                                             </label>
                                         </div>
                                     </div>
                                 </>
                             )}
                         </div>
-                        <div className="flex justify-end gap-3 p-5 border-t border-[rgba(244,246,255,0.06)]">
+                        <div className="flex justify-end gap-3 p-5 border-t border-[rgba(255,255,255,0.05)]">
                             <Button 
                                 variant="ghost" 
                                 onClick={() => {
                                     setShowUserModal(false);
                                     setGeneratedPassword(null);
                                 }} 
-                                className="text-[#64748B] rounded-xl px-5"
+                                className="text-[#737373] rounded-xl px-5"
                             >
                                 {generatedPassword ? 'Close' : 'Cancel'}
                             </Button>
                             {!generatedPassword && (
                                 <Button
                                     onClick={handleSaveUser}
-                                    className="bg-gradient-to-r from-[#6366F1] to-[#4F46E5] text-white rounded-xl px-6 font-medium shadow-lg shadow-[#4F46E5]/20"
+                                    className="bg-gradient-to-r from-[#E0B954] to-[#B8872A] text-white rounded-xl px-6 font-medium shadow-lg shadow-[#B8872A]/20"
                                 >
                                     <Plus className="w-4 h-4 mr-2" />
                                     Create User
@@ -1034,54 +1034,54 @@ const AdminDashboard = () => {
             {/* GitHub Settings Modal */}
             {showGitHubModal && editingProject && (
                 <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setShowGitHubModal(false)}>
-                    <div className="bg-[#0F1118] border border-[rgba(244,246,255,0.08)] rounded-2xl w-full max-w-md shadow-2xl" onClick={e => e.stopPropagation()}>
-                        <div className="flex items-center justify-between p-5 border-b border-[rgba(244,246,255,0.06)]">
+                    <div className="bg-[#0d0d0d] border border-[rgba(255,255,255,0.07)] rounded-2xl w-full max-w-md shadow-2xl" onClick={e => e.stopPropagation()}>
+                        <div className="flex items-center justify-between p-5 border-b border-[rgba(255,255,255,0.05)]">
                             <div>
                                 <h2 className="text-lg font-bold text-white">GitHub Settings</h2>
-                                <p className="text-xs text-[#64748B] mt-0.5">{editingProject.name}</p>
+                                <p className="text-xs text-[#737373] mt-0.5">{editingProject.name}</p>
                             </div>
-                            <button onClick={() => setShowGitHubModal(false)} className="p-2 rounded-lg hover:bg-[rgba(244,246,255,0.05)] text-[#475569] hover:text-white">
+                            <button onClick={() => setShowGitHubModal(false)} className="p-2 rounded-lg hover:bg-[rgba(244,246,255,0.05)] text-[#737373] hover:text-white">
                                 <X className="w-5 h-5" />
                             </button>
                         </div>
                         <div className="p-5 space-y-4">
                             <div>
-                                <label className="text-xs font-medium text-[#64748B] block mb-1.5">Repository URL</label>
+                                <label className="text-xs font-medium text-[#737373] block mb-1.5">Repository URL</label>
                                 <Input
                                     value={gitHubForm.github_repo_url}
                                     onChange={e => setGitHubForm(f => ({ ...f, github_repo_url: e.target.value }))}
                                     placeholder="https://github.com/org/repo"
-                                    className="bg-[rgba(244,246,255,0.03)] border-[rgba(244,246,255,0.08)] text-[#F4F6FF] rounded-xl h-10"
+                                    className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl h-10"
                                 />
                             </div>
                             <div>
-                                <label className="text-xs font-medium text-[#64748B] block mb-1.5">Repository Name (org/repo)</label>
+                                <label className="text-xs font-medium text-[#737373] block mb-1.5">Repository Name (org/repo)</label>
                                 <Input
                                     value={gitHubForm.github_repo_name}
                                     onChange={e => setGitHubForm(f => ({ ...f, github_repo_name: e.target.value }))}
                                     placeholder="myorg/myrepo"
-                                    className="bg-[rgba(244,246,255,0.03)] border-[rgba(244,246,255,0.08)] text-[#F4F6FF] rounded-xl h-10"
+                                    className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl h-10"
                                 />
                             </div>
                             <div>
-                                <label className="text-xs font-medium text-[#64748B] block mb-1.5">GitHub Token</label>
+                                <label className="text-xs font-medium text-[#737373] block mb-1.5">GitHub Token</label>
                                 <Input
                                     type="password"
                                     value={gitHubForm.github_token}
                                     onChange={e => setGitHubForm(f => ({ ...f, github_token: e.target.value }))}
                                     placeholder={editingProject.has_github_token ? "Token already set (leave empty to keep)" : "ghp_xxxx..."}
-                                    className="bg-[rgba(244,246,255,0.03)] border-[rgba(244,246,255,0.08)] text-[#F4F6FF] rounded-xl h-10"
+                                    className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl h-10"
                                 />
-                                <p className="text-[10px] text-[#475569] mt-1">
+                                <p className="text-[10px] text-[#737373] mt-1">
                                     Token needs repo scope for invitations. Leave empty to keep existing token.
                                 </p>
                             </div>
                         </div>
-                        <div className="flex justify-end gap-3 p-5 border-t border-[rgba(244,246,255,0.06)]">
-                            <Button variant="ghost" onClick={() => setShowGitHubModal(false)} className="text-[#64748B] rounded-xl px-5">Cancel</Button>
+                        <div className="flex justify-end gap-3 p-5 border-t border-[rgba(255,255,255,0.05)]">
+                            <Button variant="ghost" onClick={() => setShowGitHubModal(false)} className="text-[#737373] rounded-xl px-5">Cancel</Button>
                             <Button
                                 onClick={handleSaveGitHubSettings}
-                                className="bg-gradient-to-r from-[#6366F1] to-[#4F46E5] text-white rounded-xl px-6 font-medium shadow-lg shadow-[#4F46E5]/20"
+                                className="bg-gradient-to-r from-[#E0B954] to-[#B8872A] text-white rounded-xl px-6 font-medium shadow-lg shadow-[#B8872A]/20"
                             >
                                 <Github className="w-4 h-4 mr-2" />
                                 Save Settings

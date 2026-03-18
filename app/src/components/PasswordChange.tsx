@@ -42,18 +42,18 @@ export function PasswordChange() {
   };
 
   return (
-    <div className="min-h-screen bg-[#05060B] flex items-center justify-center p-4">
-      <Card className="w-full max-w-md bg-[#0B0D14] border-[rgba(244,246,255,0.08)]">
+    <div className="min-h-screen bg-[#080808] flex items-center justify-center p-4">
+      <Card className="w-full max-w-md bg-[#080808] border-[rgba(255,255,255,0.07)]">
         <CardHeader className="space-y-1">
           <div className="flex items-center justify-center mb-4">
-            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#6366F1] to-[#4F46E5] flex items-center justify-center">
+            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#E0B954] to-[#B8872A] flex items-center justify-center">
               <Lock className="w-6 h-6 text-white" />
             </div>
           </div>
           <CardTitle className="text-2xl font-bold text-white text-center">
             Change Password
           </CardTitle>
-          <CardDescription className="text-[#64748B] text-center">
+          <CardDescription className="text-[#737373] text-center">
             Please change your temporary password to continue
           </CardDescription>
         </CardHeader>
@@ -61,7 +61,7 @@ export function PasswordChange() {
           <div className="mb-6 p-4 bg-[rgba(245,158,11,0.1)] border border-[rgba(245,158,11,0.2)] rounded-lg">
             <div className="flex items-start gap-2">
               <AlertCircle className="w-4 h-4 text-[#F59E0B] mt-0.5" />
-              <div className="text-xs text-[#94A3B8]">
+              <div className="text-xs text-[#a3a3a3]">
                 <p className="font-medium text-[#F59E0B] mb-1">Security Requirement</p>
                 <ul className="space-y-1 list-disc list-inside">
                   <li>Minimum 8 characters</li>
@@ -75,22 +75,22 @@ export function PasswordChange() {
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="currentPassword" className="text-[#94A3B8]">Current Password</Label>
+              <Label htmlFor="currentPassword" className="text-[#a3a3a3]">Current Password</Label>
               <div className="relative">
-                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#64748B]" />
+                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#737373]" />
                 <Input
                   id="currentPassword"
                   type={showCurrentPassword ? 'text' : 'password'}
                   placeholder="Enter your current password"
                   value={currentPassword}
                   onChange={(e) => setCurrentPassword(e.target.value)}
-                  className="pl-10 pr-10 bg-[rgba(244,246,255,0.03)] border-[rgba(244,246,255,0.08)] text-[#F4F6FF] placeholder:text-[#475569]"
+                  className="pl-10 pr-10 bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] placeholder:text-[#737373]"
                   required
                 />
                 <button
                   type="button"
                   onClick={() => setShowCurrentPassword(!showCurrentPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-[#64748B] hover:text-white"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-[#737373] hover:text-white"
                 >
                   {showCurrentPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
@@ -98,22 +98,22 @@ export function PasswordChange() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="newPassword" className="text-[#94A3B8]">New Password</Label>
+              <Label htmlFor="newPassword" className="text-[#a3a3a3]">New Password</Label>
               <div className="relative">
-                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#64748B]" />
+                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#737373]" />
                 <Input
                   id="newPassword"
                   type={showNewPassword ? 'text' : 'password'}
                   placeholder="Enter new password"
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
-                  className="pl-10 pr-10 bg-[rgba(244,246,255,0.03)] border-[rgba(244,246,255,0.08)] text-[#F4F6FF] placeholder:text-[#475569]"
+                  className="pl-10 pr-10 bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] placeholder:text-[#737373]"
                   required
                 />
                 <button
                   type="button"
                   onClick={() => setShowNewPassword(!showNewPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-[#64748B] hover:text-white"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-[#737373] hover:text-white"
                 >
                   {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
@@ -121,16 +121,16 @@ export function PasswordChange() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="confirmPassword" className="text-[#94A3B8]">Confirm New Password</Label>
+              <Label htmlFor="confirmPassword" className="text-[#a3a3a3]">Confirm New Password</Label>
               <div className="relative">
-                <CheckCircle2 className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#64748B]" />
+                <CheckCircle2 className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#737373]" />
                 <Input
                   id="confirmPassword"
                   type="password"
                   placeholder="Confirm new password"
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
-                  className="pl-10 bg-[rgba(244,246,255,0.03)] border-[rgba(244,246,255,0.08)] text-[#F4F6FF] placeholder:text-[#475569]"
+                  className="pl-10 bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] placeholder:text-[#737373]"
                   required
                 />
               </div>
@@ -139,7 +139,7 @@ export function PasswordChange() {
             <Button
               type="submit"
               disabled={isLoading}
-              className="w-full bg-gradient-to-r from-[#6366F1] to-[#4F46E5] hover:from-[#5558E6] hover:to-[#4338CA] text-white font-medium"
+              className="w-full bg-gradient-to-r from-[#E0B954] to-[#B8872A] hover:from-[#5558E6] hover:to-[#4338CA] text-white font-medium"
             >
               {isLoading ? (
                 <>

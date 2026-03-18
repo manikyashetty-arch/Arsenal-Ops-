@@ -158,7 +158,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({ workItems, milestones = [],
 
     const eventStyleGetter = (event: CalendarEvent) => {
         const item = event.resource;
-        let backgroundColor = '#6366F1';
+        let backgroundColor = '#E0B954';
         
         switch (item.status) {
             case 'done':
@@ -168,10 +168,10 @@ const CalendarView: React.FC<CalendarViewProps> = ({ workItems, milestones = [],
                 backgroundColor = '#F59E0B';
                 break;
             case 'in_review':
-                backgroundColor = '#8B5CF6';
+                backgroundColor = '#C79E3B';
                 break;
             case 'todo':
-                backgroundColor = '#64748B';
+                backgroundColor = '#737373';
                 break;
         }
 
@@ -238,7 +238,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({ workItems, milestones = [],
     );
 
     return (
-        <Card className="bg-[#0F0F1A] border-[rgba(244,246,255,0.1)]">
+        <Card className="bg-[#0d0d0d] border-[rgba(255,255,255,0.08)]">
             <CardHeader>
                 <CardTitle className="text-white flex items-center gap-2">
                     Calendar View
@@ -248,40 +248,40 @@ const CalendarView: React.FC<CalendarViewProps> = ({ workItems, milestones = [],
                 <div className="calendar-container" style={{ height: '500px' }}>
                     <style>{`
                         .rbc-calendar {
-                            background-color: #0F0F1A;
+                            background-color: #0d0d0d;
                             color: white;
                         }
                         .rbc-header {
-                            background-color: #1A1A2E;
+                            background-color: #121212;
                             color: white;
-                            border-color: rgba(244,246,255,0.1) !important;
+                            border-color: rgba(255,255,255,0.08) !important;
                             padding: 8px;
                         }
                         .rbc-month-view, .rbc-time-view {
-                            border-color: rgba(244,246,255,0.1) !important;
-                            background-color: #0F0F1A;
+                            border-color: rgba(255,255,255,0.08) !important;
+                            background-color: #0d0d0d;
                         }
                         .rbc-month-row {
-                            border-color: rgba(244,246,255,0.1) !important;
+                            border-color: rgba(255,255,255,0.08) !important;
                         }
                         .rbc-day-bg {
-                            background-color: #0F0F1A;
-                            border-color: rgba(244,246,255,0.1) !important;
+                            background-color: #0d0d0d;
+                            border-color: rgba(255,255,255,0.08) !important;
                         }
                         .rbc-day-bg + .rbc-day-bg {
-                            border-left: 1px solid rgba(244,246,255,0.1);
+                            border-left: 1px solid rgba(255,255,255,0.08);
                         }
                         .rbc-off-range-bg {
                             background-color: #0A0A14;
                         }
                         .rbc-today {
-                            background-color: rgba(99, 102, 241, 0.2) !important;
+                            background-color: rgba(224, 185, 84, 0.2) !important;
                         }
                         .rbc-button-link {
                             color: white;
                         }
                         .rbc-show-more {
-                            color: #6366F1;
+                            color: #E0B954;
                             background: transparent;
                         }
                         .rbc-date-cell {
@@ -301,28 +301,28 @@ const CalendarView: React.FC<CalendarViewProps> = ({ workItems, milestones = [],
                             z-index: 1;
                         }
                         .rbc-time-header-content {
-                            border-color: rgba(244,246,255,0.1) !important;
+                            border-color: rgba(255,255,255,0.08) !important;
                         }
                         .rbc-time-content {
-                            background-color: #0F0F1A;
-                            border-color: rgba(244,246,255,0.1) !important;
+                            background-color: #0d0d0d;
+                            border-color: rgba(255,255,255,0.08) !important;
                         }
                         .rbc-time-slot {
-                            border-color: rgba(244,246,255,0.1) !important;
+                            border-color: rgba(255,255,255,0.08) !important;
                         }
                         .rbc-timeslot-group {
-                            border-color: rgba(244,246,255,0.1) !important;
+                            border-color: rgba(255,255,255,0.08) !important;
                         }
                         .rbc-label {
                             color: #9CA3AF;
                         }
                         .rbc-allday-cell {
-                            background-color: #0F0F1A;
+                            background-color: #0d0d0d;
                         }
                         /* Dim weekend columns */
                         .rbc-month-view .rbc-month-row .rbc-day-bg:first-child,
                         .rbc-month-view .rbc-month-row .rbc-day-bg:last-child {
-                            background-color: rgba(244,246,255,0.03);
+                            background-color: rgba(255,255,255,0.025);
                         }
                     `}</style>
                     <Calendar
@@ -344,19 +344,19 @@ const CalendarView: React.FC<CalendarViewProps> = ({ workItems, milestones = [],
                 <div className="flex items-center gap-4 mt-4 text-sm">
                     <div className="flex items-center gap-2">
                         <div className="w-3 h-3 rounded bg-[#10B981]" />
-                        <span className="text-[#64748B]">Done</span>
+                        <span className="text-[#737373]">Done</span>
                     </div>
                     <div className="flex items-center gap-2">
                         <div className="w-3 h-3 rounded bg-[#F59E0B]" />
-                        <span className="text-[#64748B]">In Progress</span>
+                        <span className="text-[#737373]">In Progress</span>
                     </div>
                     <div className="flex items-center gap-2">
                         <div className="w-3 h-3 rounded bg-[#EF4444]" />
-                        <span className="text-[#64748B]">Overdue</span>
+                        <span className="text-[#737373]">Overdue</span>
                     </div>
                     <div className="flex items-center gap-2">
-                        <div className="w-3 h-3 rounded bg-[#64748B]" />
-                        <span className="text-[#64748B]">To Do</span>
+                        <div className="w-3 h-3 rounded bg-[#737373]" />
+                        <span className="text-[#737373]">To Do</span>
                     </div>
                 </div>
             </CardContent>

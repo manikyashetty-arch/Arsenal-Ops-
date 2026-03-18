@@ -115,17 +115,17 @@ const ArchitectureEditor = ({ architecture, onSave, onClose }: ArchitectureEdito
     }, [onClose]);
 
     return (
-        <div className="fixed inset-0 z-50 bg-[#05060B] flex flex-col">
+        <div className="fixed inset-0 z-50 bg-[#080808] flex flex-col">
             {/* Header */}
-            <div className="h-14 border-b border-[rgba(244,246,255,0.08)] bg-[#0B0D14] flex items-center justify-between px-4">
+            <div className="h-14 border-b border-[rgba(255,255,255,0.07)] bg-[#080808] flex items-center justify-between px-4">
                 <div className="flex items-center gap-4">
                     <button
                         onClick={onClose}
-                        className="p-2 rounded-lg hover:bg-[rgba(244,246,255,0.05)] text-[#64748B] hover:text-white"
+                        className="p-2 rounded-lg hover:bg-[rgba(244,246,255,0.05)] text-[#737373] hover:text-white"
                     >
                         <X className="w-5 h-5" />
                     </button>
-                    <div className="w-px h-6 bg-[rgba(244,246,255,0.08)]" />
+                    <div className="w-px h-6 bg-[rgba(255,255,255,0.07)]" />
                     <div className="flex items-center gap-3">
                         <Input
                             value={name}
@@ -133,7 +133,7 @@ const ArchitectureEditor = ({ architecture, onSave, onClose }: ArchitectureEdito
                             className="bg-transparent border-none text-lg font-semibold text-white h-9 w-64 focus:ring-0"
                             placeholder="Architecture Name"
                         />
-                        <span className="text-xs text-[#64748B] capitalize px-2 py-1 rounded bg-[rgba(244,246,255,0.05)]">
+                        <span className="text-xs text-[#737373] capitalize px-2 py-1 rounded bg-[rgba(244,246,255,0.05)]">
                             {architecture.architecture_type}
                         </span>
                     </div>
@@ -144,7 +144,7 @@ const ArchitectureEditor = ({ architecture, onSave, onClose }: ArchitectureEdito
                             variant="ghost"
                             size="sm"
                             onClick={handleReset}
-                            className="text-[#64748B] hover:text-white"
+                            className="text-[#737373] hover:text-white"
                         >
                             <RotateCcw className="w-4 h-4 mr-2" />
                             Reset
@@ -153,7 +153,7 @@ const ArchitectureEditor = ({ architecture, onSave, onClose }: ArchitectureEdito
                     <Button
                         onClick={handleSave}
                         disabled={!hasChanges || isSaving}
-                        className="bg-[#6366F1] hover:bg-[#5558E6] text-white"
+                        className="bg-[#E0B954] hover:bg-[#5558E6] text-white"
                     >
                         {isSaving ? (
                             <>
@@ -171,22 +171,22 @@ const ArchitectureEditor = ({ architecture, onSave, onClose }: ArchitectureEdito
             </div>
 
             {/* Description */}
-            <div className="h-12 border-b border-[rgba(244,246,255,0.06)] bg-[#0B0D14]/50 flex items-center px-4">
+            <div className="h-12 border-b border-[rgba(255,255,255,0.05)] bg-[#080808]/50 flex items-center px-4">
                 <Input
                     value={description}
                     onChange={(e) => setDescription(e.target.value)}
-                    className="bg-transparent border-none text-sm text-[#94A3B8] h-8 w-full focus:ring-0"
+                    className="bg-transparent border-none text-sm text-[#a3a3a3] h-8 w-full focus:ring-0"
                     placeholder="Architecture description..."
                 />
             </div>
 
             {/* AI Refine Panel */}
-            <div className="border-b border-[rgba(244,246,255,0.06)] bg-gradient-to-r from-[#6366F1]/5 to-transparent">
+            <div className="border-b border-[rgba(255,255,255,0.05)] bg-gradient-to-r from-[#E0B954]/5 to-transparent">
                 <div className="px-4 py-3">
                     <div className="flex items-center gap-2 mb-2">
-                        <Sparkles className="w-4 h-4 text-[#6366F1]" />
+                        <Sparkles className="w-4 h-4 text-[#E0B954]" />
                         <span className="text-sm font-medium text-white">AI Architecture Refine</span>
-                        <span className="text-xs text-[#64748B]">Describe changes in plain English</span>
+                        <span className="text-xs text-[#737373]">Describe changes in plain English</span>
                     </div>
                     <div className="flex gap-3">
                         <div className="flex-1">
@@ -194,7 +194,7 @@ const ArchitectureEditor = ({ architecture, onSave, onClose }: ArchitectureEdito
                                 value={changeInstructions}
                                 onChange={(e) => setChangeInstructions(e.target.value)}
                                 placeholder="e.g., Add a Redis cache between API and database, Replace MySQL with PostgreSQL, Add a load balancer, Include message queue for async processing..."
-                                className="bg-[rgba(244,246,255,0.03)] border-[rgba(244,246,255,0.1)] text-[#F4F6FF] rounded-lg min-h-[60px] max-h-[80px] text-sm placeholder:text-[#475569] resize-none"
+                                className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.08)] text-[#F4F6FF] rounded-lg min-h-[60px] max-h-[80px] text-sm placeholder:text-[#737373] resize-none"
                                 onKeyDown={(e) => {
                                     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
                                         e.preventDefault();
@@ -206,7 +206,7 @@ const ArchitectureEditor = ({ architecture, onSave, onClose }: ArchitectureEdito
                         <Button
                             onClick={handleAIRefine}
                             disabled={isRefining || !changeInstructions.trim()}
-                            className="bg-gradient-to-r from-[#6366F1] to-[#4F46E5] hover:from-[#5558E6] hover:to-[#4338CA] text-white h-[60px] px-6 self-start"
+                            className="bg-gradient-to-r from-[#E0B954] to-[#B8872A] hover:from-[#5558E6] hover:to-[#4338CA] text-white h-[60px] px-6 self-start"
                         >
                             {isRefining ? (
                                 <>
@@ -221,7 +221,7 @@ const ArchitectureEditor = ({ architecture, onSave, onClose }: ArchitectureEdito
                             )}
                         </Button>
                     </div>
-                    <p className="text-[10px] text-[#475569] mt-1">Press Cmd+Enter or Ctrl+Enter to submit</p>
+                    <p className="text-[10px] text-[#737373] mt-1">Press Cmd+Enter or Ctrl+Enter to submit</p>
                     
                     {/* Changes Applied */}
                     {changesApplied.length > 0 && (
@@ -232,14 +232,14 @@ const ArchitectureEditor = ({ architecture, onSave, onClose }: ArchitectureEdito
                             </div>
                             <ul className="space-y-1">
                                 {changesApplied.map((change, i) => (
-                                    <li key={i} className="text-xs text-[#94A3B8] flex items-start gap-2">
+                                    <li key={i} className="text-xs text-[#a3a3a3] flex items-start gap-2">
                                         <span className="text-[#10B981]">+</span>
                                         <span>{change}</span>
                                     </li>
                                 ))}
                             </ul>
                             {aiNotes && (
-                                <p className="text-xs text-[#64748B] mt-2 italic border-t border-[#10B981]/20 pt-2">
+                                <p className="text-xs text-[#737373] mt-2 italic border-t border-[#10B981]/20 pt-2">
                                     AI Notes: {aiNotes}
                                 </p>
                             )}
@@ -251,10 +251,10 @@ const ArchitectureEditor = ({ architecture, onSave, onClose }: ArchitectureEdito
             {/* Main Content - Split View */}
             <div className="flex flex-1 overflow-hidden">
                 {/* Code Editor */}
-                <div className="w-1/2 border-r border-[rgba(244,246,255,0.08)] flex flex-col">
-                    <div className="h-10 border-b border-[rgba(244,246,255,0.06)] bg-[rgba(244,246,255,0.02)] flex items-center justify-between px-4">
-                        <span className="text-xs font-medium text-[#64748B]">Mermaid Code</span>
-                        <span className="text-xs text-[#475569]">{code.split('\n').length} lines</span>
+                <div className="w-1/2 border-r border-[rgba(255,255,255,0.07)] flex flex-col">
+                    <div className="h-10 border-b border-[rgba(255,255,255,0.05)] bg-[rgba(255,255,255,0.02)] flex items-center justify-between px-4">
+                        <span className="text-xs font-medium text-[#737373]">Mermaid Code</span>
+                        <span className="text-xs text-[#737373]">{code.split('\n').length} lines</span>
                     </div>
                     <div className="flex-1">
                         <Editor
@@ -278,10 +278,10 @@ const ArchitectureEditor = ({ architecture, onSave, onClose }: ArchitectureEdito
                 </div>
 
                 {/* Preview */}
-                <div className="w-1/2 flex flex-col bg-[#0B0D14]">
-                    <div className="h-10 border-b border-[rgba(244,246,255,0.06)] bg-[rgba(244,246,255,0.02)] flex items-center px-4">
-                        <span className="text-xs font-medium text-[#64748B]">Preview</span>
-                        <span className="text-xs text-[#475569] ml-auto">Drag to pan • Scroll to zoom</span>
+                <div className="w-1/2 flex flex-col bg-[#080808]">
+                    <div className="h-10 border-b border-[rgba(255,255,255,0.05)] bg-[rgba(255,255,255,0.02)] flex items-center px-4">
+                        <span className="text-xs font-medium text-[#737373]">Preview</span>
+                        <span className="text-xs text-[#737373] ml-auto">Drag to pan • Scroll to zoom</span>
                     </div>
                     <div className="flex-1 overflow-hidden">
                         <MermaidRenderer code={code} className="w-full h-full" />
@@ -290,14 +290,14 @@ const ArchitectureEditor = ({ architecture, onSave, onClose }: ArchitectureEdito
             </div>
 
             {/* Info Bar */}
-            <div className="h-8 border-t border-[rgba(244,246,255,0.06)] bg-[#0B0D14] flex items-center justify-between px-4 text-xs text-[#475569] flex-shrink-0">
+            <div className="h-8 border-t border-[rgba(255,255,255,0.05)] bg-[#080808] flex items-center justify-between px-4 text-xs text-[#737373] flex-shrink-0">
                 <div className="flex items-center gap-4">
                     <span>Cost: <span className="text-[#10B981]">{architecture.estimated_cost}</span></span>
                     <span>Complexity: <span className="text-[#F59E0B] capitalize">{architecture.complexity}</span></span>
-                    <span>Timeline: <span className="text-[#6366F1]">{architecture.time_to_implement}</span></span>
+                    <span>Timeline: <span className="text-[#E0B954]">{architecture.time_to_implement}</span></span>
                 </div>
                 <div className="flex items-center gap-2">
-                    <span>Press <kbd className="px-1.5 py-0.5 bg-[rgba(244,246,255,0.1)] rounded text-[#94A3B8]">Esc</kbd> to close</span>
+                    <span>Press <kbd className="px-1.5 py-0.5 bg-[rgba(255,255,255,0.08)] rounded text-[#a3a3a3]">Esc</kbd> to close</span>
                 </div>
             </div>
         </div>

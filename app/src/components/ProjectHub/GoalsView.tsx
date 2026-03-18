@@ -89,7 +89,7 @@ const GoalsView: React.FC<GoalsViewProps> = ({
     return (
         <div className="space-y-6">
             {/* Goals Section */}
-            <Card className="bg-[#0F0F1A] border-[rgba(244,246,255,0.1)]">
+            <Card className="bg-[#0d0d0d] border-[rgba(255,255,255,0.08)]">
                 <CardHeader>
                     <div className="flex items-center justify-between">
                         <CardTitle className="text-white flex items-center gap-2">
@@ -100,7 +100,7 @@ const GoalsView: React.FC<GoalsViewProps> = ({
                             variant="outline"
                             size="sm"
                             onClick={() => setShowAddGoal(!showAddGoal)}
-                            className="border-[rgba(244,246,255,0.1)]"
+                            className="border-[rgba(255,255,255,0.08)]"
                         >
                             <Plus className="w-4 h-4 mr-1" />
                             Add Goal
@@ -109,24 +109,24 @@ const GoalsView: React.FC<GoalsViewProps> = ({
                 </CardHeader>
                 <CardContent>
                     {showAddGoal && (
-                        <div className="mb-4 p-4 bg-[#0A0A14] rounded-lg border border-[rgba(244,246,255,0.06)]">
+                        <div className="mb-4 p-4 bg-[#0A0A14] rounded-lg border border-[rgba(255,255,255,0.05)]">
                             <Input
                                 placeholder="Goal title"
                                 value={newGoal.title}
                                 onChange={(e) => setNewGoal({ ...newGoal, title: e.target.value })}
-                                className="mb-2 bg-[#0F0F1A] border-[rgba(244,246,255,0.1)] text-white"
+                                className="mb-2 bg-[#0d0d0d] border-[rgba(255,255,255,0.08)] text-white"
                             />
                             <Input
                                 placeholder="Description (optional)"
                                 value={newGoal.description}
                                 onChange={(e) => setNewGoal({ ...newGoal, description: e.target.value })}
-                                className="mb-2 bg-[#0F0F1A] border-[rgba(244,246,255,0.1)] text-white"
+                                className="mb-2 bg-[#0d0d0d] border-[rgba(255,255,255,0.08)] text-white"
                             />
                             <Input
                                 type="date"
                                 value={newGoal.due_date}
                                 onChange={(e) => setNewGoal({ ...newGoal, due_date: e.target.value })}
-                                className="mb-3 bg-[#0F0F1A] border-[rgba(244,246,255,0.1)] text-white"
+                                className="mb-3 bg-[#0d0d0d] border-[rgba(255,255,255,0.08)] text-white"
                             />
                             <div className="flex gap-2">
                                 <Button onClick={handleAddGoal} size="sm">Add</Button>
@@ -137,16 +137,16 @@ const GoalsView: React.FC<GoalsViewProps> = ({
 
                     {goals.length === 0 ? (
                         <div className="text-center py-8">
-                            <Target className="w-12 h-12 text-[#64748B] mx-auto mb-2" />
-                            <p className="text-[#64748B]">No goals yet</p>
-                            <p className="text-[#64748B] text-sm">Create goals to track project objectives</p>
+                            <Target className="w-12 h-12 text-[#737373] mx-auto mb-2" />
+                            <p className="text-[#737373]">No goals yet</p>
+                            <p className="text-[#737373] text-sm">Create goals to track project objectives</p>
                         </div>
                     ) : (
                         <div className="space-y-4">
                             {goals.map((goal) => (
                                 <div
                                     key={goal.id}
-                                    className="p-4 bg-[#0A0A14] rounded-lg border border-[rgba(244,246,255,0.06)]"
+                                    className="p-4 bg-[#0A0A14] rounded-lg border border-[rgba(255,255,255,0.05)]"
                                 >
                                     <div className="flex items-start justify-between mb-3">
                                         <div className="flex-1">
@@ -157,14 +157,14 @@ const GoalsView: React.FC<GoalsViewProps> = ({
                                                 </Badge>
                                             </div>
                                             {goal.description && (
-                                                <p className="text-[#64748B] text-sm">{goal.description}</p>
+                                                <p className="text-[#737373] text-sm">{goal.description}</p>
                                             )}
                                         </div>
                                         <Button
                                             variant="ghost"
                                             size="sm"
                                             onClick={() => onDeleteGoal?.(goal.id)}
-                                            className="text-[#64748B] hover:text-red-400"
+                                            className="text-[#737373] hover:text-red-400"
                                         >
                                             <Trash2 className="w-4 h-4" />
                                         </Button>
@@ -172,7 +172,7 @@ const GoalsView: React.FC<GoalsViewProps> = ({
 
                                     <div className="mb-2">
                                         <div className="flex items-center justify-between mb-1">
-                                            <span className="text-[#64748B] text-sm">Progress</span>
+                                            <span className="text-[#737373] text-sm">Progress</span>
                                             <span className="text-white text-sm font-medium">{goal.progress}%</span>
                                         </div>
                                         <Progress value={goal.progress} className="h-2" />
@@ -180,7 +180,7 @@ const GoalsView: React.FC<GoalsViewProps> = ({
 
                                     <div className="flex items-center justify-between text-sm">
                                         {goal.due_date && (
-                                            <div className="flex items-center gap-1 text-[#64748B]">
+                                            <div className="flex items-center gap-1 text-[#737373]">
                                                 <Calendar className="w-3 h-3" />
                                                 Due: {new Date(goal.due_date).toLocaleDateString()}
                                             </div>
@@ -207,7 +207,7 @@ const GoalsView: React.FC<GoalsViewProps> = ({
             </Card>
 
             {/* Milestones Section */}
-            <Card className="bg-[#0F0F1A] border-[rgba(244,246,255,0.1)]">
+            <Card className="bg-[#0d0d0d] border-[rgba(255,255,255,0.08)]">
                 <CardHeader>
                     <div className="flex items-center justify-between">
                         <CardTitle className="text-white flex items-center gap-2">
@@ -218,7 +218,7 @@ const GoalsView: React.FC<GoalsViewProps> = ({
                             variant="outline"
                             size="sm"
                             onClick={() => setShowAddMilestone(!showAddMilestone)}
-                            className="border-[rgba(244,246,255,0.1)]"
+                            className="border-[rgba(255,255,255,0.08)]"
                         >
                             <Plus className="w-4 h-4 mr-1" />
                             Add Milestone
@@ -227,24 +227,24 @@ const GoalsView: React.FC<GoalsViewProps> = ({
                 </CardHeader>
                 <CardContent>
                     {showAddMilestone && (
-                        <div className="mb-4 p-4 bg-[#0A0A14] rounded-lg border border-[rgba(244,246,255,0.06)]">
+                        <div className="mb-4 p-4 bg-[#0A0A14] rounded-lg border border-[rgba(255,255,255,0.05)]">
                             <Input
                                 placeholder="Milestone title"
                                 value={newMilestone.title}
                                 onChange={(e) => setNewMilestone({ ...newMilestone, title: e.target.value })}
-                                className="mb-2 bg-[#0F0F1A] border-[rgba(244,246,255,0.1)] text-white"
+                                className="mb-2 bg-[#0d0d0d] border-[rgba(255,255,255,0.08)] text-white"
                             />
                             <Input
                                 placeholder="Description (optional)"
                                 value={newMilestone.description}
                                 onChange={(e) => setNewMilestone({ ...newMilestone, description: e.target.value })}
-                                className="mb-2 bg-[#0F0F1A] border-[rgba(244,246,255,0.1)] text-white"
+                                className="mb-2 bg-[#0d0d0d] border-[rgba(255,255,255,0.08)] text-white"
                             />
                             <Input
                                 type="date"
                                 value={newMilestone.due_date}
                                 onChange={(e) => setNewMilestone({ ...newMilestone, due_date: e.target.value })}
-                                className="mb-3 bg-[#0F0F1A] border-[rgba(244,246,255,0.1)] text-white"
+                                className="mb-3 bg-[#0d0d0d] border-[rgba(255,255,255,0.08)] text-white"
                             />
                             <div className="flex gap-2">
                                 <Button onClick={handleAddMilestone} size="sm">Add</Button>
@@ -255,14 +255,14 @@ const GoalsView: React.FC<GoalsViewProps> = ({
 
                     {milestones.length === 0 ? (
                         <div className="text-center py-8">
-                            <CheckCircle2 className="w-12 h-12 text-[#64748B] mx-auto mb-2" />
-                            <p className="text-[#64748B]">No milestones yet</p>
-                            <p className="text-[#64748B] text-sm">Create milestones to track key dates</p>
+                            <CheckCircle2 className="w-12 h-12 text-[#737373] mx-auto mb-2" />
+                            <p className="text-[#737373]">No milestones yet</p>
+                            <p className="text-[#737373] text-sm">Create milestones to track key dates</p>
                         </div>
                     ) : (
                         <div className="relative">
                             {/* Timeline line */}
-                            <div className="absolute left-4 top-0 bottom-0 w-0.5 bg-[rgba(244,246,255,0.1)]" />
+                            <div className="absolute left-4 top-0 bottom-0 w-0.5 bg-[rgba(255,255,255,0.08)]" />
 
                             <div className="space-y-4">
                                 {milestones.map((milestone) => (
@@ -272,16 +272,16 @@ const GoalsView: React.FC<GoalsViewProps> = ({
                                             className={`absolute left-2 w-4 h-4 rounded-full border-2 ${
                                                 milestone.is_completed
                                                     ? 'bg-[#10B981] border-[#10B981]'
-                                                    : 'bg-[#0F0F1A] border-[#6366F1]'
+                                                    : 'bg-[#0d0d0d] border-[#E0B954]'
                                             }`}
                                         />
 
-                                        <div className="flex-1 p-4 bg-[#0A0A14] rounded-lg border border-[rgba(244,246,255,0.06)]">
+                                        <div className="flex-1 p-4 bg-[#0A0A14] rounded-lg border border-[rgba(255,255,255,0.05)]">
                                             <div className="flex items-start justify-between">
                                                 <div>
                                                     <h3 className="text-white font-medium">{milestone.title}</h3>
                                                     {milestone.description && (
-                                                        <p className="text-[#64748B] text-sm mt-1">{milestone.description}</p>
+                                                        <p className="text-[#737373] text-sm mt-1">{milestone.description}</p>
                                                     )}
                                                 </div>
                                                 <div className="flex items-center gap-2">
@@ -294,7 +294,7 @@ const GoalsView: React.FC<GoalsViewProps> = ({
                                                             variant="outline"
                                                             size="sm"
                                                             onClick={() => onCompleteMilestone?.(milestone.id)}
-                                                            className="border-[rgba(244,246,255,0.1)]"
+                                                            className="border-[rgba(255,255,255,0.08)]"
                                                         >
                                                             Complete
                                                         </Button>
@@ -303,14 +303,14 @@ const GoalsView: React.FC<GoalsViewProps> = ({
                                                         variant="ghost"
                                                         size="sm"
                                                         onClick={() => onDeleteMilestone?.(milestone.id)}
-                                                        className="text-[#64748B] hover:text-red-400"
+                                                        className="text-[#737373] hover:text-red-400"
                                                     >
                                                         <Trash2 className="w-4 h-4" />
                                                     </Button>
                                                 </div>
                                             </div>
                                             {milestone.due_date && (
-                                                <div className="flex items-center gap-1 text-[#64748B] text-sm mt-2">
+                                                <div className="flex items-center gap-1 text-[#737373] text-sm mt-2">
                                                     <Calendar className="w-3 h-3" />
                                                     {milestone.is_completed && milestone.completed_at
                                                         ? `Completed: ${new Date(milestone.completed_at).toLocaleDateString()}`

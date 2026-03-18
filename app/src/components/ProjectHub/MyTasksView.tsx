@@ -100,7 +100,7 @@ const MyTasksView: React.FC<MyTasksViewProps> = ({ tasks, onTaskClick }) => {
     }, [tasks]);
 
     return (
-        <Card className="bg-[#0F0F1A] border-[rgba(244,246,255,0.1)]">
+        <Card className="bg-[#0d0d0d] border-[rgba(255,255,255,0.08)]">
             <CardHeader>
                 <CardTitle className="text-white flex items-center gap-2">
                     <Briefcase className="w-5 h-5" />
@@ -110,37 +110,37 @@ const MyTasksView: React.FC<MyTasksViewProps> = ({ tasks, onTaskClick }) => {
             <CardContent>
                 {/* Stats */}
                 <div className="grid grid-cols-4 gap-4 mb-6">
-                    <div className="p-3 bg-[#0A0A14] rounded-lg border border-[rgba(244,246,255,0.06)]">
+                    <div className="p-3 bg-[#0A0A14] rounded-lg border border-[rgba(255,255,255,0.05)]">
                         <p className="text-2xl font-bold text-white">{stats.total}</p>
-                        <p className="text-[#64748B] text-sm">Total</p>
+                        <p className="text-[#737373] text-sm">Total</p>
                     </div>
-                    <div className="p-3 bg-[#0A0A14] rounded-lg border border-[rgba(244,246,255,0.06)]">
+                    <div className="p-3 bg-[#0A0A14] rounded-lg border border-[rgba(255,255,255,0.05)]">
                         <p className="text-2xl font-bold text-[#F59E0B]">{stats.inProgress}</p>
-                        <p className="text-[#64748B] text-sm">In Progress</p>
+                        <p className="text-[#737373] text-sm">In Progress</p>
                     </div>
-                    <div className="p-3 bg-[#0A0A14] rounded-lg border border-[rgba(244,246,255,0.06)]">
+                    <div className="p-3 bg-[#0A0A14] rounded-lg border border-[rgba(255,255,255,0.05)]">
                         <p className="text-2xl font-bold text-[#EF4444]">{stats.overdue}</p>
-                        <p className="text-[#64748B] text-sm">Overdue</p>
+                        <p className="text-[#737373] text-sm">Overdue</p>
                     </div>
-                    <div className="p-3 bg-[#0A0A14] rounded-lg border border-[rgba(244,246,255,0.06)]">
+                    <div className="p-3 bg-[#0A0A14] rounded-lg border border-[rgba(255,255,255,0.05)]">
                         <p className="text-2xl font-bold text-[#10B981]">{stats.completed}</p>
-                        <p className="text-[#64748B] text-sm">Completed</p>
+                        <p className="text-[#737373] text-sm">Completed</p>
                     </div>
                 </div>
 
                 {/* Filters */}
                 <Tabs value={filter} onValueChange={(v) => setFilter(v as any)} className="mb-6">
-                    <TabsList className="bg-[#0A0A14] border border-[rgba(244,246,255,0.06)]">
-                        <TabsTrigger value="all" className="data-[state=active]:bg-[#6366F1]">
+                    <TabsList className="bg-[#0A0A14] border border-[rgba(255,255,255,0.05)]">
+                        <TabsTrigger value="all" className="data-[state=active]:bg-[#E0B954]">
                             All ({tasks.length})
                         </TabsTrigger>
-                        <TabsTrigger value="today" className="data-[state=active]:bg-[#6366F1]">
+                        <TabsTrigger value="today" className="data-[state=active]:bg-[#E0B954]">
                             Today
                         </TabsTrigger>
-                        <TabsTrigger value="week" className="data-[state=active]:bg-[#6366F1]">
+                        <TabsTrigger value="week" className="data-[state=active]:bg-[#E0B954]">
                             This Week
                         </TabsTrigger>
-                        <TabsTrigger value="overdue" className="data-[state=active]:bg-[#6366F1]">
+                        <TabsTrigger value="overdue" className="data-[state=active]:bg-[#E0B954]">
                             Overdue ({stats.overdue})
                         </TabsTrigger>
                     </TabsList>
@@ -150,8 +150,8 @@ const MyTasksView: React.FC<MyTasksViewProps> = ({ tasks, onTaskClick }) => {
                 {Object.keys(groupedTasks).length === 0 ? (
                     <div className="text-center py-12">
                         <CheckCircle2 className="w-12 h-12 text-[#10B981] mx-auto mb-2" />
-                        <p className="text-[#64748B]">No tasks found</p>
-                        <p className="text-[#64748B] text-sm">
+                        <p className="text-[#737373]">No tasks found</p>
+                        <p className="text-[#737373] text-sm">
                             {filter === 'all' ? 'You have no assigned tasks' : `No ${filter} tasks`}
                         </p>
                     </div>
@@ -159,10 +159,10 @@ const MyTasksView: React.FC<MyTasksViewProps> = ({ tasks, onTaskClick }) => {
                     <div className="space-y-6">
                         {Object.entries(groupedTasks).map(([projectName, projectTasks]) => (
                             <div key={projectName}>
-                                <h3 className="text-[#8B5CF6] font-medium mb-3 flex items-center gap-2">
+                                <h3 className="text-[#C79E3B] font-medium mb-3 flex items-center gap-2">
                                     <Briefcase className="w-4 h-4" />
                                     {projectName}
-                                    <span className="text-[#64748B] text-sm font-normal">
+                                    <span className="text-[#737373] text-sm font-normal">
                                         ({projectTasks.length})
                                     </span>
                                 </h3>
@@ -170,13 +170,13 @@ const MyTasksView: React.FC<MyTasksViewProps> = ({ tasks, onTaskClick }) => {
                                     {projectTasks.map((task) => (
                                         <div
                                             key={task.id}
-                                            className="p-3 bg-[#0A0A14] rounded-lg border border-[rgba(244,246,255,0.06)] hover:border-[rgba(244,246,255,0.1)] cursor-pointer transition-colors"
+                                            className="p-3 bg-[#0A0A14] rounded-lg border border-[rgba(255,255,255,0.05)] hover:border-[rgba(255,255,255,0.08)] cursor-pointer transition-colors"
                                             onClick={() => onTaskClick?.(task)}
                                         >
                                             <div className="flex items-start justify-between">
                                                 <div className="flex-1">
                                                     <div className="flex items-center gap-2 mb-1">
-                                                        <span className="text-[#6366F1] text-sm font-medium">{task.key}</span>
+                                                        <span className="text-[#E0B954] text-sm font-medium">{task.key}</span>
                                                         <span className="text-white">{task.title}</span>
                                                     </div>
                                                     <div className="flex items-center gap-2">
@@ -196,13 +196,13 @@ const MyTasksView: React.FC<MyTasksViewProps> = ({ tasks, onTaskClick }) => {
                                                 </div>
                                                 <div className="text-right">
                                                     {task.due_date && (
-                                                        <div className="flex items-center gap-1 text-[#64748B] text-sm mb-1">
+                                                        <div className="flex items-center gap-1 text-[#737373] text-sm mb-1">
                                                             <Calendar className="w-3 h-3" />
                                                             {new Date(task.due_date).toLocaleDateString()}
                                                         </div>
                                                     )}
                                                     {task.logged_hours !== undefined && task.estimated_hours !== undefined && (
-                                                        <div className="text-[#64748B] text-sm">
+                                                        <div className="text-[#737373] text-sm">
                                                             {task.estimated_hours}h / {task.logged_hours}h
                                                         </div>
                                                     )}
