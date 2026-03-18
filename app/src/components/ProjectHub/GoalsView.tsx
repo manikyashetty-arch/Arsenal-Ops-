@@ -78,7 +78,7 @@ const GoalsView: React.FC<GoalsViewProps> = ({
     const getStatusColor = (status: string) => {
         switch (status) {
             case 'completed':
-                return 'bg-green-500/20 text-green-400 border-green-500/30';
+                return 'bg-[#E0B954]/15 text-[#E0B954] border-[#E0B954]/30';
             case 'cancelled':
                 return 'bg-red-500/20 text-red-400 border-red-500/30';
             default:
@@ -271,7 +271,7 @@ const GoalsView: React.FC<GoalsViewProps> = ({
                                         <div
                                             className={`absolute left-2 w-4 h-4 rounded-full border-2 ${
                                                 milestone.is_completed
-                                                    ? 'bg-[#10B981] border-[#10B981]'
+                                                    ? 'bg-[#E0B954] border-[#E0B954]'
                                                     : 'bg-[#0d0d0d] border-[#E0B954]'
                                             }`}
                                         />
@@ -286,7 +286,7 @@ const GoalsView: React.FC<GoalsViewProps> = ({
                                                 </div>
                                                 <div className="flex items-center gap-2">
                                                     {milestone.is_completed ? (
-                                                        <Badge variant="outline" className="bg-green-500/20 text-green-400 border-green-500/30">
+                                                        <Badge variant="outline" className="bg-[#E0B954]/15 text-[#E0B954] border-[#E0B954]/30">
                                                             Completed
                                                         </Badge>
                                                     ) : (

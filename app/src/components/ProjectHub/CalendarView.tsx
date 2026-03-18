@@ -162,7 +162,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({ workItems, milestones = [],
         
         switch (item.status) {
             case 'done':
-                backgroundColor = '#10B981';
+                backgroundColor = '#E0B954';
                 break;
             case 'in_progress':
                 backgroundColor = '#F59E0B';
@@ -343,7 +343,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({ workItems, milestones = [],
                 </div>
                 <div className="flex items-center gap-4 mt-4 text-sm">
                     <div className="flex items-center gap-2">
-                        <div className="w-3 h-3 rounded bg-[#10B981]" />
+                        <div className="w-3 h-3 rounded bg-[#E0B954]" />
                         <span className="text-[#737373]">Done</span>
                     </div>
                     <div className="flex items-center gap-2">

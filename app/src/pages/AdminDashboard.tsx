@@ -461,7 +461,7 @@ const AdminDashboard = () => {
                                 <div className="grid grid-cols-4 gap-4">
                                     {[
                                         { label: 'Total Employees', value: stats.total_employees, icon: Users, color: '#E0B954' },
-                                        { label: 'Total Projects', value: stats.total_projects, icon: FolderKanban, color: '#10B981' },
+                                        { label: 'Total Projects', value: stats.total_projects, icon: FolderKanban, color: '#E0B954' },
                                         { label: 'Total Tickets', value: stats.total_tickets, icon: Ticket, color: '#F59E0B' },
                                         { label: 'Active Sprints', value: stats.active_sprints, icon: Calendar, color: '#EC4899' },
                                     ].map((stat, i) => (
@@ -510,7 +510,7 @@ const AdminDashboard = () => {
                                                             className="h-full rounded-full"
                                                             style={{
                                                                 width: `${stats.total_tickets ? (count / stats.total_tickets) * 100 : 0}%`,
-                                                                backgroundColor: priority === 'critical' ? '#EF4444' : priority === 'high' ? '#F97316' : priority === 'medium' ? '#F59E0B' : '#10B981'
+                                                                backgroundColor: priority === 'critical' ? '#EF4444' : priority === 'high' ? '#F97316' : priority === 'medium' ? '#F59E0B' : '#E0B954'
                                                             }}
                                                         />
                                                     </div>
@@ -554,7 +554,7 @@ const AdminDashboard = () => {
                                                 <tr key={emp.id} className="border-b border-[rgba(255,255,255,0.03)] hover:bg-[rgba(255,255,255,0.02)]">
                                                     <td className="px-5 py-4">
                                                         <div className="flex items-center gap-3">
-                                                            <div className="w-8 h-8 rounded-full bg-[rgba(224,185,84,0.2)] flex items-center justify-center text-sm font-medium text-[#818CF8]">
+                                                            <div className="w-8 h-8 rounded-full bg-[rgba(224,185,84,0.2)] flex items-center justify-center text-sm font-medium text-[#E0B954]">
                                                                 {emp.name.charAt(0).toUpperCase()}
                                                             </div>
                                                             <div>
@@ -635,14 +635,14 @@ const AdminDashboard = () => {
                                                             href={project.github_repo_url}
                                                             target="_blank"
                                                             rel="noopener noreferrer"
-                                                            className="text-xs text-[#818CF8] hover:underline flex items-center gap-1"
+                                                            className="text-xs text-[#E0B954] hover:underline flex items-center gap-1"
                                                             onClick={(e) => e.stopPropagation()}
                                                         >
                                                             {project.github_repo_name || project.github_repo_url}
                                                             <ExternalLink className="w-3 h-3" />
                                                         </a>
                                                         {project.has_github_token && (
-                                                            <span className="ml-auto text-[10px] text-[#10B981] flex items-center gap-1">
+                                                            <span className="ml-auto text-[10px] text-[#E0B954] flex items-center gap-1">
                                                                 <CheckCircle2 className="w-3 h-3" />Token
                                                             </span>
                                                         )}
@@ -651,7 +651,7 @@ const AdminDashboard = () => {
                                                         size="sm"
                                                         onClick={(e) => handleSendGitHubInvites(project, e)}
                                                         disabled={invitingProjectId === project.id}
-                                                        className="w-full h-7 text-[10px] bg-gradient-to-r from-[#E0B954] to-[#B8872A] hover:from-[#5558E6] hover:to-[#4338CA] text-white rounded-lg font-medium shadow-sm disabled:opacity-50"
+                                                        className="w-full h-7 text-[10px] bg-gradient-to-r from-[#E0B954] to-[#B8872A] hover:from-[#C79E3B] hover:to-[#B8872A] text-white rounded-lg font-medium shadow-sm disabled:opacity-50"
                                                     >
                                                         {invitingProjectId === project.id ? (
                                                             <>
@@ -707,7 +707,7 @@ const AdminDashboard = () => {
                                     <h2 className="text-lg font-semibold text-white">User Management</h2>
                                     <Button
                                         onClick={handleCreateUser}
-                                        className="bg-gradient-to-r from-[#E0B954] to-[#B8872A] hover:from-[#5558E6] hover:to-[#4338CA] text-white rounded-xl h-10 px-4"
+                                        className="bg-gradient-to-r from-[#E0B954] to-[#B8872A] hover:from-[#C79E3B] hover:to-[#B8872A] text-white rounded-xl h-10 px-4"
                                     >
                                         <Plus className="w-4 h-4 mr-2" />
                                         Add User
@@ -743,9 +743,9 @@ const AdminDashboard = () => {
                                                             {user.role.split(',').map((r, i) => (
                                                                 <span key={i} className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs ${
                                                                     r.trim() === 'admin' 
-                                                                        ? 'bg-[#E0B954]/20 text-[#818CF8] border border-[#E0B954]/30' 
+                                                                        ? 'bg-[#E0B954]/20 text-[#E0B954] border border-[#E0B954]/30' 
                                                                         : r.trim() === 'project_manager'
-                                                                        ? 'bg-[#C79E3B]/20 text-[#A78BFA] border border-[#C79E3B]/30'
+                                                                        ? 'bg-[#C79E3B]/20 text-[#C79E3B] border border-[#C79E3B]/30'
                                                                         : 'bg-[rgba(255,255,255,0.05)] text-[#a3a3a3]'
                                                                 }`}>
                                                                     {r.trim() === 'admin' && <Shield className="w-3 h-3" />}
@@ -758,8 +758,8 @@ const AdminDashboard = () => {
                                                     </td>
                                                     <td className="py-3 px-4">
                                                         {user.is_active ? (
-                                                            <span className="inline-flex items-center gap-1 text-xs text-[#10B981]">
-                                                                <span className="w-1.5 h-1.5 rounded-full bg-[#10B981]" />
+                                                            <span className="inline-flex items-center gap-1 text-xs text-[#E0B954]">
+                                                                <span className="w-1.5 h-1.5 rounded-full bg-[#E0B954]" />
                                                                 Active
                                                             </span>
                                                         ) : (
@@ -923,8 +923,8 @@ const AdminDashboard = () => {
                         <div className="p-5 space-y-4">
                             {generatedPassword ? (
                                 <div className="space-y-4">
-                                    <div className="p-4 bg-[rgba(16,185,129,0.1)] border border-[rgba(16,185,129,0.2)] rounded-xl">
-                                        <p className="text-sm text-[#10B981] font-medium mb-2">User Created Successfully!</p>
+                                    <div className="p-4 bg-[rgba(224,185,84,0.1)] border border-[rgba(224,185,84,0.2)] rounded-xl">
+                                        <p className="text-sm text-[#E0B954] font-medium mb-2">User Created Successfully!</p>
                                         <p className="text-xs text-[#a3a3a3] mb-2">Share this temporary password with the user:</p>
                                         <div className="flex items-center gap-2">
                                             <code className="flex-1 bg-[rgba(244,246,255,0.05)] px-3 py-2 rounded-lg text-sm text-white font-mono">
@@ -996,7 +996,7 @@ const AdminDashboard = () => {
                                                     type="checkbox"
                                                     checked={userForm.roles.includes('developer')}
                                                     onChange={() => handleRoleToggle('developer')}
-                                                    className="w-4 h-4 rounded border-[rgba(244,246,255,0.2)] bg-[rgba(255,255,255,0.025)] text-[#10B981] focus:ring-[#10B981]"
+                                                    className="w-4 h-4 rounded border-[rgba(244,246,255,0.2)] bg-[rgba(255,255,255,0.025)] text-[#E0B954] focus:ring-[#E0B954]"
                                                 />
                                                 <span className="text-sm text-[#f5f5f5]">Developer</span>
                                                 <span className="text-xs text-[#737373]">(Project access)</span>

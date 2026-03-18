@@ -128,7 +128,7 @@ const getPriorityColor = (priority?: string) => {
 };
 
 const STATUS_COLOR: Record<string, string> = {
-    done: '#10B981',
+    done: '#E0B954',
     in_progress: '#F59E0B',
     in_review: '#C79E3B',
     todo: '#737373',
@@ -193,7 +193,7 @@ const TimelineView: React.FC<TimelineViewProps> = ({
                     label: `🎯 ${m.title}`,
                     start: due,
                     end: due,
-                    color: m.completed_at ? '#10B981' : '#EC4899',
+                    color: m.completed_at ? '#E0B954' : '#EC4899',
                     type: 'milestone' as const,
                     progress: m.completed_at ? 100 : 0,
                 };
@@ -208,7 +208,7 @@ const TimelineView: React.FC<TimelineViewProps> = ({
                     label: `⭐ ${g.title}`,
                     start: due,
                     end: due,
-                    color: g.status === 'completed' ? '#10B981' : '#F59E0B',
+                    color: g.status === 'completed' ? '#E0B954' : '#F59E0B',
                     type: 'goal' as const,
                     progress: g.status === 'completed' ? 100 : (g.progress || 0),
                 };
@@ -581,7 +581,7 @@ const TimelineView: React.FC<TimelineViewProps> = ({
                     {/* Legend */}
                     <div className="flex items-center gap-4 px-4 py-3 border-t border-[rgba(255,255,255,0.05)] text-xs">
                         {[
-                            { color: '#10B981', label: 'Done' },
+                            { color: '#E0B954', label: 'Done' },
                             { color: '#F59E0B', label: 'In Progress' },
                             { color: '#C79E3B', label: 'In Review' },
                             { color: '#737373', label: 'To Do' },

@@ -125,7 +125,7 @@ const ListView: React.FC<ListViewProps> = ({ workItems, onTaskClick }) => {
     const getStatusIcon = (status: string) => {
         switch (status) {
             case 'done':
-                return <CheckCircle2 className="w-4 h-4 text-[#10B981]" />;
+                return <CheckCircle2 className="w-4 h-4 text-[#E0B954]" />;
             case 'in_progress':
                 return <Clock className="w-4 h-4 text-[#F59E0B]" />;
             case 'in_review':

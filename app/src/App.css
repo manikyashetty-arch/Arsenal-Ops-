@@ -23,7 +23,7 @@
   --color-gold-darker:  #B8872A;
 
   /* Status Colors */
-  --color-success:      #10B981;
+  --color-success:      #E0B954;
   --color-warning:      #F59E0B;
   --color-error:        #EF4444;
   --color-info:         #3B82F6;
@@ -186,7 +186,7 @@ button, a, input, select, textarea {
 }
 
 /* ─── Status dot colors ─────────────────────── */
-.status-active   { background: #10B981; }
+.status-active   { background: #E0B954; }
 .status-planning { background: #737373; }
 .status-done     { background: #E0B954; }
 .status-blocked  { background: #EF4444; }

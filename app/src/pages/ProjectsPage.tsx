@@ -314,7 +314,7 @@ const ProjectsPage = () => {
                     {[
                         { icon: FolderKanban, label: 'Projects', value: totalStats.projects, color: '#E0B954' },
                         { icon: Layers, label: 'Total Items', value: totalStats.items, color: '#F59E0B' },
-                        { icon: CheckCircle2, label: 'Completed', value: totalStats.completed, color: '#10B981' },
+                        { icon: CheckCircle2, label: 'Completed', value: totalStats.completed, color: '#E0B954' },
                         { icon: Zap, label: 'Story Points', value: totalStats.points, color: '#C79E3B' },
                     ].map(stat => (
                         <div key={stat.label} className="relative group">
@@ -388,12 +388,12 @@ const ProjectsPage = () => {
                             const gradients = [
                                 'from-[#E0B954]/10 to-[#4338CA]/5',
                                 'from-[#F59E0B]/10 to-[#D97706]/5',
-                                'from-[#10B981]/10 to-[#059669]/5',
-                                'from-[#C79E3B]/10 to-[#7C3AED]/5',
+                                'from-[#E0B954]/10 to-[#C79E3B]/5',
+                                'from-[#C79E3B]/10 to-[#B8872A]/5',
                                 'from-[#EC4899]/10 to-[#DB2777]/5',
                                 'from-[#06B6D4]/10 to-[#0891B2]/5',
                             ];
-                            const accentColors = ['#E0B954', '#F59E0B', '#10B981', '#C79E3B', '#EC4899', '#06B6D4'];
+                            const accentColors = ['#E0B954', '#F59E0B', '#E0B954', '#C79E3B', '#EC4899', '#06B6D4'];
                             const accent = accentColors[idx % accentColors.length];
 
                             return (

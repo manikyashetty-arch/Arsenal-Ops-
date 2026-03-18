@@ -28,7 +28,7 @@ const WorkloadView: React.FC<WorkloadViewProps> = ({ workloadData, onDeveloperCl
     const getCapacityColor = (percentage: number) => {
         if (percentage > 100) return 'text-red-400';
         if (percentage > 80) return 'text-yellow-400';
-        return 'text-green-400';
+        return 'text-[#E0B954]';
     };
 
     const getCapacityBarColor = (percentage: number) => {
@@ -131,7 +131,7 @@ const WorkloadView: React.FC<WorkloadViewProps> = ({ workloadData, onDeveloperCl
                                     <div className="grid grid-cols-3 gap-2 mb-4">
                                         <div className="text-center p-2 rounded bg-[rgba(255,255,255,0.02)]">
                                             <div className="flex items-center justify-center gap-1 mb-1">
-                                                <CheckCircle2 className="w-3 h-3 text-[#10B981]" />
+                                                <CheckCircle2 className="w-3 h-3 text-[#E0B954]" />
                                             </div>
                                             <p className="text-white font-medium">{developer.completed_items}</p>
                                             <p className="text-[#737373] text-xs">Done</p>

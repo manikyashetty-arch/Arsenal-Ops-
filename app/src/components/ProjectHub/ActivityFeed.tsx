@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
@@ -22,14 +22,15 @@ interface ActivityFeedProps {
 }
 
 const ActivityFeed: React.FC<ActivityFeedProps> = ({ activities, maxItems = 20 }) => {
+    const [showAll, setShowAll] = useState(false);
     const getActionIcon = (action: string) => {
         switch (action) {
             case 'created':
-                return <GitBranch className="w-4 h-4 text-[#10B981]" />;
+                return <GitBranch className="w-4 h-4 text-[#E0B954]" />;
             case 'updated':
                 return <Edit className="w-4 h-4 text-[#F59E0B]" />;
             case 'completed':
-                return <CheckCircle2 className="w-4 h-4 text-[#10B981]" />;
+                return <CheckCircle2 className="w-4 h-4 text-[#E0B954]" />;
             case 'deleted':
                 return <Trash2 className="w-4 h-4 text-[#EF4444]" />;
             case 'commented':
@@ -48,9 +49,9 @@ const ActivityFeed: React.FC<ActivityFeedProps> = ({ activities, maxItems = 20 }
             case 'work_item':
                 return 'bg-blue-500/20 text-blue-400 border-blue-500/30';
             case 'sprint':
-                return 'bg-purple-500/20 text-purple-400 border-purple-500/30';
+                return 'bg-[#E0B954]/15 text-[#E0B954] border-[#E0B954]/30';
             case 'goal':
-                return 'bg-green-500/20 text-green-400 border-green-500/30';
+                return 'bg-[#E0B954]/15 text-[#E0B954] border-[#E0B954]/30';
             case 'milestone':
                 return 'bg-orange-500/20 text-orange-400 border-orange-500/30';
             case 'project':
@@ -84,7 +85,7 @@ const ActivityFeed: React.FC<ActivityFeedProps> = ({ activities, maxItems = 20 }
         return date.toLocaleDateString();
     };
 
-    const displayedActivities = activities.slice(0, maxItems);
+    const displayedActivities = showAll ? activities : activities.slice(0, maxItems);
 
     return (
         <Card className="bg-[#0d0d0d] border-[rgba(255,255,255,0.08)]">
@@ -149,8 +150,13 @@ const ActivityFeed: React.FC<ActivityFeedProps> = ({ activities, maxItems = 20 }
 
                 {activities.length > maxItems && (
                     <div className="text-center mt-4">
-                        <button className="text-[#E0B954] text-sm hover:underline">
-                            View all {activities.length} activities
+                        <button
+                            onClick={() => setShowAll(prev => !prev)}
+                            className="text-[#E0B954] text-sm hover:text-[#F3D57E] hover:underline transition-colors duration-200 font-medium"
+                        >
+                            {showAll
+                                ? `Show less`
+                                : `View all ${activities.length} activities`}
                         </button>
                     </div>
                 )}

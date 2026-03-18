@@ -117,8 +117,8 @@ export default function PMView({ projectId, token }: PMViewProps) {
                 <Card className="bg-[rgba(255,255,255,0.02)] border-[rgba(255,255,255,0.05)]">
                     <CardContent className="p-4">
                         <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-lg bg-[#10B981]/20 flex items-center justify-center">
-                                <TrendingUp className="w-5 h-5 text-[#10B981]" />
+                            <div className="w-10 h-10 rounded-lg bg-[#E0B954]/20 flex items-center justify-center">
+                                <TrendingUp className="w-5 h-5 text-[#E0B954]" />
                             </div>
                             <div>
                                 <p className="text-xs text-[#737373]">Logged Hours</p>
@@ -194,12 +194,12 @@ export default function PMView({ projectId, token }: PMViewProps) {
                                     .filter(week => weekFilter === 'all' || week.logged_hours > 0 || week.allocated_hours > 0 || week.items_completed > 0)
                                     .slice(0, 10)
                                     .map((week, idx) => (
-                                    <tr key={idx} className={`border-b border-[rgba(255,255,255,0.03)] hover:bg-[rgba(255,255,255,0.02)] ${week.logged_hours > 0 ? 'bg-[#10B981]/5' : ''}`}>
+                                    <tr key={idx} className={`border-b border-[rgba(255,255,255,0.03)] hover:bg-[rgba(255,255,255,0.02)] ${week.logged_hours > 0 ? 'bg-[#E0B954]/5' : ''}`}>
                                         <td className="py-3 px-4 text-sm text-white font-medium">{week.week_label}</td>
                                         <td className="py-3 px-4 text-sm text-[#a3a3a3]">{week.week} - {week.week_end}</td>
                                         <td className="py-3 px-4 text-sm text-right text-white">{week.allocated_hours}h</td>
                                         <td className="py-3 px-4 text-sm text-right">
-                                            <span className={week.logged_hours > 0 ? 'text-[#10B981] font-semibold' : 'text-[#737373]'}>
+                                            <span className={week.logged_hours > 0 ? 'text-[#E0B954] font-semibold' : 'text-[#737373]'}>
                                                 {week.logged_hours}h
                                             </span>
                                         </td>
@@ -273,7 +273,7 @@ export default function PMView({ projectId, token }: PMViewProps) {
                                                 </td>
                                                 <td className="py-3 px-4 text-sm text-right text-white">{dev.allocated_hours}h</td>
                                                 <td className="py-3 px-4 text-sm text-right">
-                                                    <span className={dev.logged_hours > 0 ? 'text-[#10B981]' : 'text-[#737373]'}>
+                                                    <span className={dev.logged_hours > 0 ? 'text-[#E0B954]' : 'text-[#737373]'}>
                                                         {dev.logged_hours}h
                                                     </span>
                                                 </td>
@@ -289,7 +289,7 @@ export default function PMView({ projectId, token }: PMViewProps) {
                                                 </td>
                                                 <td className="py-3 px-4 text-sm text-right text-white">{dev.total_items}</td>
                                                 <td className="py-3 px-4 text-sm text-right">
-                                                    <Badge className="bg-[#10B981]/20 text-[#10B981] border-0">
+                                                    <Badge className="bg-[#E0B954]/20 text-[#E0B954] border-0">
                                                         {dev.completed_items}/{dev.total_items}
                                                     </Badge>
                                                 </td>
@@ -337,7 +337,7 @@ export default function PMView({ projectId, token }: PMViewProps) {
                                             <td className="py-3 px-4 text-sm text-white">{sprint.sprint_name}</td>
                                             <td className="py-3 px-4">
                                                 <Badge className={
-                                                    sprint.status === 'completed' ? 'bg-[#10B981]/20 text-[#10B981] border-0' :
+                                                    sprint.status === 'completed' ? 'bg-[#E0B954]/20 text-[#E0B954] border-0' :
                                                     sprint.status === 'active' ? 'bg-[#E0B954]/20 text-[#E0B954] border-0' :
                                                     'bg-[#737373]/20 text-[#a3a3a3] border-0'
                                                 }>
@@ -346,7 +346,7 @@ export default function PMView({ projectId, token }: PMViewProps) {
                                             </td>
                                             <td className="py-3 px-4 text-sm text-right text-white">{sprint.allocated_hours}h</td>
                                             <td className="py-3 px-4 text-sm text-right">
-                                                <span className={sprint.logged_hours > 0 ? 'text-[#10B981]' : 'text-[#737373]'}>
+                                                <span className={sprint.logged_hours > 0 ? 'text-[#E0B954]' : 'text-[#737373]'}>
                                                     {sprint.logged_hours}h
                                                 </span>
                                             </td>
