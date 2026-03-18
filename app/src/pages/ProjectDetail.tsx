@@ -254,14 +254,37 @@ const ProjectDetail = () => {
     }[]>([]);
     const [hubLoading, setHubLoading] = useState(false);
 
-    // Fetch project data
-    useEffect(() => {
+    // Refetch all data (used on mount and when window regains focus)
+    const refetchAll = () => {
         if (!id) return;
         fetchProject();
         fetchAllDevelopers();
         fetchSprints();
         fetchAnalytics();
         fetchHubData();
+    };
+
+    // Fetch project data on mount
+    useEffect(() => {
+        if (!id) return;
+        refetchAll();
+    }, [id]);
+
+    // Refetch when user returns to this tab/window (e.g. after creating sprint in Board)
+    useEffect(() => {
+        const handleFocus = () => {
+            if (document.visibilityState === 'visible') {
+                fetchSprints();
+                fetchAnalytics();
+                fetchHubData();
+            }
+        };
+        document.addEventListener('visibilitychange', handleFocus);
+        window.addEventListener('focus', handleFocus);
+        return () => {
+            document.removeEventListener('visibilitychange', handleFocus);
+            window.removeEventListener('focus', handleFocus);
+        };
     }, [id]);
 
     const fetchProject = async () => {
