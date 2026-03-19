@@ -14,10 +14,16 @@ import {
     Zap,
     User,
     Trash2,
-    Github,
     Settings,
     LogOut,
+    Lock,
+    BookOpen,
+    AlertCircle,
 } from 'lucide-react';
+import {
+    PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis,
+    Tooltip, ResponsiveContainer, Legend
+} from 'recharts';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -71,6 +77,21 @@ interface Project {
     developers: ProjectDeveloper[];
 }
 
+interface MyTask {
+    id: string;
+    key: string;
+    title: string;
+    type: string;
+    status: string;
+    priority: string;
+    project_id: number;
+    project_name: string;
+    due_date: string | null;
+    estimated_hours: number | null;
+    logged_hours: number | null;
+    is_overdue: boolean;
+}
+
 const ProjectsPage = () => {
     const navigate = useNavigate();
     const { user, token, logout } = useAuth();
@@ -91,6 +112,22 @@ const ProjectsPage = () => {
     const [selectedDeveloperId, setSelectedDeveloperId] = useState<string>('');
     const [newRole, setNewRole] = useState('');
     const [newResponsibilities, setNewResponsibilities] = useState('');
+
+    // My Tasks
+    const [myTasks, setMyTasks] = useState<MyTask[]>([]);
+    const [myTaskTab, setMyTaskTab] = useState<'upcoming' | 'overdue' | 'completed'>('upcoming');
+    const [myTasksLoading, setMyTasksLoading] = useState(false);
+    const [showAllTasks, setShowAllTasks] = useState(false);
+
+    // Private Notepad
+    const [notepadContent, setNotepadContent] = useState('');
+    const [notepadSaved, setNotepadSaved] = useState(true);
+
+    // Analytics
+    const [analyticsTab, setAnalyticsTab] = useState<'status' | 'priority' | 'projects'>('status');
+
+    // Active landing tab
+    const [activeTab, setActiveTab] = useState<'mytasks' | 'projects' | 'overview' | 'notepad'>('mytasks');
 
     // Fetch projects
     useEffect(() => {
@@ -136,6 +173,74 @@ const ProjectsPage = () => {
             fetchDevelopers();
         }
     }, [showCreateModal]);
+
+    // Fetch my tasks
+    const fetchMyTasks = async () => {
+        setMyTasksLoading(true);
+        try {
+            const res = await fetch(`${API_BASE_URL}/api/workitems/my-tasks`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (res.ok) setMyTasks(await res.json());
+        } catch (err) {
+            console.error('Failed to fetch my tasks:', err);
+        } finally {
+            setMyTasksLoading(false);
+        }
+    };
+
+    // Load my tasks on mount
+    useEffect(() => {
+        if (token) fetchMyTasks();
+    }, [token]);
+
+    // Load notepad from localStorage per user
+    useEffect(() => {
+        if (user?.id) {
+            const saved = localStorage.getItem(`notepad_${user.id}`);
+            if (saved !== null) setNotepadContent(saved);
+        }
+    }, [user?.id]);
+
+    // Auto-save notepad with debounce
+    useEffect(() => {
+        if (!user?.id) return;
+        setNotepadSaved(false);
+        const timer = setTimeout(() => {
+            localStorage.setItem(`notepad_${user.id}`, notepadContent);
+            setNotepadSaved(true);
+        }, 800);
+        return () => clearTimeout(timer);
+    }, [notepadContent]);
+
+    // Computed chart data
+    const statusChartData = [
+        { name: 'Done', value: myTasks.filter(t => t.status === 'done').length, color: '#E0B954' },
+        { name: 'In Progress', value: myTasks.filter(t => t.status === 'in_progress').length, color: '#F59E0B' },
+        { name: 'In Review', value: myTasks.filter(t => t.status === 'in_review').length, color: '#C79E3B' },
+        { name: 'To Do', value: myTasks.filter(t => t.status === 'todo').length, color: '#737373' },
+        { name: 'Backlog', value: myTasks.filter(t => t.status === 'backlog').length, color: '#444' },
+    ].filter(d => d.value > 0);
+
+    const priorityChartData = [
+        { name: 'Critical', count: myTasks.filter(t => t.priority === 'critical').length, color: '#EF4444' },
+        { name: 'High', count: myTasks.filter(t => t.priority === 'high').length, color: '#F97316' },
+        { name: 'Medium', count: myTasks.filter(t => t.priority === 'medium').length, color: '#F59E0B' },
+        { name: 'Low', count: myTasks.filter(t => t.priority === 'low').length, color: '#737373' },
+    ].filter(d => d.count > 0);
+
+    const projectChartData = Object.entries(
+        myTasks.reduce((acc, t) => {
+            acc[t.project_name] = (acc[t.project_name] || 0) + 1;
+            return acc;
+        }, {} as Record<string, number>)
+    ).map(([name, tasks]) => ({ name: name.length > 14 ? name.substring(0, 14) + '…' : name, tasks })).slice(0, 6);
+
+    const filteredMyTasks = myTasks.filter(t => {
+        if (myTaskTab === 'upcoming') return t.status !== 'done' && !t.is_overdue;
+        if (myTaskTab === 'overdue') return t.is_overdue;
+        return t.status === 'done';
+    });
 
     const handleAddDeveloper = () => {
         if (!selectedDeveloperId || !newRole.trim()) {
@@ -217,34 +322,6 @@ const ProjectsPage = () => {
         }
     };
 
-    const handleSendGitHubInvites = async (e: React.MouseEvent, project: Project) => {
-        e.stopPropagation();
-        if (!project.github_repo_url) {
-            toast.error('No GitHub repository configured for this project');
-            return;
-        }
-        
-        try {
-            const response = await fetch(`${API_BASE_URL}/api/projects/${project.id}/github-invite`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
-            });
-            
-            const data = await response.json();
-            
-            if (data.success) {
-                toast.success(`GitHub invitations sent! ${data.successful} successful, ${data.failed} failed`);
-            } else {
-                toast.error(data.message || 'Failed to send some invitations');
-            }
-        } catch (err) {
-            toast.error('Failed to send GitHub invitations');
-        }
-    };
-
     const filteredProjects = projects.filter(p =>
         p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         p.description.toLowerCase().includes(searchQuery.toLowerCase())
@@ -308,9 +385,9 @@ const ProjectsPage = () => {
                 </div>
             </header>
 
-            <div className="max-w-[1400px] mx-auto px-8 py-10">
+            <div className="max-w-[1400px] mx-auto px-8 py-8">
                 {/* Stats Bar */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-10">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
                     {[
                         { icon: FolderKanban, label: 'Projects', value: totalStats.projects, color: '#E0B954' },
                         { icon: Layers, label: 'Total Items', value: totalStats.items, color: '#F59E0B' },
@@ -331,181 +408,350 @@ const ProjectsPage = () => {
                     ))}
                 </div>
 
-                {/* Search & Actions */}
-                <div className="flex items-center justify-between mb-8 gap-4">
-                    <div className="relative flex-1 max-w-md">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#737373]" />
-                        <Input
-                            placeholder="Search projects..."
-                            value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
-                            className="pl-10 bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl h-11 focus:border-[#E0B954]/50 focus:ring-[#E0B954]/20 placeholder:text-[#334155]"
-                        />
-                    </div>
-                    {user?.role === 'admin' && (
-                        <Button
-                            onClick={() => setShowCreateModal(true)}
-                            className="bg-gradient-to-r from-[#E0B954] to-[#C79E3B] hover:opacity-90 text-[#080808] font-semibold rounded-xl h-11 px-6 font-medium shadow-lg shadow-[#B8872A]/20 transition-all duration-300 hover:shadow-[#B8872A]/30 hover:scale-[1.02]"
+                {/* Tab Navigation */}
+                <div className="flex items-center gap-1 mb-6 bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.06)] rounded-2xl p-1.5">
+                    {([
+                        { id: 'mytasks', label: 'My Tasks', icon: CheckCircle2 },
+                        { id: 'projects', label: 'Projects', icon: FolderKanban },
+                        { id: 'overview', label: 'My Overview', icon: BarChart3 },
+                        { id: 'notepad', label: 'Private Notepad', icon: BookOpen },
+                    ] as const).map(tab => (
+                        <button
+                            key={tab.id}
+                            onClick={() => setActiveTab(tab.id)}
+                            className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 ${
+                                activeTab === tab.id
+                                    ? 'bg-gradient-to-r from-[#E0B954] to-[#C79E3B] text-[#080808] shadow-lg shadow-[#B8872A]/20'
+                                    : 'text-[#737373] hover:text-white hover:bg-[rgba(255,255,255,0.05)]'
+                            }`}
                         >
-                            <Plus className="w-4 h-4 mr-2" />
-                            New Project
-                        </Button>
-                    )}
+                            <tab.icon className="w-4 h-4" />
+                            <span>{tab.label}</span>
+                        </button>
+                    ))}
                 </div>
 
-                {/* Projects Grid */}
-                {isLoading ? (
-                    <div className="flex items-center justify-center py-32">
-                        <div className="w-8 h-8 border-2 border-[#E0B954]/30 border-t-[#E0B954] rounded-full animate-spin" />
-                    </div>
-                ) : filteredProjects.length === 0 && !searchQuery ? (
-                    /* Empty State */
-                    <div className="flex flex-col items-center justify-center py-32 text-center">
-                        <div className="w-24 h-24 rounded-3xl bg-gradient-to-br from-[#E0B954]/20 to-[#B8872A]/10 flex items-center justify-center mb-6 border border-[#E0B954]/20">
-                            <FolderKanban className="w-10 h-10 text-[#E0B954]" />
-                        </div>
-                        <h2 className="text-2xl font-bold text-white mb-2">No projects yet</h2>
-                        <p className="text-[#737373] max-w-md mb-8">
-                            {user?.role === 'admin' 
-                                ? "Create your first project to get started with AI-powered project management."
-                                : "Contact an admin to create a project for you."
-                            }
-                        </p>
-                        {user?.role === 'admin' && (
-                            <Button
-                                onClick={() => setShowCreateModal(true)}
-                                className="bg-gradient-to-r from-[#E0B954] to-[#C79E3B] hover:opacity-90 text-[#080808] font-semibold rounded-xl h-12 px-8 font-medium shadow-lg shadow-[#B8872A]/20"
-                            >
-                                <Plus className="w-5 h-5 mr-2" />
-                                Create First Project
-                            </Button>
-                        )}
-                    </div>
-                ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-                        {filteredProjects.map((project, idx) => {
-                            const stats = project.work_item_stats;
-                            const gradients = [
-                                'from-[#E0B954]/10 to-[#4338CA]/5',
-                                'from-[#F59E0B]/10 to-[#D97706]/5',
-                                'from-[#E0B954]/10 to-[#C79E3B]/5',
-                                'from-[#C79E3B]/10 to-[#B8872A]/5',
-                                'from-[#EC4899]/10 to-[#DB2777]/5',
-                                'from-[#06B6D4]/10 to-[#0891B2]/5',
-                            ];
-                            const accentColors = ['#E0B954', '#F59E0B', '#E0B954', '#C79E3B', '#EC4899', '#06B6D4'];
-                            const accent = accentColors[idx % accentColors.length];
+                {/* Tab Content */}
+                <div>
 
-                            return (
-                                <div
-                                    key={project.id}
-                                    className="group relative cursor-pointer"
-                                    onClick={() => navigate(`/project/${project.id}`)}
-                                >
-                                    {/* Hover glow effect */}
-                                    <div
-                                        className="absolute -inset-[1px] rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-500 blur-sm"
-                                        style={{ background: `linear-gradient(135deg, ${accent}33, transparent)` }}
-                                    />
-
-                                    <div className={`relative bg-gradient-to-br ${gradients[idx % gradients.length]} border border-[rgba(255,255,255,0.05)] rounded-2xl p-6 transition-all duration-300 group-hover:border-[rgba(244,246,255,0.12)] group-hover:translate-y-[-2px] overflow-hidden`}>
-                                        {/* Background pattern */}
-                                        <div className="absolute top-0 right-0 w-32 h-32 opacity-[0.03] group-hover:opacity-[0.06] transition-opacity">
-                                            <FolderKanban className="w-full h-full" style={{ color: accent }} />
-                                        </div>
-
-                                        {/* Header */}
-                                        <div className="flex items-start justify-between mb-4 relative">
-                                            <div className="flex items-center gap-3">
-                                                <div
-                                                    className="w-10 h-10 rounded-xl flex items-center justify-center text-sm font-bold text-white shadow-lg"
-                                                    style={{ backgroundColor: accent, boxShadow: `0 4px 12px ${accent}33` }}
-                                                >
-                                                    {project.key_prefix.substring(0, 2)}
-                                                </div>
-                                                <div>
-                                                    <h3 className="text-lg font-semibold text-white group-hover:text-white/95 transition-colors line-clamp-1">{project.name}</h3>
-                                                    <span className="text-xs font-mono text-[#737373]">{project.key_prefix}</span>
-                                                </div>
-                                            </div>
-                                            {project.github_repo_url && (
-                                                <button
-                                                    onClick={(e) => handleSendGitHubInvites(e, project)}
-                                                    className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-[#E0B954]/10 text-[#737373] hover:text-[#E0B954] mr-1"
-                                                    title="Send GitHub invitations"
-                                                >
-                                                    <Github className="w-4 h-4" />
-                                                </button>
-                                            )}
-                                            <button
-                                                onClick={(e) => handleDeleteProject(e, project.id)}
-                                                className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-red-500/10 text-[#737373] hover:text-red-400"
-                                            >
-                                                <X className="w-4 h-4" />
-                                            </button>
-                                        </div>
-
-                                        {/* Description */}
-                                        <p className="text-sm text-[#737373] mb-5 line-clamp-2 min-h-[40px]">{project.description || 'No description'}</p>
-
-                                        {/* Progress */}
-                                        <div className="mb-5">
-                                            <div className="flex items-center justify-between text-xs mb-2">
-                                                <span className="text-[#737373] font-medium">Progress</span>
-                                                <span className="font-semibold" style={{ color: accent }}>{stats.completion_pct}%</span>
-                                            </div>
-                                            <div className="h-1.5 bg-[rgba(255,255,255,0.05)] rounded-full overflow-hidden">
-                                                <div
-                                                    className="h-full rounded-full transition-all duration-700 ease-out"
-                                                    style={{
-                                                        width: `${stats.completion_pct}%`,
-                                                        background: `linear-gradient(90deg, ${accent}, ${accent}BB)`,
-                                                        boxShadow: stats.completion_pct > 0 ? `0 0 8px ${accent}44` : 'none',
-                                                    }}
-                                                />
-                                            </div>
-                                        </div>
-
-                                        {/* Stats Row */}
-                                        <div className="flex items-center justify-between">
-                                            <div className="flex items-center gap-4">
-                                                <div className="flex items-center gap-1.5">
-                                                    <Layers className="w-3.5 h-3.5 text-[#737373]" />
-                                                    <span className="text-xs text-[#737373] font-medium">{stats.total} items</span>
-                                                </div>
-                                                <div className="flex items-center gap-1.5">
-                                                    <BarChart3 className="w-3.5 h-3.5 text-[#737373]" />
-                                                    <span className="text-xs text-[#737373] font-medium">{stats.total_points} pts</span>
-                                                </div>
-                                            </div>
-                                            <div className="flex items-center gap-1 text-[#737373] group-hover:text-[#E0B954] transition-colors">
-                                                <span className="text-xs font-medium">Open</span>
-                                                <ArrowRight className="w-3.5 h-3.5" />
-                                            </div>
-                                        </div>
+                    {/* MY TASKS TAB */}
+                    {activeTab === 'mytasks' && (
+                    <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.06)] rounded-2xl overflow-hidden">
+                            <div className="flex items-center justify-between px-5 pt-5 pb-3">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[#E0B954] to-[#C79E3B] flex items-center justify-center text-[#080808] text-sm font-bold">
+                                        {user?.name?.charAt(0).toUpperCase()}
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <h2 className="text-base font-semibold text-white">My tasks</h2>
+                                        <Lock className="w-3.5 h-3.5 text-[#737373]" />
                                     </div>
                                 </div>
-                            );
-                        })}
-
-                        {/* Create Project Card - Admin only */}
-                        {user?.role === 'admin' && (
-                            <div
-                                className="group cursor-pointer"
-                                onClick={() => setShowCreateModal(true)}
-                            >
-                                <div className="border-2 border-dashed border-[rgba(255,255,255,0.07)] rounded-2xl p-6 flex flex-col items-center justify-center min-h-[260px] transition-all duration-300 group-hover:border-[#E0B954]/30 group-hover:bg-[#E0B954]/5">
-                                    <div className="w-14 h-14 rounded-2xl bg-[rgba(244,246,255,0.05)] flex items-center justify-center mb-4 group-hover:bg-[#E0B954]/20 transition-all duration-300 group-hover:scale-110">
-                                        <Plus className="w-6 h-6 text-[#737373] group-hover:text-[#E0B954] transition-colors" />
-                                    </div>
-                                    <span className="text-sm font-medium text-[#737373] group-hover:text-[#E0B954] transition-colors">
-                                        Create New Project
-                                    </span>
+                                <div className="flex items-center gap-2 text-xs text-[#737373]">
+                                    <CheckCircle2 className="w-3.5 h-3.5 text-[#E0B954]" />
+                                    <span>{myTasks.filter(t => t.status === 'done').length} completed</span>
                                 </div>
                             </div>
-                        )}
+
+                            {/* Sub-tabs */}
+                            <div className="flex gap-0 px-5 border-b border-[rgba(255,255,255,0.05)]">
+                                {(['upcoming', 'overdue', 'completed'] as const).map(tab => {
+                                    const count = tab === 'upcoming'
+                                        ? myTasks.filter(t => t.status !== 'done' && !t.is_overdue).length
+                                        : tab === 'overdue'
+                                        ? myTasks.filter(t => t.is_overdue).length
+                                        : myTasks.filter(t => t.status === 'done').length;
+                                    return (
+                                        <button
+                                            key={tab}
+                                            onClick={() => { setMyTaskTab(tab); setShowAllTasks(false); }}
+                                            className={`px-4 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px ${
+                                                myTaskTab === tab
+                                                    ? 'border-[#E0B954] text-white'
+                                                    : 'border-transparent text-[#737373] hover:text-[#a3a3a3]'
+                                            }`}
+                                        >
+                                            {tab === 'overdue' && count > 0 ? (
+                                                <span className="flex items-center gap-1.5">
+                                                    Overdue
+                                                    <span className="bg-red-500/20 text-red-400 text-xs px-1.5 py-0.5 rounded-full">{count}</span>
+                                                </span>
+                                            ) : (
+                                                <span className="capitalize">{tab}</span>
+                                            )}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+
+                            {/* Task list */}
+                            <div className="p-4 space-y-0.5 min-h-[200px]">
+                                {myTasksLoading ? (
+                                    <div className="flex items-center justify-center py-10">
+                                        <div className="w-5 h-5 border-2 border-[#E0B954]/30 border-t-[#E0B954] rounded-full animate-spin" />
+                                    </div>
+                                ) : filteredMyTasks.length === 0 ? (
+                                    <div className="flex flex-col items-center justify-center py-10 text-center">
+                                        <CheckCircle2 className="w-8 h-8 text-[#E0B954]/30 mb-2" />
+                                        <p className="text-sm text-[#737373]">
+                                            {myTaskTab === 'completed' ? 'No completed tasks yet' : myTaskTab === 'overdue' ? 'No overdue tasks 🎉' : 'No upcoming tasks'}
+                                        </p>
+                                    </div>
+                                ) : (
+                                    (showAllTasks ? filteredMyTasks : filteredMyTasks.slice(0, 6)).map(task => (
+                                        <div
+                                            key={task.id}
+                                            className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-[rgba(255,255,255,0.03)] transition-colors cursor-pointer group"
+                                            onClick={() => navigate(`/project/${task.project_id}`)}
+                                        >
+                                            <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
+                                                task.status === 'done' ? 'border-[#E0B954] bg-[#E0B954]' :
+                                                task.is_overdue ? 'border-red-400' : 'border-[#444] group-hover:border-[#E0B954]/50'
+                                            }`}>
+                                                {task.status === 'done' && <CheckCircle2 className="w-3 h-3 text-[#080808]" />}
+                                            </div>
+                                            <span className={`flex-1 text-sm truncate ${
+                                                task.status === 'done' ? 'line-through text-[#555]' : 'text-[#f5f5f5]'
+                                            }`}>
+                                                {task.title}
+                                            </span>
+                                            <span className="text-xs px-2 py-0.5 rounded-md bg-[rgba(224,185,84,0.08)] text-[#C79E3B] truncate max-w-[110px] flex-shrink-0">
+                                                {task.project_name}
+                                            </span>
+                                            {task.is_overdue && (
+                                                <AlertCircle className="w-3.5 h-3.5 text-red-400 flex-shrink-0" />
+                                            )}
+                                            {task.due_date && (
+                                                <span className={`text-xs flex-shrink-0 ${
+                                                    task.is_overdue ? 'text-red-400' : 'text-[#737373]'
+                                                }`}>
+                                                    {new Date(task.due_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                                                </span>
+                                            )}
+                                        </div>
+                                    ))
+                                )}
+                                {filteredMyTasks.length > 6 && (
+                                    <button
+                                        onClick={() => setShowAllTasks(p => !p)}
+                                        className="w-full text-center text-xs text-[#737373] hover:text-[#E0B954] py-2.5 transition-colors"
+                                    >
+                                        {showAllTasks ? 'Show less' : `Show ${filteredMyTasks.length - 6} more`}
+                                    </button>
+                                )}
+                            </div>
                     </div>
-                )}
+                    )}
+
+                    {/* PROJECTS TAB */}
+                    {activeTab === 'projects' && (
+                    <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.06)] rounded-2xl overflow-hidden">
+                        <div className="flex items-center justify-between px-5 py-4 border-b border-[rgba(255,255,255,0.05)]">
+                            <div className="flex items-center gap-2">
+                                <h2 className="text-base font-semibold text-white">Projects</h2>
+                                <span className="text-xs text-[#737373] bg-[rgba(255,255,255,0.05)] px-2 py-0.5 rounded-full">{filteredProjects.length}</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <div className="relative">
+                                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#737373]" />
+                                    <Input
+                                        placeholder="Search projects..."
+                                        value={searchQuery}
+                                        onChange={(e) => setSearchQuery(e.target.value)}
+                                        className="pl-8 w-48 bg-[rgba(255,255,255,0.03)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-lg h-8 text-xs focus:border-[#E0B954]/50"
+                                    />
+                                </div>
+                                {user?.role === 'admin' && (
+                                    <Button
+                                        onClick={() => setShowCreateModal(true)}
+                                        size="sm"
+                                        className="bg-gradient-to-r from-[#E0B954] to-[#C79E3B] hover:opacity-90 text-[#080808] font-semibold rounded-lg h-8 px-3 text-xs shadow-lg shadow-[#B8872A]/20"
+                                    >
+                                        <Plus className="w-3.5 h-3.5 mr-1" />
+                                        New Project
+                                    </Button>
+                                )}
+                            </div>
+                        </div>
+                        <div className="p-4">
+                            {isLoading ? (
+                                <div className="flex items-center justify-center py-16">
+                                    <div className="w-5 h-5 border-2 border-[#E0B954]/30 border-t-[#E0B954] rounded-full animate-spin" />
+                                </div>
+                            ) : filteredProjects.length === 0 ? (
+                                <div className="text-center py-16">
+                                    <FolderKanban className="w-10 h-10 text-[#E0B954]/20 mx-auto mb-3" />
+                                    <p className="text-sm text-[#737373]">No projects found</p>
+                                </div>
+                            ) : (
+                                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                                    {filteredProjects.map((project, idx) => {
+                                        const accentColors = ['#E0B954', '#F59E0B', '#C79E3B', '#B8872A', '#EC4899', '#06B6D4'];
+                                        const accent = accentColors[idx % accentColors.length];
+                                        return (
+                                            <div
+                                                key={project.id}
+                                                onClick={() => navigate(`/project/${project.id}`)}
+                                                className="relative group bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-xl p-4 hover:border-[rgba(224,185,84,0.25)] hover:bg-[rgba(255,255,255,0.04)] cursor-pointer transition-all duration-200"
+                                            >
+                                                <div className="flex items-start justify-between mb-3">
+                                                    <div
+                                                        className="w-10 h-10 rounded-xl flex items-center justify-center text-sm font-bold text-[#080808]"
+                                                        style={{ backgroundColor: accent, boxShadow: `0 2px 10px ${accent}40` }}
+                                                    >
+                                                        {project.key_prefix.substring(0, 2)}
+                                                    </div>
+                                                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                        {user?.role === 'admin' && (
+                                                            <button
+                                                                onClick={(e) => handleDeleteProject(e, project.id)}
+                                                                className="p-1.5 rounded-lg hover:bg-red-500/10 text-[#737373] hover:text-red-400 transition-colors"
+                                                            >
+                                                                <X className="w-3.5 h-3.5" />
+                                                            </button>
+                                                        )}
+                                                        <ArrowRight className="w-3.5 h-3.5 text-[#E0B954]" />
+                                                    </div>
+                                                </div>
+                                                <h3 className="text-sm font-semibold text-white mb-1 truncate">{project.name}</h3>
+                                                <p className="text-xs text-[#737373] mb-3 line-clamp-2">{project.description || 'No description'}</p>
+                                                <div className="flex items-center gap-2">
+                                                    <div className="h-1.5 flex-1 bg-[rgba(255,255,255,0.05)] rounded-full overflow-hidden">
+                                                        <div
+                                                            className="h-full rounded-full transition-all"
+                                                            style={{ width: `${project.work_item_stats.completion_pct}%`, backgroundColor: accent }}
+                                                        />
+                                                    </div>
+                                                    <span className="text-xs text-[#737373] flex-shrink-0">{project.work_item_stats.completion_pct}%</span>
+                                                </div>
+                                                <div className="flex items-center gap-3 mt-2.5">
+                                                    <span className="text-xs text-[#737373]">{project.work_item_stats.total} items</span>
+                                                    <span className="text-xs text-[#555]">·</span>
+                                                    <span className="text-xs text-[#737373]">{project.work_item_stats.completed} done</span>
+                                                    {project.developers.length > 0 && (
+                                                        <>
+                                                            <span className="text-xs text-[#555]">·</span>
+                                                            <span className="text-xs text-[#737373]">{project.developers.length} members</span>
+                                                        </>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                    {user?.role === 'admin' && (
+                                        <button
+                                            onClick={() => setShowCreateModal(true)}
+                                            className="flex flex-col items-center justify-center gap-2 p-4 rounded-xl border border-dashed border-[rgba(255,255,255,0.08)] hover:border-[#E0B954]/30 hover:bg-[#E0B954]/5 transition-all group min-h-[140px]"
+                                        >
+                                            <div className="w-10 h-10 rounded-xl bg-[rgba(255,255,255,0.04)] flex items-center justify-center group-hover:bg-[#E0B954]/10 transition-colors">
+                                                <Plus className="w-5 h-5 text-[#737373] group-hover:text-[#E0B954]" />
+                                            </div>
+                                            <span className="text-sm text-[#737373] group-hover:text-[#E0B954] transition-colors">Create project</span>
+                                        </button>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                    )}
+
+                    {/* MY OVERVIEW TAB */}
+                    {activeTab === 'overview' && (
+                    <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.06)] rounded-2xl overflow-hidden">
+                            <div className="flex items-center justify-between px-5 py-3.5 border-b border-[rgba(255,255,255,0.05)]">
+                                <div className="flex items-center gap-2">
+                                    <BarChart3 className="w-4 h-4 text-[#E0B954]" />
+                                    <h3 className="text-sm font-semibold text-white">My Overview</h3>
+                                </div>
+                                <div className="flex gap-1">
+                                    {(['status', 'priority', 'projects'] as const).map(t => (
+                                        <button
+                                            key={t}
+                                            onClick={() => setAnalyticsTab(t)}
+                                            className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors ${
+                                                analyticsTab === t
+                                                    ? 'bg-[#E0B954]/15 text-[#E0B954]'
+                                                    : 'text-[#737373] hover:text-white hover:bg-[rgba(255,255,255,0.05)]'
+                                            }`}
+                                        >
+                                            {t === 'status' ? 'By Status' : t === 'priority' ? 'By Priority' : 'By Project'}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                            <div className="p-4 h-[220px]">
+                                {myTasks.length === 0 ? (
+                                    <div className="flex flex-col items-center justify-center h-full text-center">
+                                        <BarChart3 className="w-10 h-10 text-[#E0B954]/20 mb-2" />
+                                        <p className="text-sm text-[#737373]">No task data yet</p>
+                                        <p className="text-xs text-[#555] mt-1">Tasks assigned to you will appear here</p>
+                                    </div>
+                                ) : analyticsTab === 'status' ? (
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        <PieChart>
+                                            <Pie data={statusChartData} cx="50%" cy="50%" innerRadius={55} outerRadius={80} paddingAngle={3} dataKey="value">
+                                                {statusChartData.map((entry, index) => (
+                                                    <Cell key={`cell-${index}`} fill={entry.color} />
+                                                ))}
+                                            </Pie>
+                                            <Tooltip contentStyle={{ background: '#121212', border: '1px solid #2a2a2a', borderRadius: '8px', color: '#f5f5f5', fontSize: '12px' }} />
+                                            <Legend wrapperStyle={{ color: '#a3a3a3', fontSize: '11px' }} />
+                                        </PieChart>
+                                    </ResponsiveContainer>
+                                ) : analyticsTab === 'priority' ? (
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        <BarChart data={priorityChartData} margin={{ top: 5, right: 10, left: -20, bottom: 5 }}>
+                                            <XAxis dataKey="name" tick={{ fill: '#737373', fontSize: 11 }} axisLine={false} tickLine={false} />
+                                            <YAxis tick={{ fill: '#737373', fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} />
+                                            <Tooltip contentStyle={{ background: '#121212', border: '1px solid #2a2a2a', borderRadius: '8px', color: '#f5f5f5', fontSize: '12px' }} />
+                                            <Bar dataKey="count" radius={[4, 4, 0, 0]} name="Tasks">
+                                                {priorityChartData.map((entry, index) => (
+                                                    <Cell key={`cell-${index}`} fill={entry.color} />
+                                                ))}
+                                            </Bar>
+                                        </BarChart>
+                                    </ResponsiveContainer>
+                                ) : (
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        <BarChart data={projectChartData} layout="vertical" margin={{ top: 5, right: 10, left: 10, bottom: 5 }}>
+                                            <XAxis type="number" tick={{ fill: '#737373', fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} />
+                                            <YAxis type="category" dataKey="name" tick={{ fill: '#a3a3a3', fontSize: 11 }} axisLine={false} tickLine={false} width={70} />
+                                            <Tooltip contentStyle={{ background: '#121212', border: '1px solid #2a2a2a', borderRadius: '8px', color: '#f5f5f5', fontSize: '12px' }} />
+                                            <Bar dataKey="tasks" fill="#E0B954" radius={[0, 4, 4, 0]} name="Tasks" />
+                                        </BarChart>
+                                    </ResponsiveContainer>
+                                )}
+                            </div>
+                    </div>
+                    )}
+
+                    {/* PRIVATE NOTEPAD TAB */}
+                    {activeTab === 'notepad' && (
+                    <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.06)] rounded-2xl overflow-hidden">
+                        <div className="flex items-center justify-between px-5 py-4 border-b border-[rgba(255,255,255,0.05)]">
+                            <div className="flex items-center gap-2">
+                                <BookOpen className="w-4 h-4 text-[#a3a3a3]" />
+                                <h3 className="text-base font-semibold text-white">Private Notepad</h3>
+                                <Lock className="w-3.5 h-3.5 text-[#737373]" />
+                            </div>
+                            <span className={`text-xs transition-colors duration-300 ${
+                                notepadSaved ? 'text-[#E0B954]' : 'text-[#737373]'
+                            }`}>
+                                {notepadSaved ? '✓ Saved' : 'Saving...'}
+                            </span>
+                        </div>
+                        <div className="p-6">
+                            <textarea
+                                value={notepadContent}
+                                onChange={(e) => setNotepadContent(e.target.value)}
+                                placeholder="Jot down a quick note, idea, or add a link to an important resource. Only you can see this."
+                                className="w-full bg-transparent text-sm text-[#a3a3a3] placeholder:text-[#333] resize-none outline-none min-h-[400px] leading-relaxed"
+                            />
+                        </div>
+                    </div>
+                    )}
+
+                </div>
             </div>
 
             {/* Create Project Modal */}
