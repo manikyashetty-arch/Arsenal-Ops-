@@ -61,6 +61,10 @@ interface WorkItem {
     product_id: string;
     tags: string[];
     epic: string;
+    parent_id?: number | null;
+    epic_id?: number | null;
+    parent_key?: string | null;
+    epic_key?: string | null;
     created_at?: string;
     updated_at?: string;
 }
@@ -240,6 +244,8 @@ const ProjectBoard = () => {
         story_points: 3,
         assignee_id: null as number | null,
         sprint: 'Backlog',
+        epic_id: null as number | null,
+        parent_id: null as number | null,
     });
 
     // Fetch project and work items
@@ -348,7 +354,7 @@ const ProjectBoard = () => {
                 const newItem = await response.json();
                 setWorkItems(prev => [...prev, newItem]);
                 setShowCreateForm(false);
-                setCreateForm({ type: 'user_story', title: '', description: '', priority: 'medium', story_points: 3, assignee_id: null, sprint: 'Backlog' });
+                setCreateForm({ type: 'user_story', title: '', description: '', priority: 'medium', story_points: 3, assignee_id: null, sprint: 'Backlog', epic_id: null, parent_id: null });
                 toast.success('Work item created!');
                 refreshProjectStats();
             }
@@ -1400,6 +1406,49 @@ const ProjectBoard = () => {
                                         ))}
                                     </div>
 
+                                    {/* Hierarchy breadcrumb */}
+                                    {(selectedItem.epic_key || selectedItem.parent_key) && (
+                                        <div>
+                                            <div className="text-xs text-[#737373] mb-2 font-medium">Hierarchy</div>
+                                            <div className="flex items-center gap-1.5 flex-wrap">
+                                                {selectedItem.epic_key && (
+                                                    <span className="flex items-center gap-1 px-2 py-1 rounded-md bg-[rgba(167,139,250,0.12)] text-[#A78BFA] text-xs">
+                                                        Epic: {selectedItem.epic_key}
+                                                    </span>
+                                                )}
+                                                {selectedItem.epic_key && selectedItem.parent_key && <span className="text-[#555] text-xs">›</span>}
+                                                {selectedItem.parent_key && (
+                                                    <span className="flex items-center gap-1 px-2 py-1 rounded-md bg-[rgba(224,185,84,0.10)] text-[#E0B954] text-xs">
+                                                        Parent: {selectedItem.parent_key}
+                                                    </span>
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Child items */}
+                                    {(() => {
+                                        const children = workItems.filter(wi => wi.parent_id === parseInt(selectedItem.id));
+                                        return children.length > 0 ? (
+                                            <div>
+                                                <div className="text-xs text-[#737373] mb-2 font-medium">Child Items ({children.length})</div>
+                                                <div className="space-y-1.5">
+                                                    {children.map(child => (
+                                                        <div
+                                                            key={child.id}
+                                                            className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.04)] cursor-pointer hover:border-[rgba(255,255,255,0.08)] transition-colors"
+                                                            onClick={() => setSelectedItem(child)}
+                                                        >
+                                                            <span className="text-xs font-mono text-[#737373] flex-shrink-0">{child.key}</span>
+                                                            <span className="text-sm text-[#a3a3a3] truncate flex-1">{child.title}</span>
+                                                            <span className="text-xs text-[#555] capitalize flex-shrink-0">{child.status.replace(/_/g, ' ')}</span>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        ) : null;
+                                    })()}
+
                                     {/* Tags */}
                                     {selectedItem.tags.length > 0 && (
                                         <div>
@@ -1677,6 +1726,35 @@ const ProjectBoard = () => {
                                             <option key={dev.id} value={dev.id}>
                                                 {dev.name} ({dev.role})
                                             </option>
+                                        ))}
+                                    </select>
+                                </div>
+                            </div>
+                            {/* Hierarchy */}
+                            <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label className="text-xs font-medium text-[#737373] block mb-1.5">Epic (optional)</label>
+                                    <select
+                                        value={createForm.epic_id || ''}
+                                        onChange={e => setCreateForm(f => ({ ...f, epic_id: e.target.value ? parseInt(e.target.value) : null }))}
+                                        className="w-full h-10 bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.07)] text-[#f5f5f5] rounded-xl px-3 text-sm"
+                                    >
+                                        <option value="">No Epic</option>
+                                        {workItems.filter(wi => wi.type === 'epic').map(wi => (
+                                            <option key={wi.id} value={wi.id}>{wi.key} — {wi.title}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="text-xs font-medium text-[#737373] block mb-1.5">Parent Story (optional)</label>
+                                    <select
+                                        value={createForm.parent_id || ''}
+                                        onChange={e => setCreateForm(f => ({ ...f, parent_id: e.target.value ? parseInt(e.target.value) : null }))}
+                                        className="w-full h-10 bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.07)] text-[#f5f5f5] rounded-xl px-3 text-sm"
+                                    >
+                                        <option value="">No Parent</option>
+                                        {workItems.filter(wi => wi.type === 'user_story').map(wi => (
+                                            <option key={wi.id} value={wi.id}>{wi.key} — {wi.title}</option>
                                         ))}
                                     </select>
                                 </div>

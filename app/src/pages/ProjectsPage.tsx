@@ -19,11 +19,14 @@ import {
     Lock,
     BookOpen,
     AlertCircle,
+    ClipboardList,
+    Bug,
+    Target,
+    Clock,
+    ExternalLink,
+    Tag,
+    ChevronRight,
 } from 'lucide-react';
-import {
-    PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis,
-    Tooltip, ResponsiveContainer, Legend
-} from 'recharts';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -89,7 +92,20 @@ interface MyTask {
     due_date: string | null;
     estimated_hours: number | null;
     logged_hours: number | null;
+    remaining_hours: number | null;
     is_overdue: boolean;
+    // Enriched fields
+    story_points?: number;
+    assigned_hours?: number;
+    assignee?: string;
+    description?: string;
+    tags?: string[];
+    acceptance_criteria?: string[];
+    parent_id?: number | null;
+    epic_id?: number | null;
+    sprint_id?: number | null;
+    parent_key?: string | null;
+    epic_key?: string | null;
 }
 
 const ProjectsPage = () => {
@@ -118,13 +134,11 @@ const ProjectsPage = () => {
     const [myTaskTab, setMyTaskTab] = useState<'upcoming' | 'overdue' | 'completed'>('upcoming');
     const [myTasksLoading, setMyTasksLoading] = useState(false);
     const [showAllTasks, setShowAllTasks] = useState(false);
+    const [selectedTask, setSelectedTask] = useState<MyTask | null>(null);
 
     // Private Notepad
     const [notepadContent, setNotepadContent] = useState('');
     const [notepadSaved, setNotepadSaved] = useState(true);
-
-    // Analytics
-    const [analyticsTab, setAnalyticsTab] = useState<'status' | 'priority' | 'projects'>('status');
 
     // (box layout — no active tab needed)
 
@@ -212,28 +226,48 @@ const ProjectsPage = () => {
         return () => clearTimeout(timer);
     }, [notepadContent]);
 
-    // Computed chart data
-    const statusChartData = [
-        { name: 'Done', value: myTasks.filter(t => t.status === 'done').length, color: '#E0B954' },
-        { name: 'In Progress', value: myTasks.filter(t => t.status === 'in_progress').length, color: '#F59E0B' },
-        { name: 'In Review', value: myTasks.filter(t => t.status === 'in_review').length, color: '#C79E3B' },
-        { name: 'To Do', value: myTasks.filter(t => t.status === 'todo').length, color: '#737373' },
-        { name: 'Backlog', value: myTasks.filter(t => t.status === 'backlog').length, color: '#444' },
-    ].filter(d => d.value > 0);
+    // Computed chart data (used by My Overview stacked bar)
+    const overviewStats = {
+        total: myTasks.length,
+        done: myTasks.filter(t => t.status === 'done').length,
+        in_progress: myTasks.filter(t => t.status === 'in_progress').length,
+        in_review: myTasks.filter(t => t.status === 'in_review').length,
+        todo: myTasks.filter(t => t.status === 'todo').length,
+        overdue: myTasks.filter(t => t.is_overdue).length,
+        completion_pct: myTasks.length > 0
+            ? Math.round(myTasks.filter(t => t.status === 'done').length / myTasks.length * 100)
+            : 0,
+    };
 
-    const priorityChartData = [
-        { name: 'Critical', count: myTasks.filter(t => t.priority === 'critical').length, color: '#EF4444' },
-        { name: 'High', count: myTasks.filter(t => t.priority === 'high').length, color: '#F97316' },
-        { name: 'Medium', count: myTasks.filter(t => t.priority === 'medium').length, color: '#F59E0B' },
-        { name: 'Low', count: myTasks.filter(t => t.priority === 'low').length, color: '#737373' },
-    ].filter(d => d.count > 0);
+    const STATUS_BARS = [
+        { key: 'done',        color: '#34D399', label: 'Done' },
+        { key: 'in_progress', color: '#E0B954', label: 'In Progress' },
+        { key: 'in_review',   color: '#A78BFA', label: 'In Review' },
+        { key: 'todo',        color: '#60A5FA', label: 'To Do' },
+    ] as const;
 
-    const projectChartData = Object.entries(
-        myTasks.reduce((acc, t) => {
-            acc[t.project_name] = (acc[t.project_name] || 0) + 1;
-            return acc;
-        }, {} as Record<string, number>)
-    ).map(([name, tasks]) => ({ name: name.length > 14 ? name.substring(0, 14) + '…' : name, tasks })).slice(0, 6);
+    const TASK_TYPE_CONFIG: Record<string, { icon: React.ElementType; color: string; label: string; bg: string }> = {
+        user_story: { icon: BookOpen,     color: '#E0B954', label: 'Story', bg: 'rgba(224,185,84,0.15)' },
+        task:       { icon: ClipboardList, color: '#F59E0B', label: 'Task',  bg: 'rgba(245,158,11,0.15)' },
+        bug:        { icon: Bug,           color: '#EF4444', label: 'Bug',   bg: 'rgba(239,68,68,0.15)'  },
+        epic:       { icon: Target,        color: '#A78BFA', label: 'Epic',  bg: 'rgba(167,139,250,0.15)' },
+    };
+
+    const PRIORITY_COLORS: Record<string, string> = {
+        critical: '#EF4444',
+        high:     '#F97316',
+        medium:   '#F59E0B',
+        low:      '#737373',
+    };
+
+    const STATUS_COLOR: Record<string, string> = {
+        todo:        '#60A5FA',
+        in_progress: '#E0B954',
+        in_review:   '#A78BFA',
+        done:        '#34D399',
+        blocked:     '#EF4444',
+        backlog:     '#555',
+    };
 
     const filteredMyTasks = myTasks.filter(t => {
         if (myTaskTab === 'upcoming') return t.status !== 'done' && !t.is_overdue;
@@ -477,7 +511,7 @@ const ProjectsPage = () => {
                                         <div
                                             key={task.id}
                                             className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-[rgba(255,255,255,0.03)] transition-colors cursor-pointer group"
-                                            onClick={() => navigate(`/project/${task.project_id}`)}
+                                            onClick={() => setSelectedTask(task)}
                                         >
                                             <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
                                                 task.status === 'done' ? 'border-[#E0B954] bg-[#E0B954]' :
@@ -598,17 +632,6 @@ const ProjectsPage = () => {
                                             </div>
                                         );
                                     })}
-                                    {user?.role === 'admin' && (
-                                        <button
-                                            onClick={() => setShowCreateModal(true)}
-                                            className="flex items-center gap-3 w-full px-3 py-2.5 rounded-xl border border-dashed border-[rgba(255,255,255,0.06)] hover:border-[#E0B954]/30 hover:bg-[#E0B954]/5 transition-all group"
-                                        >
-                                            <div className="w-8 h-8 rounded-lg bg-[rgba(255,255,255,0.03)] flex items-center justify-center group-hover:bg-[#E0B954]/10 transition-colors flex-shrink-0">
-                                                <Plus className="w-4 h-4 text-[#737373] group-hover:text-[#E0B954]" />
-                                            </div>
-                                            <span className="text-sm text-[#737373] group-hover:text-[#E0B954] transition-colors">Create project</span>
-                                        </button>
-                                    )}
                                 </div>
                             )}
                         </div>
@@ -640,74 +663,251 @@ const ProjectsPage = () => {
 
                     {/* BOTTOM-RIGHT: MY OVERVIEW BOX */}
                     <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.06)] rounded-2xl flex flex-col h-[460px]">
-                            <div className="flex items-center justify-between px-5 py-3.5 border-b border-[rgba(255,255,255,0.05)] flex-shrink-0">
-                                <div className="flex items-center gap-2">
-                                    <BarChart3 className="w-4 h-4 text-[#E0B954]" />
-                                    <h3 className="text-sm font-semibold text-white">My Overview</h3>
-                                </div>
-                                <div className="flex gap-1">
-                                    {(['status', 'priority', 'projects'] as const).map(t => (
-                                        <button
-                                            key={t}
-                                            onClick={() => setAnalyticsTab(t)}
-                                            className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors ${
-                                                analyticsTab === t
-                                                    ? 'bg-[#E0B954]/15 text-[#E0B954]'
-                                                    : 'text-[#737373] hover:text-white hover:bg-[rgba(255,255,255,0.05)]'
-                                            }`}
-                                        >
-                                            {t === 'status' ? 'By Status' : t === 'priority' ? 'By Priority' : 'By Project'}
-                                        </button>
-                                    ))}
-                                </div>
+                        <div className="flex items-center justify-between px-5 py-3.5 border-b border-[rgba(255,255,255,0.05)] flex-shrink-0">
+                            <div className="flex items-center gap-2">
+                                <BarChart3 className="w-4 h-4 text-[#E0B954]" />
+                                <h3 className="text-sm font-semibold text-white">My Overview</h3>
                             </div>
-                            <div className="flex-1 min-h-0 p-4">
-                                {myTasks.length === 0 ? (
-                                    <div className="flex flex-col items-center justify-center h-full text-center">
-                                        <BarChart3 className="w-10 h-10 text-[#E0B954]/20 mb-2" />
-                                        <p className="text-sm text-[#737373]">No task data yet</p>
-                                        <p className="text-xs text-[#555] mt-1">Tasks assigned to you will appear here</p>
+                            <span className="text-xs text-[#737373]">{overviewStats.total} tasks</span>
+                        </div>
+                        <div className="flex-1 min-h-0 p-4 overflow-y-auto space-y-4">
+                            {myTasks.length === 0 ? (
+                                <div className="flex flex-col items-center justify-center h-full text-center">
+                                    <BarChart3 className="w-10 h-10 text-[#E0B954]/20 mb-2" />
+                                    <p className="text-sm text-[#737373]">No task data yet</p>
+                                    <p className="text-xs text-[#555] mt-1">Tasks assigned to you will appear here</p>
+                                </div>
+                            ) : (
+                                <>
+                                    {/* Row 1 — 4 stat micro-cards */}
+                                    <div className="grid grid-cols-4 gap-2">
+                                        {[
+                                            { label: 'Total', value: overviewStats.total, color: '#f5f5f5' },
+                                            { label: 'Done', value: overviewStats.done, color: '#34D399' },
+                                            { label: 'In Progress', value: overviewStats.in_progress, color: '#E0B954' },
+                                            { label: 'Overdue', value: overviewStats.overdue, color: '#EF4444' },
+                                        ].map(s => (
+                                            <div key={s.label} className="bg-[rgba(255,255,255,0.03)] rounded-xl p-3 text-center">
+                                                <div className="text-xl font-bold" style={{ color: s.color }}>{s.value}</div>
+                                                <div className="text-xs text-[#737373] mt-0.5">{s.label}</div>
+                                            </div>
+                                        ))}
                                     </div>
-                                ) : analyticsTab === 'status' ? (
-                                    <ResponsiveContainer width="100%" height="100%">
-                                        <PieChart>
-                                            <Pie data={statusChartData} cx="50%" cy="50%" innerRadius={55} outerRadius={80} paddingAngle={3} dataKey="value">
-                                                {statusChartData.map((entry, index) => (
-                                                    <Cell key={`cell-${index}`} fill={entry.color} />
-                                                ))}
-                                            </Pie>
-                                            <Tooltip contentStyle={{ background: '#121212', border: '1px solid #2a2a2a', borderRadius: '8px', color: '#f5f5f5', fontSize: '12px' }} />
-                                            <Legend wrapperStyle={{ color: '#a3a3a3', fontSize: '11px' }} />
-                                        </PieChart>
-                                    </ResponsiveContainer>
-                                ) : analyticsTab === 'priority' ? (
-                                    <ResponsiveContainer width="100%" height="100%">
-                                        <BarChart data={priorityChartData} margin={{ top: 5, right: 10, left: -20, bottom: 5 }}>
-                                            <XAxis dataKey="name" tick={{ fill: '#737373', fontSize: 11 }} axisLine={false} tickLine={false} />
-                                            <YAxis tick={{ fill: '#737373', fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} />
-                                            <Tooltip contentStyle={{ background: '#121212', border: '1px solid #2a2a2a', borderRadius: '8px', color: '#f5f5f5', fontSize: '12px' }} />
-                                            <Bar dataKey="count" radius={[4, 4, 0, 0]} name="Tasks">
-                                                {priorityChartData.map((entry, index) => (
-                                                    <Cell key={`cell-${index}`} fill={entry.color} />
-                                                ))}
-                                            </Bar>
-                                        </BarChart>
-                                    </ResponsiveContainer>
-                                ) : (
-                                    <ResponsiveContainer width="100%" height="100%">
-                                        <BarChart data={projectChartData} layout="vertical" margin={{ top: 5, right: 10, left: 10, bottom: 5 }}>
-                                            <XAxis type="number" tick={{ fill: '#737373', fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} />
-                                            <YAxis type="category" dataKey="name" tick={{ fill: '#a3a3a3', fontSize: 11 }} axisLine={false} tickLine={false} width={70} />
-                                            <Tooltip contentStyle={{ background: '#121212', border: '1px solid #2a2a2a', borderRadius: '8px', color: '#f5f5f5', fontSize: '12px' }} />
-                                            <Bar dataKey="tasks" fill="#E0B954" radius={[0, 4, 4, 0]} name="Tasks" />
-                                        </BarChart>
-                                    </ResponsiveContainer>
-                                )}
-                            </div>
+
+                                    {/* Row 2 — Completion progress bar */}
+                                    <div>
+                                        <div className="flex items-center justify-between mb-1.5">
+                                            <span className="text-xs text-[#737373]">Completion</span>
+                                            <span className="text-xs font-semibold text-[#34D399]">{overviewStats.completion_pct}%</span>
+                                        </div>
+                                        <div className="h-2 bg-[rgba(255,255,255,0.05)] rounded-full overflow-hidden">
+                                            <div
+                                                className="h-full rounded-full transition-all duration-500"
+                                                style={{ width: `${overviewStats.completion_pct}%`, background: 'linear-gradient(90deg, #34D399, #059669)' }}
+                                            />
+                                        </div>
+                                    </div>
+
+                                    {/* Row 3 — Stacked status bar */}
+                                    <div>
+                                        <div className="flex items-center justify-between mb-1.5">
+                                            <span className="text-xs text-[#737373]">Status distribution</span>
+                                        </div>
+                                        <div className="h-3 rounded-full overflow-hidden flex w-full">
+                                            {STATUS_BARS.map(s => {
+                                                const count = overviewStats[s.key as keyof typeof overviewStats] as number;
+                                                const pct = overviewStats.total > 0 ? (count / overviewStats.total) * 100 : 0;
+                                                return pct > 0 ? (
+                                                    <div key={s.key} style={{ width: `${pct}%`, backgroundColor: s.color }} title={`${s.label}: ${count}`} />
+                                                ) : null;
+                                            })}
+                                        </div>
+                                        <div className="flex flex-wrap gap-3 mt-2">
+                                            {STATUS_BARS.map(s => {
+                                                const count = overviewStats[s.key as keyof typeof overviewStats] as number;
+                                                return (
+                                                    <div key={s.key} className="flex items-center gap-1.5">
+                                                        <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: s.color }} />
+                                                        <span className="text-xs text-[#737373]">{s.label} <span className="text-white font-medium">{count}</span></span>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+
+                                    {/* Row 4 — Next due */}
+                                    {(() => {
+                                        const dueSoon = myTasks
+                                            .filter(t => t.due_date && t.status !== 'done')
+                                            .sort((a, b) => new Date(a.due_date!).getTime() - new Date(b.due_date!).getTime())
+                                            .slice(0, 3);
+                                        return dueSoon.length > 0 ? (
+                                            <div>
+                                                <div className="text-xs text-[#737373] mb-2 font-medium">Next due</div>
+                                                <div className="space-y-1.5">
+                                                    {dueSoon.map(t => (
+                                                        <div key={t.id} className="flex items-center gap-2 text-xs cursor-pointer hover:bg-[rgba(255,255,255,0.02)] px-2 py-1 rounded-lg transition-colors" onClick={() => setSelectedTask(t)}>
+                                                            <div className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: STATUS_COLOR[t.status] || '#555' }} />
+                                                            <span className="text-[#a3a3a3] truncate flex-1">{t.title}</span>
+                                                            <span className={`flex-shrink-0 ${t.is_overdue ? 'text-red-400' : 'text-[#737373]'}`}>
+                                                                {new Date(t.due_date!).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                                                            </span>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        ) : null;
+                                    })()}
+                                </>
+                            )}
+                        </div>
                     </div>
 
                 </div>{/* end 2×2 grid */}
             </div>
+
+            {/* Jira-style Ticket Slide-in Panel */}
+            {selectedTask && (
+                <>
+                    <div className="fixed inset-0 bg-black/40 z-40" onClick={() => setSelectedTask(null)} />
+                    <div className="fixed right-0 top-0 bottom-0 w-full max-w-lg bg-[#080808] border-l border-[rgba(255,255,255,0.07)] z-50 flex flex-col shadow-2xl shadow-black/50">
+                        {/* Panel Header */}
+                        <div className="flex items-start justify-between p-5 border-b border-[rgba(255,255,255,0.05)] sticky top-0 bg-[#080808] flex-shrink-0">
+                            <div className="flex items-center gap-3 flex-1 min-w-0">
+                                {(() => {
+                                    const tc = TASK_TYPE_CONFIG[selectedTask.type] || TASK_TYPE_CONFIG.task;
+                                    return (
+                                        <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-sm font-medium flex-shrink-0" style={{ backgroundColor: tc.bg, color: tc.color }}>
+                                            <tc.icon className="w-4 h-4" />
+                                            {tc.label}
+                                        </div>
+                                    );
+                                })()}
+                                <span className="text-xs font-mono text-[#E0B954] flex-shrink-0">{selectedTask.key}</span>
+                                <button
+                                    onClick={() => { navigate(`/project/${selectedTask.project_id}`); setSelectedTask(null); }}
+                                    className="flex items-center gap-1 text-xs text-[#737373] hover:text-white ml-auto flex-shrink-0"
+                                >
+                                    <ExternalLink className="w-3.5 h-3.5" />
+                                    Open in project
+                                </button>
+                            </div>
+                            <button onClick={() => setSelectedTask(null)} className="p-1.5 rounded-lg hover:bg-[rgba(244,246,255,0.05)] text-[#737373] hover:text-white ml-3 flex-shrink-0">
+                                <X className="w-4 h-4" />
+                            </button>
+                        </div>
+
+                        {/* Panel Content (scrollable) */}
+                        <div className="flex-1 overflow-y-auto p-5 space-y-5">
+                            {/* Title */}
+                            <h2 className="text-lg font-semibold text-white leading-tight">{selectedTask.title}</h2>
+
+                            {/* Breadcrumb (parent/epic) */}
+                            {(selectedTask.epic_key || selectedTask.parent_key) && (
+                                <div className="flex items-center gap-1.5 text-xs">
+                                    {selectedTask.epic_key && (
+                                        <span className="flex items-center gap-1 px-2 py-1 rounded-md bg-[rgba(167,139,250,0.12)] text-[#A78BFA]">
+                                            <Target className="w-3 h-3" />
+                                            {selectedTask.epic_key}
+                                        </span>
+                                    )}
+                                    {selectedTask.parent_key && (
+                                        <>
+                                            {selectedTask.epic_key && <ChevronRight className="w-3 h-3 text-[#555]" />}
+                                            <span className="flex items-center gap-1 px-2 py-1 rounded-md bg-[rgba(224,185,84,0.10)] text-[#E0B954]">
+                                                <BookOpen className="w-3 h-3" />
+                                                {selectedTask.parent_key}
+                                            </span>
+                                        </>
+                                    )}
+                                </div>
+                            )}
+
+                            {/* Stats grid 2×3 */}
+                            <div className="grid grid-cols-3 gap-2">
+                                {[
+                                    { label: 'Status', value: selectedTask.status.replace(/_/g, ' '), color: STATUS_COLOR[selectedTask.status] || '#f5f5f5' },
+                                    { label: 'Priority', value: selectedTask.priority, color: PRIORITY_COLORS[selectedTask.priority] || '#f5f5f5' },
+                                    { label: 'Story Points', value: String(selectedTask.story_points ?? '-'), color: '#f5f5f5' },
+                                    { label: 'Est. Hours', value: selectedTask.assigned_hours ? `${selectedTask.assigned_hours}h` : '-', color: '#a3a3a3' },
+                                    { label: 'Logged Hrs', value: selectedTask.logged_hours ? `${selectedTask.logged_hours}h` : '0h', color: '#a3a3a3' },
+                                    { label: 'Remaining', value: selectedTask.remaining_hours ? `${selectedTask.remaining_hours}h` : '-', color: '#a3a3a3' },
+                                ].map(({ label, value, color }) => (
+                                    <div key={label} className="bg-[rgba(255,255,255,0.025)] rounded-xl p-3">
+                                        <p className="text-xs text-[#737373] mb-1">{label}</p>
+                                        <p className="text-sm font-semibold capitalize" style={{ color }}>{value}</p>
+                                    </div>
+                                ))}
+                            </div>
+
+                            {/* Assignee / Due Date / Project */}
+                            <div className="space-y-0">
+                                {[
+                                    { label: 'Assignee', value: selectedTask.assignee || 'Unassigned' },
+                                    { label: 'Due Date', value: selectedTask.due_date ? new Date(selectedTask.due_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Not set' },
+                                    { label: 'Project', value: selectedTask.project_name },
+                                ].map(({ label, value }) => (
+                                    <div key={label} className="flex items-center justify-between py-2.5 border-b border-[rgba(255,255,255,0.04)]">
+                                        <span className="text-xs text-[#737373]">{label}</span>
+                                        <span className="text-sm text-[#f5f5f5]">{value}</span>
+                                    </div>
+                                ))}
+                            </div>
+
+                            {/* Description */}
+                            {selectedTask.description && (
+                                <div>
+                                    <p className="text-xs font-medium text-[#737373] mb-2">Description</p>
+                                    <p className="text-sm text-[#a3a3a3] leading-relaxed bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-xl p-4">
+                                        {selectedTask.description}
+                                    </p>
+                                </div>
+                            )}
+
+                            {/* Tags */}
+                            {selectedTask.tags && selectedTask.tags.length > 0 && (
+                                <div>
+                                    <div className="flex items-center gap-1.5 mb-2">
+                                        <Tag className="w-3.5 h-3.5 text-[#737373]" />
+                                        <p className="text-xs font-medium text-[#737373]">Tags</p>
+                                    </div>
+                                    <div className="flex flex-wrap gap-2">
+                                        {selectedTask.tags.map(tag => (
+                                            <span key={tag} className="px-2.5 py-1 rounded-lg bg-[rgba(255,255,255,0.05)] text-[#a3a3a3] text-xs">{tag}</span>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Acceptance Criteria */}
+                            {selectedTask.acceptance_criteria && selectedTask.acceptance_criteria.length > 0 && (
+                                <div>
+                                    <p className="text-xs font-medium text-[#737373] mb-2">Acceptance Criteria</p>
+                                    <div className="space-y-1.5">
+                                        {selectedTask.acceptance_criteria.map((ac, i) => (
+                                            <div key={i} className="flex items-start gap-2 text-sm text-[#a3a3a3]">
+                                                <CheckCircle2 className="w-4 h-4 text-[#555] flex-shrink-0 mt-0.5" />
+                                                <span className="leading-relaxed">{ac}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Footer */}
+                        <div className="flex-shrink-0 p-4 border-t border-[rgba(255,255,255,0.05)]">
+                            <button
+                                onClick={() => { navigate(`/project/${selectedTask.project_id}`); setSelectedTask(null); }}
+                                className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-gradient-to-r from-[#E0B954] to-[#C79E3B] text-[#080808] font-semibold text-sm hover:opacity-90 transition-opacity"
+                            >
+                                <ExternalLink className="w-4 h-4" />
+                                Open full ticket
+                            </button>
+                        </div>
+                    </div>
+                </>
+            )}
 
             {/* Create Project Modal */}
             {showCreateModal && (

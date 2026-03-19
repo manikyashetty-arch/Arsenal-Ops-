@@ -136,6 +136,16 @@ async def list_work_items(
     
     items = query.all()
     
+    # Pre-fetch parent/epic keys in one batch query
+    all_lookup_ids = list(set(
+        [item.parent_id for item in items if item.parent_id] +
+        [item.epic_id for item in items if item.epic_id]
+    ))
+    id_to_key: dict = {}
+    if all_lookup_ids:
+        related = db.query(WorkItem.id, WorkItem.key).filter(WorkItem.id.in_(all_lookup_ids)).all()
+        id_to_key = {r.id: r.key for r in related}
+    
     # Include assignee name in response
     result = []
     for item in items:
@@ -149,7 +159,7 @@ async def list_work_items(
             "priority": item.priority,
             "story_points": item.story_points or 0,
             "assigned_hours": item.estimated_hours or 0,
-            "estimated_hours": item.estimated_hours or 0,  # Also return as estimated_hours for frontend
+            "estimated_hours": item.estimated_hours or 0,
             "remaining_hours": item.remaining_hours or 0,
             "logged_hours": item.logged_hours or 0,
             "assignee": "Unassigned",
@@ -158,6 +168,11 @@ async def list_work_items(
             "sprint_id": item.sprint_id,
             "epic": "",
             "tags": item.tags or [],
+            "acceptance_criteria": item.acceptance_criteria or [],
+            "parent_id": item.parent_id,
+            "epic_id": item.epic_id,
+            "parent_key": id_to_key.get(item.parent_id) if item.parent_id else None,
+            "epic_key": id_to_key.get(item.epic_id) if item.epic_id else None,
             "due_date": item.due_date.isoformat() if item.due_date else None,
             "start_date": item.start_date.isoformat() if item.start_date else None,
             "created_at": item.created_at.isoformat() if item.created_at else None,
@@ -217,7 +232,16 @@ async def get_my_tasks(
             "estimated_hours": item.estimated_hours,
             "logged_hours": item.logged_hours,
             "remaining_hours": item.remaining_hours,
-            "is_overdue": item.due_date and item.due_date < datetime.utcnow() and item.status != "done"
+            "is_overdue": bool(item.due_date and item.due_date < datetime.utcnow() and item.status != "done"),
+            "story_points": item.story_points or 0,
+            "assigned_hours": item.estimated_hours or 0,
+            "assignee": developer.name,
+            "description": item.description or "",
+            "tags": item.tags or [],
+            "acceptance_criteria": item.acceptance_criteria or [],
+            "parent_id": item.parent_id,
+            "epic_id": item.epic_id,
+            "sprint_id": item.sprint_id,
         })
     
     return result

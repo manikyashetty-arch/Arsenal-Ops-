@@ -21,6 +21,10 @@ interface WorkItem {
     sprint?: string;
     story_points?: number;
     acceptance_criteria?: string;
+    parent_id?: number | null;
+    epic_id?: number | null;
+    parent_key?: string | null;
+    epic_key?: string | null;
 }
 
 interface ListViewProps {
@@ -42,10 +46,15 @@ const ListView: React.FC<ListViewProps> = ({ workItems, onTaskClick }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const [statusFilter, setStatusFilter] = useState<string>('all');
     const [priorityFilter, setPriorityFilter] = useState<string>('all');
+    const [assigneeFilter, setAssigneeFilter] = useState<string>('all');
     const [sortField, setSortField] = useState<SortField>('status');
     const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
     const [groupBy, setGroupBy] = useState<string>('none');
     const [selectedItem, setSelectedItem] = useState<WorkItem | null>(null);
+
+    const uniqueAssignees = useMemo(() => [
+        ...new Set(workItems.map(i => i.assignee || 'Unassigned'))
+    ], [workItems]);
 
     const filteredAndSortedItems = useMemo(() => {
         let items = [...workItems];
@@ -62,6 +71,9 @@ const ListView: React.FC<ListViewProps> = ({ workItems, onTaskClick }) => {
         }
         if (priorityFilter !== 'all') {
             items = items.filter(item => item.priority === priorityFilter);
+        }
+        if (assigneeFilter !== 'all') {
+            items = items.filter(item => (item.assignee || 'Unassigned') === assigneeFilter);
         }
 
         // Sort
@@ -87,7 +99,7 @@ const ListView: React.FC<ListViewProps> = ({ workItems, onTaskClick }) => {
         });
 
         return items;
-    }, [workItems, searchTerm, statusFilter, priorityFilter, sortField, sortDirection]);
+    }, [workItems, searchTerm, statusFilter, priorityFilter, assigneeFilter, sortField, sortDirection]);
 
     const groupedItems = useMemo(() => {
         if (groupBy === 'none') return { 'All Items': filteredAndSortedItems };
@@ -207,6 +219,18 @@ const ListView: React.FC<ListViewProps> = ({ workItems, onTaskClick }) => {
                             <SelectItem value="low">Low</SelectItem>
                         </SelectContent>
                     </Select>
+
+                    <Select value={assigneeFilter} onValueChange={setAssigneeFilter}>
+                        <SelectTrigger className="w-[140px] bg-[#0A0A14] border-[rgba(255,255,255,0.08)] text-white">
+                            <SelectValue placeholder="Assignee" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="all">All Assignees</SelectItem>
+                            {uniqueAssignees.map(name => (
+                                <SelectItem key={name} value={name}>{name}</SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
                     
                     <Select value={groupBy} onValueChange={setGroupBy}>
                         <SelectTrigger className="w-[130px] bg-[#0A0A14] border-[rgba(255,255,255,0.08)] text-white">
@@ -257,6 +281,9 @@ const ListView: React.FC<ListViewProps> = ({ workItems, onTaskClick }) => {
                                             <td className="py-3 px-4">{getStatusIcon(item.status)}</td>
                                             <td className="py-3 px-4">
                                                 <div className="flex flex-col">
+                                                    {item.parent_key && (
+                                                        <span className="text-[#555] text-xs mb-0.5">&#9668; {item.parent_key}</span>
+                                                    )}
                                                     <span className="text-white font-medium">{item.key}</span>
                                                     <span className="text-[#737373] text-sm truncate max-w-[300px]">{item.title}</span>
                                                 </div>
@@ -373,7 +400,7 @@ const ListView: React.FC<ListViewProps> = ({ workItems, onTaskClick }) => {
                                 {[
                                     { label: 'Assignee', value: selectedItem.assignee || 'Unassigned' },
                                     { label: 'Sprint', value: selectedItem.sprint || 'Backlog' },
-                                    { label: 'Story Points', value: selectedItem.story_points ?? '-' },
+                                    { label: 'Story Points', value: String(selectedItem.story_points ?? '-') },
                                     { label: 'Est. Hours', value: selectedItem.estimated_hours ? `${selectedItem.estimated_hours}h` : '-' },
                                     { label: 'Logged Hours', value: selectedItem.logged_hours ? `${selectedItem.logged_hours}h` : '0h' },
                                     {
@@ -392,6 +419,53 @@ const ListView: React.FC<ListViewProps> = ({ workItems, onTaskClick }) => {
                                     </div>
                                 ))}
                             </div>
+
+                            {/* Hierarchy */}
+                            {(selectedItem.epic_key || selectedItem.parent_key) && (
+                                <div>
+                                    <p className="text-xs font-medium text-[#737373] mb-2">Hierarchy</p>
+                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                        {selectedItem.epic_key && (
+                                            <span className="flex items-center gap-1 px-2 py-1 rounded-md bg-[rgba(167,139,250,0.12)] text-[#A78BFA] text-xs">
+                                                <Target className="w-3 h-3" />
+                                                Epic: {selectedItem.epic_key}
+                                            </span>
+                                        )}
+                                        {selectedItem.epic_key && selectedItem.parent_key && (
+                                            <span className="text-[#555] text-xs">›</span>
+                                        )}
+                                        {selectedItem.parent_key && (
+                                            <span className="flex items-center gap-1 px-2 py-1 rounded-md bg-[rgba(224,185,84,0.10)] text-[#E0B954] text-xs">
+                                                <BookOpen className="w-3 h-3" />
+                                                Parent: {selectedItem.parent_key}
+                                            </span>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Child items */}
+                            {(() => {
+                                const children = workItems.filter(i => i.parent_id === parseInt(selectedItem.id));
+                                return children.length > 0 ? (
+                                    <div>
+                                        <p className="text-xs font-medium text-[#737373] mb-2">Child Items ({children.length})</p>
+                                        <div className="space-y-1.5">
+                                            {children.map(child => (
+                                                <div
+                                                    key={child.id}
+                                                    className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.04)] cursor-pointer hover:border-[rgba(255,255,255,0.08)] transition-colors"
+                                                    onClick={() => setSelectedItem(child)}
+                                                >
+                                                    {getStatusIcon(child.status)}
+                                                    <span className="text-xs font-mono text-[#737373] flex-shrink-0">{child.key}</span>
+                                                    <span className="text-sm text-[#a3a3a3] truncate">{child.title}</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                ) : null;
+                            })()}
                         </div>
                     </div>
                 </>
