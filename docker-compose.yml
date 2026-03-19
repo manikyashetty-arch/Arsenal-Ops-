@@ -8,7 +8,7 @@ services:
     environment:
       POSTGRES_USER: arsenalops
       POSTGRES_PASSWORD: arsenal_ops_secret
-      POSTGRES_DB: arsenal_ops
+      POSTGRES_DB: arsenalops
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
@@ -26,13 +26,19 @@ services:
       dockerfile: Dockerfile
     container_name: arsenal-ops-api
     environment:
-      - DATABASE_URL=postgresql://arsenalops:arsenal_ops_secret@postgres:5432/arsenal_ops
+      - DATABASE_URL=postgresql://arsenalops:arsenal_ops_secret@postgres:5432/arsenalops
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - AZURE_OPENAI_ENDPOINT=${AZURE_OPENAI_ENDPOINT}
       - AZURE_OPENAI_API_KEY=${AZURE_OPENAI_API_KEY}
       - AZURE_OPENAI_DEPLOYMENT=${AZURE_OPENAI_DEPLOYMENT}
       - AZURE_OPENAI_API_VERSION=${AZURE_OPENAI_API_VERSION}
       - GITHUB_TOKEN=${GITHUB_TOKEN}
+      - SMTP_HOST=${SMTP_HOST}
+      - SMTP_PORT=${SMTP_PORT}
+      - SMTP_USER=${SMTP_USER}
+      - SMTP_PASSWORD=${SMTP_PASSWORD}
+      - SMTP_FROM_EMAIL=${SMTP_FROM_EMAIL}
+      - SMTP_FROM_NAME=${SMTP_FROM_NAME}
       - PYTHONUNBUFFERED=1
     ports:
       - "8000:8000"

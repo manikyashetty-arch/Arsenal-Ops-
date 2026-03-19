@@ -5,10 +5,6 @@ from pydantic import BaseModel
 from typing import List, Optional
 from datetime import datetime
 import re
-import os
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
 
 import sys
 sys.path.append('..')
@@ -18,6 +14,7 @@ from models.work_item import WorkItem
 from models.developer import Developer
 from models.user import User
 from routers.auth import get_current_user
+from services.email_service import email_service
 
 router = APIRouter(prefix="/api/comments", tags=["comments"])
 
@@ -53,78 +50,6 @@ def extract_mentions(content: str) -> List[int]:
     mention_pattern = r'@(\d+)'
     matches = re.findall(mention_pattern, content)
     return [int(m) for m in matches]
-
-
-def send_email_notification(
-    to_email: str,
-    to_name: str,
-    author_name: str,
-    work_item_key: str,
-    work_item_title: str,
-    comment_content: str,
-    is_blocker: bool = False
-):
-    """Send email notification for @mentions"""
-    smtp_host = os.getenv("SMTP_HOST", "smtp.gmail.com")
-    smtp_port = int(os.getenv("SMTP_PORT", "587"))
-    smtp_user = os.getenv("SMTP_USER", "")
-    smtp_password = os.getenv("SMTP_PASSWORD", "")
-    from_email = os.getenv("SMTP_FROM_EMAIL", smtp_user)
-    
-    if not smtp_user or not smtp_password:
-        print(f"SMTP not configured. Would send email to {to_email}")
-        return False
-    
-    try:
-        subject_type = "🚫 BLOCKER" if is_blocker else " Mention"
-        subject = f"{subject_type}: You were mentioned in {work_item_key}"
-        
-        html_body = f"""
-        <html>
-        <body style="font-family: Arial, sans-serif; padding: 20px; background-color: #f5f5f5;">
-            <div style="max-width: 600px; margin: 0 auto; background: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
-                <h2 style="color: {'#DC2626' if is_blocker else '#6366F1'}; margin-top: 0;">
-                    {'🚫 BLOCKER Alert!' if is_blocker else 'You were mentioned!'}
-                </h2>
-                <p style="color: #333; font-size: 16px;">
-                    Hi <strong>{to_name}</strong>,
-                </p>
-                <p style="color: #333; font-size: 16px;">
-                    <strong>{author_name}</strong> mentioned you in ticket <strong>{work_item_key}</strong>:
-                </p>
-                <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin: 20px 0; border-left: 4px solid {'#DC2626' if is_blocker else '#6366F1'};">
-                    <p style="margin: 0; color: #555;"><strong>{work_item_title}</strong></p>
-                </div>
-                <div style="background: #fff; padding: 15px; border: 1px solid #e0e0e0; border-radius: 8px; margin: 20px 0;">
-                    <p style="margin: 0; color: #333; white-space: pre-wrap;">{comment_content}</p>
-                </div>
-                {'<p style="color: #DC2626; font-weight: bold;">⚠️ This is marked as a BLOCKER and requires your attention!</p>' if is_blocker else ''}
-                <p style="color: #666; font-size: 14px; margin-top: 30px;">
-                    This is an automated notification from Arsenal Ops.
-                </p>
-            </div>
-        </body>
-        </html>
-        """
-        
-        msg = MIMEMultipart('alternative')
-        msg['Subject'] = subject
-        msg['From'] = from_email
-        msg['To'] = to_email
-        
-        html_part = MIMEText(html_body, 'html')
-        msg.attach(html_part)
-        
-        with smtplib.SMTP(smtp_host, smtp_port) as server:
-            server.starttls()
-            server.login(smtp_user, smtp_password)
-            server.sendmail(from_email, to_email, msg.as_string())
-        
-        print(f"Email sent to {to_email}")
-        return True
-    except Exception as e:
-        print(f"Failed to send email: {e}")
-        return False
 
 
 @router.get("/workitem/{work_item_id}", response_model=List[CommentResponse])
@@ -199,7 +124,7 @@ async def create_comment(
     for mentioned_id in mentions:
         mentioned_user = db.query(Developer).filter(Developer.id == mentioned_id).first()
         if mentioned_user and mentioned_user.email:
-            send_email_notification(
+            email_service.send_mention_notification(
                 to_email=mentioned_user.email,
                 to_name=mentioned_user.name,
                 author_name=author_name,
