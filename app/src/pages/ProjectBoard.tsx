@@ -192,8 +192,9 @@ const ProjectBoard = () => {
     const [showCreateForm, setShowCreateForm] = useState(false);
     const [viewMode, setViewMode] = useState<'board' | 'list'>('board');
     const [searchQuery, setSearchQuery] = useState('');
-    const [filterType, setFilterType] = useState<string>('all');
-    const [filterPriority, setFilterPriority] = useState<string>('all');
+        const [filterType, setFilterType] = useState<string>('all');
+        const [filterPriority, setFilterPriority] = useState<string>('all');
+        const [filterAssignee, setFilterAssignee] = useState<string>('all');
     const [draggedItem, setDraggedItem] = useState<string | null>(null);
     const [dragOverColumn, setDragOverColumn] = useState<string | null>(null);
     
@@ -288,6 +289,13 @@ const ProjectBoard = () => {
         if (searchQuery && !item.title.toLowerCase().includes(searchQuery.toLowerCase())) return false;
         if (filterType !== 'all' && item.type !== filterType) return false;
         if (filterPriority !== 'all' && item.priority !== filterPriority) return false;
+        if (filterAssignee !== 'all') {
+            if (filterAssignee === 'unassigned') {
+                if (item.assignee_id !== null && item.assignee_id !== undefined) return false;
+            } else {
+                if (String(item.assignee_id) !== filterAssignee) return false;
+            }
+        }
         // Sprint filter
         if (selectedSprintId === 'backlog' && item.sprint_id !== null) return false;
         if (typeof selectedSprintId === 'number' && item.sprint_id !== selectedSprintId) return false;
@@ -1037,6 +1045,18 @@ const ProjectBoard = () => {
                             <option value="high">High</option>
                             <option value="medium">Medium</option>
                             <option value="low">Low</option>
+                        </select>
+                        {/* Assignee Filter */}
+                        <select
+                            value={filterAssignee}
+                            onChange={(e) => setFilterAssignee(e.target.value)}
+                            className="h-8 text-xs bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.05)] text-[#a3a3a3] rounded-lg px-2 appearance-none cursor-pointer hover:border-[rgba(244,246,255,0.12)] transition-colors"
+                        >
+                            <option value="all">All Assignees</option>
+                            <option value="unassigned">Unassigned</option>
+                            {(project?.developers ?? []).map(dev => (
+                                <option key={dev.id} value={String(dev.id)}>{dev.name}</option>
+                            ))}
                         </select>
                         {/* Sprint Filter */}
                         <div className="flex items-center gap-2">

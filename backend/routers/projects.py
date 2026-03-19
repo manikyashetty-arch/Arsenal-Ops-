@@ -478,6 +478,13 @@ async def remove_developer_from_project(
     if result.rowcount == 0:
         raise HTTPException(status_code=404, detail="Developer not found in this project")
     
+    # Unassign all work items in this project that were assigned to the removed developer
+    from models.work_item import WorkItem
+    db.query(WorkItem).filter(
+        WorkItem.project_id == project_id,
+        WorkItem.assignee_id == developer_id
+    ).update({"assignee_id": None}, synchronize_session=False)
+    
     db.commit()
     return {"status": "success", "message": "Developer removed from project"}
 

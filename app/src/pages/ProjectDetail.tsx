@@ -378,7 +378,7 @@ const ProjectDetail = () => {
         }
     };
 
-    // Hub data fetch functions (also includes analytics to share one loading gate)
+    // Hub data fetch functions (also includes analytics + prdAnalysis to share one loading gate)
     const fetchHubData = async () => {
         if (!id) return;
         setHubLoading(true);
@@ -389,6 +389,7 @@ const ProjectDetail = () => {
             fetchActivities(),
             fetchWorkload(),
             fetchAnalytics(),
+            fetchPrdAnalysis(),
         ]);
         setHubLoading(false);
     };
@@ -570,7 +571,7 @@ const ProjectDetail = () => {
     // Fetch PRD analysis when project loads
     useEffect(() => {
         if (project) {
-            fetchPrdAnalysis();
+            // prdAnalysis is now loaded inside fetchHubData — no separate trigger needed
         }
     }, [project]);
 
@@ -837,7 +838,68 @@ const ProjectDetail = () => {
             <main className="px-6 py-4 max-w-7xl mx-auto">
                 {/* Overview Tab */}
                 {activeTab === 'overview' && (
-                    <div className="space-y-4">
+                    hubLoading ? (
+                        // Full overview skeleton — shown until ALL data (analytics, PRD) is ready
+                        <div className="space-y-4 animate-pulse">
+                            {/* Project Information skeleton */}
+                            <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-2xl p-4">
+                                <div className="flex items-center justify-between mb-4">
+                                    <div className="h-5 w-44 bg-[rgba(255,255,255,0.07)] rounded" />
+                                    <div className="h-7 w-14 bg-[rgba(255,255,255,0.04)] rounded-lg" />
+                                </div>
+                                <div className="space-y-3">
+                                    <div className="h-3 w-24 bg-[rgba(255,255,255,0.05)] rounded" />
+                                    <div className="h-4 w-3/4 bg-[rgba(255,255,255,0.06)] rounded" />
+                                    <div className="h-3 w-32 bg-[rgba(255,255,255,0.05)] rounded mt-2" />
+                                    <div className="h-4 w-1/2 bg-[rgba(255,255,255,0.05)] rounded" />
+                                </div>
+                                <div className="flex gap-6 pt-4 mt-3 border-t border-[rgba(255,255,255,0.04)]">
+                                    {[...Array(4)].map((_, i) => (
+                                        <div key={i}>
+                                            <div className="h-2.5 w-14 bg-[rgba(255,255,255,0.04)] rounded mb-1" />
+                                            <div className="h-4 w-16 bg-[rgba(255,255,255,0.06)] rounded" />
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                            {/* 4 Stat cards skeleton */}
+                            <div className="grid grid-cols-4 gap-3">
+                                {[...Array(4)].map((_, i) => (
+                                    <div key={i} className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-xl p-4">
+                                        <div className="flex items-center gap-3">
+                                            <div className="w-10 h-10 rounded-lg bg-[rgba(255,255,255,0.05)]" />
+                                            <div>
+                                                <div className="h-7 w-12 bg-[rgba(255,255,255,0.07)] rounded mb-1" />
+                                                <div className="h-3 w-20 bg-[rgba(255,255,255,0.04)] rounded" />
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                            {/* PRD/Project Overview skeleton */}
+                            <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-2xl p-5">
+                                <div className="flex items-center gap-3 mb-5">
+                                    <div className="w-10 h-10 rounded-xl bg-[rgba(255,255,255,0.06)]" />
+                                    <div>
+                                        <div className="h-4 w-36 bg-[rgba(255,255,255,0.07)] rounded mb-1" />
+                                        <div className="h-3 w-28 bg-[rgba(255,255,255,0.04)] rounded" />
+                                    </div>
+                                </div>
+                                <div className="space-y-2 mb-4">
+                                    <div className="h-3 w-full bg-[rgba(255,255,255,0.05)] rounded" />
+                                    <div className="h-3 w-5/6 bg-[rgba(255,255,255,0.05)] rounded" />
+                                    <div className="h-3 w-4/6 bg-[rgba(255,255,255,0.04)] rounded" />
+                                </div>
+                                <div className="flex flex-wrap gap-2 mb-4">
+                                    {[...Array(5)].map((_, i) => (
+                                        <div key={i} className="h-6 w-24 bg-[rgba(255,255,255,0.04)] rounded-full" />
+                                    ))}
+                                </div>
+                                <div className="h-32 bg-[rgba(255,255,255,0.025)] rounded-xl" />
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="space-y-4">
                         <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-2xl p-4">
                             <div className="flex items-center justify-between mb-3">
                                 <h2 className="text-lg font-semibold text-white">Project Information</h2>
@@ -1470,7 +1532,8 @@ const ProjectDetail = () => {
                                 </div>
                             )}
                         </div>
-                    </div>
+                        </div>
+                    )
                 )}
 
                 {/* Add Developer Modal (shared across overview & hub) */}
@@ -1543,6 +1606,39 @@ const ProjectDetail = () => {
                 )}
                 {/* Project Hub Tab */}
                 {activeTab === 'hub' && (
+                    hubLoading ? (
+                        <div className="space-y-4 animate-pulse">
+                            {/* Active Sprints skeleton */}
+                            <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(224,185,84,0.12)] rounded-2xl p-5 space-y-3">
+                                <div className="flex items-center gap-3 mb-2">
+                                    <div className="w-9 h-9 rounded-xl bg-[rgba(255,255,255,0.06)]" />
+                                    <div className="h-4 w-28 bg-[rgba(255,255,255,0.07)] rounded" />
+                                </div>
+                                <div className="grid grid-cols-2 gap-3">
+                                    {[...Array(2)].map((_, i) => (
+                                        <div key={i} className="border border-[rgba(255,255,255,0.05)] rounded-xl p-4 space-y-2">
+                                            <div className="h-3.5 w-32 bg-[rgba(255,255,255,0.07)] rounded" />
+                                            <div className="h-2 w-full bg-[rgba(255,255,255,0.04)] rounded-full mt-2" />
+                                            <div className="h-3 w-24 bg-[rgba(255,255,255,0.04)] rounded mt-1" />
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                            {/* ListView skeleton */}
+                            <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-2xl p-5 space-y-3">
+                                <div className="h-4 w-32 bg-[rgba(255,255,255,0.07)] rounded" />
+                                {[...Array(5)].map((_, i) => (
+                                    <div key={i} className="flex items-center gap-3 py-2.5 border-b border-[rgba(255,255,255,0.04)]">
+                                        <div className="h-4 w-4 rounded bg-[rgba(255,255,255,0.06)] flex-shrink-0" />
+                                        <div className="h-3 w-14 bg-[rgba(255,255,255,0.05)] rounded" />
+                                        <div className="h-3 flex-1 bg-[rgba(255,255,255,0.05)] rounded" />
+                                        <div className="h-5 w-16 bg-[rgba(255,255,255,0.04)] rounded-full" />
+                                        <div className="h-5 w-16 bg-[rgba(255,255,255,0.04)] rounded-full" />
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    ) : (
                     <div className="space-y-4">
                         {/* Active Sprints in Hub */}
                         {sprints.length > 0 && (
@@ -1637,30 +1733,32 @@ const ProjectDetail = () => {
                             <ListView workItems={hubWorkItems} />
                         )}
                     </div>
+                    )
                 )}
 
                 {/* Project Tracker Tab */}
                 {activeTab === 'tracker' && (
-                    <div className="space-y-4">
-                        {hubLoading && (
-                            <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-2xl p-5 animate-pulse space-y-4">
-                                <div className="flex items-center gap-3">
-                                    <div className="w-10 h-10 rounded-xl bg-[rgba(255,255,255,0.06)]" />
-                                    <div className="space-y-1.5">
-                                        <div className="h-4 w-36 bg-[rgba(255,255,255,0.07)] rounded" />
-                                        <div className="h-3 w-52 bg-[rgba(255,255,255,0.04)] rounded" />
-                                    </div>
-                                </div>
-                                <div className="grid grid-cols-2 gap-4">
-                                    {[...Array(2)].map((_, i) => (
-                                        <div key={i} className="bg-[rgba(255,255,255,0.025)] rounded-xl p-4 h-52" />
-                                    ))}
-                                    <div className="bg-[rgba(255,255,255,0.025)] rounded-xl p-4 col-span-2 h-64" />
+                    hubLoading ? (
+                        <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-2xl p-5 animate-pulse space-y-4">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-xl bg-[rgba(255,255,255,0.06)]" />
+                                <div className="space-y-1.5">
+                                    <div className="h-4 w-36 bg-[rgba(255,255,255,0.07)] rounded" />
+                                    <div className="h-3 w-52 bg-[rgba(255,255,255,0.04)] rounded" />
                                 </div>
                             </div>
-                        )}
+                            <div className="grid grid-cols-2 gap-4">
+                                {[...Array(2)].map((_, i) => (
+                                    <div key={i} className="bg-[rgba(255,255,255,0.025)] rounded-xl p-4 h-52" />
+                                ))}
+                                <div className="bg-[rgba(255,255,255,0.025)] rounded-xl p-4 col-span-2 h-64" />
+                            </div>
+                            <div className="h-80 bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-2xl" />
+                        </div>
+                    ) : (
+                        <div className="space-y-4">
                         {/* Analytics Charts */}
-                        {!hubLoading && analytics && analytics.total_items > 0 && (
+                        {analytics && analytics.total_items > 0 && (
                             <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-2xl p-5">
                                 <div className="flex items-center gap-3 mb-4">
                                     <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#E0B954] to-[#C79E3B] flex items-center justify-center">
@@ -1731,8 +1829,7 @@ const ProjectDetail = () => {
                             </div>
                         )}
 
-                        {!hubLoading && (
-                            <TimelineView
+                        <TimelineView
                                 workItems={hubWorkItems}
                                 milestones={milestones}
                                 goals={goals}
@@ -1742,8 +1839,8 @@ const ProjectDetail = () => {
                                 onTaskUpdate={handleTaskUpdate}
                                 onTaskCreate={handleTaskCreate}
                             />
-                        )}
-                    </div>
+                        </div>
+                    )
                 )}
 
                 {/* Calendar Tab */}
@@ -1833,6 +1930,61 @@ const ProjectDetail = () => {
 
                 {/* Project Manager Tab */}
                 {activeTab === 'pm' && isProjectManager(user) && (
+                    hubLoading ? (
+                        <div className="space-y-4 animate-pulse">
+                            {/* Sprint Progress skeleton */}
+                            <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(224,185,84,0.12)] rounded-2xl p-5">
+                                <div className="flex items-center gap-3 mb-5">
+                                    <div className="w-10 h-10 rounded-xl bg-[rgba(255,255,255,0.06)]" />
+                                    <div className="space-y-1.5">
+                                        <div className="h-4 w-48 bg-[rgba(255,255,255,0.07)] rounded" />
+                                        <div className="h-3 w-64 bg-[rgba(255,255,255,0.04)] rounded" />
+                                    </div>
+                                </div>
+                                {[...Array(2)].map((_, i) => (
+                                    <div key={i} className="border border-[rgba(255,255,255,0.05)] rounded-xl p-4 mb-3 space-y-3">
+                                        <div className="h-4 w-36 bg-[rgba(255,255,255,0.07)] rounded" />
+                                        <div className="flex items-center gap-3">
+                                            <div className="h-2.5 w-14 bg-[rgba(255,255,255,0.04)] rounded" />
+                                            <div className="flex-1 h-2 bg-[rgba(255,255,255,0.05)] rounded-full" />
+                                            <div className="h-3 w-8 bg-[rgba(255,255,255,0.04)] rounded" />
+                                        </div>
+                                        <div className="flex items-center gap-3">
+                                            <div className="h-2.5 w-14 bg-[rgba(255,255,255,0.04)] rounded" />
+                                            <div className="flex-1 h-2 bg-[rgba(255,255,255,0.05)] rounded-full" />
+                                            <div className="h-3 w-8 bg-[rgba(255,255,255,0.04)] rounded" />
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                            {/* PMView skeleton */}
+                            <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-2xl p-5 space-y-3">
+                                <div className="h-4 w-44 bg-[rgba(255,255,255,0.07)] rounded mb-4" />
+                                {[...Array(4)].map((_, i) => (
+                                    <div key={i} className="flex items-center gap-3 py-2.5 border-b border-[rgba(255,255,255,0.04)]">
+                                        <div className="h-7 w-7 rounded-full bg-[rgba(255,255,255,0.06)]" />
+                                        <div className="h-3 flex-1 bg-[rgba(255,255,255,0.05)] rounded" />
+                                        <div className="h-3 w-12 bg-[rgba(255,255,255,0.04)] rounded" />
+                                        <div className="h-3 w-12 bg-[rgba(255,255,255,0.04)] rounded" />
+                                    </div>
+                                ))}
+                            </div>
+                            {/* Workload skeleton */}
+                            <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-2xl p-5 space-y-3">
+                                <div className="h-4 w-36 bg-[rgba(255,255,255,0.07)] rounded mb-4" />
+                                {[...Array(3)].map((_, i) => (
+                                    <div key={i} className="flex items-center gap-3 py-2.5">
+                                        <div className="h-8 w-8 rounded-full bg-[rgba(255,255,255,0.06)]" />
+                                        <div className="flex-1 space-y-1.5">
+                                            <div className="h-3 w-28 bg-[rgba(255,255,255,0.07)] rounded" />
+                                            <div className="h-2 w-full bg-[rgba(255,255,255,0.04)] rounded-full" />
+                                        </div>
+                                        <div className="h-3 w-16 bg-[rgba(255,255,255,0.04)] rounded" />
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    ) : (
                     <div className="space-y-4">
                         {/* Sprint Expected vs Actual Progress */}
                         {sprints.length > 0 && (
@@ -1968,6 +2120,7 @@ const ProjectDetail = () => {
                             />
                         </div>
                     </div>
+                    )
                 )}
             </main>
 
