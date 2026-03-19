@@ -32,6 +32,8 @@ import {
     BarChart3,
     List,
     Activity,
+    ChevronDown,
+    ChevronUp,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import PMView from '@/components/PMView';
@@ -253,6 +255,8 @@ const ProjectDetail = () => {
         this_week_remaining_hours?: number;
     }[]>([]);
     const [hubLoading, setHubLoading] = useState(false);
+        const [sprintsExpanded, setSprintsExpanded] = useState(false);
+        const [progressExpanded, setProgressExpanded] = useState(false);
 
     // Refetch all data (used on mount and when window regains focus)
     const refetchAll = () => {
@@ -1483,17 +1487,29 @@ const ProjectDetail = () => {
                         {/* Active Sprints in Hub */}
                         {sprints.length > 0 && (
                             <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(224,185,84,0.12)] rounded-2xl p-5">
-                                <div className="flex items-center gap-3 mb-4">
-                                    <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-[#E0B954] to-[#C79E3B] flex items-center justify-center shadow-lg shadow-[#E0B954]/20">
-                                        <TrendingUp className="w-4 h-4 text-white" />
+                                <div className="flex items-center justify-between mb-4">
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-[#E0B954] to-[#C79E3B] flex items-center justify-center shadow-lg shadow-[#E0B954]/20">
+                                            <TrendingUp className="w-4 h-4 text-white" />
+                                        </div>
+                                        <div>
+                                            <h3 className="font-semibold text-white">Active Sprints</h3>
+                                            <p className="text-xs text-[#737373]">{sprints.filter(s => s.status === 'active').length} active · {sprints.length} total</p>
+                                        </div>
                                     </div>
-                                    <div>
-                                        <h3 className="font-semibold text-white">Active Sprints</h3>
-                                        <p className="text-xs text-[#737373]">{sprints.filter(s => s.status === 'active').length} active · {sprints.length} total</p>
-                                    </div>
+                                    {sprints.length > 2 && (
+                                        <button
+                                            onClick={() => setSprintsExpanded(p => !p)}
+                                            className="flex items-center gap-1.5 text-xs text-[#E0B954] hover:text-[#F3D57E] px-3 py-1.5 rounded-lg bg-[#E0B954]/10 hover:bg-[#E0B954]/15 transition-colors font-medium flex-shrink-0"
+                                        >
+                                            {sprintsExpanded
+                                                ? <><ChevronUp className="w-3.5 h-3.5" /> Collapse</>
+                                                : <><ChevronDown className="w-3.5 h-3.5" /> Show all {sprints.length}</>}
+                                        </button>
+                                    )}
                                 </div>
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                    {sprints.map((sprint) => (
+                                    {(sprintsExpanded ? sprints : sprints.slice(0, 2)).map((sprint) => (
                                         <div key={sprint.id} className={`border rounded-xl p-4 ${
                                             sprint.status === 'active' ? 'border-[#E0B954]/30 bg-[#E0B954]/5' :
                                             sprint.status === 'completed' ? 'border-[#E0B954]/20 bg-[rgba(224,185,84,0.03)]' :
@@ -1577,9 +1593,17 @@ const ProjectDetail = () => {
                                                     data={Object.entries(analytics.status_distribution).map(([name, value]) => ({ name, value }))}
                                                     cx="50%" cy="50%" innerRadius={40} outerRadius={80} paddingAngle={5} dataKey="value"
                                                 >
-                                                    {Object.entries(analytics.status_distribution).map((_, index) => (
-                                                        <Cell key={`cell-${index}`} fill={['#E0B954', '#E0B954', '#F59E0B', '#EF4444', '#737373'][index % 5]} />
-                                                    ))}
+                                                    {Object.entries(analytics.status_distribution).map(([name], index) => {
+                                                        const statusColors: Record<string, string> = {
+                                                            todo: '#60A5FA',
+                                                            in_progress: '#E0B954',
+                                                            in_review: '#A78BFA',
+                                                            done: '#34D399',
+                                                            blocked: '#EF4444',
+                                                        };
+                                                        const fallback = ['#60A5FA', '#E0B954', '#A78BFA', '#34D399', '#EF4444'];
+                                                        return <Cell key={`cell-${index}`} fill={statusColors[name] ?? fallback[index % fallback.length]} />;
+                                                    })}
                                                 </Pie>
                                                 <Tooltip contentStyle={{ backgroundColor: '#121212', border: 'none', borderRadius: '8px' }} />
                                                 <Legend />
@@ -1596,8 +1620,8 @@ const ProjectDetail = () => {
                                                     <YAxis tick={{ fill: '#737373' }} />
                                                     <Tooltip contentStyle={{ backgroundColor: '#121212', border: 'none', borderRadius: '8px' }} />
                                                     <Legend />
-                                                    <Bar dataKey="committed" fill="#E0B954" name="Committed" />
-                                                    <Bar dataKey="completed" fill="#E0B954" name="Completed" />
+                                                    <Bar dataKey="committed" fill="#60A5FA" name="Committed" radius={[4, 4, 0, 0]} />
+                                                    <Bar dataKey="completed" fill="#34D399" name="Completed" radius={[4, 4, 0, 0]} />
                                                 </BarChart>
                                             </ResponsiveContainer>
                                         </div>
@@ -1611,8 +1635,8 @@ const ProjectDetail = () => {
                                                 <YAxis tick={{ fill: '#737373' }} />
                                                 <Tooltip contentStyle={{ backgroundColor: '#121212', border: 'none', borderRadius: '8px' }} />
                                                 <Legend />
-                                                <Line type="monotone" dataKey="remaining" stroke="#F59E0B" name="Remaining Items" strokeWidth={2} />
-                                                <Line type="monotone" dataKey="completed" stroke="#E0B954" name="Completed Items" strokeWidth={2} />
+                                                <Line type="monotone" dataKey="remaining" stroke="#EF4444" name="Remaining Items" strokeWidth={2} dot={{ fill: '#EF4444', r: 3 }} />
+                                                <Line type="monotone" dataKey="completed" stroke="#34D399" name="Completed Items" strokeWidth={2} dot={{ fill: '#34D399', r: 3 }} />
                                             </LineChart>
                                         </ResponsiveContainer>
                                     </div>
@@ -1675,17 +1699,29 @@ const ProjectDetail = () => {
                         {/* Sprint Expected vs Actual Progress */}
                         {sprints.length > 0 && (
                             <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(224,185,84,0.12)] rounded-2xl p-5 shadow-[0_0_30px_rgba(224,185,84,0.05)]">
-                                <div className="flex items-center gap-3 mb-5">
-                                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#E0B954] to-[#C79E3B] flex items-center justify-center shadow-lg shadow-[#E0B954]/25">
-                                        <BarChart3 className="w-5 h-5 text-white" />
+                                <div className="flex items-center justify-between mb-5">
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#E0B954] to-[#C79E3B] flex items-center justify-center shadow-lg shadow-[#E0B954]/25">
+                                            <BarChart3 className="w-5 h-5 text-white" />
+                                        </div>
+                                        <div>
+                                            <h3 className="font-semibold text-white">Sprint Progress vs Expected</h3>
+                                            <p className="text-xs text-[#737373]">Actual completion compared to time-based expected progress</p>
+                                        </div>
                                     </div>
-                                    <div>
-                                        <h3 className="font-semibold text-white">Sprint Progress vs Expected</h3>
-                                        <p className="text-xs text-[#737373]">Actual completion compared to time-based expected progress</p>
-                                    </div>
+                                    {sprints.length > 1 && (
+                                        <button
+                                            onClick={() => setProgressExpanded(p => !p)}
+                                            className="flex items-center gap-1.5 text-xs text-[#E0B954] hover:text-[#F3D57E] px-3 py-1.5 rounded-lg bg-[#E0B954]/10 hover:bg-[#E0B954]/15 transition-colors font-medium flex-shrink-0"
+                                        >
+                                            {progressExpanded
+                                                ? <><ChevronUp className="w-3.5 h-3.5" /> Collapse</>
+                                                : <><ChevronDown className="w-3.5 h-3.5" /> Show all {sprints.length}</>}
+                                        </button>
+                                    )}
                                 </div>
                                 <div className="space-y-4">
-                                    {sprints.map((sprint) => {
+                                    {(progressExpanded ? sprints : sprints.slice(0, 1)).map((sprint) => {
                                         // Calculate expected progress based on time elapsed
                                         const now = new Date();
                                         let expectedPct = 0;

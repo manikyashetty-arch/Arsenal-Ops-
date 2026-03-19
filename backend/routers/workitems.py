@@ -182,6 +182,47 @@ async def list_work_items(
     return result
 
 
+@router.get("/my-tasks")
+async def get_my_tasks(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get all tasks assigned to the current user across all projects"""
+    from models.developer import Developer
+    from models.project import Project
+    
+    # Find developer associated with current user
+    developer = db.query(Developer).filter(Developer.email == current_user.email).first()
+    
+    if not developer:
+        return []
+    
+    # Get all work items assigned to this developer
+    items = db.query(WorkItem).filter(WorkItem.assignee_id == developer.id).all()
+    
+    result = []
+    for item in items:
+        project = db.query(Project).filter(Project.id == item.project_id).first()
+        
+        result.append({
+            "id": str(item.id),
+            "key": item.key,
+            "title": item.title,
+            "type": item.type,
+            "status": item.status,
+            "priority": item.priority,
+            "project_id": item.project_id,
+            "project_name": project.name if project else "Unknown",
+            "due_date": item.due_date.isoformat() if item.due_date else None,
+            "estimated_hours": item.estimated_hours,
+            "logged_hours": item.logged_hours,
+            "remaining_hours": item.remaining_hours,
+            "is_overdue": item.due_date and item.due_date < datetime.utcnow() and item.status != "done"
+        })
+    
+    return result
+
+
 @router.get("/{item_id}")
 async def get_work_item(
     item_id: int,
@@ -1424,45 +1465,3 @@ async def remove_item_dependency(
 
 
 # ============== MY TASKS ==============
-
-@router.get("/my-tasks")
-async def get_my_tasks(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    """Get all tasks assigned to the current user across all projects"""
-    from models.developer import Developer
-    from models.project import Project
-    
-    # Find developer associated with current user
-    developer = db.query(Developer).filter(Developer.email == current_user.email).first()
-    
-    if not developer:
-        return []
-    
-    # Get all work items assigned to this developer
-    items = db.query(WorkItem).filter(WorkItem.assignee_id == developer.id).all()
-    
-    result = []
-    for item in items:
-        project = db.query(Project).filter(Project.id == item.project_id).first()
-        
-        result.append({
-            "id": str(item.id),
-            "key": item.key,
-            "title": item.title,
-            "type": item.type,
-            "status": item.status,
-            "priority": item.priority,
-            "project_id": item.project_id,
-            "project_name": project.name if project else "Unknown",
-            "due_date": item.due_date.isoformat() if item.due_date else None,
-            "estimated_hours": item.estimated_hours,
-            "logged_hours": item.logged_hours,
-            "remaining_hours": item.remaining_hours,
-            "is_overdue": item.due_date and item.due_date < datetime.utcnow() and item.status != "done"
-        })
-    
-    return result
-    
-    return result

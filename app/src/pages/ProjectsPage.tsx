@@ -126,8 +126,7 @@ const ProjectsPage = () => {
     // Analytics
     const [analyticsTab, setAnalyticsTab] = useState<'status' | 'priority' | 'projects'>('status');
 
-    // Active landing tab
-    const [activeTab, setActiveTab] = useState<'mytasks' | 'projects' | 'overview' | 'notepad'>('mytasks');
+    // (box layout — no active tab needed)
 
     // Fetch projects
     useEffect(() => {
@@ -408,36 +407,12 @@ const ProjectsPage = () => {
                     ))}
                 </div>
 
-                {/* Tab Navigation */}
-                <div className="flex items-center gap-1 mb-6 bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.06)] rounded-2xl p-1.5">
-                    {([
-                        { id: 'mytasks', label: 'My Tasks', icon: CheckCircle2 },
-                        { id: 'projects', label: 'Projects', icon: FolderKanban },
-                        { id: 'overview', label: 'My Overview', icon: BarChart3 },
-                        { id: 'notepad', label: 'Private Notepad', icon: BookOpen },
-                    ] as const).map(tab => (
-                        <button
-                            key={tab.id}
-                            onClick={() => setActiveTab(tab.id)}
-                            className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 ${
-                                activeTab === tab.id
-                                    ? 'bg-gradient-to-r from-[#E0B954] to-[#C79E3B] text-[#080808] shadow-lg shadow-[#B8872A]/20'
-                                    : 'text-[#737373] hover:text-white hover:bg-[rgba(255,255,255,0.05)]'
-                            }`}
-                        >
-                            <tab.icon className="w-4 h-4" />
-                            <span>{tab.label}</span>
-                        </button>
-                    ))}
-                </div>
+                {/* 2×2 Grid Layout */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
 
-                {/* Tab Content */}
-                <div>
-
-                    {/* MY TASKS TAB */}
-                    {activeTab === 'mytasks' && (
-                    <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.06)] rounded-2xl overflow-hidden">
-                            <div className="flex items-center justify-between px-5 pt-5 pb-3">
+                    {/* TOP-LEFT: MY TASKS BOX */}
+                    <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.06)] rounded-2xl flex flex-col h-[460px]">
+                            <div className="flex items-center justify-between px-5 pt-5 pb-3 flex-shrink-0">
                                 <div className="flex items-center gap-3">
                                     <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[#E0B954] to-[#C79E3B] flex items-center justify-center text-[#080808] text-sm font-bold">
                                         {user?.name?.charAt(0).toUpperCase()}
@@ -454,7 +429,7 @@ const ProjectsPage = () => {
                             </div>
 
                             {/* Sub-tabs */}
-                            <div className="flex gap-0 px-5 border-b border-[rgba(255,255,255,0.05)]">
+                            <div className="flex gap-0 px-5 border-b border-[rgba(255,255,255,0.05)] flex-shrink-0">
                                 {(['upcoming', 'overdue', 'completed'] as const).map(tab => {
                                     const count = tab === 'upcoming'
                                         ? myTasks.filter(t => t.status !== 'done' && !t.is_overdue).length
@@ -485,7 +460,7 @@ const ProjectsPage = () => {
                             </div>
 
                             {/* Task list */}
-                            <div className="p-4 space-y-0.5 min-h-[200px]">
+                            <div className="flex-1 overflow-y-auto p-4 space-y-0.5">
                                 {myTasksLoading ? (
                                     <div className="flex items-center justify-center py-10">
                                         <div className="w-5 h-5 border-2 border-[#E0B954]/30 border-t-[#E0B954] rounded-full animate-spin" />
@@ -541,12 +516,10 @@ const ProjectsPage = () => {
                                 )}
                             </div>
                     </div>
-                    )}
 
-                    {/* PROJECTS TAB */}
-                    {activeTab === 'projects' && (
-                    <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.06)] rounded-2xl overflow-hidden">
-                        <div className="flex items-center justify-between px-5 py-4 border-b border-[rgba(255,255,255,0.05)]">
+                    {/* TOP-RIGHT: PROJECTS BOX */}
+                    <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.06)] rounded-2xl flex flex-col h-[460px]">
+                        <div className="flex items-center justify-between px-5 py-4 border-b border-[rgba(255,255,255,0.05)] flex-shrink-0">
                             <div className="flex items-center gap-2">
                                 <h2 className="text-base font-semibold text-white">Projects</h2>
                                 <span className="text-xs text-[#737373] bg-[rgba(255,255,255,0.05)] px-2 py-0.5 rounded-full">{filteredProjects.length}</span>
@@ -555,36 +528,35 @@ const ProjectsPage = () => {
                                 <div className="relative">
                                     <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#737373]" />
                                     <Input
-                                        placeholder="Search projects..."
+                                        placeholder="Search..."
                                         value={searchQuery}
                                         onChange={(e) => setSearchQuery(e.target.value)}
-                                        className="pl-8 w-48 bg-[rgba(255,255,255,0.03)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-lg h-8 text-xs focus:border-[#E0B954]/50"
+                                        className="pl-8 w-32 bg-[rgba(255,255,255,0.03)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-lg h-7 text-xs focus:border-[#E0B954]/50"
                                     />
                                 </div>
                                 {user?.role === 'admin' && (
-                                    <Button
+                                    <button
                                         onClick={() => setShowCreateModal(true)}
-                                        size="sm"
-                                        className="bg-gradient-to-r from-[#E0B954] to-[#C79E3B] hover:opacity-90 text-[#080808] font-semibold rounded-lg h-8 px-3 text-xs shadow-lg shadow-[#B8872A]/20"
+                                        className="w-7 h-7 flex items-center justify-center rounded-lg bg-gradient-to-r from-[#E0B954] to-[#C79E3B] hover:opacity-90 text-[#080808] transition-opacity"
+                                        title="New Project"
                                     >
-                                        <Plus className="w-3.5 h-3.5 mr-1" />
-                                        New Project
-                                    </Button>
+                                        <Plus className="w-4 h-4" />
+                                    </button>
                                 )}
                             </div>
                         </div>
-                        <div className="p-4">
+                        <div className="flex-1 overflow-y-auto p-3">
                             {isLoading ? (
-                                <div className="flex items-center justify-center py-16">
+                                <div className="flex items-center justify-center py-10">
                                     <div className="w-5 h-5 border-2 border-[#E0B954]/30 border-t-[#E0B954] rounded-full animate-spin" />
                                 </div>
                             ) : filteredProjects.length === 0 ? (
-                                <div className="text-center py-16">
-                                    <FolderKanban className="w-10 h-10 text-[#E0B954]/20 mx-auto mb-3" />
+                                <div className="flex flex-col items-center justify-center h-full text-center">
+                                    <FolderKanban className="w-8 h-8 text-[#E0B954]/20 mx-auto mb-2" />
                                     <p className="text-sm text-[#737373]">No projects found</p>
                                 </div>
                             ) : (
-                                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                                <div className="space-y-1">
                                     {filteredProjects.map((project, idx) => {
                                         const accentColors = ['#E0B954', '#F59E0B', '#C79E3B', '#B8872A', '#EC4899', '#06B6D4'];
                                         const accent = accentColors[idx % accentColors.length];
@@ -592,48 +564,36 @@ const ProjectsPage = () => {
                                             <div
                                                 key={project.id}
                                                 onClick={() => navigate(`/project/${project.id}`)}
-                                                className="relative group bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-xl p-4 hover:border-[rgba(224,185,84,0.25)] hover:bg-[rgba(255,255,255,0.04)] cursor-pointer transition-all duration-200"
+                                                className="group flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-[rgba(255,255,255,0.04)] cursor-pointer transition-all duration-200"
                                             >
-                                                <div className="flex items-start justify-between mb-3">
-                                                    <div
-                                                        className="w-10 h-10 rounded-xl flex items-center justify-center text-sm font-bold text-[#080808]"
-                                                        style={{ backgroundColor: accent, boxShadow: `0 2px 10px ${accent}40` }}
-                                                    >
-                                                        {project.key_prefix.substring(0, 2)}
-                                                    </div>
-                                                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                        {user?.role === 'admin' && (
-                                                            <button
-                                                                onClick={(e) => handleDeleteProject(e, project.id)}
-                                                                className="p-1.5 rounded-lg hover:bg-red-500/10 text-[#737373] hover:text-red-400 transition-colors"
-                                                            >
-                                                                <X className="w-3.5 h-3.5" />
-                                                            </button>
-                                                        )}
-                                                        <ArrowRight className="w-3.5 h-3.5 text-[#E0B954]" />
-                                                    </div>
+                                                <div
+                                                    className="w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold text-[#080808] flex-shrink-0"
+                                                    style={{ backgroundColor: accent }}
+                                                >
+                                                    {project.key_prefix.substring(0, 2)}
                                                 </div>
-                                                <h3 className="text-sm font-semibold text-white mb-1 truncate">{project.name}</h3>
-                                                <p className="text-xs text-[#737373] mb-3 line-clamp-2">{project.description || 'No description'}</p>
-                                                <div className="flex items-center gap-2">
-                                                    <div className="h-1.5 flex-1 bg-[rgba(255,255,255,0.05)] rounded-full overflow-hidden">
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="flex items-center justify-between mb-1">
+                                                        <span className="text-sm font-medium text-white truncate">{project.name}</span>
+                                                        <span className="text-xs text-[#737373] flex-shrink-0 ml-2">{project.work_item_stats.completion_pct}%</span>
+                                                    </div>
+                                                    <div className="h-1 bg-[rgba(255,255,255,0.05)] rounded-full overflow-hidden">
                                                         <div
                                                             className="h-full rounded-full transition-all"
                                                             style={{ width: `${project.work_item_stats.completion_pct}%`, backgroundColor: accent }}
                                                         />
                                                     </div>
-                                                    <span className="text-xs text-[#737373] flex-shrink-0">{project.work_item_stats.completion_pct}%</span>
                                                 </div>
-                                                <div className="flex items-center gap-3 mt-2.5">
-                                                    <span className="text-xs text-[#737373]">{project.work_item_stats.total} items</span>
-                                                    <span className="text-xs text-[#555]">·</span>
-                                                    <span className="text-xs text-[#737373]">{project.work_item_stats.completed} done</span>
-                                                    {project.developers.length > 0 && (
-                                                        <>
-                                                            <span className="text-xs text-[#555]">·</span>
-                                                            <span className="text-xs text-[#737373]">{project.developers.length} members</span>
-                                                        </>
+                                                <div className="flex items-center gap-1 flex-shrink-0">
+                                                    {user?.role === 'admin' && (
+                                                        <button
+                                                            onClick={(e) => handleDeleteProject(e, project.id)}
+                                                            className="p-1 rounded-lg opacity-0 group-hover:opacity-100 hover:bg-red-500/10 text-[#737373] hover:text-red-400 transition-all"
+                                                        >
+                                                            <X className="w-3 h-3" />
+                                                        </button>
                                                     )}
+                                                    <ArrowRight className="w-3.5 h-3.5 text-[#555] group-hover:text-[#E0B954] transition-colors" />
                                                 </div>
                                             </div>
                                         );
@@ -641,10 +601,10 @@ const ProjectsPage = () => {
                                     {user?.role === 'admin' && (
                                         <button
                                             onClick={() => setShowCreateModal(true)}
-                                            className="flex flex-col items-center justify-center gap-2 p-4 rounded-xl border border-dashed border-[rgba(255,255,255,0.08)] hover:border-[#E0B954]/30 hover:bg-[#E0B954]/5 transition-all group min-h-[140px]"
+                                            className="flex items-center gap-3 w-full px-3 py-2.5 rounded-xl border border-dashed border-[rgba(255,255,255,0.06)] hover:border-[#E0B954]/30 hover:bg-[#E0B954]/5 transition-all group"
                                         >
-                                            <div className="w-10 h-10 rounded-xl bg-[rgba(255,255,255,0.04)] flex items-center justify-center group-hover:bg-[#E0B954]/10 transition-colors">
-                                                <Plus className="w-5 h-5 text-[#737373] group-hover:text-[#E0B954]" />
+                                            <div className="w-8 h-8 rounded-lg bg-[rgba(255,255,255,0.03)] flex items-center justify-center group-hover:bg-[#E0B954]/10 transition-colors flex-shrink-0">
+                                                <Plus className="w-4 h-4 text-[#737373] group-hover:text-[#E0B954]" />
                                             </div>
                                             <span className="text-sm text-[#737373] group-hover:text-[#E0B954] transition-colors">Create project</span>
                                         </button>
@@ -653,12 +613,34 @@ const ProjectsPage = () => {
                             )}
                         </div>
                     </div>
-                    )}
 
-                    {/* MY OVERVIEW TAB */}
-                    {activeTab === 'overview' && (
-                    <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.06)] rounded-2xl overflow-hidden">
-                            <div className="flex items-center justify-between px-5 py-3.5 border-b border-[rgba(255,255,255,0.05)]">
+                    {/* BOTTOM-LEFT: PRIVATE NOTEPAD BOX */}
+                    <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.06)] rounded-2xl flex flex-col h-[460px]">
+                        <div className="flex items-center justify-between px-5 py-4 border-b border-[rgba(255,255,255,0.05)] flex-shrink-0">
+                            <div className="flex items-center gap-2">
+                                <BookOpen className="w-4 h-4 text-[#a3a3a3]" />
+                                <h3 className="text-base font-semibold text-white">Private Notepad</h3>
+                                <Lock className="w-3.5 h-3.5 text-[#737373]" />
+                            </div>
+                            <span className={`text-xs transition-colors duration-300 ${
+                                notepadSaved ? 'text-[#E0B954]' : 'text-[#737373]'
+                            }`}>
+                                {notepadSaved ? '✓ Saved' : 'Saving...'}
+                            </span>
+                        </div>
+                        <div className="flex-1 overflow-hidden p-5">
+                            <textarea
+                                value={notepadContent}
+                                onChange={(e) => setNotepadContent(e.target.value)}
+                                placeholder="Jot down a quick note, idea, or add a link to an important resource. Only you can see this."
+                                className="w-full h-full bg-transparent text-sm text-[#a3a3a3] placeholder:text-[#333] resize-none outline-none leading-relaxed"
+                            />
+                        </div>
+                    </div>
+
+                    {/* BOTTOM-RIGHT: MY OVERVIEW BOX */}
+                    <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.06)] rounded-2xl flex flex-col h-[460px]">
+                            <div className="flex items-center justify-between px-5 py-3.5 border-b border-[rgba(255,255,255,0.05)] flex-shrink-0">
                                 <div className="flex items-center gap-2">
                                     <BarChart3 className="w-4 h-4 text-[#E0B954]" />
                                     <h3 className="text-sm font-semibold text-white">My Overview</h3>
@@ -679,7 +661,7 @@ const ProjectsPage = () => {
                                     ))}
                                 </div>
                             </div>
-                            <div className="p-4 h-[220px]">
+                            <div className="flex-1 min-h-0 p-4">
                                 {myTasks.length === 0 ? (
                                     <div className="flex flex-col items-center justify-center h-full text-center">
                                         <BarChart3 className="w-10 h-10 text-[#E0B954]/20 mb-2" />
@@ -723,35 +705,8 @@ const ProjectsPage = () => {
                                 )}
                             </div>
                     </div>
-                    )}
 
-                    {/* PRIVATE NOTEPAD TAB */}
-                    {activeTab === 'notepad' && (
-                    <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.06)] rounded-2xl overflow-hidden">
-                        <div className="flex items-center justify-between px-5 py-4 border-b border-[rgba(255,255,255,0.05)]">
-                            <div className="flex items-center gap-2">
-                                <BookOpen className="w-4 h-4 text-[#a3a3a3]" />
-                                <h3 className="text-base font-semibold text-white">Private Notepad</h3>
-                                <Lock className="w-3.5 h-3.5 text-[#737373]" />
-                            </div>
-                            <span className={`text-xs transition-colors duration-300 ${
-                                notepadSaved ? 'text-[#E0B954]' : 'text-[#737373]'
-                            }`}>
-                                {notepadSaved ? '✓ Saved' : 'Saving...'}
-                            </span>
-                        </div>
-                        <div className="p-6">
-                            <textarea
-                                value={notepadContent}
-                                onChange={(e) => setNotepadContent(e.target.value)}
-                                placeholder="Jot down a quick note, idea, or add a link to an important resource. Only you can see this."
-                                className="w-full bg-transparent text-sm text-[#a3a3a3] placeholder:text-[#333] resize-none outline-none min-h-[400px] leading-relaxed"
-                            />
-                        </div>
-                    </div>
-                    )}
-
-                </div>
+                </div>{/* end 2×2 grid */}
             </div>
 
             {/* Create Project Modal */}

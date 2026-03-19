@@ -114,8 +114,8 @@ const BusinessReviewView: React.FC<BusinessReviewViewProps> = ({
     healthScore = Math.max(0, Math.min(100, healthScore));
 
     const getHealthMeta = (score: number) => {
-        if (score >= 80) return { color: '#E0B954', label: 'Healthy', borderColor: 'border-[#E0B954]/20', bgColor: 'bg-[#E0B954]/5' };
-        if (score >= 60) return { color: '#F59E0B', label: 'At Risk', borderColor: 'border-[#F59E0B]/20', bgColor: 'bg-[#F59E0B]/5' };
+        if (score >= 80) return { color: '#34D399', label: 'Healthy', borderColor: 'border-[#34D399]/20', bgColor: 'bg-[#34D399]/5' };
+        if (score >= 60) return { color: '#FBBF24', label: 'At Risk', borderColor: 'border-[#FBBF24]/20', bgColor: 'bg-[#FBBF24]/5' };
         return { color: '#EF4444', label: 'Critical', borderColor: 'border-[#EF4444]/20', bgColor: 'bg-[#EF4444]/5' };
     };
     const health = getHealthMeta(healthScore);
