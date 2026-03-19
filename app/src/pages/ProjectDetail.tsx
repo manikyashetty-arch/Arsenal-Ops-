@@ -254,7 +254,7 @@ const ProjectDetail = () => {
         remaining_hours: number;
         this_week_remaining_hours?: number;
     }[]>([]);
-    const [hubLoading, setHubLoading] = useState(false);
+    const [hubLoading, setHubLoading] = useState(true);
         const [sprintsExpanded, setSprintsExpanded] = useState(false);
         const [progressExpanded, setProgressExpanded] = useState(false);
 
@@ -264,8 +264,7 @@ const ProjectDetail = () => {
         fetchProject();
         fetchAllDevelopers();
         fetchSprints();
-        fetchAnalytics();
-        fetchHubData();
+        fetchHubData(); // analytics is now included inside fetchHubData
     };
 
     // Fetch project data on mount
@@ -279,8 +278,7 @@ const ProjectDetail = () => {
         const handleFocus = () => {
             if (document.visibilityState === 'visible') {
                 fetchSprints();
-                fetchAnalytics();
-                fetchHubData();
+                fetchHubData(); // analytics is now included inside fetchHubData
             }
         };
         document.addEventListener('visibilitychange', handleFocus);
@@ -380,7 +378,7 @@ const ProjectDetail = () => {
         }
     };
 
-    // Hub data fetch functions
+    // Hub data fetch functions (also includes analytics to share one loading gate)
     const fetchHubData = async () => {
         if (!id) return;
         setHubLoading(true);
@@ -390,6 +388,7 @@ const ProjectDetail = () => {
             fetchMilestones(),
             fetchActivities(),
             fetchWorkload(),
+            fetchAnalytics(),
         ]);
         setHubLoading(false);
     };
@@ -659,8 +658,69 @@ const ProjectDetail = () => {
 
     if (isLoading) {
         return (
-            <div className="min-h-screen bg-[#080808] flex items-center justify-center">
-                <div className="w-10 h-10 border-2 border-[#E0B954]/30 border-t-[#E0B954] rounded-full animate-spin" />
+            <div className="min-h-screen bg-[#080808] text-[#F4F6FF]">
+                {/* Skeleton Header */}
+                <header className="border-b border-[rgba(255,255,255,0.05)] bg-[#080808]/95 sticky top-0 z-40">
+                    <div className="px-6 py-4 flex items-center justify-between">
+                        <div className="flex items-center gap-4">
+                            <div className="h-8 w-24 bg-[rgba(255,255,255,0.06)] rounded-lg animate-pulse" />
+                            <div className="w-px h-6 bg-[rgba(255,255,255,0.07)]" />
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-xl bg-[rgba(255,255,255,0.06)] animate-pulse" />
+                                <div className="space-y-1.5">
+                                    <div className="h-4 w-36 bg-[rgba(255,255,255,0.06)] rounded animate-pulse" />
+                                    <div className="h-3 w-16 bg-[rgba(255,255,255,0.04)] rounded animate-pulse" />
+                                </div>
+                            </div>
+                        </div>
+                        <div className="h-9 w-28 bg-[rgba(255,255,255,0.06)] rounded-xl animate-pulse" />
+                    </div>
+                    {/* Skeleton Tabs */}
+                    <div className="px-6 flex gap-1 border-t border-[rgba(255,255,255,0.03)]">
+                        {[...Array(7)].map((_, i) => (
+                            <div key={i} className="h-10 w-24 bg-[rgba(255,255,255,0.04)] rounded-t-lg animate-pulse mx-1" />
+                        ))}
+                    </div>
+                </header>
+                {/* Skeleton Content */}
+                <main className="px-6 py-4 max-w-7xl mx-auto space-y-4">
+                    {/* Stat cards row */}
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        {[...Array(4)].map((_, i) => (
+                            <div key={i} className="bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.05)] rounded-2xl p-5">
+                                <div className="h-3 w-16 bg-[rgba(255,255,255,0.06)] rounded animate-pulse mb-3" />
+                                <div className="h-8 w-12 bg-[rgba(255,255,255,0.07)] rounded animate-pulse mb-1" />
+                                <div className="h-1.5 w-full bg-[rgba(255,255,255,0.04)] rounded-full animate-pulse" />
+                            </div>
+                        ))}
+                    </div>
+                    {/* Content block */}
+                    <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-2xl p-5 space-y-4">
+                        <div className="h-5 w-40 bg-[rgba(255,255,255,0.06)] rounded animate-pulse" />
+                        <div className="space-y-2">
+                            {[...Array(5)].map((_, i) => (
+                                <div key={i} className="h-3 rounded animate-pulse" style={{ width: `${90 - i * 8}%`, backgroundColor: 'rgba(255,255,255,0.04)' }} />
+                            ))}
+                        </div>
+                    </div>
+                    {/* Second content block */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {[...Array(2)].map((_, i) => (
+                            <div key={i} className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-2xl p-5 space-y-3">
+                                <div className="h-4 w-32 bg-[rgba(255,255,255,0.06)] rounded animate-pulse" />
+                                {[...Array(4)].map((_, j) => (
+                                    <div key={j} className="flex items-center gap-3">
+                                        <div className="w-8 h-8 rounded-full bg-[rgba(255,255,255,0.06)] animate-pulse flex-shrink-0" />
+                                        <div className="flex-1 space-y-1">
+                                            <div className="h-3 w-3/4 bg-[rgba(255,255,255,0.05)] rounded animate-pulse" />
+                                            <div className="h-2.5 w-1/2 bg-[rgba(255,255,255,0.04)] rounded animate-pulse" />
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        ))}
+                    </div>
+                </main>
             </div>
         );
     }
@@ -1560,8 +1620,18 @@ const ProjectDetail = () => {
 
                         {/* Work Items List */}
                         {hubLoading ? (
-                            <div className="flex items-center justify-center py-12">
-                                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#E0B954]"></div>
+                            <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-2xl p-5 space-y-3 animate-pulse">
+                                <div className="h-4 w-32 bg-[rgba(255,255,255,0.07)] rounded" />
+                                {[...Array(5)].map((_, i) => (
+                                    <div key={i} className="flex items-center gap-3 py-2.5 border-b border-[rgba(255,255,255,0.04)]">
+                                        <div className="h-4 w-4 rounded bg-[rgba(255,255,255,0.06)] flex-shrink-0" />
+                                        <div className="h-3 w-14 bg-[rgba(255,255,255,0.05)] rounded" />
+                                        <div className="h-3 flex-1 bg-[rgba(255,255,255,0.05)] rounded" />
+                                        <div className="h-5 w-16 bg-[rgba(255,255,255,0.04)] rounded-full" />
+                                        <div className="h-5 w-16 bg-[rgba(255,255,255,0.04)] rounded-full" />
+                                        <div className="h-3 w-20 bg-[rgba(255,255,255,0.04)] rounded" />
+                                    </div>
+                                ))}
                             </div>
                         ) : (
                             <ListView workItems={hubWorkItems} />
@@ -1572,8 +1642,25 @@ const ProjectDetail = () => {
                 {/* Project Tracker Tab */}
                 {activeTab === 'tracker' && (
                     <div className="space-y-4">
+                        {hubLoading && (
+                            <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-2xl p-5 animate-pulse space-y-4">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-xl bg-[rgba(255,255,255,0.06)]" />
+                                    <div className="space-y-1.5">
+                                        <div className="h-4 w-36 bg-[rgba(255,255,255,0.07)] rounded" />
+                                        <div className="h-3 w-52 bg-[rgba(255,255,255,0.04)] rounded" />
+                                    </div>
+                                </div>
+                                <div className="grid grid-cols-2 gap-4">
+                                    {[...Array(2)].map((_, i) => (
+                                        <div key={i} className="bg-[rgba(255,255,255,0.025)] rounded-xl p-4 h-52" />
+                                    ))}
+                                    <div className="bg-[rgba(255,255,255,0.025)] rounded-xl p-4 col-span-2 h-64" />
+                                </div>
+                            </div>
+                        )}
                         {/* Analytics Charts */}
-                        {analytics && analytics.total_items > 0 && (
+                        {!hubLoading && analytics && analytics.total_items > 0 && (
                             <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-2xl p-5">
                                 <div className="flex items-center gap-3 mb-4">
                                     <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#E0B954] to-[#C79E3B] flex items-center justify-center">
@@ -1644,53 +1731,104 @@ const ProjectDetail = () => {
                             </div>
                         )}
 
-                        <TimelineView
-                            workItems={hubWorkItems}
-                            milestones={milestones}
-                            goals={goals}
-                            projectStartDate={project?.created_at}
-                            projectId={parseInt(id!)}
-                            developers={project.developers.map(d => ({ id: d.id, name: d.name, email: d.email }))}
-                            onTaskUpdate={handleTaskUpdate}
-                            onTaskCreate={handleTaskCreate}
-                        />
+                        {!hubLoading && (
+                            <TimelineView
+                                workItems={hubWorkItems}
+                                milestones={milestones}
+                                goals={goals}
+                                projectStartDate={project?.created_at}
+                                projectId={parseInt(id!)}
+                                developers={project.developers.map(d => ({ id: d.id, name: d.name, email: d.email }))}
+                                onTaskUpdate={handleTaskUpdate}
+                                onTaskCreate={handleTaskCreate}
+                            />
+                        )}
                     </div>
                 )}
 
                 {/* Calendar Tab */}
                 {activeTab === 'calendar' && (
-                    <CalendarView workItems={hubWorkItems} milestones={milestones} goals={goals} />
+                    hubLoading ? (
+                        <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-2xl p-5 animate-pulse">
+                            <div className="grid grid-cols-7 gap-2 mb-3">{[...Array(7)].map((_,i) => <div key={i} className="h-8 bg-[rgba(255,255,255,0.05)] rounded" />)}</div>
+                            {[...Array(5)].map((_,r) => (
+                                <div key={r} className="grid grid-cols-7 gap-2 mb-2">{[...Array(7)].map((_,c) => <div key={c} className="h-16 bg-[rgba(255,255,255,0.03)] rounded" />)}</div>
+                            ))}
+                        </div>
+                    ) : (
+                        <CalendarView workItems={hubWorkItems} milestones={milestones} goals={goals} />
+                    )
                 )}
 
                 {/* Business Review Tab */}
                 {activeTab === 'business' && (
-                    <BusinessReviewView
-                        project={project}
-                        analytics={analytics}
-                        sprints={sprints}
-                        milestones={milestones}
-                        workItems={hubWorkItems}
-                        goals={goals}
-                    />
+                    hubLoading ? (
+                        <div className="space-y-4 animate-pulse">
+                            {[...Array(3)].map((_, i) => (
+                                <div key={i} className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-2xl p-5">
+                                    <div className="h-4 w-40 bg-[rgba(255,255,255,0.07)] rounded mb-4" />
+                                    <div className="h-40 bg-[rgba(255,255,255,0.025)] rounded-xl" />
+                                </div>
+                            ))}
+                        </div>
+                    ) : (
+                        <BusinessReviewView
+                            project={project}
+                            analytics={analytics}
+                            sprints={sprints}
+                            milestones={milestones}
+                            workItems={hubWorkItems}
+                            goals={goals}
+                        />
+                    )
                 )}
 
                 {/* Goals Tab */}
                 {activeTab === 'goals' && (
-                    <GoalsView
-                        goals={goals}
-                        milestones={milestones}
-                        onAddGoal={handleAddGoal}
-                        onAddMilestone={handleAddMilestone}
-                        onUpdateGoalProgress={handleUpdateGoalProgress}
-                        onCompleteMilestone={handleCompleteMilestone}
-                        onDeleteGoal={handleDeleteGoal}
-                        onDeleteMilestone={handleDeleteMilestone}
-                    />
+                    hubLoading ? (
+                        <div className="space-y-3 animate-pulse">
+                            {[...Array(4)].map((_, i) => (
+                                <div key={i} className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-2xl p-4 flex items-center gap-4">
+                                    <div className="w-10 h-10 rounded-xl bg-[rgba(255,255,255,0.06)] flex-shrink-0" />
+                                    <div className="flex-1 space-y-2">
+                                        <div className="h-4 w-48 bg-[rgba(255,255,255,0.07)] rounded" />
+                                        <div className="h-2.5 w-full bg-[rgba(255,255,255,0.04)] rounded-full" />
+                                    </div>
+                                    <div className="h-6 w-12 bg-[rgba(255,255,255,0.04)] rounded" />
+                                </div>
+                            ))}
+                        </div>
+                    ) : (
+                        <GoalsView
+                            goals={goals}
+                            milestones={milestones}
+                            onAddGoal={handleAddGoal}
+                            onAddMilestone={handleAddMilestone}
+                            onUpdateGoalProgress={handleUpdateGoalProgress}
+                            onCompleteMilestone={handleCompleteMilestone}
+                            onDeleteGoal={handleDeleteGoal}
+                            onDeleteMilestone={handleDeleteMilestone}
+                        />
+                    )
                 )}
 
                 {/* Activity Tab */}
                 {activeTab === 'activity' && (
-                    <ActivityFeed activities={activities} />
+                    hubLoading ? (
+                        <div className="space-y-2 animate-pulse">
+                            {[...Array(6)].map((_, i) => (
+                                <div key={i} className="flex items-start gap-3 py-3 border-b border-[rgba(255,255,255,0.04)]">
+                                    <div className="w-7 h-7 rounded-full bg-[rgba(255,255,255,0.06)] flex-shrink-0 mt-0.5" />
+                                    <div className="flex-1 space-y-1.5">
+                                        <div className="h-3.5 w-3/4 bg-[rgba(255,255,255,0.06)] rounded" />
+                                        <div className="h-2.5 w-24 bg-[rgba(255,255,255,0.04)] rounded" />
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    ) : (
+                        <ActivityFeed activities={activities} />
+                    )
                 )}
 
                 {/* Project Manager Tab */}

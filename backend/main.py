@@ -74,11 +74,19 @@ app.add_middleware(
 # Global exception handler to ensure CORS headers on errors
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
-    """Catch all unhandled exceptions and return JSON with proper CORS"""
+    """Catch all unhandled exceptions and return JSON with proper CORS headers"""
     print(f"[GLOBAL ERROR] {request.method} {request.url.path}: {str(exc)}")
+    origin = request.headers.get("origin", "")
+    headers = {}
+    if origin in cors_origins:
+        headers["Access-Control-Allow-Origin"] = origin
+        headers["Access-Control-Allow-Credentials"] = "true"
+        headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS, PATCH"
+        headers["Access-Control-Allow-Headers"] = "*"
     return JSONResponse(
         status_code=500,
-        content={"detail": f"Internal server error: {str(exc)}"}
+        content={"detail": f"Internal server error: {str(exc)}"},
+        headers=headers,
     )
 
 # Include routers

@@ -133,6 +133,7 @@ const ProjectsPage = () => {
     const [myTaskTab, setMyTaskTab] = useState<'upcoming' | 'overdue' | 'completed'>('upcoming');
     const [myTasksLoading, setMyTasksLoading] = useState(false);
     const [showAllTasks, setShowAllTasks] = useState(false);
+    const [showAllDueSoon, setShowAllDueSoon] = useState(false);
     const [selectedTask, setSelectedTask] = useState<MyTask | null>(null);
 
     // Private Notepad
@@ -433,7 +434,11 @@ const ProjectsPage = () => {
                                     <stat.icon className="w-5 h-5" style={{ color: stat.color }} />
                                     <TrendingUp className="w-3.5 h-3.5 text-[#334155] group-hover:text-[#737373] transition-colors" />
                                 </div>
-                                <div className="text-3xl font-bold text-white tracking-tight">{stat.value}</div>
+                                {isLoading ? (
+                                    <div className="h-9 w-16 bg-[rgba(255,255,255,0.06)] rounded-lg animate-pulse mb-1" />
+                                ) : (
+                                    <div className="text-3xl font-bold text-white tracking-tight">{stat.value}</div>
+                                )}
                                 <div className="text-xs text-[#737373] font-medium mt-1">{stat.label}</div>
                             </div>
                         </div>
@@ -670,7 +675,43 @@ const ProjectsPage = () => {
                             <span className="text-xs text-[#737373]">{overviewStats.total} tasks</span>
                         </div>
                         <div className="flex-1 min-h-0 p-4 overflow-y-auto space-y-4">
-                            {myTasks.length === 0 ? (
+                            {myTasksLoading ? (
+                                /* Skeleton while tasks load */
+                                <>
+                                    <div className="grid grid-cols-4 gap-2">
+                                        {[...Array(4)].map((_, i) => (
+                                            <div key={i} className="bg-[rgba(255,255,255,0.03)] rounded-xl p-3 text-center">
+                                                <div className="h-7 w-8 bg-[rgba(255,255,255,0.07)] rounded-lg animate-pulse mx-auto mb-1" />
+                                                <div className="h-3 w-12 bg-[rgba(255,255,255,0.05)] rounded animate-pulse mx-auto" />
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <div>
+                                        <div className="flex justify-between mb-1.5">
+                                            <div className="h-3 w-20 bg-[rgba(255,255,255,0.05)] rounded animate-pulse" />
+                                            <div className="h-3 w-8 bg-[rgba(255,255,255,0.05)] rounded animate-pulse" />
+                                        </div>
+                                        <div className="h-2 bg-[rgba(255,255,255,0.05)] rounded-full animate-pulse" />
+                                    </div>
+                                    <div>
+                                        <div className="h-3 rounded-full bg-[rgba(255,255,255,0.05)] animate-pulse mb-2" />
+                                        <div className="flex gap-3">
+                                            {[...Array(4)].map((_, i) => (
+                                                <div key={i} className="h-3 w-16 bg-[rgba(255,255,255,0.04)] rounded animate-pulse" />
+                                            ))}
+                                        </div>
+                                    </div>
+                                    <div className="space-y-2">
+                                        {[...Array(3)].map((_, i) => (
+                                            <div key={i} className="flex items-center gap-2 px-2 py-1">
+                                                <div className="w-1.5 h-1.5 rounded-full bg-[rgba(255,255,255,0.07)] animate-pulse flex-shrink-0" />
+                                                <div className="h-3 flex-1 bg-[rgba(255,255,255,0.05)] rounded animate-pulse" />
+                                                <div className="h-3 w-10 bg-[rgba(255,255,255,0.04)] rounded animate-pulse flex-shrink-0" />
+                                            </div>
+                                        ))}
+                                    </div>
+                                </>
+                            ) : myTasks.length === 0 ? (
                                 <div className="flex flex-col items-center justify-center h-full text-center">
                                     <BarChart3 className="w-10 h-10 text-[#E0B954]/20 mb-2" />
                                     <p className="text-sm text-[#737373]">No task data yet</p>
@@ -736,13 +777,16 @@ const ProjectsPage = () => {
 
                                     {/* Row 4 — Next due */}
                                     {(() => {
-                                        const dueSoon = myTasks
+                                        const allDue = myTasks
                                             .filter(t => t.due_date && t.status !== 'done')
-                                            .sort((a, b) => new Date(a.due_date!).getTime() - new Date(b.due_date!).getTime())
-                                            .slice(0, 3);
-                                        return dueSoon.length > 0 ? (
+                                            .sort((a, b) => new Date(a.due_date!).getTime() - new Date(b.due_date!).getTime());
+                                        const dueSoon = showAllDueSoon ? allDue : allDue.slice(0, 4);
+                                        return allDue.length > 0 ? (
                                             <div>
-                                                <div className="text-xs text-[#737373] mb-2 font-medium">Next due</div>
+                                                <div className="flex items-center justify-between mb-2">
+                                                    <span className="text-xs text-[#737373] font-medium">Next due</span>
+                                                    <span className="text-xs text-[#737373]">{allDue.length} upcoming</span>
+                                                </div>
                                                 <div className="space-y-1.5">
                                                     {dueSoon.map(t => (
                                                         <div key={t.id} className="flex items-center gap-2 text-xs cursor-pointer hover:bg-[rgba(255,255,255,0.02)] px-2 py-1 rounded-lg transition-colors" onClick={() => setSelectedTask(t)}>
@@ -754,6 +798,14 @@ const ProjectsPage = () => {
                                                         </div>
                                                     ))}
                                                 </div>
+                                                {allDue.length > 4 && (
+                                                    <button
+                                                        onClick={() => setShowAllDueSoon(p => !p)}
+                                                        className="w-full text-center text-xs text-[#737373] hover:text-[#E0B954] py-1.5 mt-1 transition-colors"
+                                                    >
+                                                        {showAllDueSoon ? 'Show less' : `Show ${allDue.length - 4} more`}
+                                                    </button>
+                                                )}
                                             </div>
                                         ) : null;
                                     })()}

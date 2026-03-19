@@ -7,7 +7,8 @@ from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, text
+from sqlalchemy.exc import IntegrityError
 
 import sys
 sys.path.append('..')
@@ -22,28 +23,22 @@ from routers.auth import get_current_user
 router = APIRouter(prefix="/api/workitems", tags=["Work Items"])
 
 # Counter for generating work item keys
-def get_next_item_number(db: Session, project_id: int) -> int:
-    """Get the next work item number for a project - uses max existing number to avoid duplicates after deletions"""
-    # Get the project's key_prefix
-    project = db.query(Project).filter(Project.id == project_id).first()
-    key_prefix = getattr(project, 'key_prefix', None) or "PROJ" if project else "PROJ"
-    
-    # Find the highest existing number for this project's key prefix
-    existing_keys = db.query(WorkItem.key).filter(
-        WorkItem.project_id == project_id,
-        WorkItem.key.like(f"{key_prefix}-%")
-    ).all()
-    
-    max_num = 0
-    for (key,) in existing_keys:
-        try:
-            num = int(key.split("-")[-1])
-            if num > max_num:
-                max_num = num
-        except (ValueError, IndexError):
-            pass
-    
-    return max_num + 1
+def get_next_item_number(db: Session, key_prefix: str) -> int:
+    """Get the next work item number for a key prefix — queries GLOBALLY.
+    Caller MUST hold the advisory lock before calling this.
+    """
+    row = db.execute(
+        text("""
+            SELECT COALESCE(MAX(
+                CAST(REGEXP_REPLACE(key, '^.*-', '') AS INTEGER)
+            ), 0) + 1
+            FROM work_items
+            WHERE key LIKE :prefix
+              AND key ~ :pattern
+        """),
+        {"prefix": f"{key_prefix}-%", "pattern": f"^{key_prefix}-[0-9]+$"}
+    ).scalar()
+    return row or 1
 
 
 # Request/Response models
@@ -274,9 +269,17 @@ async def create_work_item(
     
     # Generate key using project's key_prefix
     key_prefix = getattr(project, 'key_prefix', None) or "PROJ"
-    item_number = get_next_item_number(db, item.project_id)
+
+    # Acquire a PostgreSQL transaction-level advisory lock scoped to this key_prefix.
+    # This serializes concurrent inserts for the same prefix across all Gunicorn workers,
+    # making key collisions impossible without any retry logic.
+    lock_id = abs(hash(key_prefix)) % 2_147_483_647
+    db.execute(text("SELECT pg_advisory_xact_lock(:lock_id)"), {"lock_id": lock_id})
+
+    # Now we're the only transaction touching this prefix — get next number safely
+    item_number = get_next_item_number(db, key_prefix)
     key = f"{key_prefix}-{item_number}"
-    
+
     work_item = WorkItem(
         project_id=item.project_id,
         key=key,
@@ -285,7 +288,7 @@ async def create_work_item(
         description=item.description,
         status=item.status,
         estimated_hours=item.estimated_hours,
-        remaining_hours=item.estimated_hours,  # Initialize remaining as estimated
+        remaining_hours=item.estimated_hours,
         story_points=item.story_points,
         priority=item.priority,
         assignee_id=item.assignee_id,
@@ -297,10 +300,10 @@ async def create_work_item(
         start_date=datetime.fromisoformat(item.start_date) if item.start_date else None,
         due_date=datetime.fromisoformat(item.due_date) if item.due_date else None
     )
-    
     db.add(work_item)
-    
-    # Log activity
+    db.flush()  # assigns work_item.id without committing
+
+    # Log activity (now work_item.id is available)
     from models.activity_log import ActivityLog
     activity = ActivityLog(
         project_id=item.project_id,
@@ -311,7 +314,6 @@ async def create_work_item(
         title=f"Created {key}: {item.title}"
     )
     db.add(activity)
-    
     db.commit()
     db.refresh(work_item)
     
