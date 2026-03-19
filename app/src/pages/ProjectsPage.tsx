@@ -22,7 +22,6 @@ import {
     ClipboardList,
     Bug,
     Target,
-    Clock,
     ExternalLink,
     Tag,
     ChevronRight,
