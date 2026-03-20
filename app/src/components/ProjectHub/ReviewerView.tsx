@@ -41,7 +41,7 @@ interface ReviewerViewProps {
 const PRIORITY_COLOR: Record<string, string> = {
     high: '#EF4444',
     medium: '#F59E0B',
-    low: '#10B981',
+    low: '#E0B954',
     critical: '#DC2626',
 };
 
@@ -238,7 +238,7 @@ const ReviewerView: React.FC<ReviewerViewProps> = ({ workItems, projectId: _proj
                                     size="sm"
                                     onClick={() => handleMarkDone(item.id)}
                                     disabled={loading[`done-${item.id}`]}
-                                    className="bg-[#10B981] hover:bg-[#059669] text-white"
+                                    className="bg-[#E0B954] hover:bg-[#C79E3B] text-white"
                                 >
                                     {loading[`done-${item.id}`] ? (
                                         <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />

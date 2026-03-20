@@ -153,7 +153,7 @@ const ArchitectureEditor = ({ architecture, onSave, onClose }: ArchitectureEdito
                     <Button
                         onClick={handleSave}
                         disabled={!hasChanges || isSaving}
-                        className="bg-[#E0B954] hover:bg-[#5558E6] text-white"
+                        className="bg-[#E0B954] hover:bg-[#C79E3B] text-white"
                     >
                         {isSaving ? (
                             <>
@@ -206,7 +206,7 @@ const ArchitectureEditor = ({ architecture, onSave, onClose }: ArchitectureEdito
                         <Button
                             onClick={handleAIRefine}
                             disabled={isRefining || !changeInstructions.trim()}
-                            className="bg-gradient-to-r from-[#E0B954] to-[#B8872A] hover:from-[#5558E6] hover:to-[#4338CA] text-white h-[60px] px-6 self-start"
+                            className="bg-gradient-to-r from-[#E0B954] to-[#B8872A] hover:from-[#C79E3B] hover:to-[#B8872A] text-white h-[60px] px-6 self-start"
                         >
                             {isRefining ? (
                                 <>
@@ -225,21 +225,21 @@ const ArchitectureEditor = ({ architecture, onSave, onClose }: ArchitectureEdito
                     
                     {/* Changes Applied */}
                     {changesApplied.length > 0 && (
-                        <div className="mt-3 p-3 bg-[#10B981]/10 border border-[#10B981]/20 rounded-lg">
+                        <div className="mt-3 p-3 bg-[#E0B954]/10 border border-[#E0B954]/20 rounded-lg">
                             <div className="flex items-center gap-2 mb-2">
-                                <CheckCircle2 className="w-4 h-4 text-[#10B981]" />
-                                <span className="text-sm font-medium text-[#10B981]">Changes Applied</span>
+                                <CheckCircle2 className="w-4 h-4 text-[#E0B954]" />
+                                <span className="text-sm font-medium text-[#E0B954]">Changes Applied</span>
                             </div>
                             <ul className="space-y-1">
                                 {changesApplied.map((change, i) => (
                                     <li key={i} className="text-xs text-[#a3a3a3] flex items-start gap-2">
-                                        <span className="text-[#10B981]">+</span>
+                                        <span className="text-[#E0B954]">+</span>
                                         <span>{change}</span>
                                     </li>
                                 ))}
                             </ul>
                             {aiNotes && (
-                                <p className="text-xs text-[#737373] mt-2 italic border-t border-[#10B981]/20 pt-2">
+                                <p className="text-xs text-[#737373] mt-2 italic border-t border-[#E0B954]/20 pt-2">
                                     AI Notes: {aiNotes}
                                 </p>
                             )}
@@ -292,7 +292,7 @@ const ArchitectureEditor = ({ architecture, onSave, onClose }: ArchitectureEdito
             {/* Info Bar */}
             <div className="h-8 border-t border-[rgba(255,255,255,0.05)] bg-[#080808] flex items-center justify-between px-4 text-xs text-[#737373] flex-shrink-0">
                 <div className="flex items-center gap-4">
-                    <span>Cost: <span className="text-[#10B981]">{architecture.estimated_cost}</span></span>
+                    <span>Cost: <span className="text-[#E0B954]">{architecture.estimated_cost}</span></span>
                     <span>Complexity: <span className="text-[#F59E0B] capitalize">{architecture.complexity}</span></span>
                     <span>Timeline: <span className="text-[#E0B954]">{architecture.time_to_implement}</span></span>
                 </div>

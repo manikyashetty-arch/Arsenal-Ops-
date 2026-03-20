@@ -114,8 +114,8 @@ const BusinessReviewView: React.FC<BusinessReviewViewProps> = ({
     healthScore = Math.max(0, Math.min(100, healthScore));
 
     const getHealthMeta = (score: number) => {
-        if (score >= 80) return { color: '#10B981', label: 'Healthy', borderColor: 'border-[#10B981]/20', bgColor: 'bg-[#10B981]/5' };
-        if (score >= 60) return { color: '#F59E0B', label: 'At Risk', borderColor: 'border-[#F59E0B]/20', bgColor: 'bg-[#F59E0B]/5' };
+        if (score >= 80) return { color: '#34D399', label: 'Healthy', borderColor: 'border-[#34D399]/20', bgColor: 'bg-[#34D399]/5' };
+        if (score >= 60) return { color: '#FBBF24', label: 'At Risk', borderColor: 'border-[#FBBF24]/20', bgColor: 'bg-[#FBBF24]/5' };
         return { color: '#EF4444', label: 'Critical', borderColor: 'border-[#EF4444]/20', bgColor: 'bg-[#EF4444]/5' };
     };
     const health = getHealthMeta(healthScore);
@@ -183,8 +183,8 @@ const BusinessReviewView: React.FC<BusinessReviewViewProps> = ({
                 {/* On-Time Delivery */}
                 <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-2xl p-5">
                     <div className="flex items-center gap-2 mb-3">
-                        <div className="w-8 h-8 rounded-xl bg-[#10B981]/10 flex items-center justify-center">
-                            <CheckCircle2 className="w-4 h-4 text-[#10B981]" />
+                        <div className="w-8 h-8 rounded-xl bg-[#E0B954]/10 flex items-center justify-center">
+                            <CheckCircle2 className="w-4 h-4 text-[#E0B954]" />
                         </div>
                         <span className="text-xs text-[#737373]">On-Time Delivery</span>
                     </div>
@@ -225,7 +225,7 @@ const BusinessReviewView: React.FC<BusinessReviewViewProps> = ({
                         <Badge
                             className={`border-0 ${
                                 milestonePct >= 50
-                                    ? 'bg-[#10B981]/20 text-[#10B981]'
+                                    ? 'bg-[#E0B954]/20 text-[#E0B954]'
                                     : 'bg-[#F59E0B]/20 text-[#F59E0B]'
                             }`}
                         >
@@ -243,14 +243,14 @@ const BusinessReviewView: React.FC<BusinessReviewViewProps> = ({
                                     <div
                                         className={`w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 ${
                                             milestone.is_completed
-                                                ? 'bg-[#10B981]/20'
+                                                ? 'bg-[#E0B954]/20'
                                                 : isOverdue
                                                 ? 'bg-[#EF4444]/20'
                                                 : 'bg-[#737373]/20'
                                         }`}
                                     >
                                         {milestone.is_completed ? (
-                                            <CheckCircle2 className="w-3 h-3 text-[#10B981]" />
+                                            <CheckCircle2 className="w-3 h-3 text-[#E0B954]" />
                                         ) : isOverdue ? (
                                             <AlertTriangle className="w-3 h-3 text-[#EF4444]" />
                                         ) : (
@@ -295,13 +295,13 @@ const BusinessReviewView: React.FC<BusinessReviewViewProps> = ({
                         {
                             label: 'Overdue Tasks',
                             value: overdueItems,
-                            color: overdueItems > 5 ? '#EF4444' : overdueItems > 0 ? '#F59E0B' : '#10B981',
+                            color: overdueItems > 5 ? '#EF4444' : overdueItems > 0 ? '#F59E0B' : '#E0B954',
                             icon: Clock,
                         },
                         {
                             label: 'Open Bugs',
                             value: openBugs,
-                            color: openBugs > 10 ? '#EF4444' : openBugs > 3 ? '#F59E0B' : '#10B981',
+                            color: openBugs > 10 ? '#EF4444' : openBugs > 3 ? '#F59E0B' : '#E0B954',
                             icon: AlertCircle,
                         },
                         {
@@ -313,7 +313,7 @@ const BusinessReviewView: React.FC<BusinessReviewViewProps> = ({
                         {
                             label: 'Critical Open',
                             value: criticalOpen,
-                            color: criticalOpen > 0 ? '#EF4444' : '#10B981',
+                            color: criticalOpen > 0 ? '#EF4444' : '#E0B954',
                             icon: AlertTriangle,
                         },
                     ].map(({ label, value, color, icon: Icon }) => (
@@ -351,7 +351,7 @@ const BusinessReviewView: React.FC<BusinessReviewViewProps> = ({
                             <div className="flex items-center gap-3">
                                 <div className="flex-1 h-2 bg-[rgba(255,255,255,0.05)] rounded-full overflow-hidden">
                                     <div
-                                        className="h-full bg-gradient-to-r from-[#E0B954] to-[#10B981] rounded-full transition-all"
+                                        className="h-full bg-gradient-to-r from-[#E0B954] to-[#E0B954] rounded-full transition-all"
                                         style={{ width: `${completionPct}%` }}
                                     />
                                 </div>
@@ -362,7 +362,7 @@ const BusinessReviewView: React.FC<BusinessReviewViewProps> = ({
                             <div className="bg-[rgba(255,255,255,0.025)] rounded-xl p-4">
                                 <p className="text-xs text-[#737373] mb-1">Active Sprint</p>
                                 <p className="text-sm font-semibold text-white">{activeSprint.name}</p>
-                                <p className="text-xs text-[#10B981] mt-1">
+                                <p className="text-xs text-[#E0B954] mt-1">
                                     {activeSprint.completion_pct}% complete
                                 </p>
                             </div>
@@ -422,8 +422,8 @@ const BusinessReviewView: React.FC<BusinessReviewViewProps> = ({
             {analytics?.team_performance && analytics.team_performance.length > 0 && (
                 <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-2xl p-6">
                     <div className="flex items-center gap-3 mb-5">
-                        <div className="w-9 h-9 rounded-xl bg-[#10B981]/10 flex items-center justify-center">
-                            <Users className="w-4 h-4 text-[#10B981]" />
+                        <div className="w-9 h-9 rounded-xl bg-[#E0B954]/10 flex items-center justify-center">
+                            <Users className="w-4 h-4 text-[#E0B954]" />
                         </div>
                         <h3 className="text-sm font-semibold text-white">Team Capacity</h3>
                     </div>
@@ -447,12 +447,12 @@ const BusinessReviewView: React.FC<BusinessReviewViewProps> = ({
                                         </div>
                                         <div className="h-1.5 bg-[rgba(255,255,255,0.05)] rounded-full overflow-hidden">
                                             <div
-                                                className="h-full bg-gradient-to-r from-[#E0B954] to-[#10B981] rounded-full"
+                                                className="h-full bg-gradient-to-r from-[#E0B954] to-[#E0B954] rounded-full"
                                                 style={{ width: `${pct}%` }}
                                             />
                                         </div>
                                     </div>
-                                    <span className="text-xs font-medium text-[#10B981] w-10 text-right">
+                                    <span className="text-xs font-medium text-[#E0B954] w-10 text-right">
                                         {pct}%
                                     </span>
                                 </div>

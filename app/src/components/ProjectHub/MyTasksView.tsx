@@ -67,11 +67,11 @@ const MyTasksView: React.FC<MyTasksViewProps> = ({ tasks, onTaskClick }) => {
     const getStatusColor = (status: string) => {
         switch (status) {
             case 'done':
-                return 'bg-green-500/20 text-green-400 border-green-500/30';
+                return 'bg-[#E0B954]/15 text-[#E0B954] border-[#E0B954]/30';
             case 'in_progress':
                 return 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30';
             case 'in_review':
-                return 'bg-purple-500/20 text-purple-400 border-purple-500/30';
+                return 'bg-[#E0B954]/15 text-[#E0B954] border-[#E0B954]/30';
             default:
                 return 'bg-gray-500/20 text-gray-400 border-gray-500/30';
         }
@@ -123,7 +123,7 @@ const MyTasksView: React.FC<MyTasksViewProps> = ({ tasks, onTaskClick }) => {
                         <p className="text-[#737373] text-sm">Overdue</p>
                     </div>
                     <div className="p-3 bg-[#0A0A14] rounded-lg border border-[rgba(255,255,255,0.05)]">
-                        <p className="text-2xl font-bold text-[#10B981]">{stats.completed}</p>
+                        <p className="text-2xl font-bold text-[#E0B954]">{stats.completed}</p>
                         <p className="text-[#737373] text-sm">Completed</p>
                     </div>
                 </div>
@@ -149,7 +149,7 @@ const MyTasksView: React.FC<MyTasksViewProps> = ({ tasks, onTaskClick }) => {
                 {/* Tasks by Project */}
                 {Object.keys(groupedTasks).length === 0 ? (
                     <div className="text-center py-12">
-                        <CheckCircle2 className="w-12 h-12 text-[#10B981] mx-auto mb-2" />
+                        <CheckCircle2 className="w-12 h-12 text-[#E0B954] mx-auto mb-2" />
                         <p className="text-[#737373]">No tasks found</p>
                         <p className="text-[#737373] text-sm">
                             {filter === 'all' ? 'You have no assigned tasks' : `No ${filter} tasks`}

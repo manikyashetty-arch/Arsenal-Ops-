@@ -1,9 +1,9 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { Users, Clock, AlertTriangle, CheckCircle2, Info } from 'lucide-react';
+import { Users, Clock, AlertTriangle, CheckCircle2, Info, ChevronDown, ChevronUp } from 'lucide-react';
 
 interface WorkloadData {
     developer_id: number | string;
@@ -24,11 +24,14 @@ interface WorkloadViewProps {
     onDeveloperClick?: (developerId: number | string) => void;
 }
 
+const INITIAL_SHOW = 3;
+
 const WorkloadView: React.FC<WorkloadViewProps> = ({ workloadData, onDeveloperClick }) => {
+    const [showAll, setShowAll] = useState(false);
     const getCapacityColor = (percentage: number) => {
         if (percentage > 100) return 'text-red-400';
         if (percentage > 80) return 'text-yellow-400';
-        return 'text-green-400';
+        return 'text-[#E0B954]';
     };
 
     const getCapacityBarColor = (percentage: number) => {
@@ -50,6 +53,7 @@ const WorkloadView: React.FC<WorkloadViewProps> = ({ workloadData, onDeveloperCl
     const sortedData = [...workloadData].sort((a, b) => 
         (b.this_week_remaining_hours ?? 0) - (a.this_week_remaining_hours ?? 0)
     );
+    const visibleData = showAll ? sortedData : sortedData.slice(0, INITIAL_SHOW);
 
     return (
         <Card className="bg-[#0d0d0d] border-[rgba(255,255,255,0.08)]">
@@ -66,7 +70,7 @@ const WorkloadView: React.FC<WorkloadViewProps> = ({ workloadData, onDeveloperCl
                     </div>
                 ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                        {sortedData.map((developer) => {
+                        {visibleData.map((developer) => {
                             // Assume 40 hours/week capacity
                             const weeklyCapacity = 40;
                             // Use this week's remaining hours for capacity calculation
@@ -131,7 +135,7 @@ const WorkloadView: React.FC<WorkloadViewProps> = ({ workloadData, onDeveloperCl
                                     <div className="grid grid-cols-3 gap-2 mb-4">
                                         <div className="text-center p-2 rounded bg-[rgba(255,255,255,0.02)]">
                                             <div className="flex items-center justify-center gap-1 mb-1">
-                                                <CheckCircle2 className="w-3 h-3 text-[#10B981]" />
+                                                <CheckCircle2 className="w-3 h-3 text-[#E0B954]" />
                                             </div>
                                             <p className="text-white font-medium">{developer.completed_items}</p>
                                             <p className="text-[#737373] text-xs">Done</p>
@@ -197,6 +201,20 @@ const WorkloadView: React.FC<WorkloadViewProps> = ({ workloadData, onDeveloperCl
                                 </div>
                             );
                         })}
+                    </div>
+                )}
+
+                {sortedData.length > INITIAL_SHOW && (
+                    <div className="flex items-center justify-between mt-4 pt-4 border-t border-[rgba(255,255,255,0.05)]">
+                        <span className="text-xs text-[#737373]">
+                            Showing {showAll ? sortedData.length : Math.min(INITIAL_SHOW, sortedData.length)} of {sortedData.length} developers
+                        </span>
+                        <button
+                            onClick={() => setShowAll(p => !p)}
+                            className="flex items-center gap-1.5 text-xs text-[#E0B954] hover:text-[#F3D57E] px-3 py-1.5 rounded-lg bg-[#E0B954]/10 hover:bg-[#E0B954]/15 transition-colors font-medium"
+                        >
+                            {showAll ? <><ChevronUp className="w-3.5 h-3.5" /> Show less</> : <><ChevronDown className="w-3.5 h-3.5" /> Show all {sortedData.length}</>}
+                        </button>
                     </div>
                 )}
 

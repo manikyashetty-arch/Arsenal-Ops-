@@ -14,9 +14,17 @@ import {
     Zap,
     User,
     Trash2,
-    Github,
     Settings,
     LogOut,
+    Lock,
+    BookOpen,
+    AlertCircle,
+    ClipboardList,
+    Bug,
+    Target,
+    ExternalLink,
+    Tag,
+    ChevronRight,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -71,6 +79,34 @@ interface Project {
     developers: ProjectDeveloper[];
 }
 
+interface MyTask {
+    id: string;
+    key: string;
+    title: string;
+    type: string;
+    status: string;
+    priority: string;
+    project_id: number;
+    project_name: string;
+    due_date: string | null;
+    estimated_hours: number | null;
+    logged_hours: number | null;
+    remaining_hours: number | null;
+    is_overdue: boolean;
+    // Enriched fields
+    story_points?: number;
+    assigned_hours?: number;
+    assignee?: string;
+    description?: string;
+    tags?: string[];
+    acceptance_criteria?: string[];
+    parent_id?: number | null;
+    epic_id?: number | null;
+    sprint_id?: number | null;
+    parent_key?: string | null;
+    epic_key?: string | null;
+}
+
 const ProjectsPage = () => {
     const navigate = useNavigate();
     const { user, token, logout } = useAuth();
@@ -91,6 +127,20 @@ const ProjectsPage = () => {
     const [selectedDeveloperId, setSelectedDeveloperId] = useState<string>('');
     const [newRole, setNewRole] = useState('');
     const [newResponsibilities, setNewResponsibilities] = useState('');
+
+    // My Tasks
+    const [myTasks, setMyTasks] = useState<MyTask[]>([]);
+    const [myTaskTab, setMyTaskTab] = useState<'upcoming' | 'overdue' | 'completed'>('upcoming');
+    const [myTasksLoading, setMyTasksLoading] = useState(false);
+    const [showAllTasks, setShowAllTasks] = useState(false);
+    const [showAllDueSoon, setShowAllDueSoon] = useState(false);
+    const [selectedTask, setSelectedTask] = useState<MyTask | null>(null);
+
+    // Private Notepad
+    const [notepadContent, setNotepadContent] = useState('');
+    const [notepadSaved, setNotepadSaved] = useState(true);
+
+    // (box layout — no active tab needed)
 
     // Fetch projects
     useEffect(() => {
@@ -136,6 +186,94 @@ const ProjectsPage = () => {
             fetchDevelopers();
         }
     }, [showCreateModal]);
+
+    // Fetch my tasks
+    const fetchMyTasks = async () => {
+        setMyTasksLoading(true);
+        try {
+            const res = await fetch(`${API_BASE_URL}/api/workitems/my-tasks`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (res.ok) setMyTasks(await res.json());
+        } catch (err) {
+            console.error('Failed to fetch my tasks:', err);
+        } finally {
+            setMyTasksLoading(false);
+        }
+    };
+
+    // Load my tasks on mount
+    useEffect(() => {
+        if (token) fetchMyTasks();
+    }, [token]);
+
+    // Load notepad from localStorage per user
+    useEffect(() => {
+        if (user?.id) {
+            const saved = localStorage.getItem(`notepad_${user.id}`);
+            if (saved !== null) setNotepadContent(saved);
+        }
+    }, [user?.id]);
+
+    // Auto-save notepad with debounce
+    useEffect(() => {
+        if (!user?.id) return;
+        setNotepadSaved(false);
+        const timer = setTimeout(() => {
+            localStorage.setItem(`notepad_${user.id}`, notepadContent);
+            setNotepadSaved(true);
+        }, 800);
+        return () => clearTimeout(timer);
+    }, [notepadContent]);
+
+    // Computed chart data (used by My Overview stacked bar)
+    const overviewStats = {
+        total: myTasks.length,
+        done: myTasks.filter(t => t.status === 'done').length,
+        in_progress: myTasks.filter(t => t.status === 'in_progress').length,
+        in_review: myTasks.filter(t => t.status === 'in_review').length,
+        todo: myTasks.filter(t => t.status === 'todo').length,
+        overdue: myTasks.filter(t => t.is_overdue).length,
+        completion_pct: myTasks.length > 0
+            ? Math.round(myTasks.filter(t => t.status === 'done').length / myTasks.length * 100)
+            : 0,
+    };
+
+    const STATUS_BARS = [
+        { key: 'done',        color: '#34D399', label: 'Done' },
+        { key: 'in_progress', color: '#E0B954', label: 'In Progress' },
+        { key: 'in_review',   color: '#A78BFA', label: 'In Review' },
+        { key: 'todo',        color: '#60A5FA', label: 'To Do' },
+    ] as const;
+
+    const TASK_TYPE_CONFIG: Record<string, { icon: React.ElementType; color: string; label: string; bg: string }> = {
+        user_story: { icon: BookOpen,     color: '#E0B954', label: 'Story', bg: 'rgba(224,185,84,0.15)' },
+        task:       { icon: ClipboardList, color: '#F59E0B', label: 'Task',  bg: 'rgba(245,158,11,0.15)' },
+        bug:        { icon: Bug,           color: '#EF4444', label: 'Bug',   bg: 'rgba(239,68,68,0.15)'  },
+        epic:       { icon: Target,        color: '#A78BFA', label: 'Epic',  bg: 'rgba(167,139,250,0.15)' },
+    };
+
+    const PRIORITY_COLORS: Record<string, string> = {
+        critical: '#EF4444',
+        high:     '#F97316',
+        medium:   '#F59E0B',
+        low:      '#737373',
+    };
+
+    const STATUS_COLOR: Record<string, string> = {
+        todo:        '#60A5FA',
+        in_progress: '#E0B954',
+        in_review:   '#A78BFA',
+        done:        '#34D399',
+        blocked:     '#EF4444',
+        backlog:     '#555',
+    };
+
+    const filteredMyTasks = myTasks.filter(t => {
+        if (myTaskTab === 'upcoming') return t.status !== 'done' && !t.is_overdue;
+        if (myTaskTab === 'overdue') return t.is_overdue;
+        return t.status === 'done';
+    });
 
     const handleAddDeveloper = () => {
         if (!selectedDeveloperId || !newRole.trim()) {
@@ -217,34 +355,6 @@ const ProjectsPage = () => {
         }
     };
 
-    const handleSendGitHubInvites = async (e: React.MouseEvent, project: Project) => {
-        e.stopPropagation();
-        if (!project.github_repo_url) {
-            toast.error('No GitHub repository configured for this project');
-            return;
-        }
-        
-        try {
-            const response = await fetch(`${API_BASE_URL}/api/projects/${project.id}/github-invite`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
-            });
-            
-            const data = await response.json();
-            
-            if (data.success) {
-                toast.success(`GitHub invitations sent! ${data.successful} successful, ${data.failed} failed`);
-            } else {
-                toast.error(data.message || 'Failed to send some invitations');
-            }
-        } catch (err) {
-            toast.error('Failed to send GitHub invitations');
-        }
-    };
-
     const filteredProjects = projects.filter(p =>
         p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         p.description.toLowerCase().includes(searchQuery.toLowerCase())
@@ -308,13 +418,13 @@ const ProjectsPage = () => {
                 </div>
             </header>
 
-            <div className="max-w-[1400px] mx-auto px-8 py-10">
+            <div className="max-w-[1400px] mx-auto px-8 py-8">
                 {/* Stats Bar */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-10">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
                     {[
                         { icon: FolderKanban, label: 'Projects', value: totalStats.projects, color: '#E0B954' },
                         { icon: Layers, label: 'Total Items', value: totalStats.items, color: '#F59E0B' },
-                        { icon: CheckCircle2, label: 'Completed', value: totalStats.completed, color: '#10B981' },
+                        { icon: CheckCircle2, label: 'Completed', value: totalStats.completed, color: '#E0B954' },
                         { icon: Zap, label: 'Story Points', value: totalStats.points, color: '#C79E3B' },
                     ].map(stat => (
                         <div key={stat.label} className="relative group">
@@ -324,189 +434,531 @@ const ProjectsPage = () => {
                                     <stat.icon className="w-5 h-5" style={{ color: stat.color }} />
                                     <TrendingUp className="w-3.5 h-3.5 text-[#334155] group-hover:text-[#737373] transition-colors" />
                                 </div>
-                                <div className="text-3xl font-bold text-white tracking-tight">{stat.value}</div>
+                                {isLoading ? (
+                                    <div className="h-9 w-16 bg-[rgba(255,255,255,0.06)] rounded-lg animate-pulse mb-1" />
+                                ) : (
+                                    <div className="text-3xl font-bold text-white tracking-tight">{stat.value}</div>
+                                )}
                                 <div className="text-xs text-[#737373] font-medium mt-1">{stat.label}</div>
                             </div>
                         </div>
                     ))}
                 </div>
 
-                {/* Search & Actions */}
-                <div className="flex items-center justify-between mb-8 gap-4">
-                    <div className="relative flex-1 max-w-md">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#737373]" />
-                        <Input
-                            placeholder="Search projects..."
-                            value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
-                            className="pl-10 bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl h-11 focus:border-[#E0B954]/50 focus:ring-[#E0B954]/20 placeholder:text-[#334155]"
-                        />
-                    </div>
-                    {user?.role === 'admin' && (
-                        <Button
-                            onClick={() => setShowCreateModal(true)}
-                            className="bg-gradient-to-r from-[#E0B954] to-[#C79E3B] hover:opacity-90 text-[#080808] font-semibold rounded-xl h-11 px-6 font-medium shadow-lg shadow-[#B8872A]/20 transition-all duration-300 hover:shadow-[#B8872A]/30 hover:scale-[1.02]"
-                        >
-                            <Plus className="w-4 h-4 mr-2" />
-                            New Project
-                        </Button>
-                    )}
-                </div>
+                {/* 2×2 Grid Layout */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
 
-                {/* Projects Grid */}
-                {isLoading ? (
-                    <div className="flex items-center justify-center py-32">
-                        <div className="w-8 h-8 border-2 border-[#E0B954]/30 border-t-[#E0B954] rounded-full animate-spin" />
-                    </div>
-                ) : filteredProjects.length === 0 && !searchQuery ? (
-                    /* Empty State */
-                    <div className="flex flex-col items-center justify-center py-32 text-center">
-                        <div className="w-24 h-24 rounded-3xl bg-gradient-to-br from-[#E0B954]/20 to-[#B8872A]/10 flex items-center justify-center mb-6 border border-[#E0B954]/20">
-                            <FolderKanban className="w-10 h-10 text-[#E0B954]" />
-                        </div>
-                        <h2 className="text-2xl font-bold text-white mb-2">No projects yet</h2>
-                        <p className="text-[#737373] max-w-md mb-8">
-                            {user?.role === 'admin' 
-                                ? "Create your first project to get started with AI-powered project management."
-                                : "Contact an admin to create a project for you."
-                            }
-                        </p>
-                        {user?.role === 'admin' && (
-                            <Button
-                                onClick={() => setShowCreateModal(true)}
-                                className="bg-gradient-to-r from-[#E0B954] to-[#C79E3B] hover:opacity-90 text-[#080808] font-semibold rounded-xl h-12 px-8 font-medium shadow-lg shadow-[#B8872A]/20"
-                            >
-                                <Plus className="w-5 h-5 mr-2" />
-                                Create First Project
-                            </Button>
-                        )}
-                    </div>
-                ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-                        {filteredProjects.map((project, idx) => {
-                            const stats = project.work_item_stats;
-                            const gradients = [
-                                'from-[#E0B954]/10 to-[#4338CA]/5',
-                                'from-[#F59E0B]/10 to-[#D97706]/5',
-                                'from-[#10B981]/10 to-[#059669]/5',
-                                'from-[#C79E3B]/10 to-[#7C3AED]/5',
-                                'from-[#EC4899]/10 to-[#DB2777]/5',
-                                'from-[#06B6D4]/10 to-[#0891B2]/5',
-                            ];
-                            const accentColors = ['#E0B954', '#F59E0B', '#10B981', '#C79E3B', '#EC4899', '#06B6D4'];
-                            const accent = accentColors[idx % accentColors.length];
+                    {/* TOP-LEFT: MY TASKS BOX */}
+                    <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.06)] rounded-2xl flex flex-col h-[460px]">
+                            <div className="flex items-center justify-between px-5 pt-5 pb-3 flex-shrink-0">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[#E0B954] to-[#C79E3B] flex items-center justify-center text-[#080808] text-sm font-bold">
+                                        {user?.name?.charAt(0).toUpperCase()}
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <h2 className="text-base font-semibold text-white">My tasks</h2>
+                                        <Lock className="w-3.5 h-3.5 text-[#737373]" />
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-2 text-xs text-[#737373]">
+                                    <CheckCircle2 className="w-3.5 h-3.5 text-[#E0B954]" />
+                                    <span>{myTasks.filter(t => t.status === 'done').length} completed</span>
+                                </div>
+                            </div>
 
-                            return (
-                                <div
-                                    key={project.id}
-                                    className="group relative cursor-pointer"
-                                    onClick={() => navigate(`/project/${project.id}`)}
-                                >
-                                    {/* Hover glow effect */}
-                                    <div
-                                        className="absolute -inset-[1px] rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-500 blur-sm"
-                                        style={{ background: `linear-gradient(135deg, ${accent}33, transparent)` }}
-                                    />
+                            {/* Sub-tabs */}
+                            <div className="flex gap-0 px-5 border-b border-[rgba(255,255,255,0.05)] flex-shrink-0">
+                                {(['upcoming', 'overdue', 'completed'] as const).map(tab => {
+                                    const count = tab === 'upcoming'
+                                        ? myTasks.filter(t => t.status !== 'done' && !t.is_overdue).length
+                                        : tab === 'overdue'
+                                        ? myTasks.filter(t => t.is_overdue).length
+                                        : myTasks.filter(t => t.status === 'done').length;
+                                    return (
+                                        <button
+                                            key={tab}
+                                            onClick={() => { setMyTaskTab(tab); setShowAllTasks(false); }}
+                                            className={`px-4 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px ${
+                                                myTaskTab === tab
+                                                    ? 'border-[#E0B954] text-white'
+                                                    : 'border-transparent text-[#737373] hover:text-[#a3a3a3]'
+                                            }`}
+                                        >
+                                            {tab === 'overdue' && count > 0 ? (
+                                                <span className="flex items-center gap-1.5">
+                                                    Overdue
+                                                    <span className="bg-red-500/20 text-red-400 text-xs px-1.5 py-0.5 rounded-full">{count}</span>
+                                                </span>
+                                            ) : (
+                                                <span className="capitalize">{tab}</span>
+                                            )}
+                                        </button>
+                                    );
+                                })}
+                            </div>
 
-                                    <div className={`relative bg-gradient-to-br ${gradients[idx % gradients.length]} border border-[rgba(255,255,255,0.05)] rounded-2xl p-6 transition-all duration-300 group-hover:border-[rgba(244,246,255,0.12)] group-hover:translate-y-[-2px] overflow-hidden`}>
-                                        {/* Background pattern */}
-                                        <div className="absolute top-0 right-0 w-32 h-32 opacity-[0.03] group-hover:opacity-[0.06] transition-opacity">
-                                            <FolderKanban className="w-full h-full" style={{ color: accent }} />
+                            {/* Task list */}
+                            <div className="flex-1 overflow-y-auto p-4 space-y-0.5">
+                                {myTasksLoading ? (
+                                    <div className="flex items-center justify-center py-10">
+                                        <div className="w-5 h-5 border-2 border-[#E0B954]/30 border-t-[#E0B954] rounded-full animate-spin" />
+                                    </div>
+                                ) : filteredMyTasks.length === 0 ? (
+                                    <div className="flex flex-col items-center justify-center py-10 text-center">
+                                        <CheckCircle2 className="w-8 h-8 text-[#E0B954]/30 mb-2" />
+                                        <p className="text-sm text-[#737373]">
+                                            {myTaskTab === 'completed' ? 'No completed tasks yet' : myTaskTab === 'overdue' ? 'No overdue tasks 🎉' : 'No upcoming tasks'}
+                                        </p>
+                                    </div>
+                                ) : (
+                                    (showAllTasks ? filteredMyTasks : filteredMyTasks.slice(0, 6)).map(task => (
+                                        <div
+                                            key={task.id}
+                                            className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-[rgba(255,255,255,0.03)] transition-colors cursor-pointer group"
+                                            onClick={() => setSelectedTask(task)}
+                                        >
+                                            <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
+                                                task.status === 'done' ? 'border-[#E0B954] bg-[#E0B954]' :
+                                                task.is_overdue ? 'border-red-400' : 'border-[#444] group-hover:border-[#E0B954]/50'
+                                            }`}>
+                                                {task.status === 'done' && <CheckCircle2 className="w-3 h-3 text-[#080808]" />}
+                                            </div>
+                                            <span className={`flex-1 text-sm truncate ${
+                                                task.status === 'done' ? 'line-through text-[#555]' : 'text-[#f5f5f5]'
+                                            }`}>
+                                                {task.title}
+                                            </span>
+                                            <span className="text-xs px-2 py-0.5 rounded-md bg-[rgba(224,185,84,0.08)] text-[#C79E3B] truncate max-w-[110px] flex-shrink-0">
+                                                {task.project_name}
+                                            </span>
+                                            {task.is_overdue && (
+                                                <AlertCircle className="w-3.5 h-3.5 text-red-400 flex-shrink-0" />
+                                            )}
+                                            {task.due_date && (
+                                                <span className={`text-xs flex-shrink-0 ${
+                                                    task.is_overdue ? 'text-red-400' : 'text-[#737373]'
+                                                }`}>
+                                                    {new Date(task.due_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                                                </span>
+                                            )}
                                         </div>
+                                    ))
+                                )}
+                                {filteredMyTasks.length > 6 && (
+                                    <button
+                                        onClick={() => setShowAllTasks(p => !p)}
+                                        className="w-full text-center text-xs text-[#737373] hover:text-[#E0B954] py-2.5 transition-colors"
+                                    >
+                                        {showAllTasks ? 'Show less' : `Show ${filteredMyTasks.length - 6} more`}
+                                    </button>
+                                )}
+                            </div>
+                    </div>
 
-                                        {/* Header */}
-                                        <div className="flex items-start justify-between mb-4 relative">
-                                            <div className="flex items-center gap-3">
+                    {/* TOP-RIGHT: PROJECTS BOX */}
+                    <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.06)] rounded-2xl flex flex-col h-[460px]">
+                        <div className="flex items-center justify-between px-5 py-4 border-b border-[rgba(255,255,255,0.05)] flex-shrink-0">
+                            <div className="flex items-center gap-2">
+                                <h2 className="text-base font-semibold text-white">Projects</h2>
+                                <span className="text-xs text-[#737373] bg-[rgba(255,255,255,0.05)] px-2 py-0.5 rounded-full">{filteredProjects.length}</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <div className="relative">
+                                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#737373]" />
+                                    <Input
+                                        placeholder="Search..."
+                                        value={searchQuery}
+                                        onChange={(e) => setSearchQuery(e.target.value)}
+                                        className="pl-8 w-32 bg-[rgba(255,255,255,0.03)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-lg h-7 text-xs focus:border-[#E0B954]/50"
+                                    />
+                                </div>
+                                {user?.role === 'admin' && (
+                                    <button
+                                        onClick={() => setShowCreateModal(true)}
+                                        className="w-7 h-7 flex items-center justify-center rounded-lg bg-gradient-to-r from-[#E0B954] to-[#C79E3B] hover:opacity-90 text-[#080808] transition-opacity"
+                                        title="New Project"
+                                    >
+                                        <Plus className="w-4 h-4" />
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+                        <div className="flex-1 overflow-y-auto p-3">
+                            {isLoading ? (
+                                <div className="flex items-center justify-center py-10">
+                                    <div className="w-5 h-5 border-2 border-[#E0B954]/30 border-t-[#E0B954] rounded-full animate-spin" />
+                                </div>
+                            ) : filteredProjects.length === 0 ? (
+                                <div className="flex flex-col items-center justify-center h-full text-center">
+                                    <FolderKanban className="w-8 h-8 text-[#E0B954]/20 mx-auto mb-2" />
+                                    <p className="text-sm text-[#737373]">No projects found</p>
+                                </div>
+                            ) : (
+                                <div className="space-y-1">
+                                    {filteredProjects.map((project, idx) => {
+                                        const accentColors = ['#E0B954', '#F59E0B', '#C79E3B', '#B8872A', '#EC4899', '#06B6D4'];
+                                        const accent = accentColors[idx % accentColors.length];
+                                        return (
+                                            <div
+                                                key={project.id}
+                                                onClick={() => navigate(`/project/${project.id}`)}
+                                                className="group flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-[rgba(255,255,255,0.04)] cursor-pointer transition-all duration-200"
+                                            >
                                                 <div
-                                                    className="w-10 h-10 rounded-xl flex items-center justify-center text-sm font-bold text-white shadow-lg"
-                                                    style={{ backgroundColor: accent, boxShadow: `0 4px 12px ${accent}33` }}
+                                                    className="w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold text-[#080808] flex-shrink-0"
+                                                    style={{ backgroundColor: accent }}
                                                 >
                                                     {project.key_prefix.substring(0, 2)}
                                                 </div>
-                                                <div>
-                                                    <h3 className="text-lg font-semibold text-white group-hover:text-white/95 transition-colors line-clamp-1">{project.name}</h3>
-                                                    <span className="text-xs font-mono text-[#737373]">{project.key_prefix}</span>
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="flex items-center justify-between mb-1">
+                                                        <span className="text-sm font-medium text-white truncate">{project.name}</span>
+                                                        <span className="text-xs text-[#737373] flex-shrink-0 ml-2">{project.work_item_stats.completion_pct}%</span>
+                                                    </div>
+                                                    <div className="h-1 bg-[rgba(255,255,255,0.05)] rounded-full overflow-hidden">
+                                                        <div
+                                                            className="h-full rounded-full transition-all"
+                                                            style={{ width: `${project.work_item_stats.completion_pct}%`, backgroundColor: accent }}
+                                                        />
+                                                    </div>
+                                                </div>
+                                                <div className="flex items-center gap-1 flex-shrink-0">
+                                                    {user?.role === 'admin' && (
+                                                        <button
+                                                            onClick={(e) => handleDeleteProject(e, project.id)}
+                                                            className="p-1 rounded-lg opacity-0 group-hover:opacity-100 hover:bg-red-500/10 text-[#737373] hover:text-red-400 transition-all"
+                                                        >
+                                                            <X className="w-3 h-3" />
+                                                        </button>
+                                                    )}
+                                                    <ArrowRight className="w-3.5 h-3.5 text-[#555] group-hover:text-[#E0B954] transition-colors" />
                                                 </div>
                                             </div>
-                                            {project.github_repo_url && (
-                                                <button
-                                                    onClick={(e) => handleSendGitHubInvites(e, project)}
-                                                    className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-[#E0B954]/10 text-[#737373] hover:text-[#E0B954] mr-1"
-                                                    title="Send GitHub invitations"
-                                                >
-                                                    <Github className="w-4 h-4" />
-                                                </button>
-                                            )}
-                                            <button
-                                                onClick={(e) => handleDeleteProject(e, project.id)}
-                                                className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-red-500/10 text-[#737373] hover:text-red-400"
-                                            >
-                                                <X className="w-4 h-4" />
-                                            </button>
-                                        </div>
-
-                                        {/* Description */}
-                                        <p className="text-sm text-[#737373] mb-5 line-clamp-2 min-h-[40px]">{project.description || 'No description'}</p>
-
-                                        {/* Progress */}
-                                        <div className="mb-5">
-                                            <div className="flex items-center justify-between text-xs mb-2">
-                                                <span className="text-[#737373] font-medium">Progress</span>
-                                                <span className="font-semibold" style={{ color: accent }}>{stats.completion_pct}%</span>
-                                            </div>
-                                            <div className="h-1.5 bg-[rgba(255,255,255,0.05)] rounded-full overflow-hidden">
-                                                <div
-                                                    className="h-full rounded-full transition-all duration-700 ease-out"
-                                                    style={{
-                                                        width: `${stats.completion_pct}%`,
-                                                        background: `linear-gradient(90deg, ${accent}, ${accent}BB)`,
-                                                        boxShadow: stats.completion_pct > 0 ? `0 0 8px ${accent}44` : 'none',
-                                                    }}
-                                                />
-                                            </div>
-                                        </div>
-
-                                        {/* Stats Row */}
-                                        <div className="flex items-center justify-between">
-                                            <div className="flex items-center gap-4">
-                                                <div className="flex items-center gap-1.5">
-                                                    <Layers className="w-3.5 h-3.5 text-[#737373]" />
-                                                    <span className="text-xs text-[#737373] font-medium">{stats.total} items</span>
-                                                </div>
-                                                <div className="flex items-center gap-1.5">
-                                                    <BarChart3 className="w-3.5 h-3.5 text-[#737373]" />
-                                                    <span className="text-xs text-[#737373] font-medium">{stats.total_points} pts</span>
-                                                </div>
-                                            </div>
-                                            <div className="flex items-center gap-1 text-[#737373] group-hover:text-[#E0B954] transition-colors">
-                                                <span className="text-xs font-medium">Open</span>
-                                                <ArrowRight className="w-3.5 h-3.5" />
-                                            </div>
-                                        </div>
-                                    </div>
+                                        );
+                                    })}
                                 </div>
-                            );
-                        })}
-
-                        {/* Create Project Card - Admin only */}
-                        {user?.role === 'admin' && (
-                            <div
-                                className="group cursor-pointer"
-                                onClick={() => setShowCreateModal(true)}
-                            >
-                                <div className="border-2 border-dashed border-[rgba(255,255,255,0.07)] rounded-2xl p-6 flex flex-col items-center justify-center min-h-[260px] transition-all duration-300 group-hover:border-[#E0B954]/30 group-hover:bg-[#E0B954]/5">
-                                    <div className="w-14 h-14 rounded-2xl bg-[rgba(244,246,255,0.05)] flex items-center justify-center mb-4 group-hover:bg-[#E0B954]/20 transition-all duration-300 group-hover:scale-110">
-                                        <Plus className="w-6 h-6 text-[#737373] group-hover:text-[#E0B954] transition-colors" />
-                                    </div>
-                                    <span className="text-sm font-medium text-[#737373] group-hover:text-[#E0B954] transition-colors">
-                                        Create New Project
-                                    </span>
-                                </div>
-                            </div>
-                        )}
+                            )}
+                        </div>
                     </div>
-                )}
+
+                    {/* BOTTOM-LEFT: PRIVATE NOTEPAD BOX */}
+                    <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.06)] rounded-2xl flex flex-col h-[460px]">
+                        <div className="flex items-center justify-between px-5 py-4 border-b border-[rgba(255,255,255,0.05)] flex-shrink-0">
+                            <div className="flex items-center gap-2">
+                                <BookOpen className="w-4 h-4 text-[#a3a3a3]" />
+                                <h3 className="text-base font-semibold text-white">Private Notepad</h3>
+                                <Lock className="w-3.5 h-3.5 text-[#737373]" />
+                            </div>
+                            <span className={`text-xs transition-colors duration-300 ${
+                                notepadSaved ? 'text-[#E0B954]' : 'text-[#737373]'
+                            }`}>
+                                {notepadSaved ? '✓ Saved' : 'Saving...'}
+                            </span>
+                        </div>
+                        <div className="flex-1 overflow-hidden p-5">
+                            <textarea
+                                value={notepadContent}
+                                onChange={(e) => setNotepadContent(e.target.value)}
+                                placeholder="Jot down a quick note, idea, or add a link to an important resource. Only you can see this."
+                                className="w-full h-full bg-transparent text-sm text-[#a3a3a3] placeholder:text-[#333] resize-none outline-none leading-relaxed"
+                            />
+                        </div>
+                    </div>
+
+                    {/* BOTTOM-RIGHT: MY OVERVIEW BOX */}
+                    <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.06)] rounded-2xl flex flex-col h-[460px]">
+                        <div className="flex items-center justify-between px-5 py-3.5 border-b border-[rgba(255,255,255,0.05)] flex-shrink-0">
+                            <div className="flex items-center gap-2">
+                                <BarChart3 className="w-4 h-4 text-[#E0B954]" />
+                                <h3 className="text-sm font-semibold text-white">My Overview</h3>
+                            </div>
+                            <span className="text-xs text-[#737373]">{overviewStats.total} tasks</span>
+                        </div>
+                        <div className="flex-1 min-h-0 p-4 overflow-y-auto space-y-4">
+                            {myTasksLoading ? (
+                                /* Skeleton while tasks load */
+                                <>
+                                    <div className="grid grid-cols-4 gap-2">
+                                        {[...Array(4)].map((_, i) => (
+                                            <div key={i} className="bg-[rgba(255,255,255,0.03)] rounded-xl p-3 text-center">
+                                                <div className="h-7 w-8 bg-[rgba(255,255,255,0.07)] rounded-lg animate-pulse mx-auto mb-1" />
+                                                <div className="h-3 w-12 bg-[rgba(255,255,255,0.05)] rounded animate-pulse mx-auto" />
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <div>
+                                        <div className="flex justify-between mb-1.5">
+                                            <div className="h-3 w-20 bg-[rgba(255,255,255,0.05)] rounded animate-pulse" />
+                                            <div className="h-3 w-8 bg-[rgba(255,255,255,0.05)] rounded animate-pulse" />
+                                        </div>
+                                        <div className="h-2 bg-[rgba(255,255,255,0.05)] rounded-full animate-pulse" />
+                                    </div>
+                                    <div>
+                                        <div className="h-3 rounded-full bg-[rgba(255,255,255,0.05)] animate-pulse mb-2" />
+                                        <div className="flex gap-3">
+                                            {[...Array(4)].map((_, i) => (
+                                                <div key={i} className="h-3 w-16 bg-[rgba(255,255,255,0.04)] rounded animate-pulse" />
+                                            ))}
+                                        </div>
+                                    </div>
+                                    <div className="space-y-2">
+                                        {[...Array(3)].map((_, i) => (
+                                            <div key={i} className="flex items-center gap-2 px-2 py-1">
+                                                <div className="w-1.5 h-1.5 rounded-full bg-[rgba(255,255,255,0.07)] animate-pulse flex-shrink-0" />
+                                                <div className="h-3 flex-1 bg-[rgba(255,255,255,0.05)] rounded animate-pulse" />
+                                                <div className="h-3 w-10 bg-[rgba(255,255,255,0.04)] rounded animate-pulse flex-shrink-0" />
+                                            </div>
+                                        ))}
+                                    </div>
+                                </>
+                            ) : myTasks.length === 0 ? (
+                                <div className="flex flex-col items-center justify-center h-full text-center">
+                                    <BarChart3 className="w-10 h-10 text-[#E0B954]/20 mb-2" />
+                                    <p className="text-sm text-[#737373]">No task data yet</p>
+                                    <p className="text-xs text-[#555] mt-1">Tasks assigned to you will appear here</p>
+                                </div>
+                            ) : (
+                                <>
+                                    {/* Row 1 — 4 stat micro-cards */}
+                                    <div className="grid grid-cols-4 gap-2">
+                                        {[
+                                            { label: 'Total', value: overviewStats.total, color: '#f5f5f5' },
+                                            { label: 'Done', value: overviewStats.done, color: '#34D399' },
+                                            { label: 'In Progress', value: overviewStats.in_progress, color: '#E0B954' },
+                                            { label: 'Overdue', value: overviewStats.overdue, color: '#EF4444' },
+                                        ].map(s => (
+                                            <div key={s.label} className="bg-[rgba(255,255,255,0.03)] rounded-xl p-3 text-center">
+                                                <div className="text-xl font-bold" style={{ color: s.color }}>{s.value}</div>
+                                                <div className="text-xs text-[#737373] mt-0.5">{s.label}</div>
+                                            </div>
+                                        ))}
+                                    </div>
+
+                                    {/* Row 2 — Completion progress bar */}
+                                    <div>
+                                        <div className="flex items-center justify-between mb-1.5">
+                                            <span className="text-xs text-[#737373]">Completion</span>
+                                            <span className="text-xs font-semibold text-[#34D399]">{overviewStats.completion_pct}%</span>
+                                        </div>
+                                        <div className="h-2 bg-[rgba(255,255,255,0.05)] rounded-full overflow-hidden">
+                                            <div
+                                                className="h-full rounded-full transition-all duration-500"
+                                                style={{ width: `${overviewStats.completion_pct}%`, background: 'linear-gradient(90deg, #34D399, #059669)' }}
+                                            />
+                                        </div>
+                                    </div>
+
+                                    {/* Row 3 — Stacked status bar */}
+                                    <div>
+                                        <div className="flex items-center justify-between mb-1.5">
+                                            <span className="text-xs text-[#737373]">Status distribution</span>
+                                        </div>
+                                        <div className="h-3 rounded-full overflow-hidden flex w-full">
+                                            {STATUS_BARS.map(s => {
+                                                const count = overviewStats[s.key as keyof typeof overviewStats] as number;
+                                                const pct = overviewStats.total > 0 ? (count / overviewStats.total) * 100 : 0;
+                                                return pct > 0 ? (
+                                                    <div key={s.key} style={{ width: `${pct}%`, backgroundColor: s.color }} title={`${s.label}: ${count}`} />
+                                                ) : null;
+                                            })}
+                                        </div>
+                                        <div className="flex flex-wrap gap-3 mt-2">
+                                            {STATUS_BARS.map(s => {
+                                                const count = overviewStats[s.key as keyof typeof overviewStats] as number;
+                                                return (
+                                                    <div key={s.key} className="flex items-center gap-1.5">
+                                                        <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: s.color }} />
+                                                        <span className="text-xs text-[#737373]">{s.label} <span className="text-white font-medium">{count}</span></span>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+
+                                    {/* Row 4 — Next due */}
+                                    {(() => {
+                                        const allDue = myTasks
+                                            .filter(t => t.due_date && t.status !== 'done')
+                                            .sort((a, b) => new Date(a.due_date!).getTime() - new Date(b.due_date!).getTime());
+                                        const dueSoon = showAllDueSoon ? allDue : allDue.slice(0, 4);
+                                        return allDue.length > 0 ? (
+                                            <div>
+                                                <div className="flex items-center justify-between mb-2">
+                                                    <span className="text-xs text-[#737373] font-medium">Next due</span>
+                                                    <span className="text-xs text-[#737373]">{allDue.length} upcoming</span>
+                                                </div>
+                                                <div className="space-y-1.5">
+                                                    {dueSoon.map(t => (
+                                                        <div key={t.id} className="flex items-center gap-2 text-xs cursor-pointer hover:bg-[rgba(255,255,255,0.02)] px-2 py-1 rounded-lg transition-colors" onClick={() => setSelectedTask(t)}>
+                                                            <div className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: STATUS_COLOR[t.status] || '#555' }} />
+                                                            <span className="text-[#a3a3a3] truncate flex-1">{t.title}</span>
+                                                            <span className={`flex-shrink-0 ${t.is_overdue ? 'text-red-400' : 'text-[#737373]'}`}>
+                                                                {new Date(t.due_date!).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                                                            </span>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                                {allDue.length > 4 && (
+                                                    <button
+                                                        onClick={() => setShowAllDueSoon(p => !p)}
+                                                        className="w-full text-center text-xs text-[#737373] hover:text-[#E0B954] py-1.5 mt-1 transition-colors"
+                                                    >
+                                                        {showAllDueSoon ? 'Show less' : `Show ${allDue.length - 4} more`}
+                                                    </button>
+                                                )}
+                                            </div>
+                                        ) : null;
+                                    })()}
+                                </>
+                            )}
+                        </div>
+                    </div>
+
+                </div>{/* end 2×2 grid */}
             </div>
+
+            {/* Jira-style Ticket Slide-in Panel */}
+            {selectedTask && (
+                <>
+                    <div className="fixed inset-0 bg-black/40 z-40" onClick={() => setSelectedTask(null)} />
+                    <div className="fixed right-0 top-0 bottom-0 w-full max-w-lg bg-[#080808] border-l border-[rgba(255,255,255,0.07)] z-50 flex flex-col shadow-2xl shadow-black/50">
+                        {/* Panel Header */}
+                        <div className="flex items-start justify-between p-5 border-b border-[rgba(255,255,255,0.05)] sticky top-0 bg-[#080808] flex-shrink-0">
+                            <div className="flex items-center gap-3 flex-1 min-w-0">
+                                {(() => {
+                                    const tc = TASK_TYPE_CONFIG[selectedTask.type] || TASK_TYPE_CONFIG.task;
+                                    return (
+                                        <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-sm font-medium flex-shrink-0" style={{ backgroundColor: tc.bg, color: tc.color }}>
+                                            <tc.icon className="w-4 h-4" />
+                                            {tc.label}
+                                        </div>
+                                    );
+                                })()}
+                                <span className="text-xs font-mono text-[#E0B954] flex-shrink-0">{selectedTask.key}</span>
+                                <button
+                                    onClick={() => { navigate(`/project/${selectedTask.project_id}`); setSelectedTask(null); }}
+                                    className="flex items-center gap-1 text-xs text-[#737373] hover:text-white ml-auto flex-shrink-0"
+                                >
+                                    <ExternalLink className="w-3.5 h-3.5" />
+                                    Open in project
+                                </button>
+                            </div>
+                            <button onClick={() => setSelectedTask(null)} className="p-1.5 rounded-lg hover:bg-[rgba(244,246,255,0.05)] text-[#737373] hover:text-white ml-3 flex-shrink-0">
+                                <X className="w-4 h-4" />
+                            </button>
+                        </div>
+
+                        {/* Panel Content (scrollable) */}
+                        <div className="flex-1 overflow-y-auto p-5 space-y-5">
+                            {/* Title */}
+                            <h2 className="text-lg font-semibold text-white leading-tight">{selectedTask.title}</h2>
+
+                            {/* Breadcrumb (parent/epic) */}
+                            {(selectedTask.epic_key || selectedTask.parent_key) && (
+                                <div className="flex items-center gap-1.5 text-xs">
+                                    {selectedTask.epic_key && (
+                                        <span className="flex items-center gap-1 px-2 py-1 rounded-md bg-[rgba(167,139,250,0.12)] text-[#A78BFA]">
+                                            <Target className="w-3 h-3" />
+                                            {selectedTask.epic_key}
+                                        </span>
+                                    )}
+                                    {selectedTask.parent_key && (
+                                        <>
+                                            {selectedTask.epic_key && <ChevronRight className="w-3 h-3 text-[#555]" />}
+                                            <span className="flex items-center gap-1 px-2 py-1 rounded-md bg-[rgba(224,185,84,0.10)] text-[#E0B954]">
+                                                <BookOpen className="w-3 h-3" />
+                                                {selectedTask.parent_key}
+                                            </span>
+                                        </>
+                                    )}
+                                </div>
+                            )}
+
+                            {/* Stats grid 2×3 */}
+                            <div className="grid grid-cols-3 gap-2">
+                                {[
+                                    { label: 'Status', value: selectedTask.status.replace(/_/g, ' '), color: STATUS_COLOR[selectedTask.status] || '#f5f5f5' },
+                                    { label: 'Priority', value: selectedTask.priority, color: PRIORITY_COLORS[selectedTask.priority] || '#f5f5f5' },
+                                    { label: 'Story Points', value: String(selectedTask.story_points ?? '-'), color: '#f5f5f5' },
+                                    { label: 'Est. Hours', value: selectedTask.assigned_hours ? `${selectedTask.assigned_hours}h` : '-', color: '#a3a3a3' },
+                                    { label: 'Logged Hrs', value: selectedTask.logged_hours ? `${selectedTask.logged_hours}h` : '0h', color: '#a3a3a3' },
+                                    { label: 'Remaining', value: selectedTask.remaining_hours ? `${selectedTask.remaining_hours}h` : '-', color: '#a3a3a3' },
+                                ].map(({ label, value, color }) => (
+                                    <div key={label} className="bg-[rgba(255,255,255,0.025)] rounded-xl p-3">
+                                        <p className="text-xs text-[#737373] mb-1">{label}</p>
+                                        <p className="text-sm font-semibold capitalize" style={{ color }}>{value}</p>
+                                    </div>
+                                ))}
+                            </div>
+
+                            {/* Assignee / Due Date / Project */}
+                            <div className="space-y-0">
+                                {[
+                                    { label: 'Assignee', value: selectedTask.assignee || 'Unassigned' },
+                                    { label: 'Due Date', value: selectedTask.due_date ? new Date(selectedTask.due_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Not set' },
+                                    { label: 'Project', value: selectedTask.project_name },
+                                ].map(({ label, value }) => (
+                                    <div key={label} className="flex items-center justify-between py-2.5 border-b border-[rgba(255,255,255,0.04)]">
+                                        <span className="text-xs text-[#737373]">{label}</span>
+                                        <span className="text-sm text-[#f5f5f5]">{value}</span>
+                                    </div>
+                                ))}
+                            </div>
+
+                            {/* Description */}
+                            {selectedTask.description && (
+                                <div>
+                                    <p className="text-xs font-medium text-[#737373] mb-2">Description</p>
+                                    <p className="text-sm text-[#a3a3a3] leading-relaxed bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-xl p-4">
+                                        {selectedTask.description}
+                                    </p>
+                                </div>
+                            )}
+
+                            {/* Tags */}
+                            {selectedTask.tags && selectedTask.tags.length > 0 && (
+                                <div>
+                                    <div className="flex items-center gap-1.5 mb-2">
+                                        <Tag className="w-3.5 h-3.5 text-[#737373]" />
+                                        <p className="text-xs font-medium text-[#737373]">Tags</p>
+                                    </div>
+                                    <div className="flex flex-wrap gap-2">
+                                        {selectedTask.tags.map(tag => (
+                                            <span key={tag} className="px-2.5 py-1 rounded-lg bg-[rgba(255,255,255,0.05)] text-[#a3a3a3] text-xs">{tag}</span>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Acceptance Criteria */}
+                            {selectedTask.acceptance_criteria && selectedTask.acceptance_criteria.length > 0 && (
+                                <div>
+                                    <p className="text-xs font-medium text-[#737373] mb-2">Acceptance Criteria</p>
+                                    <div className="space-y-1.5">
+                                        {selectedTask.acceptance_criteria.map((ac, i) => (
+                                            <div key={i} className="flex items-start gap-2 text-sm text-[#a3a3a3]">
+                                                <CheckCircle2 className="w-4 h-4 text-[#555] flex-shrink-0 mt-0.5" />
+                                                <span className="leading-relaxed">{ac}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Footer */}
+                        <div className="flex-shrink-0 p-4 border-t border-[rgba(255,255,255,0.05)]">
+                            <button
+                                onClick={() => { navigate(`/project/${selectedTask.project_id}`); setSelectedTask(null); }}
+                                className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-gradient-to-r from-[#E0B954] to-[#C79E3B] text-[#080808] font-semibold text-sm hover:opacity-90 transition-opacity"
+                            >
+                                <ExternalLink className="w-4 h-4" />
+                                Open full ticket
+                            </button>
+                        </div>
+                    </div>
+                </>
+            )}
 
             {/* Create Project Modal */}
             {showCreateModal && (

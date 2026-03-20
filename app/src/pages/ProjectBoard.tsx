@@ -61,6 +61,10 @@ interface WorkItem {
     product_id: string;
     tags: string[];
     epic: string;
+    parent_id?: number | null;
+    epic_id?: number | null;
+    parent_key?: string | null;
+    epic_key?: string | null;
     created_at?: string;
     updated_at?: string;
 }
@@ -156,7 +160,7 @@ const STATUS_CONFIG = {
     todo: { label: 'To Do', color: '#E0B954', icon: Plus, gradient: 'from-[#E0B954]/10' },
     in_progress: { label: 'In Progress', color: '#F59E0B', icon: Clock, gradient: 'from-[#F59E0B]/10' },
     in_review: { label: 'In Review', color: '#C79E3B', icon: AlertCircle, gradient: 'from-[#C79E3B]/10' },
-    done: { label: 'Done', color: '#10B981', icon: CheckCircle2, gradient: 'from-[#10B981]/10' },
+    done: { label: 'Done', color: '#E0B954', icon: CheckCircle2, gradient: 'from-[#E0B954]/10' },
 } as const;
 
 const TYPE_CONFIG = {
@@ -188,8 +192,9 @@ const ProjectBoard = () => {
     const [showCreateForm, setShowCreateForm] = useState(false);
     const [viewMode, setViewMode] = useState<'board' | 'list'>('board');
     const [searchQuery, setSearchQuery] = useState('');
-    const [filterType, setFilterType] = useState<string>('all');
-    const [filterPriority, setFilterPriority] = useState<string>('all');
+        const [filterType, setFilterType] = useState<string>('all');
+        const [filterPriority, setFilterPriority] = useState<string>('all');
+        const [filterAssignee, setFilterAssignee] = useState<string>('all');
     const [draggedItem, setDraggedItem] = useState<string | null>(null);
     const [dragOverColumn, setDragOverColumn] = useState<string | null>(null);
     
@@ -240,6 +245,8 @@ const ProjectBoard = () => {
         story_points: 3,
         assignee_id: null as number | null,
         sprint: 'Backlog',
+        epic_id: null as number | null,
+        parent_id: null as number | null,
     });
 
     // Fetch project and work items
@@ -282,6 +289,13 @@ const ProjectBoard = () => {
         if (searchQuery && !item.title.toLowerCase().includes(searchQuery.toLowerCase())) return false;
         if (filterType !== 'all' && item.type !== filterType) return false;
         if (filterPriority !== 'all' && item.priority !== filterPriority) return false;
+        if (filterAssignee !== 'all') {
+            if (filterAssignee === 'unassigned') {
+                if (item.assignee_id !== null && item.assignee_id !== undefined) return false;
+            } else {
+                if (String(item.assignee_id) !== filterAssignee) return false;
+            }
+        }
         // Sprint filter
         if (selectedSprintId === 'backlog' && item.sprint_id !== null) return false;
         if (typeof selectedSprintId === 'number' && item.sprint_id !== selectedSprintId) return false;
@@ -348,7 +362,7 @@ const ProjectBoard = () => {
                 const newItem = await response.json();
                 setWorkItems(prev => [...prev, newItem]);
                 setShowCreateForm(false);
-                setCreateForm({ type: 'user_story', title: '', description: '', priority: 'medium', story_points: 3, assignee_id: null, sprint: 'Backlog' });
+                setCreateForm({ type: 'user_story', title: '', description: '', priority: 'medium', story_points: 3, assignee_id: null, sprint: 'Backlog', epic_id: null, parent_id: null });
                 toast.success('Work item created!');
                 refreshProjectStats();
             }
@@ -532,7 +546,7 @@ const ProjectBoard = () => {
                 const devId = parseInt(part.substring(1));
                 const dev = allDevelopers.find(d => d.id === devId);
                 return (
-                    <span key={index} className="bg-[rgba(224,185,84,0.2)] text-[#818CF8] px-1.5 py-0.5 rounded-md font-medium">
+                    <span key={index} className="bg-[rgba(224,185,84,0.2)] text-[#E0B954] px-1.5 py-0.5 rounded-md font-medium">
                         @{dev?.name || devId}
                     </span>
                 );
@@ -839,8 +853,50 @@ const ProjectBoard = () => {
 
     if (isLoading) {
         return (
-            <div className="min-h-screen bg-[#080808] flex items-center justify-center">
-                <div className="w-10 h-10 border-2 border-[#E0B954]/30 border-t-[#E0B954] rounded-full animate-spin" />
+            <div className="min-h-screen bg-[#080808] text-[#F4F6FF]">
+                {/* Skeleton Header */}
+                <header className="border-b border-[rgba(255,255,255,0.05)] bg-[#080808]/90 sticky top-0 z-40">
+                    <div className="px-6 py-4 flex items-center gap-4">
+                        <div className="h-8 w-24 bg-[rgba(255,255,255,0.06)] rounded-lg animate-pulse" />
+                        <div className="h-8 w-48 bg-[rgba(255,255,255,0.04)] rounded-lg animate-pulse" />
+                        <div className="ml-auto flex gap-2">
+                            <div className="h-8 w-24 bg-[rgba(255,255,255,0.04)] rounded-lg animate-pulse" />
+                            <div className="h-8 w-24 bg-[rgba(255,255,255,0.06)] rounded-lg animate-pulse" />
+                        </div>
+                    </div>
+                    <div className="px-6 pb-3 flex gap-3">
+                        {[...Array(5)].map((_, i) => (
+                            <div key={i} className="h-3 w-16 bg-[rgba(255,255,255,0.04)] rounded animate-pulse" />
+                        ))}
+                    </div>
+                </header>
+                {/* Skeleton Board Columns */}
+                <div className="flex gap-4 p-6">
+                    {[...Array(4)].map((_, col) => (
+                        <div key={col} className="flex-1 min-w-[260px]">
+                            <div className="flex items-center gap-2 mb-4">
+                                <div className="h-4 w-24 bg-[rgba(255,255,255,0.06)] rounded animate-pulse" />
+                                <div className="h-4 w-6 bg-[rgba(255,255,255,0.04)] rounded-full animate-pulse" />
+                            </div>
+                            <div className="space-y-3">
+                                {[...Array(col === 0 ? 4 : col === 1 ? 3 : col === 2 ? 2 : 1)].map((_, i) => (
+                                    <div key={i} className="bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.05)] rounded-xl p-4 space-y-3">
+                                        <div className="flex items-center gap-2">
+                                            <div className="h-3 w-14 bg-[rgba(255,255,255,0.06)] rounded animate-pulse" />
+                                            <div className="h-3 w-10 bg-[rgba(255,255,255,0.04)] rounded animate-pulse ml-auto" />
+                                        </div>
+                                        <div className="h-4 w-full bg-[rgba(255,255,255,0.05)] rounded animate-pulse" />
+                                        <div className="h-3 w-3/4 bg-[rgba(255,255,255,0.04)] rounded animate-pulse" />
+                                        <div className="flex items-center gap-2 pt-1">
+                                            <div className="h-5 w-5 rounded-full bg-[rgba(255,255,255,0.06)] animate-pulse" />
+                                            <div className="h-3 w-16 bg-[rgba(255,255,255,0.04)] rounded animate-pulse" />
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    ))}
+                </div>
             </div>
         );
     }
@@ -914,7 +970,7 @@ const ProjectBoard = () => {
                             onClick={handleAIGenerate}
                             disabled={isGenerating}
                             size="sm"
-                            className="bg-gradient-to-r from-[#E0B954] to-[#B8872A] hover:from-[#5558E6] hover:to-[#4338CA] text-white rounded-lg font-medium shadow-lg shadow-[#B8872A]/20 h-9"
+                            className="bg-gradient-to-r from-[#E0B954] to-[#B8872A] hover:from-[#C79E3B] hover:to-[#B8872A] text-white rounded-lg font-medium shadow-lg shadow-[#B8872A]/20 h-9"
                         >
                             {isGenerating ? (
                                 <>
@@ -931,7 +987,7 @@ const ProjectBoard = () => {
                         <Button
                             onClick={() => setShowCreateForm(true)}
                             size="sm"
-                            className="bg-gradient-to-r from-[#E0B954] to-[#B8872A] hover:from-[#5558E6] hover:to-[#4338CA] text-white rounded-lg font-medium shadow-lg shadow-[#B8872A]/20 h-9"
+                            className="bg-gradient-to-r from-[#E0B954] to-[#B8872A] hover:from-[#C79E3B] hover:to-[#B8872A] text-white rounded-lg font-medium shadow-lg shadow-[#B8872A]/20 h-9"
                         >
                             <Plus className="w-3.5 h-3.5 mr-2" />
                             New Item
@@ -990,6 +1046,18 @@ const ProjectBoard = () => {
                             <option value="medium">Medium</option>
                             <option value="low">Low</option>
                         </select>
+                        {/* Assignee Filter */}
+                        <select
+                            value={filterAssignee}
+                            onChange={(e) => setFilterAssignee(e.target.value)}
+                            className="h-8 text-xs bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.05)] text-[#a3a3a3] rounded-lg px-2 appearance-none cursor-pointer hover:border-[rgba(244,246,255,0.12)] transition-colors"
+                        >
+                            <option value="all">All Assignees</option>
+                            <option value="unassigned">Unassigned</option>
+                            {(project?.developers ?? []).map(dev => (
+                                <option key={dev.id} value={String(dev.id)}>{dev.name}</option>
+                            ))}
+                        </select>
                         {/* Sprint Filter */}
                         <div className="flex items-center gap-2">
                             <select
@@ -1008,7 +1076,7 @@ const ProjectBoard = () => {
                             <Button
                                 onClick={() => setShowCreateSprintModal(true)}
                                 size="sm"
-                                className="bg-gradient-to-r from-[#E0B954] to-[#B8872A] hover:from-[#5558E6] hover:to-[#4338CA] text-white rounded-lg font-medium shadow-lg shadow-[#B8872A]/20 h-8 px-3 text-xs"
+                                className="bg-gradient-to-r from-[#E0B954] to-[#B8872A] hover:from-[#C79E3B] hover:to-[#B8872A] text-white rounded-lg font-medium shadow-lg shadow-[#B8872A]/20 h-8 px-3 text-xs"
                             >
                                 <Plus className="w-3 h-3 mr-1" />
                                 New Sprint
@@ -1109,7 +1177,7 @@ const ProjectBoard = () => {
                                                                 {item.remaining_hours}h left
                                                             </span>
                                                             <span className="flex items-center gap-2">
-                                                                <span className="text-[#10B981]">{item.logged_hours || 0}h logged</span>
+                                                                <span className="text-[#E0B954]">{item.logged_hours || 0}h logged</span>
                                                                 <span>/ {item.assigned_hours}h</span>
                                                             </span>
                                                         </div>
@@ -1374,10 +1442,10 @@ const ProjectBoard = () => {
                                         {[
                                             { label: 'Story Points', value: selectedItem.story_points, color: '#E0B954' },
                                             { label: 'Allocated Hours', value: `${selectedItem.assigned_hours}h`, color: '#E0B954' },
-                                            { label: 'Logged Hours', value: `${selectedItem.logged_hours || 0}h`, color: '#10B981' },
+                                            { label: 'Logged Hours', value: `${selectedItem.logged_hours || 0}h`, color: '#E0B954' },
                                             { label: 'Remaining Hours', value: `${selectedItem.remaining_hours}h`, color: '#F59E0B' },
                                             { label: 'Status', value: (STATUS_CONFIG[selectedItem.status] || STATUS_CONFIG.todo).label, color: (STATUS_CONFIG[selectedItem.status] || STATUS_CONFIG.todo).color },
-                                            { label: 'Priority', value: selectedItem.priority.charAt(0).toUpperCase() + selectedItem.priority.slice(1), color: (PRIORITY_COLORS[selectedItem.priority] || PRIORITY_COLORS.medium).text.replace('text-', '').includes('red') ? '#EF4444' : (PRIORITY_COLORS[selectedItem.priority] || PRIORITY_COLORS.medium).text.includes('orange') ? '#F97316' : (PRIORITY_COLORS[selectedItem.priority] || PRIORITY_COLORS.medium).text.includes('yellow') ? '#F59E0B' : '#10B981' },
+                                            { label: 'Priority', value: selectedItem.priority.charAt(0).toUpperCase() + selectedItem.priority.slice(1), color: (PRIORITY_COLORS[selectedItem.priority] || PRIORITY_COLORS.medium).text.replace('text-', '').includes('red') ? '#EF4444' : (PRIORITY_COLORS[selectedItem.priority] || PRIORITY_COLORS.medium).text.includes('orange') ? '#F97316' : (PRIORITY_COLORS[selectedItem.priority] || PRIORITY_COLORS.medium).text.includes('yellow') ? '#F59E0B' : '#E0B954' },
                                         ].map(d => (
                                             <div key={d.label} className="bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.05)] rounded-xl p-3.5">
                                                 <div className="text-[10px] text-[#737373] font-medium uppercase tracking-wider mb-1">{d.label}</div>
@@ -1399,6 +1467,49 @@ const ProjectBoard = () => {
                                             </div>
                                         ))}
                                     </div>
+
+                                    {/* Hierarchy breadcrumb */}
+                                    {(selectedItem.epic_key || selectedItem.parent_key) && (
+                                        <div>
+                                            <div className="text-xs text-[#737373] mb-2 font-medium">Hierarchy</div>
+                                            <div className="flex items-center gap-1.5 flex-wrap">
+                                                {selectedItem.epic_key && (
+                                                    <span className="flex items-center gap-1 px-2 py-1 rounded-md bg-[rgba(167,139,250,0.12)] text-[#A78BFA] text-xs">
+                                                        Epic: {selectedItem.epic_key}
+                                                    </span>
+                                                )}
+                                                {selectedItem.epic_key && selectedItem.parent_key && <span className="text-[#555] text-xs">›</span>}
+                                                {selectedItem.parent_key && (
+                                                    <span className="flex items-center gap-1 px-2 py-1 rounded-md bg-[rgba(224,185,84,0.10)] text-[#E0B954] text-xs">
+                                                        Parent: {selectedItem.parent_key}
+                                                    </span>
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Child items */}
+                                    {(() => {
+                                        const children = workItems.filter(wi => wi.parent_id === parseInt(selectedItem.id));
+                                        return children.length > 0 ? (
+                                            <div>
+                                                <div className="text-xs text-[#737373] mb-2 font-medium">Child Items ({children.length})</div>
+                                                <div className="space-y-1.5">
+                                                    {children.map(child => (
+                                                        <div
+                                                            key={child.id}
+                                                            className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.04)] cursor-pointer hover:border-[rgba(255,255,255,0.08)] transition-colors"
+                                                            onClick={() => setSelectedItem(child)}
+                                                        >
+                                                            <span className="text-xs font-mono text-[#737373] flex-shrink-0">{child.key}</span>
+                                                            <span className="text-sm text-[#a3a3a3] truncate flex-1">{child.title}</span>
+                                                            <span className="text-xs text-[#555] capitalize flex-shrink-0">{child.status.replace(/_/g, ' ')}</span>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        ) : null;
+                                    })()}
 
                                     {/* Tags */}
                                     {selectedItem.tags.length > 0 && (
@@ -1433,7 +1544,7 @@ const ProjectBoard = () => {
                                                         input.value = '';
                                                     }
                                                 }}
-                                                className="bg-[#10B981] hover:bg-[#059669] text-white rounded-xl h-9"
+                                                className="bg-[#E0B954] hover:bg-[#C79E3B] text-white rounded-xl h-9"
                                             >
                                                 <Clock className="w-3.5 h-3.5 mr-1.5" />
                                                 Log Hours
@@ -1538,7 +1649,7 @@ const ProjectBoard = () => {
                                                                 onClick={() => insertMention(dev)}
                                                                 className="w-full px-3 py-2 text-left text-sm text-[#f5f5f5] hover:bg-[rgba(224,185,84,0.1)] flex items-center gap-2"
                                                             >
-                                                                <div className="w-6 h-6 rounded-full bg-[rgba(224,185,84,0.2)] flex items-center justify-center text-xs text-[#818CF8]">
+                                                                <div className="w-6 h-6 rounded-full bg-[rgba(224,185,84,0.2)] flex items-center justify-center text-xs text-[#E0B954]">
                                                                     {dev.name.charAt(0).toUpperCase()}
                                                                 </div>
                                                                 <span>{dev.name}</span>
@@ -1589,7 +1700,7 @@ const ProjectBoard = () => {
                                                             <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs ${
                                                                 comment.comment_type === 'blocker' 
                                                                     ? 'bg-[rgba(239,68,68,0.2)] text-[#EF4444]' 
-                                                                    : 'bg-[rgba(224,185,84,0.2)] text-[#818CF8]'
+                                                                    : 'bg-[rgba(224,185,84,0.2)] text-[#E0B954]'
                                                             }`}>
                                                                 {comment.author_name?.charAt?.(0)?.toUpperCase() || '?'}
                                                             </div>
@@ -1677,6 +1788,35 @@ const ProjectBoard = () => {
                                             <option key={dev.id} value={dev.id}>
                                                 {dev.name} ({dev.role})
                                             </option>
+                                        ))}
+                                    </select>
+                                </div>
+                            </div>
+                            {/* Hierarchy */}
+                            <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label className="text-xs font-medium text-[#737373] block mb-1.5">Epic (optional)</label>
+                                    <select
+                                        value={createForm.epic_id || ''}
+                                        onChange={e => setCreateForm(f => ({ ...f, epic_id: e.target.value ? parseInt(e.target.value) : null }))}
+                                        className="w-full h-10 bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.07)] text-[#f5f5f5] rounded-xl px-3 text-sm"
+                                    >
+                                        <option value="">No Epic</option>
+                                        {workItems.filter(wi => wi.type === 'epic').map(wi => (
+                                            <option key={wi.id} value={wi.id}>{wi.key} — {wi.title}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="text-xs font-medium text-[#737373] block mb-1.5">Parent Story (optional)</label>
+                                    <select
+                                        value={createForm.parent_id || ''}
+                                        onChange={e => setCreateForm(f => ({ ...f, parent_id: e.target.value ? parseInt(e.target.value) : null }))}
+                                        className="w-full h-10 bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.07)] text-[#f5f5f5] rounded-xl px-3 text-sm"
+                                    >
+                                        <option value="">No Parent</option>
+                                        {workItems.filter(wi => wi.type === 'user_story').map(wi => (
+                                            <option key={wi.id} value={wi.id}>{wi.key} — {wi.title}</option>
                                         ))}
                                     </select>
                                 </div>
@@ -1924,7 +2064,7 @@ const ProjectBoard = () => {
                                                 <p className="text-xs text-[#737373]">Total Points</p>
                                             </div>
                                             <div className="bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.07)] rounded-xl p-4 text-center">
-                                                <p className="text-2xl font-bold text-[#10B981]">{ticketsSummary.total_estimated_hours}h</p>
+                                                <p className="text-2xl font-bold text-[#E0B954]">{ticketsSummary.total_estimated_hours}h</p>
                                                 <p className="text-xs text-[#737373]">Estimated Hours</p>
                                             </div>
                                         </div>
@@ -2017,8 +2157,8 @@ const ProjectBoard = () => {
                             {/* Step: Done */}
                             {aiStep === 'done' && (
                                 <div className="flex flex-col items-center justify-center py-16">
-                                    <div className="w-20 h-20 rounded-full bg-[#10B981]/20 flex items-center justify-center mb-6">
-                                        <CheckCircle2 className="w-10 h-10 text-[#10B981]" />
+                                    <div className="w-20 h-20 rounded-full bg-[#E0B954]/20 flex items-center justify-center mb-6">
+                                        <CheckCircle2 className="w-10 h-10 text-[#E0B954]" />
                                     </div>
                                     <h3 className="text-2xl font-bold text-white mb-2">All Done!</h3>
                                     <p className="text-[#737373] text-center max-w-md mb-6">
@@ -2074,7 +2214,7 @@ const ProjectBoard = () => {
                                 {aiStep === 'preview' && (
                                     <Button
                                         onClick={handleCommitArchitecture}
-                                        className="bg-gradient-to-r from-[#10B981] to-[#059669] text-white rounded-xl px-6 font-medium shadow-lg shadow-[#10B981]/20"
+                                        className="bg-gradient-to-r from-[#E0B954] to-[#C79E3B] text-white rounded-xl px-6 font-medium shadow-lg shadow-[#E0B954]/20"
                                     >
                                         <GitCommit className="w-4 h-4 mr-2" />
                                         Commit & Create Tickets

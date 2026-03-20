@@ -51,7 +51,7 @@ function IdleWarningModal({ onStay, onLogout, remainingSeconds }: { onStay: () =
           </Button>
           <Button 
             onClick={onStay}
-            className="flex-1 bg-gradient-to-r from-[#E0B954] to-[#B8872A] hover:from-[#5558E6] hover:to-[#4338CA] text-white rounded-xl h-11 font-medium"
+            className="flex-1 bg-gradient-to-r from-[#E0B954] to-[#B8872A] hover:from-[#C79E3B] hover:to-[#B8872A] text-white rounded-xl h-11 font-medium"
           >
             Stay Logged In
           </Button>
