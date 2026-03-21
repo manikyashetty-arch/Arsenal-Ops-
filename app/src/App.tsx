@@ -71,11 +71,14 @@ function AuthenticatedRoutes() {
     if (isAuthenticated && !isLoading) {
       const currentPath = window.location.pathname;
       // Don't redirect if already on a valid page
-      if (!['/'].includes(currentPath) && !currentPath.startsWith('/project')) {
+      const isValidPath = currentPath === '/' || 
+                         currentPath.startsWith('/project') || 
+                         (currentPath === '/admin' && user?.role === 'admin');
+      if (!isValidPath) {
         navigate('/');
       }
     }
-  }, [isAuthenticated, isLoading, navigate]);
+  }, [isAuthenticated, isLoading, navigate, user]);
 
   // Countdown timer for warning modal
   useEffect(() => {

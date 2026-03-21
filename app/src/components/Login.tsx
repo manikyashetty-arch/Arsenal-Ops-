@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { AlertCircle, Lock } from 'lucide-react';
+import { AlertCircle, Lock, Loader2 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
 import { API_BASE_URL } from '@/config/api';
@@ -15,80 +15,81 @@ declare global {
 export function Login() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [googleClientId, setGoogleClientId] = useState<string>('');
+  const [googleReady, setGoogleReady] = useState(false);
   const { loginWithGoogle } = useAuth();
   const navigate = useNavigate();
 
-  // Load Google script and fetch client ID
+  // Load Google Sign-In SDK and wait for it to be ready
   useEffect(() => {
-    // Load Google Sign-In script
-    if (!window.google) {
-      const script = document.createElement('script');
-      script.src = 'https://accounts.google.com/gsi/client';
-      script.async = true;
-      script.defer = true;
-      document.head.appendChild(script);
-    }
-
-    // Fetch Google Client ID from backend
+    // Fetch Google Client ID from backend first
     const fetchGoogleConfig = async () => {
       try {
         const response = await fetch(`${API_BASE_URL}/api/auth/google/config`);
         if (response.ok) {
           const data = await response.json();
-          setGoogleClientId(data.client_id);
+          (window as any).GOOGLE_CLIENT_ID = data.client_id;
+          
+          // Load Google Sign-In script
+          if (!window.google) {
+            const script = document.createElement('script');
+            script.src = 'https://accounts.google.com/gsi/client';
+            script.async = true;
+            script.defer = true;
+            
+            script.onload = () => {
+              // Initialize Google Sign-In
+              if (window.google?.accounts?.id) {
+                window.google.accounts.id.initialize({
+                  client_id: data.client_id,
+                  callback: handleGoogleSignIn
+                });
+                setGoogleReady(true);
+              }
+            };
+            
+            document.head.appendChild(script);
+          } else if (window.google?.accounts?.id) {
+            window.google.accounts.id.initialize({
+              client_id: data.client_id,
+              callback: handleGoogleSignIn
+            });
+            setGoogleReady(true);
+          }
         }
       } catch (error) {
         console.error('Failed to load Google config:', error);
+        setError('Failed to load Google Sign-In. Please refresh the page.');
       }
     };
 
     fetchGoogleConfig();
   }, []);
 
-  // Initialize Google Sign-In button when client ID is loaded
-  useEffect(() => {
-    if (googleClientId && window.google) {
-      window.google.accounts.id.initialize({
-        client_id: googleClientId,
-        callback: (window as any).handleGoogleSignIn
-      });
-      const button = document.getElementById('google-signin-button');
-      if (button) {
-        window.google.accounts.id.renderButton(button, {
-          theme: 'dark',
-          size: 'large',
-          width: '100%'
-        });
+  // Handle Google Sign-In callback
+  const handleGoogleSignIn = async (response: any) => {
+    if (response.credential) {
+      setIsLoading(true);
+      setError(null);
+      try {
+        await loginWithGoogle(response.credential);
+        toast.success('Login successful!');
+        navigate('/');
+      } catch (error: any) {
+        const errorMessage = error.message || 'Google login failed';
+        setError(errorMessage);
+        toast.error(errorMessage);
+      } finally {
+        setIsLoading(false);
       }
     }
-  }, [googleClientId]);
+  };
 
-  // Handle Google Sign-In callback
-  useEffect(() => {
-    // Make this function available in window for Google Sign-In callback
-    (window as any).handleGoogleSignIn = async (response: any) => {
-      if (response.credential) {
-        setIsLoading(true);
-        setError(null);
-        try {
-          await loginWithGoogle(response.credential);
-          toast.success('Login successful!');
-          navigate('/');
-        } catch (error: any) {
-          const errorMessage = error.message || 'Google login failed';
-          setError(errorMessage);
-          toast.error(errorMessage);
-        } finally {
-          setIsLoading(false);
-        }
-      }
-    };
-
-    return () => {
-      delete (window as any).handleGoogleSignIn;
-    };
-  }, [loginWithGoogle, navigate]);
+  // Trigger Google Sign-In
+  const handleSignInClick = () => {
+    if (window.google?.accounts?.id) {
+      window.google.accounts.id.prompt();
+    }
+  };
 
   return (
     <div className="min-h-screen bg-[#080808] flex items-center justify-center p-4">
@@ -114,22 +115,23 @@ export function Login() {
             </div>
           )}
 
-          {/* Google SSO Button */}
-          {googleClientId && (
-            <div 
-              id="google-signin-button"
-              className="flex justify-center w-full"
-            />
-          )}
-
-          {!googleClientId && (
-            <div className="p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-lg flex items-start gap-2">
-              <AlertCircle className="w-4 h-4 text-yellow-400 mt-0.5 flex-shrink-0" />
-              <p className="text-sm text-yellow-300">
-                Loading Google Sign-In...
-              </p>
-            </div>
-          )}
+          {/* Custom Google Sign-In Button */}
+          <button
+            onClick={handleSignInClick}
+            disabled={isLoading || !googleReady}
+            className="w-full py-3 px-4 bg-gradient-to-r from-[#E0B954] to-[#B8872A] hover:from-[#C79E3B] hover:to-[#9d7722] disabled:from-[#737373] disabled:to-[#737373] text-white font-medium rounded-lg transition-all flex items-center justify-center gap-2"
+          >
+            {isLoading ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Signing in...
+              </>
+            ) : !googleReady ? (
+              'Loading Google Sign-In...'
+            ) : (
+              'Sign in with Google'
+            )}
+          </button>
           
           <div className="mt-6 p-4 bg-[rgba(224,185,84,0.1)] border border-[rgba(224,185,84,0.2)] rounded-lg">
             <div className="flex items-start gap-2">
