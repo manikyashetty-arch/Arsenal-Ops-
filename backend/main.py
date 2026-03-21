@@ -109,29 +109,45 @@ async def startup_event():
     except Exception as e:
         print(f"DEBUG: Database initialization error: {e}")
     
-    # Create default admin user in background (non-blocking)
+    # Create default admin users from .env configuration
     try:
         from models.user import User, UserRole
-        import hashlib
+        from models.developer import Developer
         from database import SessionLocal
+        
+        # Read admin emails from .env (format: "email1@company.com,email2@company.com")
+        admin_emails_str = os.getenv("ADMIN_EMAILS", "manikya.shetty@arsenalai.com")
+        admin_emails = [email.strip() for email in admin_emails_str.split(",") if email.strip()]
         
         db = SessionLocal()
         try:
-            existing_admin = db.query(User).filter(User.role == UserRole.ADMIN.value).first()
-            if not existing_admin:
-                temp_password = "AdminPass123!"
-                hashed_password = hashlib.sha256(temp_password.encode()).hexdigest()
-                admin = User(
-                    email="manikya.shetty@arsenalai.com",
-                    name="manikya rathna",
-                    hashed_password=hashed_password,
-                    role=UserRole.ADMIN.value,
-                    is_active=True,
-                    is_first_login=True
-                )
-                db.add(admin)
-                db.commit()
-                print("DEFAULT ADMIN CREATED! Email: manikya.shetty@arsenalai.com")
+            for email in admin_emails:
+                existing = db.query(User).filter(User.email == email).first()
+                if not existing:
+                    # Extract name from email (part before @)
+                    name = email.split("@")[0].replace(".", " ").title()
+                    admin = User(
+                        email=email,
+                        name=name,
+                        hashed_password=None,  # No password for SSO users
+                        role=UserRole.ADMIN.value,
+                        is_active=True,
+                        is_first_login=False  # SSO users don't need password change
+                    )
+                    db.add(admin)
+                    db.commit()
+                    
+                    # Also create as Developer/Employee
+                    existing_dev = db.query(Developer).filter(Developer.email == email).first()
+                    if not existing_dev:
+                        developer = Developer(
+                            name=name,
+                            email=email
+                        )
+                        db.add(developer)
+                        db.commit()
+                    
+                    print(f"DEFAULT ADMIN CREATED! Email: {email}, Name: {name}")
         except Exception as e:
             print(f"Admin creation error: {e}")
         finally:

@@ -197,6 +197,8 @@ async def create_user(
     db: Session = Depends(get_db)
 ):
     """Admin: Create a new user with auto-generated password"""
+    from models.developer import Developer
+    
     # Check if email already exists
     existing = db.query(User).filter(User.email == user_data.email).first()
     if existing:
@@ -219,6 +221,18 @@ async def create_user(
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
+    
+    # If user has developer role, also create them as a Developer/Employee
+    if 'developer' in user_data.role:
+        # Check if developer already exists with this email
+        existing_dev = db.query(Developer).filter(Developer.email == user_data.email).first()
+        if not existing_dev:
+            new_developer = Developer(
+                name=user_data.name,
+                email=user_data.email
+            )
+            db.add(new_developer)
+            db.commit()
     
     return {
         "status": "success",
@@ -374,6 +388,8 @@ async def google_login(
     5. Backend returns JWT access token
     6. Frontend stores JWT and uses for subsequent requests
     """
+    from models.developer import Developer
+    
     # Verify the Google ID token
     user_info = google_oauth_service.verify_token(request.token)
     if not user_info:
@@ -404,6 +420,18 @@ async def google_login(
             last_login_at=datetime.utcnow()
         )
         db.add(user)
+        db.commit()
+        db.refresh(user)
+        
+        # Also create as Developer/Employee
+        existing_dev = db.query(Developer).filter(Developer.email == user_info['email']).first()
+        if not existing_dev:
+            new_developer = Developer(
+                name=user_info['name'],
+                email=user_info['email']
+            )
+            db.add(new_developer)
+            db.commit()
     
     # Update last login timestamp
     user.last_login_at = datetime.utcnow()
