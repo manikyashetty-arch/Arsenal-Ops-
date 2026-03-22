@@ -507,7 +507,7 @@ const ProjectBoard = () => {
     const insertMention = (developer: { id: number; name: string }) => {
         const lastAtIndex = newComment.lastIndexOf('@');
         const beforeMention = newComment.substring(0, lastAtIndex);
-        setNewComment(`${beforeMention}@${developer.id} `);
+        setNewComment(`${beforeMention}@${developer.name} `);
         setShowMentions(false);
         setMentionFilter('');
     };
@@ -539,15 +539,31 @@ const ProjectBoard = () => {
     };
 
     // Render comment with mentions highlighted
-    const renderCommentContent = (content: string) => {
-        const parts = content.split(/(@\d+)/g);
+    const renderCommentContent = (content: string, mentions: number[] = []) => {
+        // Build a map of developer IDs to names for quick lookup
+        const devMap = new Map(allDevelopers.map(d => [d.id, d.name]));
+        
+        // Replace @name with highlighted version for each mentioned developer
+        let result = content;
+        mentions.forEach(devId => {
+            const devName = devMap.get(devId);
+            if (devName) {
+                // Replace @devName with highlighted version
+                const regex = new RegExp(`@${devName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'g');
+                result = result.replace(regex, `<<<MENTION_${devId}>>>`);
+            }
+        });
+        
+        // Parse the result and highlight the placeholders
+        const parts = result.split(/(<<<MENTION_\d+>>>)/g);
         return parts.map((part, index) => {
-            if (part.startsWith('@') && !isNaN(parseInt(part.substring(1)))) {
-                const devId = parseInt(part.substring(1));
-                const dev = allDevelopers.find(d => d.id === devId);
+            const match = part.match(/<<<MENTION_(\d+)>>>/);
+            if (match) {
+                const devId = parseInt(match[1]);
+                const devName = devMap.get(devId);
                 return (
                     <span key={index} className="bg-[rgba(224,185,84,0.2)] text-[#E0B954] px-1.5 py-0.5 rounded-md font-medium">
-                        @{dev?.name || devId}
+                        @{devName}
                     </span>
                 );
             }
@@ -1713,7 +1729,7 @@ const ProjectBoard = () => {
                                                             </span>
                                                         </div>
                                                         <p className="text-sm text-[#a3a3a3] leading-relaxed">
-                                                            {renderCommentContent(comment.content)}
+                                                            {renderCommentContent(comment.content, comment.mentions)}
                                                         </p>
                                                     </div>
                                                 ))

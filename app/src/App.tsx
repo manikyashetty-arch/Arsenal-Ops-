@@ -1,4 +1,4 @@
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, useNavigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { Login } from './components/Login';
@@ -63,7 +63,22 @@ function IdleWarningModal({ onStay, onLogout, remainingSeconds }: { onStay: () =
 
 function AuthenticatedRoutes() {
   const { user, isLoading, isAuthenticated, showWarning, dismissWarning, logout } = useAuth();
+  const navigate = useNavigate();
   const [countdown, setCountdown] = useState(300); // 5 minutes in seconds
+
+  // Redirect to home if already authenticated and on login page
+  useEffect(() => {
+    if (isAuthenticated && !isLoading) {
+      const currentPath = window.location.pathname;
+      // Don't redirect if already on a valid page
+      const isValidPath = currentPath === '/' || 
+                         currentPath.startsWith('/project') || 
+                         (currentPath === '/admin' && user?.role === 'admin');
+      if (!isValidPath) {
+        navigate('/');
+      }
+    }
+  }, [isAuthenticated, isLoading, navigate, user]);
 
   // Countdown timer for warning modal
   useEffect(() => {
@@ -111,23 +126,23 @@ function AuthenticatedRoutes() {
           remainingSeconds={countdown}
         />
       )}
-      <Router>
-        <Routes>
-          <Route path="/" element={<ProjectsPage />} />
-          <Route path="/project/:id" element={<ProjectDetail />} />
-          <Route path="/project/:id/board" element={<ProjectBoard />} />
-          <Route path="/admin" element={<AdminDashboard />} />
-        </Routes>
-      </Router>
+      <Routes>
+        <Route path="/" element={<ProjectsPage />} />
+        <Route path="/project/:id" element={<ProjectDetail />} />
+        <Route path="/project/:id/board" element={<ProjectBoard />} />
+        <Route path="/admin" element={<AdminDashboard />} />
+      </Routes>
     </>
   );
 }
 
 function App() {
   return (
-    <AuthProvider>
-      <AuthenticatedRoutes />
-    </AuthProvider>
+    <Router>
+      <AuthProvider>
+        <AuthenticatedRoutes />
+      </AuthProvider>
+    </Router>
   );
 }
 

@@ -18,6 +18,7 @@ from models.sprint import Sprint, SprintStatus
 from models.project import Project
 from models.user import User
 from services.llm_agent import llm_agent
+from services.email_service import email_service
 from routers.auth import get_current_user
 
 router = APIRouter(prefix="/api/workitems", tags=["Work Items"])
@@ -317,6 +318,21 @@ async def create_work_item(
     db.commit()
     db.refresh(work_item)
     
+    # Send assignment notification if assignee is set
+    if work_item.assignee_id and work_item.assignee:
+        assignee = work_item.assignee
+        email_service.send_task_assignment_notification(
+            to_email=assignee.email,
+            to_name=assignee.name,
+            assigner_name=current_user.email,
+            work_item_key=work_item.key,
+            work_item_title=work_item.title,
+            work_item_description=work_item.description or "",
+            project_id=work_item.project_id,
+            priority=work_item.priority,
+            due_date=work_item.due_date.isoformat() if work_item.due_date else None
+        )
+    
     # Return with assignee name
     assignee_name = "Unassigned"
     if work_item.assignee_id and work_item.assignee:
@@ -434,6 +450,22 @@ async def update_work_item(
                 title=f"Reassigned {item.key} from {old_assignee_name} to {new_assignee_name}"
             )
             db.add(activity)
+            
+            # Send assignment notification to new assignee if newly assigned
+            if new_assignee_id and new_assignee_name != "Unassigned":
+                new_assignee = db.query(Developer).filter(Developer.id == new_assignee_id).first()
+                if new_assignee and new_assignee.email:
+                    email_service.send_task_assignment_notification(
+                        to_email=new_assignee.email,
+                        to_name=new_assignee.name,
+                        assigner_name=current_user.email,
+                        work_item_key=item.key,
+                        work_item_title=item.title,
+                        work_item_description=item.description or "",
+                        project_id=item.project_id,
+                        priority=item.priority,
+                        due_date=item.due_date.isoformat() if item.due_date else None
+                    )
     
     # Log activity for status changes
     if 'status' in update_data:

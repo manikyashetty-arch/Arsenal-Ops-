@@ -1,34 +1,93 @@
-import { useState } from 'react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { AlertCircle, Lock, Mail, Eye, EyeOff } from 'lucide-react';
+import { AlertCircle, Lock, Loader2 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
+import { API_BASE_URL } from '@/config/api';
+
+declare global {
+  interface Window {
+    google: any;
+  }
+}
 
 export function Login() {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const { login } = useAuth();
+  const [googleReady, setGoogleReady] = useState(false);
+  const { loginWithGoogle } = useAuth();
+  const navigate = useNavigate();
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsLoading(true);
-    setError(null);
+  // Load Google Sign-In SDK and wait for it to be ready
+  useEffect(() => {
+    // Fetch Google Client ID from backend first
+    const fetchGoogleConfig = async () => {
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/auth/google/config`);
+        if (response.ok) {
+          const data = await response.json();
+          (window as any).GOOGLE_CLIENT_ID = data.client_id;
+          
+          // Load Google Sign-In script
+          if (!window.google) {
+            const script = document.createElement('script');
+            script.src = 'https://accounts.google.com/gsi/client';
+            script.async = true;
+            script.defer = true;
+            
+            script.onload = () => {
+              // Initialize Google Sign-In
+              if (window.google?.accounts?.id) {
+                window.google.accounts.id.initialize({
+                  client_id: data.client_id,
+                  callback: handleGoogleSignIn
+                });
+                setGoogleReady(true);
+              }
+            };
+            
+            document.head.appendChild(script);
+          } else if (window.google?.accounts?.id) {
+            window.google.accounts.id.initialize({
+              client_id: data.client_id,
+              callback: handleGoogleSignIn
+            });
+            setGoogleReady(true);
+          }
+        }
+      } catch (error) {
+        console.error('Failed to load Google config:', error);
+        setError('Failed to load Google Sign-In. Please refresh the page.');
+      }
+    };
 
-    try {
-      await login(email, password);
-      toast.success('Login successful!');
-    } catch (error: any) {
-      const errorMessage = error.message || 'Login failed';
-      setError(errorMessage);
-      toast.error(errorMessage);
-    } finally {
-      setIsLoading(false);
+    fetchGoogleConfig();
+  }, []);
+
+  // Handle Google Sign-In callback
+  const handleGoogleSignIn = async (response: any) => {
+    if (response.credential) {
+      setIsLoading(true);
+      setError(null);
+      try {
+        await loginWithGoogle(response.credential);
+        toast.success('Login successful!');
+        navigate('/');
+      } catch (error: any) {
+        const errorMessage = error.message || 'Google login failed';
+        setError(errorMessage);
+        toast.error(errorMessage);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+  };
+
+  // Trigger Google Sign-In
+  const handleSignInClick = () => {
+    if (window.google?.accounts?.id) {
+      window.google.accounts.id.prompt();
     }
   };
 
@@ -45,7 +104,7 @@ export function Login() {
             Arsenal Ops
           </CardTitle>
           <CardDescription className="text-[#737373] text-center">
-            Sign in to your account
+            Sign in with your Google account
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -55,66 +114,31 @@ export function Login() {
               <p className="text-sm text-red-300">{error}</p>
             </div>
           )}
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="email" className="text-[#a3a3a3]">Email</Label>
-              <div className="relative">
-                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#737373]" />
-                <Input
-                  id="email"
-                  type="email"
-                  placeholder="name@company.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="pl-10 bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] placeholder:text-[#737373]"
-                  required
-                />
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="password" className="text-[#a3a3a3]">Password</Label>
-              <div className="relative">
-                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#737373]" />
-                <Input
-                  id="password"
-                  type={showPassword ? 'text' : 'password'}
-                  placeholder="Enter your password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="pl-10 pr-10 bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] placeholder:text-[#737373]"
-                  required
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-[#737373] hover:text-white"
-                >
-                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
-              </div>
-            </div>
-            <Button
-              type="submit"
-              disabled={isLoading}
-              className="w-full bg-gradient-to-r from-[#E0B954] to-[#B8872A] hover:from-[#C79E3B] hover:to-[#B8872A] text-white font-medium"
-            >
-              {isLoading ? (
-                <>
-                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin mr-2" />
-                  Signing in...
-                </>
-              ) : (
-                'Sign In'
-              )}
-            </Button>
-          </form>
+
+          {/* Custom Google Sign-In Button */}
+          <button
+            onClick={handleSignInClick}
+            disabled={isLoading || !googleReady}
+            className="w-full py-3 px-4 bg-gradient-to-r from-[#E0B954] to-[#B8872A] hover:from-[#C79E3B] hover:to-[#9d7722] disabled:from-[#737373] disabled:to-[#737373] text-white font-medium rounded-lg transition-all flex items-center justify-center gap-2"
+          >
+            {isLoading ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Signing in...
+              </>
+            ) : !googleReady ? (
+              'Loading Google Sign-In...'
+            ) : (
+              'Sign in with Google'
+            )}
+          </button>
           
           <div className="mt-6 p-4 bg-[rgba(224,185,84,0.1)] border border-[rgba(224,185,84,0.2)] rounded-lg">
             <div className="flex items-start gap-2">
               <AlertCircle className="w-4 h-4 text-[#E0B954] mt-0.5" />
               <p className="text-xs text-[#a3a3a3]">
-                First time login? Use the temporary password provided by your admin. 
-                You'll be asked to change it after signing in.
+                Sign in with your Google account to access Arsenal Ops. 
+                New accounts will be automatically created on first login.
               </p>
             </div>
           </div>
