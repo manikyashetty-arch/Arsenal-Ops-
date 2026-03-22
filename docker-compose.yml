@@ -42,6 +42,7 @@ services:
       - SMTP_FROM_EMAIL=${SMTP_FROM_EMAIL}
       - SMTP_FROM_NAME=${SMTP_FROM_NAME}
       - ADMIN_EMAILS=${ADMIN_EMAILS}
+      - FRONTEND_URL=${FRONTEND_URL}
       - PYTHONUNBUFFERED=1
     ports:
       - "8000:8000"

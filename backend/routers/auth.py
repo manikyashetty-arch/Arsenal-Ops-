@@ -408,6 +408,16 @@ async def google_login(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Account is disabled"
             )
+        
+        # Ensure existing user has a Developer record (for users created before SSO feature)
+        existing_dev = db.query(Developer).filter(Developer.email == user_info['email']).first()
+        if not existing_dev:
+            new_developer = Developer(
+                name=user.name,
+                email=user.email
+            )
+            db.add(new_developer)
+            db.commit()
     else:
         # Create new user from Google SSO
         user = User(

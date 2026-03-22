@@ -83,10 +83,14 @@ class EmailService:
         work_item_key: str,
         work_item_title: str,
         work_item_description: str,
+        project_id: int,
         priority: str = "medium",
         due_date: Optional[str] = None
     ) -> bool:
         """Send notification when a task is assigned to someone"""
+        frontend_url = os.getenv("FRONTEND_URL", "https://arsenal-ops.vercel.app")
+        board_link = f"{frontend_url}/project/{project_id}/board"
+        
         priority_color = {
             "critical": "#DC2626",
             "high": "#F97316",
@@ -133,7 +137,11 @@ class EmailService:
                     </p>
                 </div>
                 
-                <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #e5e7eb;">
+                <div style="margin-top: 30px; text-align: center;">
+                    <a href="{board_link}" style="display: inline-block; background-color: #3b82f6; color: white; padding: 12px 30px; border-radius: 6px; text-decoration: none; font-weight: bold; margin-bottom: 20px;">View in Project Board</a>
+                </div>
+                
+                <div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #e5e7eb;">
                     <p style="color: #6b7280; font-size: 12px; margin: 0;">
                         This is an automated notification from <strong>Arsenal Ops</strong>. 
                         Log in to view and manage your tasks.
@@ -158,6 +166,8 @@ Priority: {priority.upper()}
 
 Assigned by: {assigner_name}
 
+View in Project Board: {board_link}
+
 Log in to Arsenal Ops to view and manage your tasks.
         """
         
@@ -176,9 +186,13 @@ Log in to Arsenal Ops to view and manage your tasks.
         work_item_key: str,
         work_item_title: str,
         comment_content: str,
+        project_id: int,
         is_blocker: bool = False
     ) -> bool:
         """Send notification when user is mentioned in a comment"""
+        frontend_url = os.getenv("FRONTEND_URL", "https://arsenal-ops.vercel.app")
+        board_link = f"{frontend_url}/project/{project_id}/board"
+        
         color = "#DC2626" if is_blocker else "#6366F1"
         emoji = "🚫" if is_blocker else "💬"
         notification_type = "BLOCKER Alert" if is_blocker else "Mention"
@@ -220,7 +234,11 @@ Log in to Arsenal Ops to view and manage your tasks.
                 
                 {'<p style="color: #991b1b; background: #fee2e2; padding: 15px; border-radius: 8px; margin: 20px 0; font-weight: bold;">⚠️ This comment is marked as a BLOCKER and requires your attention!</p>' if is_blocker else ''}
                 
-                <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #e5e7eb;">
+                <div style="margin-top: 30px; text-align: center;">
+                    <a href="{board_link}" style="display: inline-block; background-color: {color}; color: white; padding: 12px 30px; border-radius: 6px; text-decoration: none; font-weight: bold; margin-bottom: 20px;">View in Project Board</a>
+                </div>
+                
+                <div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #e5e7eb;">
                     <p style="color: #6b7280; font-size: 12px; margin: 0;">
                         This is an automated notification from <strong>Arsenal Ops</strong>. 
                         Log in to respond or view more details.
@@ -244,6 +262,8 @@ Comment:
 {comment_content}
 
 {'⚠️ This comment is marked as a BLOCKER and requires your attention!' if is_blocker else ''}
+
+View in Project Board: {board_link}
 
 Log in to Arsenal Ops to respond or view more details.
         """

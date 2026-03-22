@@ -328,6 +328,7 @@ async def create_work_item(
             work_item_key=work_item.key,
             work_item_title=work_item.title,
             work_item_description=work_item.description or "",
+            project_id=work_item.project_id,
             priority=work_item.priority,
             due_date=work_item.due_date.isoformat() if work_item.due_date else None
         )
@@ -461,6 +462,7 @@ async def update_work_item(
                         work_item_key=item.key,
                         work_item_title=item.title,
                         work_item_description=item.description or "",
+                        project_id=item.project_id,
                         priority=item.priority,
                         due_date=item.due_date.isoformat() if item.due_date else None
                     )

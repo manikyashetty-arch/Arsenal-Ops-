@@ -44,12 +44,34 @@ class CommentResponse(BaseModel):
         from_attributes = True
 
 
-def extract_mentions(content: str) -> List[int]:
-    """Extract @mentioned user IDs from content. Format: @123 or @name"""
-    # Match @id pattern (e.g., @123)
-    mention_pattern = r'@(\d+)'
-    matches = re.findall(mention_pattern, content)
-    return [int(m) for m in matches]
+def extract_mentions(content: str, db: Session) -> List[int]:
+    """Extract @mentioned user names from content. Format: @John Doe Smith"""
+    mentioned_ids = []
+    
+    print(content)
+    # Find all @mentions - text after @ until next space or @
+    import re
+    for match in re.finditer(r'@([^@\s]+(?:\s+[^@\s]+)*)', content):
+        mention_text = match.group(1).strip()
+        
+        # Try to parse as ID first
+        if mention_text.isdigit():
+            mentioned_ids.append(int(mention_text))
+        else:
+            # Find developer by exact name match
+            dev = db.query(Developer).filter(Developer.name == mention_text).first()
+            if dev:
+                mentioned_ids.append(dev.id)
+            else:
+                # If no exact match, try to find by closest prefix match
+                # This handles cases where mention might have extra text after it
+                devs = db.query(Developer).all()
+                for d in devs:
+                    if mention_text.startswith(d.name):
+                        mentioned_ids.append(d.id)
+                        break
+    
+    return mentioned_ids
 
 
 @router.get("/workitem/{work_item_id}", response_model=List[CommentResponse])
@@ -101,7 +123,7 @@ async def create_comment(
     author_id = author.id if author else None
     
     # Extract mentions from content
-    mentions = extract_mentions(comment.content)
+    mentions = extract_mentions(comment.content, db)
     
     # Create comment
     new_comment = Comment(
@@ -131,6 +153,7 @@ async def create_comment(
                 work_item_key=work_item.key,
                 work_item_title=work_item.title,
                 comment_content=comment.content,
+                project_id=work_item.project_id,
                 is_blocker=is_blocker
             )
     
@@ -160,7 +183,7 @@ async def update_comment(
         raise HTTPException(status_code=404, detail="Comment not found")
     
     comment.content = update.content
-    comment.mentions = extract_mentions(update.content)
+    comment.mentions = extract_mentions(update.content, db)
     
     db.commit()
     db.refresh(comment)
