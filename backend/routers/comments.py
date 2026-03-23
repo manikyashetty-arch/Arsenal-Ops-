@@ -154,6 +154,7 @@ async def create_comment(
                 work_item_title=work_item.title,
                 comment_content=comment.content,
                 project_id=work_item.project_id,
+                work_item_id=work_item.id,
                 is_blocker=is_blocker
             )
     

@@ -178,7 +178,7 @@ const PRIORITY_COLORS = {
 };
 
 const ProjectBoard = () => {
-    const { id } = useParams<{ id: string }>();
+    const { id, ticketId } = useParams<{ id: string; ticketId?: string }>();
     const navigate = useNavigate();
     const { token } = useAuth();
     const [project, setProject] = useState<Project | null>(null);
@@ -261,7 +261,18 @@ const ProjectBoard = () => {
                     fetch(`${API_BASE_URL}/api/workitems/projects/${id}/sprints`, { headers }),
                 ]);
                 if (projRes.ok) setProject(await projRes.json());
-                if (itemsRes.ok) setWorkItems(await itemsRes.json());
+                if (itemsRes.ok) {
+                    const items = await itemsRes.json();
+                    setWorkItems(items);
+                    
+                    // If URL has ticketId, find and select that item
+                    if (ticketId) {
+                        const selectedItemFromUrl = items.find((item: WorkItem) => item.id === ticketId);
+                        if (selectedItemFromUrl) {
+                            setSelectedItem(selectedItemFromUrl);
+                        }
+                    }
+                }
                 if (sprintsRes.ok) setSprints(await sprintsRes.json());
             } catch (err) {
                 console.error('Failed to fetch data:', err);
@@ -271,7 +282,16 @@ const ProjectBoard = () => {
             }
         };
         fetchData();
-    }, [id, token]);
+    }, [id, token, ticketId]);
+
+    // Clear selected item when ticketId is removed from URL
+    useEffect(() => {
+        if (!ticketId) {
+            setSelectedItem(null);
+            setIsEditing(false);
+            setEditForm({});
+        }
+    }, [ticketId]);
 
     // Refresh project stats
     const refreshProjectStats = useCallback(async () => {
@@ -1189,7 +1209,7 @@ const ProjectBoard = () => {
                                                     key={item.id}
                                                     draggable
                                                     onDragStart={() => handleDragStart(item.id)}
-                                                    onClick={() => { setSelectedItem(item); setIsEditing(false); setEditForm({}); }}
+                                                    onClick={() => { navigate(`/project/${id}/board/${item.id}`); setIsEditing(false); setEditForm({}); }}
                                                     className={`group bg-[rgba(255,255,255,0.025)] rounded-xl border border-[rgba(255,255,255,0.05)] p-3.5 cursor-pointer transition-all duration-200 hover:border-[rgba(244,246,255,0.15)] hover:bg-[rgba(244,246,255,0.05)] hover:shadow-lg hover:shadow-black/20 ${draggedItem === item.id ? 'opacity-40 scale-95' : ''
                                                         }`}
                                                 >
@@ -1310,7 +1330,7 @@ const ProjectBoard = () => {
                                     return (
                                         <div
                                             key={item.id}
-                                            onClick={() => { setSelectedItem(item); setIsEditing(false); setEditForm({}); }}
+                                            onClick={() => { navigate(`/project/${id}/board/${item.id}`); setIsEditing(false); setEditForm({}); }}
                                             className="grid grid-cols-[1fr_120px_100px_100px_100px_120px] gap-4 px-5 py-3.5 border-b border-[rgba(255,255,255,0.03)] hover:bg-[rgba(255,255,255,0.025)] cursor-pointer transition-colors group"
                                         >
                                             <div className="flex items-center gap-3 min-w-0">
@@ -1352,7 +1372,7 @@ const ProjectBoard = () => {
             {/* Detail Slide-in Drawer */}
             {selectedItem && (
                 <>
-                    <div className="fixed inset-0 bg-black/40 z-40" onClick={() => setSelectedItem(null)} />
+                    <div className="fixed inset-0 bg-black/40 z-40" onClick={() => navigate(`/project/${id}/board`)} />
                     <div className="fixed right-0 top-0 bottom-0 w-full max-w-xl bg-[#080808] border-l border-[rgba(255,255,255,0.07)] z-50 flex flex-col shadow-2xl shadow-black/50 animate-in slide-in-from-right duration-300">
                         {/* Drawer Header */}
                         <div className="flex items-center justify-between p-5 border-b border-[rgba(255,255,255,0.05)]">
@@ -1378,7 +1398,7 @@ const ProjectBoard = () => {
                                     className="text-red-400 hover:text-red-300 hover:bg-red-400/10 rounded-lg h-8 px-2.5">
                                     <Trash2 className="w-3.5 h-3.5" />
                                 </Button>
-                                <Button size="sm" variant="ghost" onClick={() => setSelectedItem(null)}
+                                <Button size="sm" variant="ghost" onClick={() => navigate(`/project/${id}/board`)}
                                     className="text-[#737373] hover:text-white rounded-lg h-8 px-2.5">
                                     <X className="w-4 h-4" />
                                 </Button>
@@ -1540,7 +1560,7 @@ const ProjectBoard = () => {
                                                         <div
                                                             key={child.id}
                                                             className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.04)] cursor-pointer hover:border-[rgba(255,255,255,0.08)] transition-colors"
-                                                            onClick={() => setSelectedItem(child)}
+                                                            onClick={() => navigate(`/project/${id}/board/${child.id}`)}
                                                         >
                                                             <span className="text-xs font-mono text-[#737373] flex-shrink-0">{child.key}</span>
                                                             <span className="text-sm text-[#a3a3a3] truncate flex-1">{child.title}</span>

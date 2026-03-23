@@ -130,6 +130,7 @@ function AuthenticatedRoutes() {
         <Route path="/" element={<ProjectsPage />} />
         <Route path="/project/:id" element={<ProjectDetail />} />
         <Route path="/project/:id/board" element={<ProjectBoard />} />
+        <Route path="/project/:id/board/:ticketId" element={<ProjectBoard />} />
         <Route path="/admin" element={<AdminDashboard />} />
       </Routes>
     </>

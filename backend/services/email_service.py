@@ -84,12 +84,13 @@ class EmailService:
         work_item_title: str,
         work_item_description: str,
         project_id: int,
+        work_item_id: int,
         priority: str = "medium",
         due_date: Optional[str] = None
     ) -> bool:
         """Send notification when a task is assigned to someone"""
         frontend_url = os.getenv("FRONTEND_URL", "https://arsenal-ops.vercel.app")
-        board_link = f"{frontend_url}/project/{project_id}/board"
+        ticket_link = f"{frontend_url}/project/{project_id}/board/{work_item_id}"
         
         priority_color = {
             "critical": "#DC2626",
@@ -138,7 +139,7 @@ class EmailService:
                 </div>
                 
                 <div style="margin-top: 30px; text-align: center;">
-                    <a href="{board_link}" style="display: inline-block; background-color: #3b82f6; color: white; padding: 12px 30px; border-radius: 6px; text-decoration: none; font-weight: bold; margin-bottom: 20px;">View in Project Board</a>
+                    <a href="{ticket_link}" style="display: inline-block; background-color: #3b82f6; color: white; padding: 12px 30px; border-radius: 6px; text-decoration: none; font-weight: bold; margin-bottom: 20px;">View Ticket</a>
                 </div>
                 
                 <div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #e5e7eb;">
@@ -166,7 +167,7 @@ Priority: {priority.upper()}
 
 Assigned by: {assigner_name}
 
-View in Project Board: {board_link}
+View Ticket: {ticket_link}
 
 Log in to Arsenal Ops to view and manage your tasks.
         """
@@ -187,11 +188,12 @@ Log in to Arsenal Ops to view and manage your tasks.
         work_item_title: str,
         comment_content: str,
         project_id: int,
+        work_item_id: int,
         is_blocker: bool = False
     ) -> bool:
         """Send notification when user is mentioned in a comment"""
         frontend_url = os.getenv("FRONTEND_URL", "https://arsenal-ops.vercel.app")
-        board_link = f"{frontend_url}/project/{project_id}/board"
+        ticket_link = f"{frontend_url}/project/{project_id}/board/{work_item_id}"
         
         color = "#DC2626" if is_blocker else "#6366F1"
         emoji = "🚫" if is_blocker else "💬"
@@ -235,7 +237,7 @@ Log in to Arsenal Ops to view and manage your tasks.
                 {'<p style="color: #991b1b; background: #fee2e2; padding: 15px; border-radius: 8px; margin: 20px 0; font-weight: bold;">⚠️ This comment is marked as a BLOCKER and requires your attention!</p>' if is_blocker else ''}
                 
                 <div style="margin-top: 30px; text-align: center;">
-                    <a href="{board_link}" style="display: inline-block; background-color: {color}; color: white; padding: 12px 30px; border-radius: 6px; text-decoration: none; font-weight: bold; margin-bottom: 20px;">View in Project Board</a>
+                    <a href="{ticket_link}" style="display: inline-block; background-color: {color}; color: white; padding: 12px 30px; border-radius: 6px; text-decoration: none; font-weight: bold; margin-bottom: 20px;">View Ticket</a>
                 </div>
                 
                 <div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #e5e7eb;">
@@ -263,7 +265,7 @@ Comment:
 
 {'⚠️ This comment is marked as a BLOCKER and requires your attention!' if is_blocker else ''}
 
-View in Project Board: {board_link}
+View Ticket: {ticket_link}
 
 Log in to Arsenal Ops to respond or view more details.
         """
