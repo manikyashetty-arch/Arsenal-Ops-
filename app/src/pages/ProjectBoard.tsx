@@ -286,7 +286,12 @@ const ProjectBoard = () => {
 
     // Filtered items
     const filteredItems = workItems.filter(item => {
-        if (searchQuery && !item.title.toLowerCase().includes(searchQuery.toLowerCase())) return false;
+        if (searchQuery) {
+            const searchLower = searchQuery.toLowerCase();
+            const titleMatch = item.title.toLowerCase().includes(searchLower);
+            const keyMatch = item.key.toLowerCase().includes(searchLower);
+            if (!titleMatch && !keyMatch) return false;
+        }
         if (filterType !== 'all' && item.type !== filterType) return false;
         if (filterPriority !== 'all' && item.priority !== filterPriority) return false;
         if (filterAssignee !== 'all') {
