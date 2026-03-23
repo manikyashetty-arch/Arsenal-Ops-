@@ -543,7 +543,7 @@ const ProjectBoard = () => {
         }
     };
 
-    // Render comment with mentions highlighted
+    // Render comment with mentions highlighted and links as clickable
     const renderCommentContent = (content: string, mentions: number[] = []) => {
         // Build a map of developer IDs to names for quick lookup
         const devMap = new Map(allDevelopers.map(d => [d.id, d.name]));
@@ -559,12 +559,20 @@ const ProjectBoard = () => {
             }
         });
         
+        // Also replace URLs with placeholders
+        const urlRegex = /(https?:\/\/[^\s]+)/g;
+        const urls: string[] = [];
+        result = result.replace(urlRegex, (match) => {
+            urls.push(match);
+            return `<<<URL_${urls.length - 1}>>>`;
+        });
+        
         // Parse the result and highlight the placeholders
-        const parts = result.split(/(<<<MENTION_\d+>>>)/g);
+        const parts = result.split(/(<<<MENTION_\d+>>>|<<<URL_\d+>>>)/g);
         return parts.map((part, index) => {
-            const match = part.match(/<<<MENTION_(\d+)>>>/);
-            if (match) {
-                const devId = parseInt(match[1]);
+            const mentionMatch = part.match(/<<<MENTION_(\d+)>>>/);
+            if (mentionMatch) {
+                const devId = parseInt(mentionMatch[1]);
                 const devName = devMap.get(devId);
                 return (
                     <span key={index} className="bg-[rgba(224,185,84,0.2)] text-[#E0B954] px-1.5 py-0.5 rounded-md font-medium">
@@ -572,6 +580,18 @@ const ProjectBoard = () => {
                     </span>
                 );
             }
+            
+            const urlMatch = part.match(/<<<URL_(\d+)>>>/);
+            if (urlMatch) {
+                const urlIndex = parseInt(urlMatch[1]);
+                const url = urls[urlIndex];
+                return (
+                    <a key={index} href={url} target="_blank" rel="noopener noreferrer" className="text-[#E0B954] hover:text-[#C79E3B] underline hover:no-underline transition-colors break-all">
+                        {url}
+                    </a>
+                );
+            }
+            
             return part;
         });
     };
