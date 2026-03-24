@@ -221,3 +221,78 @@ async def delete_comment(
     db.commit()
     
     return {"message": "Comment deleted"}
+
+
+@router.get("/project/{project_id}/business-review", response_model=List[dict])
+async def get_business_review_comments(
+    project_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get all business review comments for a project with work item details"""
+    from models.work_item import WorkItem
+    
+    # Get all comments marked as business_review in this project
+    comments = db.query(Comment).join(
+        WorkItem, Comment.work_item_id == WorkItem.id
+    ).filter(
+        WorkItem.project_id == project_id,
+        Comment.comment_type == 'business_review'
+    ).order_by(Comment.created_at.desc()).all()
+    
+    result = []
+    for comment in comments:
+        work_item = db.query(WorkItem).filter(WorkItem.id == comment.work_item_id).first()
+        author_name = "Unknown"
+        if comment.author_id and comment.author:
+            author_name = comment.author.name
+        
+        result.append({
+            'id': comment.id,
+            'comment_id': comment.id,
+            'work_item_id': comment.work_item_id,
+            'work_item_key': work_item.key if work_item else f"ITEM-{comment.work_item_id}",
+            'work_item_title': work_item.title if work_item else "Unknown",
+            'author_id': comment.author_id,
+            'author_name': author_name,
+            'content': comment.content,
+            'is_resolved': comment.is_resolved if comment.is_resolved is not None else False,
+            'created_at': comment.created_at,
+            'updated_at': comment.updated_at,
+            'mentions': comment.mentions or []
+        })
+    
+    return result
+
+
+@router.patch("/{comment_id}/resolve")
+async def toggle_comment_resolved(
+    comment_id: int,
+    is_resolved: bool,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Mark a business review comment as resolved or unresolved"""
+    comment = db.query(Comment).filter(Comment.id == comment_id).first()
+    if not comment:
+        raise HTTPException(status_code=404, detail="Comment not found")
+    
+    comment.is_resolved = is_resolved
+    db.commit()
+    db.refresh(comment)
+    
+    author_name = "Unknown"
+    if comment.author_id and comment.author:
+        author_name = comment.author.name
+    
+    return CommentResponse(
+        id=comment.id,
+        work_item_id=comment.work_item_id,
+        author_id=comment.author_id,
+        author_name=author_name,
+        content=comment.content,
+        mentions=comment.mentions or [],
+        comment_type=comment.comment_type,
+        created_at=comment.created_at,
+        updated_at=comment.updated_at
+    )

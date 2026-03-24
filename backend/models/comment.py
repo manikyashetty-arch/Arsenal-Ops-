@@ -1,5 +1,5 @@
 """Comment model - Comments and activity on work items with @mentions"""
-from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, JSON, Index
+from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, JSON, Index, Boolean
 from sqlalchemy.orm import relationship
 from datetime import datetime
 
@@ -22,7 +22,10 @@ class Comment(Base):
     mentions = Column(JSON, default=list)
     
     # Type: comment, blocker, update
-    comment_type = Column(String(20), default="comment")  # comment, blocker, status_change
+    comment_type = Column(String(20), default="comment")  # comment, blocker, status_change, business_review
+    
+    # Resolution status for business review comments
+    is_resolved = Column(Boolean, default=False)
     
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)

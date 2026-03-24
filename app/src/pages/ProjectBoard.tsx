@@ -538,7 +538,7 @@ const ProjectBoard = () => {
     };
 
     // Submit comment
-    const handleSubmitComment = async (isBlocker: boolean = false) => {
+    const handleSubmitComment = async (commentType: 'comment' | 'blocker' | 'business_review' = 'comment') => {
         if (!selectedItem || !newComment.trim()) return;
 
         try {
@@ -549,14 +549,19 @@ const ProjectBoard = () => {
                     work_item_id: parseInt(selectedItem.id),
                     content: newComment,
                     author_id: project?.developers?.[0]?.id || 1, // TODO: Use actual logged-in user
-                    comment_type: isBlocker ? 'blocker' : 'comment',
+                    comment_type: commentType,
                 }),
             });
             if (response.ok) {
                 const newCommentData = await response.json();
                 setComments(prev => [newCommentData, ...prev]);
                 setNewComment('');
-                toast.success(isBlocker ? 'Blocker reported!' : 'Comment added!');
+                const messages = {
+                    'blocker': 'Blocker reported!',
+                    'business_review': 'Business Review comment added!',
+                    'comment': 'Comment added!'
+                };
+                toast.success(messages[commentType]);
             }
         } catch {
             toast.error('Failed to add comment');
@@ -1722,10 +1727,10 @@ const ProjectBoard = () => {
                                                     )}
                                                 </div>
                                             )}
-                                            <div className="flex gap-2 mt-2">
+                                            <div className="flex gap-2 mt-2 flex-wrap">
                                                 <Button
                                                     size="sm"
-                                                    onClick={() => handleSubmitComment(false)}
+                                                    onClick={() => handleSubmitComment('comment')}
                                                     disabled={!newComment.trim()}
                                                     className="bg-[rgba(224,185,84,0.1)] border border-[rgba(224,185,84,0.3)] text-[#E0B954] hover:bg-[rgba(224,185,84,0.2)] rounded-lg text-xs h-8"
                                                 >
@@ -1734,12 +1739,21 @@ const ProjectBoard = () => {
                                                 </Button>
                                                 <Button
                                                     size="sm"
-                                                    onClick={() => handleSubmitComment(true)}
+                                                    onClick={() => handleSubmitComment('blocker')}
                                                     disabled={!newComment.trim()}
                                                     className="bg-[rgba(239,68,68,0.1)] border border-[rgba(239,68,68,0.3)] text-[#EF4444] hover:bg-[rgba(239,68,68,0.2)] rounded-lg text-xs h-8"
                                                 >
                                                     <AlertCircle className="w-3 h-3 mr-1" />
                                                     Report Blocker
+                                                </Button>
+                                                <Button
+                                                    size="sm"
+                                                    onClick={() => handleSubmitComment('business_review')}
+                                                    disabled={!newComment.trim()}
+                                                    className="bg-[rgba(167,139,250,0.1)] border border-[rgba(167,139,250,0.3)] text-[#A78BFA] hover:bg-[rgba(167,139,250,0.2)] rounded-lg text-xs h-8"
+                                                >
+                                                    <Target className="w-3 h-3 mr-1" />
+                                                    Business Review
                                                 </Button>
                                             </div>
                                         </div>
@@ -1754,13 +1768,17 @@ const ProjectBoard = () => {
                                                 comments.map(comment => (
                                                     <div key={comment.id} className={`p-3 rounded-xl ${
                                                         comment.comment_type === 'blocker' 
-                                                            ? 'bg-[rgba(239,68,68,0.05)] border border-[rgba(239,68,68,0.2)]' 
+                                                            ? 'bg-[rgba(239,68,68,0.05)] border border-[rgba(239,68,68,0.2)]'
+                                                            : comment.comment_type === 'business_review'
+                                                            ? 'bg-[rgba(167,139,250,0.05)] border border-[rgba(167,139,250,0.2)]'
                                                             : 'bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)]'
                                                     }`}>
                                                         <div className="flex items-center gap-2 mb-2">
                                                             <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs ${
                                                                 comment.comment_type === 'blocker' 
-                                                                    ? 'bg-[rgba(239,68,68,0.2)] text-[#EF4444]' 
+                                                                    ? 'bg-[rgba(239,68,68,0.2)] text-[#EF4444]'
+                                                                    : comment.comment_type === 'business_review'
+                                                                    ? 'bg-[rgba(167,139,250,0.2)] text-[#A78BFA]'
                                                                     : 'bg-[rgba(224,185,84,0.2)] text-[#E0B954]'
                                                             }`}>
                                                                 {comment.author_name?.charAt?.(0)?.toUpperCase() || '?'}
@@ -1768,6 +1786,9 @@ const ProjectBoard = () => {
                                                             <span className="text-sm font-medium text-[#f5f5f5]">{comment.author_name}</span>
                                                             {comment.comment_type === 'blocker' && (
                                                                 <span className="px-1.5 py-0.5 rounded-md bg-[rgba(239,68,68,0.2)] text-[#EF4444] text-[10px] font-medium">BLOCKER</span>
+                                                            )}
+                                                            {comment.comment_type === 'business_review' && (
+                                                                <span className="px-1.5 py-0.5 rounded-md bg-[rgba(167,139,250,0.2)] text-[#A78BFA] text-[10px] font-medium">BUSINESS REVIEW</span>
                                                             )}
                                                             <span className="text-xs text-[#737373] ml-auto">
                                                                 {new Date(comment.created_at).toLocaleDateString()}

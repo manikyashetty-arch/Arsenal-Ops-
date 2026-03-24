@@ -247,6 +247,25 @@ def run_migrations():
                 print("[MIGRATION] key_prefix column added successfully!")
         except Exception as e:
             print(f"[MIGRATION ERROR] {e}")
+        
+        # Migration: Add is_resolved column to comments
+        try:
+            result = conn.execute(text("""
+                SELECT column_name 
+                FROM information_schema.columns 
+                WHERE table_name = 'comments' AND column_name = 'is_resolved'
+            """))
+            
+            if not result.fetchone():
+                print("[MIGRATION] Adding is_resolved column to comments...")
+                conn.execute(text("""
+                    ALTER TABLE comments 
+                    ADD COLUMN is_resolved BOOLEAN DEFAULT FALSE
+                """))
+                conn.commit()
+                print("[MIGRATION] is_resolved column added successfully!")
+        except Exception as e:
+            print(f"[MIGRATION ERROR] {e}")
 
 def init_db():
     """Initialize database tables"""
