@@ -231,7 +231,11 @@ async def list_projects(
     current_user: User = Depends(get_current_user)
 ):
     """List all projects (admin sees all, developers see assigned only)"""
-    if current_user.role == UserRole.ADMIN.value:
+    # Check if user has admin role (handles multi-role users like 'admin,developer')
+    user_roles = [role.strip() for role in current_user.role.split(',')]
+    is_admin = UserRole.ADMIN.value in user_roles
+    
+    if is_admin:
         # Admin sees all projects
         projects = db.query(Project).all()
     else:

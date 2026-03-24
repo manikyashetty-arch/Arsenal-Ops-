@@ -73,7 +73,7 @@ export function Login() {
       try {
         await loginWithGoogle(response.credential);
         toast.success('Login successful!');
-        navigate('/');
+        // The redirect will be handled by App.tsx useEffect
       } catch (error: any) {
         const errorMessage = error.message || 'Google login failed';
         setError(errorMessage);
