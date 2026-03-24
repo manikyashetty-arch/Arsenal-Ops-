@@ -266,6 +266,37 @@ def run_migrations():
                 print("[MIGRATION] is_resolved column added successfully!")
         except Exception as e:
             print(f"[MIGRATION ERROR] {e}")
+        
+        # Migration: Create project_files table if not exists
+        try:
+            result = conn.execute(text("""
+                SELECT table_name 
+                FROM information_schema.tables 
+                WHERE table_name = 'project_files'
+            """))
+            
+            if not result.fetchone():
+                print("[MIGRATION] Creating project_files table...")
+                conn.execute(text("""
+                    CREATE TABLE project_files (
+                        id SERIAL PRIMARY KEY,
+                        project_id INTEGER REFERENCES projects(id) ON DELETE CASCADE NOT NULL,
+                        file_name VARCHAR(255) NOT NULL,
+                        file_size INTEGER NOT NULL,
+                        file_type VARCHAR(100) NOT NULL,
+                        file_url VARCHAR(500) NOT NULL,
+                        uploaded_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                        uploaded_by_name VARCHAR(255) NOT NULL,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        CONSTRAINT fk_project_files_project FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+                    )
+                """))
+                conn.execute(text("CREATE INDEX idx_project_files_project ON project_files(project_id)"))
+                conn.execute(text("CREATE INDEX idx_project_files_created ON project_files(created_at)"))
+                conn.commit()
+                print("[MIGRATION] project_files table created!")
+        except Exception as e:
+            print(f"[MIGRATION ERROR] {e}")
 
 def init_db():
     """Initialize database tables"""
@@ -273,7 +304,7 @@ def init_db():
         project, task, persona, user_story, 
         market_insight, developer, work_item, sprint,
         architecture, user, time_entry, task_dependency,
-        project_goal, project_milestone, activity_log
+        project_goal, project_milestone, activity_log, project_file
     )
     Base.metadata.create_all(bind=engine)
     
