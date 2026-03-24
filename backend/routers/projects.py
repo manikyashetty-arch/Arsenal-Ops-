@@ -859,7 +859,7 @@ async def get_project_workload(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Get workload data for all developers in a project"""
+    """Get workload data for all developers in a project - shows weekly capacity"""
     project = require_project_access(project_id, current_user, db)
     
     from models.work_item import WorkItem
@@ -898,7 +898,10 @@ async def get_project_workload(
                 "estimated_hours": 0,
                 "logged_hours": 0,
                 "remaining_hours": 0,
-                "this_week_remaining_hours": 0,  # Only tasks due this week (Mon-Fri)
+                "this_week_in_progress_hours": 0,  # Estimated hours on in_progress tickets
+                "this_week_done_hours": 0,  # Actual logged hours on done tickets this week
+                "this_week_capacity_used": 0,  # Total capacity used this week
+                "this_week_remaining_capacity": 40,  # Remaining capacity (40h - used)
                 "items": []
             }
         
@@ -908,9 +911,24 @@ async def get_project_workload(
         workload_data[assignee_id]["logged_hours"] += item.logged_hours or 0
         workload_data[assignee_id]["remaining_hours"] += item.remaining_hours or 0
         
-        # "This Week" = remaining hours on in-progress tickets (active work this week)
+        # Check if ticket was modified this week
+        ticket_modified_this_week = item.updated_at and week_start <= item.updated_at <= week_end
+        
+        # Per-week capacity calculation
         if item.status == "in_progress":
-            workload_data[assignee_id]["this_week_remaining_hours"] += item.remaining_hours or 0
+            if ticket_modified_this_week:
+                # Moved to in_progress THIS WEEK: use estimated hours
+                workload_data[assignee_id]["this_week_in_progress_hours"] += item.estimated_hours or 0
+            else:
+                # Already in_progress BEFORE this week: use only remaining hours
+                workload_data[assignee_id]["this_week_in_progress_hours"] += item.remaining_hours or 0
+        elif item.status == "in_review":
+            # In-review: work is done, use actual logged hours
+            workload_data[assignee_id]["this_week_done_hours"] += item.logged_hours or 0
+        elif item.status == "done" and item.completed_at:
+            # Done this week: use actual logged hours (not estimated)
+            if week_start <= item.completed_at <= week_end:
+                workload_data[assignee_id]["this_week_done_hours"] += item.logged_hours or 0
         
         if item.status == "done":
             workload_data[assignee_id]["completed_items"] += 1
@@ -933,6 +951,15 @@ async def get_project_workload(
             "estimated_hours": item.estimated_hours,
             "logged_hours": item.logged_hours
         })
+    
+    # Calculate weekly capacity used and remaining
+    for dev_id in workload_data:
+        capacity_used = (
+            workload_data[dev_id]["this_week_in_progress_hours"] +
+            workload_data[dev_id]["this_week_done_hours"]
+        )
+        workload_data[dev_id]["this_week_capacity_used"] = capacity_used
+        workload_data[dev_id]["this_week_remaining_capacity"] = max(0, 40 - capacity_used)
     
     return list(workload_data.values())
 

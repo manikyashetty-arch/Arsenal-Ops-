@@ -16,7 +16,10 @@ interface WorkloadData {
     estimated_hours: number;
     logged_hours: number;
     remaining_hours: number;
-    this_week_remaining_hours?: number;  // Tasks due this week only
+    this_week_in_progress_hours: number;  // Estimated hours on in-progress tickets
+    this_week_done_hours: number;  // Actual logged hours on done tickets this week
+    this_week_capacity_used: number;  // Total capacity used this week
+    this_week_remaining_capacity: number;  // Remaining capacity (40h - used)
 }
 
 interface WorkloadViewProps {
@@ -49,9 +52,9 @@ const WorkloadView: React.FC<WorkloadViewProps> = ({ workloadData, onDeveloperCl
             .slice(0, 2);
     };
 
-    // Sort by this week's workload (highest first)
+    // Sort by weekly capacity used (highest first)
     const sortedData = [...workloadData].sort((a, b) => 
-        (b.this_week_remaining_hours ?? 0) - (a.this_week_remaining_hours ?? 0)
+        (b.this_week_capacity_used ?? 0) - (a.this_week_capacity_used ?? 0)
     );
     const visibleData = showAll ? sortedData : sortedData.slice(0, INITIAL_SHOW);
 
@@ -71,11 +74,11 @@ const WorkloadView: React.FC<WorkloadViewProps> = ({ workloadData, onDeveloperCl
                 ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                         {visibleData.map((developer) => {
-                            // Assume 40 hours/week capacity
+                            // 40 hours/week capacity
                             const weeklyCapacity = 40;
-                            // Use this week's remaining hours for capacity calculation
-                            const thisWeekHours = developer.this_week_remaining_hours ?? 0;
-                            const capacityPercentage = Math.round((thisWeekHours / weeklyCapacity) * 100);
+                            const capacityUsed = developer.this_week_capacity_used ?? 0;
+                            const capacityPercentage = Math.round((capacityUsed / weeklyCapacity) * 100);
+                            const remaining = developer.this_week_remaining_capacity ?? 0;
                             
                             return (
                                 <div
@@ -104,14 +107,14 @@ const WorkloadView: React.FC<WorkloadViewProps> = ({ workloadData, onDeveloperCl
                                     <div className="mb-4">
                                         <div className="flex items-center justify-between mb-1">
                                             <div className="flex items-center gap-1">
-                                                <span className="text-[#737373] text-sm">Remaining</span>
+                                                <span className="text-[#737373] text-sm">This Week's Capacity</span>
                                                 <TooltipProvider>
                                                     <Tooltip>
                                                         <TooltipTrigger>
                                                             <Info className="w-3 h-3 text-[#737373]" />
                                                         </TooltipTrigger>
                                                         <TooltipContent className="bg-[#121212] border-[rgba(255,255,255,0.08)] text-white max-w-xs">
-                                                            <p>Remaining hours on in-progress tickets assigned to this developer.</p>
+                                                            <p>Estimated hours on in-progress tickets + actual logged hours on completed tickets this week.</p>
                                                         </TooltipContent>
                                                     </Tooltip>
                                                 </TooltipProvider>
@@ -127,7 +130,7 @@ const WorkloadView: React.FC<WorkloadViewProps> = ({ workloadData, onDeveloperCl
                                             />
                                         </div>
                                         <p className="text-[#737373] text-xs mt-1">
-                                            {thisWeekHours}h remaining / {weeklyCapacity}h capacity
+                                            {capacityUsed}h used / {weeklyCapacity}h capacity ({remaining}h remaining)
                                         </p>
                                     </div>
 
@@ -176,7 +179,7 @@ const WorkloadView: React.FC<WorkloadViewProps> = ({ workloadData, onDeveloperCl
                                                 <TooltipTrigger className="text-left">
                                                     <div>
                                                         <span className="text-[#737373] text-xs">Remaining</span>
-                                                        <p className="text-white font-medium">{thisWeekHours}h</p>
+                                                        <p className="text-white font-medium">{developer.remaining_hours}h</p>
                                                     </div>
                                                 </TooltipTrigger>
                                                 <TooltipContent className="bg-[#121212] border-[rgba(255,255,255,0.08)] text-white">
