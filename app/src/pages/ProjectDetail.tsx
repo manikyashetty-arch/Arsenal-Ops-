@@ -278,6 +278,7 @@ const ProjectDetail = () => {
 
     // Files state
     const [files, setFiles] = useState<ProjectFile[]>([]);
+    const [_filesLoading, setFilesLoading] = useState(false);
     const [uploadingFile, setUploadingFile] = useState(false);
 
     // Refetch all data (used on mount and when window regains focus)

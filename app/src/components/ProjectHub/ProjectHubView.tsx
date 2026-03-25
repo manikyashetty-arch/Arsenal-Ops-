@@ -71,7 +71,10 @@ interface WorkloadData {
     estimated_hours: number;
     logged_hours: number;
     remaining_hours: number;
-    this_week_remaining_hours?: number;
+    this_week_in_progress_hours?: number;
+    this_week_done_hours?: number;
+    this_week_capacity_used?: number;
+    this_week_remaining_capacity?: number;
 }
 
 const ProjectHubView: React.FC<ProjectHubViewProps> = ({ projectId, token, project, developers = [] }) => {
