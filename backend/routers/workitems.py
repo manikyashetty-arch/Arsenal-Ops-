@@ -565,6 +565,7 @@ async def delete_work_item(
 class LogHoursRequest(BaseModel):
     hours: int
     description: Optional[str] = None
+    developer_id: Optional[int] = None  # Optional: specify who did the work (defaults to current user)
 
 
 @router.post("/{item_id}/log-hours")
@@ -585,14 +586,21 @@ async def log_hours(
     if request.hours <= 0:
         raise HTTPException(status_code=400, detail="Hours must be greater than 0")
     
-    # Attribute hours to the PERSON LOGGING THE TIME (current user).
-    # This ensures reviewers get credit for their review time in PM tab.
-    # The ticket's logged_hours total still increases, but the time entry belongs to the logger.
-    developer = db.query(Developer).filter(Developer.email == current_user.email).first()
+    # Determine who to attribute the hours to
+    developer = None
     
-    # If current user is not a developer, fall back to ticket assignee
-    if not developer and item.assignee_id:
+    if request.developer_id:
+        # Use explicitly specified developer (e.g., logging hours for someone else)
+        developer = db.query(Developer).filter(Developer.id == request.developer_id).first()
+        if not developer:
+            raise HTTPException(status_code=404, detail=f"Developer with id {request.developer_id} not found")
+    elif item.assignee_id:
+        # Default: attribute to the TICKET ASSIGNEE (the person assigned to the ticket)
+        # This ensures hours are credited to the person doing the work, not the person clicking the button
         developer = db.query(Developer).filter(Developer.id == item.assignee_id).first()
+    else:
+        # Fallback: attribute to the person logging the time if no assignee
+        developer = db.query(Developer).filter(Developer.email == current_user.email).first()
     
     print(f"DEBUG log-hours: current_user.email={current_user.email}, assignee_id={item.assignee_id}, logger_developer={developer.id if developer else 'NOT FOUND'}")
     
@@ -627,6 +635,76 @@ async def log_hours(
         "remaining_hours": item.remaining_hours,
         "time_entry": time_entry.to_dict(),
         "message": f"Logged {request.hours}h successfully"
+    }
+
+
+@router.get("/{item_id}/time-entries")
+async def get_work_item_time_entries(
+    item_id: int,
+    this_week_only: bool = False,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get time entries for a specific work item (requires auth)"""
+    from models.time_entry import TimeEntry
+    from models.developer import Developer
+    from datetime import timedelta
+    
+    # Verify work item exists
+    item = db.query(WorkItem).filter(WorkItem.id == item_id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Work item not found")
+    
+    # Get all time entries for this work item
+    time_entries = db.query(TimeEntry).filter(TimeEntry.work_item_id == item_id).all()
+    
+    # Calculate week boundaries if filtering by this week
+    week_start = None
+    week_end = None
+    if this_week_only:
+        today = datetime.utcnow()
+        days_since_sunday = (today.weekday() + 1) % 7
+        week_start = today - timedelta(days=days_since_sunday)
+        week_start = week_start.replace(hour=0, minute=0, second=0, microsecond=0)
+        week_end = week_start + timedelta(days=6, hours=23, minutes=59, seconds=59)
+    
+    # Build response with developer info
+    result = []
+    for te in time_entries:
+        # Filter by this week if requested
+        if this_week_only and te.logged_at:
+            if not (week_start <= te.logged_at <= week_end):
+                continue
+        
+        developer = db.query(Developer).filter(Developer.id == te.developer_id).first() if te.developer_id else None
+        
+        result.append({
+            "id": te.id,
+            "developer_id": te.developer_id,
+            "developer_name": developer.name if developer else "Unknown",
+            "developer_email": developer.email if developer else None,
+            "hours": te.hours,
+            "description": te.description,
+            "logged_at": te.logged_at.isoformat() if te.logged_at else None,
+            "is_this_week": te.logged_at and week_start and week_end and week_start <= te.logged_at <= week_end if not this_week_only else True
+        })
+    
+    # Calculate this week's total
+    this_week_total = sum(te.hours for te in time_entries 
+                          if te.logged_at and week_start and week_end and week_start <= te.logged_at <= week_end) if week_start and week_end else 0
+    
+    return {
+        "work_item_id": item_id,
+        "work_item_key": item.key,
+        "work_item_title": item.title,
+        "total_logged_hours": item.logged_hours or 0,
+        "this_week_total": this_week_total,
+        "week_range": {
+            "start": week_start.isoformat() if week_start else None,
+            "end": week_end.isoformat() if week_end else None
+        } if week_start else None,
+        "time_entries": result,
+        "count": len(result)
     }
 
 

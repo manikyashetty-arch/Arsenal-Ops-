@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import TimeEntriesTable from '@/components/TimeEntriesTable';
 import {
     ArrowLeft,
     Plus,
@@ -1314,6 +1315,9 @@ const ProjectBoard = () => {
                                                             )}
                                                         </div>
                                                     )}
+
+                                                    {/* This Week Time Entries Table */}
+                                                    <TimeEntriesTable workItemId={item.id} token={token || ''} />
                                                 </div>
                                             );
                                         })}
