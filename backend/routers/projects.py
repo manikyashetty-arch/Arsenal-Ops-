@@ -1,12 +1,14 @@
 """
 Projects Router - CRUD operations for projects with work item stats
 """
-from fastapi import APIRouter, HTTPException, Depends, status
+from fastapi import APIRouter, HTTPException, Depends, status, UploadFile, File
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from typing import List, Optional
 from datetime import datetime
 from sqlalchemy.orm import Session
 from sqlalchemy import select, insert, delete
+import os
 
 import sys
 sys.path.append('..')
@@ -229,7 +231,11 @@ async def list_projects(
     current_user: User = Depends(get_current_user)
 ):
     """List all projects (admin sees all, developers see assigned only)"""
-    if current_user.role == UserRole.ADMIN.value:
+    # Check if user has admin role (handles multi-role users like 'admin,developer')
+    user_roles = [role.strip() for role in current_user.role.split(',')]
+    is_admin = UserRole.ADMIN.value in user_roles
+    
+    if is_admin:
         # Admin sees all projects
         projects = db.query(Project).all()
     else:
@@ -853,7 +859,7 @@ async def get_project_workload(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Get workload data for all developers in a project"""
+    """Get workload data for all developers in a project - shows weekly capacity"""
     project = require_project_access(project_id, current_user, db)
     
     from models.work_item import WorkItem
@@ -892,7 +898,10 @@ async def get_project_workload(
                 "estimated_hours": 0,
                 "logged_hours": 0,
                 "remaining_hours": 0,
-                "this_week_remaining_hours": 0,  # Only tasks due this week (Mon-Fri)
+                "this_week_in_progress_hours": 0,  # Estimated hours on in_progress tickets
+                "this_week_done_hours": 0,  # Actual logged hours on done tickets this week
+                "this_week_capacity_used": 0,  # Total capacity used this week
+                "this_week_remaining_capacity": 40,  # Remaining capacity (40h - used)
                 "items": []
             }
         
@@ -902,9 +911,24 @@ async def get_project_workload(
         workload_data[assignee_id]["logged_hours"] += item.logged_hours or 0
         workload_data[assignee_id]["remaining_hours"] += item.remaining_hours or 0
         
-        # "This Week" = remaining hours on in-progress tickets (active work this week)
+        # Check if ticket was modified this week
+        ticket_modified_this_week = item.updated_at and week_start <= item.updated_at <= week_end
+        
+        # Per-week capacity calculation
         if item.status == "in_progress":
-            workload_data[assignee_id]["this_week_remaining_hours"] += item.remaining_hours or 0
+            if ticket_modified_this_week:
+                # Moved to in_progress THIS WEEK: use estimated hours
+                workload_data[assignee_id]["this_week_in_progress_hours"] += item.estimated_hours or 0
+            else:
+                # Already in_progress BEFORE this week: use only remaining hours
+                workload_data[assignee_id]["this_week_in_progress_hours"] += item.remaining_hours or 0
+        elif item.status == "in_review":
+            # In-review: work is done, use actual logged hours
+            workload_data[assignee_id]["this_week_done_hours"] += item.logged_hours or 0
+        elif item.status == "done" and item.completed_at:
+            # Done this week: use actual logged hours (not estimated)
+            if week_start <= item.completed_at <= week_end:
+                workload_data[assignee_id]["this_week_done_hours"] += item.logged_hours or 0
         
         if item.status == "done":
             workload_data[assignee_id]["completed_items"] += 1
@@ -928,4 +952,195 @@ async def get_project_workload(
             "logged_hours": item.logged_hours
         })
     
+    # Calculate weekly capacity used and remaining
+    for dev_id in workload_data:
+        capacity_used = (
+            workload_data[dev_id]["this_week_in_progress_hours"] +
+            workload_data[dev_id]["this_week_done_hours"]
+        )
+        workload_data[dev_id]["this_week_capacity_used"] = capacity_used
+        workload_data[dev_id]["this_week_remaining_capacity"] = max(0, 40 - capacity_used)
+    
     return list(workload_data.values())
+
+
+# ============================================================================
+# FILE MANAGEMENT ENDPOINTS
+# ============================================================================
+
+class ProjectFileResponse(BaseModel):
+    id: int
+    file_name: str
+    file_size: int
+    file_type: str
+    file_url: str
+    uploaded_by: str
+    created_at: str
+
+
+@router.get("/{project_id}/files")
+async def get_project_files(
+    project_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get all files for a project"""
+    from models.project_file import ProjectFile
+    
+    project = require_project_access(project_id, current_user, db)
+    
+    files = db.query(ProjectFile).filter(ProjectFile.project_id == project_id).order_by(ProjectFile.created_at.desc()).all()
+    
+    return [
+        {
+            "id": f.id,
+            "file_name": f.file_name,
+            "file_size": f.file_size,
+            "file_type": f.file_type,
+            "file_url": f.file_url,
+            "uploaded_by": f.uploaded_by_name,
+            "created_at": f.created_at.isoformat()
+        }
+        for f in files
+    ]
+
+
+@router.post("/{project_id}/files")
+async def upload_project_file(
+    project_id: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Upload a file to a project"""
+    from models.project_file import ProjectFile
+    
+    project = require_project_access(project_id, current_user, db)
+    
+    # Create uploads directory if it doesn't exist
+    upload_dir = "uploads/projects"
+    os.makedirs(upload_dir, exist_ok=True)
+    
+    # Create project-specific directory
+    project_upload_dir = os.path.join(upload_dir, str(project_id))
+    os.makedirs(project_upload_dir, exist_ok=True)
+    
+    # Save file
+    file_path = os.path.join(project_upload_dir, file.filename)
+    try:
+        with open(file_path, "wb") as f:
+            content = await file.read()
+            f.write(content)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to save file: {str(e)}")
+    
+    # Get file size
+    file_size = os.path.getsize(file_path)
+    
+    # Create database record
+    db_file = ProjectFile(
+        project_id=project_id,
+        file_name=file.filename,
+        file_size=file_size,
+        file_type=file.content_type or "application/octet-stream",
+        file_url="",  # Will be set after commit to get the ID
+        uploaded_by=current_user.id,
+        uploaded_by_name=current_user.email
+    )
+    
+    db.add(db_file)
+    db.commit()
+    db.refresh(db_file)
+    
+    # Update file_url with the actual file ID
+    db_file.file_url = f"/api/projects/{project_id}/files/{db_file.id}/download"
+    db.commit()
+    
+    return {
+        "id": db_file.id,
+        "file_name": db_file.file_name,
+        "file_size": db_file.file_size,
+        "file_type": db_file.file_type,
+        "file_url": db_file.file_url,
+        "uploaded_by": db_file.uploaded_by_name,
+        "created_at": db_file.created_at.isoformat()
+    }
+
+
+@router.get("/{project_id}/files/{file_id}/download")
+async def download_project_file(
+    project_id: int,
+    file_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Download a file from a project"""
+    from models.project_file import ProjectFile
+    
+    project = require_project_access(project_id, current_user, db)
+    
+    db_file = db.query(ProjectFile).filter(
+        ProjectFile.id == file_id,
+        ProjectFile.project_id == project_id
+    ).first()
+    
+    if not db_file:
+        raise HTTPException(status_code=404, detail="File not found")
+    
+    # Build file path
+    upload_dir = "uploads/projects"
+    project_dir = os.path.join(upload_dir, str(project_id))
+    file_path = os.path.join(project_dir, db_file.file_name)
+    
+    # Check if file exists
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="File not found on disk")
+    
+    # Return file with proper headers
+    return FileResponse(
+        path=file_path,
+        filename=db_file.file_name,
+        media_type=db_file.file_type
+    )
+
+
+@router.delete("/{project_id}/files/{file_id}")
+async def delete_project_file(
+    project_id: int,
+    file_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Delete a file from a project"""
+    from models.project_file import ProjectFile
+    
+    project = require_project_access(project_id, current_user, db)
+    
+    db_file = db.query(ProjectFile).filter(
+        ProjectFile.id == file_id,
+        ProjectFile.project_id == project_id
+    ).first()
+    
+    if not db_file:
+        raise HTTPException(status_code=404, detail="File not found")
+    
+    # Delete physical file
+    try:
+        upload_dir = "uploads/projects"
+        # Try to find and delete the file
+        project_dir = os.path.join(upload_dir, str(project_id))
+        if os.path.exists(project_dir):
+            for filename in os.listdir(project_dir):
+                if filename.startswith(os.path.splitext(db_file.file_name)[0]):
+                    os.remove(os.path.join(project_dir, filename))
+                    break
+    except Exception as e:
+        # Log error but don't fail - still delete DB record
+        print(f"Error deleting file: {e}")
+    
+    # Delete database record
+    db.delete(db_file)
+    db.commit()
+    
+    return {"success": True, "message": "File deleted"}
+

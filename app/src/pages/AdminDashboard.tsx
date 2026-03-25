@@ -42,6 +42,20 @@ interface Employee {
     assigned_items_count: number;
 }
 
+interface DeveloperCapacity {
+    developer_id: number;
+    developer_name: string;
+    developer_email: string;
+    avatar_url: string | null;
+    project_count: number;
+    this_week_in_progress_hours: number;
+    this_week_in_review_hours: number;
+    this_week_done_hours: number;
+    this_week_capacity_used: number;
+    this_week_remaining_capacity: number;
+    specialization: string | null;
+}
+
 interface User {
     id: number;
     email: string;
@@ -79,9 +93,10 @@ interface DashboardStats {
 
 const AdminDashboard = () => {
     const navigate = useNavigate();
-    const [activeTab, setActiveTab] = useState<'dashboard' | 'employees' | 'projects' | 'users'>('dashboard');
+    const [activeTab, setActiveTab] = useState<'dashboard' | 'employees' | 'projects' | 'users' | 'developers-capacity'>('dashboard');
     const [stats, setStats] = useState<DashboardStats | null>(null);
     const [employees, setEmployees] = useState<Employee[]>([]);
+    const [developerCapacities, setDeveloperCapacities] = useState<DeveloperCapacity[]>([]);
     const [projects, setProjects] = useState<Project[]>([]);
     const [users, setUsers] = useState<User[]>([]);
     const [loading, setLoading] = useState(true);
@@ -114,19 +129,21 @@ const AdminDashboard = () => {
     const fetchData = async () => {
         setLoading(true);
         try {
-            const [statsRes, employeesRes, projectsRes, usersRes] = await Promise.all([
+            const [statsRes, employeesRes, projectsRes, usersRes, capacityRes] = await Promise.all([
                 fetch(`${API_BASE_URL}/api/admin/stats`),
                 fetch(`${API_BASE_URL}/api/admin/employees`),
                 fetch(`${API_BASE_URL}/api/admin/projects`),
                 fetch(`${API_BASE_URL}/api/auth/admin/users`, {
                     headers: { 'Authorization': `Bearer ${token}` }
                 }),
+                fetch(`${API_BASE_URL}/api/admin/developers/capacity`),
             ]);
 
             if (statsRes.ok) setStats(await statsRes.json());
             if (employeesRes.ok) setEmployees(await employeesRes.json());
             if (projectsRes.ok) setProjects(await projectsRes.json());
             if (usersRes.ok) setUsers(await usersRes.json());
+            if (capacityRes.ok) setDeveloperCapacities(await capacityRes.json());
         } catch (error) {
             console.error('Failed to fetch admin data:', error);
             toast.error('Failed to load dashboard data');
@@ -546,11 +563,23 @@ const AdminDashboard = () => {
                                                 <th className="text-left text-xs font-medium text-[#737373] uppercase tracking-wider px-5 py-3">GitHub</th>
                                                 <th className="text-left text-xs font-medium text-[#737373] uppercase tracking-wider px-5 py-3">Projects</th>
                                                 <th className="text-left text-xs font-medium text-[#737373] uppercase tracking-wider px-5 py-3">Assigned</th>
+                                                <th className="text-left text-xs font-medium text-[#737373] uppercase tracking-wider px-5 py-3">Capacity</th>
                                                 <th className="text-right text-xs font-medium text-[#737373] uppercase tracking-wider px-5 py-3">Actions</th>
                                             </tr>
                                         </thead>
                                         <tbody>
-                                            {employees.map(emp => (
+                                            {employees.map(emp => {
+                                                const devCapacity = developerCapacities.find(d => d.developer_id === emp.id);
+                                                const capacityPercentage = devCapacity 
+                                                    ? Math.round((devCapacity.this_week_capacity_used / 40) * 100)
+                                                    : 0;
+                                                const capacityStatus = devCapacity
+                                                    ? devCapacity.this_week_remaining_capacity >= 10 ? 'Available' 
+                                                      : devCapacity.this_week_remaining_capacity > 0 ? 'Moderate'
+                                                      : 'Busy'
+                                                    : 'Available';
+                                                
+                                                return (
                                                 <tr key={emp.id} className="border-b border-[rgba(255,255,255,0.03)] hover:bg-[rgba(255,255,255,0.02)]">
                                                     <td className="px-5 py-4">
                                                         <div className="flex items-center gap-3">
@@ -569,6 +598,29 @@ const AdminDashboard = () => {
                                                     <td className="px-5 py-4 text-sm text-[#737373]">{emp.github_username || '-'}</td>
                                                     <td className="px-5 py-4 text-sm text-[#a3a3a3]">{emp.project_count}</td>
                                                     <td className="px-5 py-4 text-sm text-[#a3a3a3]">{emp.assigned_items_count}</td>
+                                                    <td className="px-5 py-4">
+                                                        <div className="flex items-center gap-2">
+                                                            <div className="flex-1 h-2 bg-[rgba(255,255,255,0.05)] rounded-full overflow-hidden max-w-xs">
+                                                                <div
+                                                                    className={`h-full rounded-full ${
+                                                                        capacityPercentage > 100 ? 'bg-red-500'
+                                                                        : capacityPercentage > 80 ? 'bg-yellow-500'
+                                                                        : 'bg-gradient-to-r from-[#E0B954] to-[#C79E3B]'
+                                                                    }`}
+                                                                    style={{
+                                                                        width: `${Math.min(capacityPercentage, 100)}%`
+                                                                    }}
+                                                                />
+                                                            </div>
+                                                            <span className={`text-xs font-medium whitespace-nowrap ${
+                                                                capacityStatus === 'Available' ? 'text-[#E0B954]' : 
+                                                                capacityStatus === 'Busy' ? 'text-[#F59E0B]' : 
+                                                                'text-[#a3a3a3]'
+                                                            }`}>
+                                                                {capacityStatus} ({devCapacity?.this_week_capacity_used || 0}h/{devCapacity?.this_week_remaining_capacity || 40}h)
+                                                            </span>
+                                                        </div>
+                                                    </td>
                                                     <td className="px-5 py-4">
                                                         <div className="flex justify-end gap-2">
                                                             <Button
@@ -590,7 +642,8 @@ const AdminDashboard = () => {
                                                         </div>
                                                     </td>
                                                 </tr>
-                                            ))}
+                                                );
+                                            })}
                                         </tbody>
                                     </table>
                                     {employees.length === 0 && (

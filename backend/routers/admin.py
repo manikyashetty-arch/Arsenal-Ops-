@@ -129,6 +129,65 @@ async def list_employees(db: Session = Depends(get_db)):
     return result
 
 
+@router.get("/developers/capacity")
+async def get_developers_capacity(db: Session = Depends(get_db)):
+    """Get weekly capacity for all developers across all projects"""
+    from datetime import timedelta, datetime as dt
+    
+    # Calculate this week's boundaries (Sunday to Saturday)
+    today = dt.utcnow()
+    days_since_sunday = (today.weekday() + 1) % 7
+    week_start = today - timedelta(days=days_since_sunday)
+    week_start = week_start.replace(hour=0, minute=0, second=0, microsecond=0)
+    week_end = week_start + timedelta(days=6, hours=23, minutes=59, seconds=59)
+    
+    developers = db.query(Developer).all()
+    result = []
+    
+    for dev in developers:
+        # Get all work items assigned to this developer across all projects
+        dev_items = db.query(WorkItem).filter(WorkItem.assignee_id == dev.id).all()
+        
+        # Calculate weekly capacity
+        # For in_progress: if modified THIS WEEK use estimated hours, else use remaining hours
+        in_progress_hours = sum(
+            item.estimated_hours or 0
+            if (item.updated_at and week_start <= item.updated_at <= week_end)
+            else (item.remaining_hours or 0)
+            for item in dev_items if item.status == "in_progress"
+        )
+        
+        in_review_hours = sum(
+            item.logged_hours or 0
+            for item in dev_items if item.status == "in_review"
+        )
+        
+        done_hours = sum(
+            item.logged_hours or 0
+            for item in dev_items if item.status == "done" and item.completed_at
+            and week_start <= item.completed_at <= week_end
+        )
+        
+        capacity_used = in_progress_hours + in_review_hours + done_hours
+        remaining_capacity = max(0, 40 - capacity_used)
+        
+        result.append({
+            "developer_id": dev.id,
+            "developer_name": dev.name,
+            "developer_email": dev.email,
+            "avatar_url": dev.avatar_url,
+            "project_count": len(dev.projects) if dev.projects else 0,
+            "this_week_in_progress_hours": in_progress_hours,
+            "this_week_in_review_hours": in_review_hours,
+            "this_week_done_hours": done_hours,
+            "this_week_capacity_used": capacity_used,
+            "this_week_remaining_capacity": remaining_capacity,
+            "specialization": getattr(dev, 'specialization', None)
+        })
+    
+    return result
+
+
 @router.post("/employees", response_model=EmployeeResponse)
 async def create_employee(employee: EmployeeCreate, db: Session = Depends(get_db)):
     """Create a new employee/developer"""

@@ -32,6 +32,7 @@ interface AuthContextType {
   isLoading: boolean;
   isAuthenticated: boolean;
   login: (email: string, password: string) => Promise<void>;
+  loginWithGoogle: (idToken: string) => Promise<void>;
   logout: () => void;
   changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
   checkAuth: () => Promise<void>;
@@ -47,22 +48,35 @@ const IDLE_TIMEOUT = 30 * 60 * 1000;
 const WARNING_TIME = 25 * 60 * 1000;
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<User | null>(() => {
+    // Try to restore user from localStorage on mount
+    const savedUser = localStorage.getItem('user');
+    if (savedUser) {
+      try {
+        return JSON.parse(savedUser);
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  });
   const [token, setToken] = useState<string | null>(localStorage.getItem('token'));
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(!!token); // Only loading if we have a token
   const [idleTime, setIdleTime] = useState(0);
   const [showWarning, setShowWarning] = useState(false);
   
   const lastActivityRef = useRef(Date.now());
   const isAuthenticated = !!user && !!token;
 
+  // Check authentication on mount and when token changes
   useEffect(() => {
+    // If there's a token in localStorage, validate it
     if (token) {
       checkAuth();
     } else {
       setIsLoading(false);
     }
-  }, [token]);
+  }, []);
 
   // Activity tracking
   useEffect(() => {
@@ -111,17 +125,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const checkAuth = async () => {
     try {
+      const currentToken = token || localStorage.getItem('token');
+      if (!currentToken) {
+        setIsLoading(false);
+        return;
+      }
+
       const response = await fetch(`${API_BASE_URL}/api/auth/me`, {
         headers: {
-          'Authorization': `Bearer ${token}`
+          'Authorization': `Bearer ${currentToken}`
         }
       });
       
       if (response.ok) {
         const userData = await response.json();
         setUser(userData);
+        if (!token) {
+          setToken(currentToken);
+        }
       } else {
-        // Token invalid
+        // Token invalid, clear it
         logout();
       }
     } catch (error) {
@@ -154,6 +177,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setToken(data.access_token);
     setUser(data.user);
     localStorage.setItem('token', data.access_token);
+    localStorage.setItem('user', JSON.stringify(data.user));
+    lastActivityRef.current = Date.now();
+    setIdleTime(0);
+  };
+
+  const loginWithGoogle = async (idToken: string) => {
+    const response = await fetch(`${API_BASE_URL}/api/auth/google-login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ token: idToken })
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || 'Google login failed');
+    }
+
+    const data = await response.json();
+    setToken(data.access_token);
+    setUser(data.user);
+    localStorage.setItem('token', data.access_token);
+    localStorage.setItem('user', JSON.stringify(data.user));
     lastActivityRef.current = Date.now();
     setIdleTime(0);
   };
@@ -164,6 +211,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setIdleTime(0);
     setShowWarning(false);
     localStorage.removeItem('token');
+    localStorage.removeItem('user');
   };
 
   const changePassword = async (currentPassword: string, newPassword: string) => {
@@ -192,6 +240,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isLoading,
       isAuthenticated,
       login,
+      loginWithGoogle,
       logout,
       changePassword,
       checkAuth,

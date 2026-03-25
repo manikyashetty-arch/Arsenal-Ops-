@@ -34,6 +34,9 @@ import {
     Activity,
     ChevronDown,
     ChevronUp,
+    Upload,
+    File,
+    Download,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import PMView from '@/components/PMView';
@@ -159,7 +162,7 @@ interface Project {
     architectures: Architecture[];
 }
 
-type TabType = 'overview' | 'hub' | 'tracker' | 'calendar' | 'business' | 'goals' | 'activity' | 'pm';
+type TabType = 'overview' | 'hub' | 'tracker' | 'calendar' | 'business' | 'goals' | 'activity' | 'files' | 'pm';
 
 interface HubWorkItem {
     id: string;
@@ -211,6 +214,16 @@ interface ActivityItem {
     user_email?: string;
 }
 
+interface ProjectFile {
+    id: number;
+    file_name: string;
+    file_size: number;
+    file_type: string;
+    file_url: string;
+    uploaded_by: string;
+    created_at: string;
+}
+
 const ProjectDetail = () => {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
@@ -258,6 +271,11 @@ const ProjectDetail = () => {
         const [sprintsExpanded, setSprintsExpanded] = useState(false);
         const [progressExpanded, setProgressExpanded] = useState(false);
 
+    // Files state
+    const [files, setFiles] = useState<ProjectFile[]>([]);
+    const [filesLoading, setFilesLoading] = useState(false);
+    const [uploadingFile, setUploadingFile] = useState(false);
+
     // Refetch all data (used on mount and when window regains focus)
     const refetchAll = () => {
         if (!id) return;
@@ -288,6 +306,13 @@ const ProjectDetail = () => {
             window.removeEventListener('focus', handleFocus);
         };
     }, [id]);
+
+    // Fetch files when files tab becomes active
+    useEffect(() => {
+        if (activeTab === 'files') {
+            fetchFiles();
+        }
+    }, [activeTab, id]);
 
     const fetchProject = async () => {
         try {
@@ -471,6 +496,96 @@ const ProjectDetail = () => {
             if (res.ok) setWorkload(await res.json());
         } catch (err) {
             console.error('Failed to fetch workload:', err);
+        }
+    };
+
+    const fetchFiles = async () => {
+        if (!id) return;
+        setFilesLoading(true);
+        try {
+            const res = await fetch(`${API_BASE_URL}/api/projects/${id}/files`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (res.ok) setFiles(await res.json());
+        } catch (err) {
+            console.error('Failed to fetch files:', err);
+        } finally {
+            setFilesLoading(false);
+        }
+    };
+
+    const handleUploadFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
+        if (!id || !event.target.files || event.target.files.length === 0) return;
+
+        const file = event.target.files[0];
+        const formData = new FormData();
+        formData.append('file', file);
+
+        setUploadingFile(true);
+        try {
+            const res = await fetch(`${API_BASE_URL}/api/projects/${id}/files`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}` },
+                body: formData,
+            });
+            if (res.ok) {
+                toast.success('File uploaded successfully!');
+                fetchFiles();
+                // Reset input
+                event.target.value = '';
+            } else {
+                toast.error('Failed to upload file');
+            }
+        } catch (err) {
+            console.error('Failed to upload file:', err);
+            toast.error('Failed to upload file');
+        } finally {
+            setUploadingFile(false);
+        }
+    };
+
+    const handleDownloadFile = async (file: ProjectFile) => {
+        try {
+            const res = await fetch(`${API_BASE_URL}${file.file_url}`, {
+                headers: { 'Authorization': `Bearer ${token}` },
+            });
+            if (res.ok) {
+                const blob = await res.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = file.file_name;
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                document.body.removeChild(a);
+            } else {
+                toast.error('Failed to download file');
+            }
+        } catch (err) {
+            console.error('Failed to download file:', err);
+            toast.error('Failed to download file');
+        }
+    };
+
+    const handleDeleteFile = async (fileId: number) => {
+        if (!confirm('Delete this file?')) return;
+        if (!id) return;
+
+        try {
+            const res = await fetch(`${API_BASE_URL}/api/projects/${id}/files/${fileId}`, {
+                method: 'DELETE',
+                headers: { 'Authorization': `Bearer ${token}` },
+            });
+            if (res.ok) {
+                toast.success('File deleted');
+                fetchFiles();
+            } else {
+                toast.error('Failed to delete file');
+            }
+        } catch (err) {
+            console.error('Failed to delete file:', err);
+            toast.error('Failed to delete file');
         }
     };
 
@@ -764,6 +879,7 @@ const ProjectDetail = () => {
         { id: 'business' as TabType, label: 'Business Review', icon: TrendingUp },
         { id: 'goals' as TabType, label: 'Goals', icon: Target },
         { id: 'activity' as TabType, label: 'Activity', icon: Activity },
+        { id: 'files' as TabType, label: 'Files', icon: Upload },
         // PM tab only for admins and project managers
         ...(isProjectManager(user) ? [{ id: 'pm' as TabType, label: 'Project Manager', icon: Clock }] : []),
     ];
@@ -1926,6 +2042,102 @@ const ProjectDetail = () => {
                     ) : (
                         <ActivityFeed activities={activities} />
                     )
+                )}
+
+                {/* Files Tab */}
+                {activeTab === 'files' && (
+                    <div className="space-y-4">
+                        {/* Upload Section */}
+                        <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-2xl p-6">
+                            <div className="flex items-center justify-between mb-4">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-xl bg-[#E0B954]/10 flex items-center justify-center">
+                                        <Upload className="w-5 h-5 text-[#E0B954]" />
+                                    </div>
+                                    <div>
+                                        <h3 className="font-semibold text-white">Upload Files</h3>
+                                        <p className="text-xs text-[#737373]">Share project files and documents</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <label className="cursor-pointer">
+                                <div className="border-2 border-dashed border-[rgba(224,185,84,0.3)] rounded-xl p-8 text-center hover:border-[rgba(224,185,84,0.6)] transition-colors">
+                                    <input
+                                        type="file"
+                                        onChange={handleUploadFile}
+                                        disabled={uploadingFile}
+                                        className="hidden"
+                                        accept="*/*"
+                                    />
+                                    <Upload className="w-8 h-8 text-[#E0B954] mx-auto mb-2" />
+                                    <p className="text-sm text-[#f5f5f5] font-medium mb-1">
+                                        {uploadingFile ? 'Uploading...' : 'Click to upload or drag and drop'}
+                                    </p>
+                                    <p className="text-xs text-[#737373]">Any file type, up to 50MB</p>
+                                </div>
+                            </label>
+                        </div>
+
+                        {/* Files List */}
+                        <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-2xl overflow-hidden">
+                            <div className="p-4 border-b border-[rgba(255,255,255,0.05)]">
+                                <h3 className="font-semibold text-white flex items-center gap-2">
+                                    <File className="w-5 h-5 text-[#E0B954]" />
+                                    Project Files {files.length > 0 && `(${files.length})`}
+                                </h3>
+                            </div>
+
+                            {files.length === 0 ? (
+                                <div className="p-8 text-center">
+                                    <File className="w-12 h-12 text-[#737373] mx-auto mb-3 opacity-50" />
+                                    <p className="text-[#737373]">No files uploaded yet</p>
+                                    <p className="text-xs text-[#737373] mt-1">Upload files to share with your team</p>
+                                </div>
+                            ) : (
+                                <div className="divide-y divide-[rgba(255,255,255,0.05)]">
+                                    {files.map((file) => (
+                                        <div key={file.id} className="p-4 hover:bg-[rgba(255,255,255,0.02)] transition-colors flex items-center justify-between">
+                                            <div className="flex items-center gap-3 flex-1 min-w-0">
+                                                <div className="w-10 h-10 rounded-lg bg-[#E0B954]/10 flex items-center justify-center flex-shrink-0">
+                                                    <File className="w-5 h-5 text-[#E0B954]" />
+                                                </div>
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="flex items-center gap-2">
+                                                        <p className="text-sm text-[#f5f5f5] font-medium truncate">{file.file_name}</p>
+                                                        <span className="text-xs text-[#737373] flex-shrink-0">
+                                                            ({(file.file_size / 1024 / 1024).toFixed(2)} MB)
+                                                        </span>
+                                                    </div>
+                                                    <div className="flex items-center gap-2 text-xs text-[#737373] mt-1">
+                                                        <span>Uploaded by {file.uploaded_by}</span>
+                                                        <span>•</span>
+                                                        <span>{new Date(file.created_at).toLocaleDateString()}</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div className="flex items-center gap-2 ml-2 flex-shrink-0">
+                                                <button
+                                                    onClick={() => handleDownloadFile(file)}
+                                                    className="p-2 hover:bg-[rgba(224,185,84,0.1)] rounded-lg transition-colors text-[#E0B954]"
+                                                    title="Download"
+                                                >
+                                                    <Download className="w-4 h-4" />
+                                                </button>
+                                                <button
+                                                    onClick={() => handleDeleteFile(file.id)}
+                                                    className="p-2 hover:bg-[rgba(244,63,94,0.1)] rounded-lg transition-colors text-[#F43F5E]"
+                                                    title="Delete"
+                                                >
+                                                    <Trash2 className="w-4 h-4" />
+                                                </button>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    </div>
                 )}
 
                 {/* Project Manager Tab */}

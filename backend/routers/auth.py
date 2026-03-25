@@ -1,5 +1,5 @@
 """
-Authentication Router - Login, logout, password management
+Authentication Router - Login, logout, password management, Google SSO
 """
 from fastapi import APIRouter, HTTPException, Depends, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
@@ -16,6 +16,7 @@ import sys
 sys.path.append('..')
 from database import get_db
 from models.user import User, UserRole
+from services.google_oauth_service import google_oauth_service
 
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
 
@@ -56,6 +57,11 @@ class Token(BaseModel):
 class PasswordReset(BaseModel):
     user_id: int
     new_password: str
+
+
+class GoogleLoginRequest(BaseModel):
+    """Request model for Google SSO login"""
+    token: str  # Google ID token from frontend
 
 
 def generate_temp_password(length=12):
@@ -191,6 +197,8 @@ async def create_user(
     db: Session = Depends(get_db)
 ):
     """Admin: Create a new user with auto-generated password"""
+    from models.developer import Developer
+    
     # Check if email already exists
     existing = db.query(User).filter(User.email == user_data.email).first()
     if existing:
@@ -213,6 +221,18 @@ async def create_user(
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
+    
+    # If user has developer role, also create them as a Developer/Employee
+    if 'developer' in user_data.role:
+        # Check if developer already exists with this email
+        existing_dev = db.query(Developer).filter(Developer.email == user_data.email).first()
+        if not existing_dev:
+            new_developer = Developer(
+                name=user_data.name,
+                email=user_data.email
+            )
+            db.add(new_developer)
+            db.commit()
     
     return {
         "status": "success",
@@ -349,4 +369,117 @@ async def get_current_user_info(current_user: User = Depends(get_current_user)):
         "name": current_user.name,
         "role": current_user.role,
         "is_first_login": current_user.is_first_login
+    }
+
+
+@router.post("/google-login", response_model=Token)
+async def google_login(
+    request: GoogleLoginRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Google SSO Login Endpoint
+    
+    OAuth 2.0 Flow:
+    1. Frontend gets ID token from Google Sign-In
+    2. Frontend sends token to this endpoint
+    3. Backend verifies token with Google
+    4. Backend creates/updates user in database
+    5. Backend returns JWT access token
+    6. Frontend stores JWT and uses for subsequent requests
+    """
+    from models.developer import Developer
+    
+    # Verify the Google ID token
+    user_info = google_oauth_service.verify_token(request.token)
+    if not user_info:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid Google token"
+        )
+    
+    # Check if user already exists by email
+    user = db.query(User).filter(User.email == user_info['email']).first()
+    
+    if user:
+        # Existing user - verify account is active
+        if not user.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Account is disabled"
+            )
+        
+        # Ensure existing user has a Developer record (for users created before SSO feature)
+        existing_dev = db.query(Developer).filter(Developer.email == user_info['email']).first()
+        if not existing_dev:
+            new_developer = Developer(
+                name=user.name,
+                email=user.email
+            )
+            db.add(new_developer)
+            db.commit()
+    else:
+        # Create new user from Google SSO
+        user = User(
+            email=user_info['email'],
+            name=user_info['name'],
+            hashed_password=None,  # SSO users don't have password
+            role=UserRole.DEVELOPER.value,
+            is_active=True,
+            is_first_login=False,  # SSO users don't need password change
+            last_login_at=datetime.utcnow()
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+        
+        # Also create as Developer/Employee
+        existing_dev = db.query(Developer).filter(Developer.email == user_info['email']).first()
+        if not existing_dev:
+            new_developer = Developer(
+                name=user_info['name'],
+                email=user_info['email']
+            )
+            db.add(new_developer)
+            db.commit()
+    
+    # Update last login timestamp
+    user.last_login_at = datetime.utcnow()
+    db.commit()
+    db.refresh(user)
+    
+    # Generate JWT token (same as password login)
+    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = create_access_token(
+        data={"sub": str(user.id)}, 
+        expires_delta=access_token_expires
+    )
+    
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "user": {
+            "id": user.id,
+            "email": user.email,
+            "name": user.name,
+            "role": user.role,
+            "is_first_login": user.is_first_login
+        }
+    }
+
+
+@router.get("/google/config")
+async def get_google_config():
+    """
+    Get Google Client ID for frontend configuration
+    Frontend needs this to initialize Google Sign-In
+    """
+    if not google_oauth_service.is_configured():
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Google SSO not configured"
+        )
+    
+    return {
+        "client_id": google_oauth_service.google_client_id
     }

@@ -1,6 +1,6 @@
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import { useState, useEffect } from 'react';
-import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { AuthProvider, useAuth, isAdmin } from './contexts/AuthContext';
 import { Login } from './components/Login';
 import { PasswordChange } from './components/PasswordChange';
 import ProjectsPage from './pages/ProjectsPage';
@@ -63,7 +63,26 @@ function IdleWarningModal({ onStay, onLogout, remainingSeconds }: { onStay: () =
 
 function AuthenticatedRoutes() {
   const { user, isLoading, isAuthenticated, showWarning, dismissWarning, logout } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
   const [countdown, setCountdown] = useState(300); // 5 minutes in seconds
+
+  // Store intended destination before redirecting to login
+  useEffect(() => {
+    if (!isLoading && !isAuthenticated && location.pathname !== '/login') {
+      localStorage.setItem('intendedPath', location.pathname + location.search);
+      navigate('/login');
+    }
+  }, [isAuthenticated, isLoading, navigate, location]);
+
+  // After login, redirect to intended destination
+  useEffect(() => {
+    if (!isLoading && isAuthenticated && location.pathname === '/login') {
+      const intendedPath = localStorage.getItem('intendedPath') || '/';
+      localStorage.removeItem('intendedPath');
+      navigate(intendedPath);
+    }
+  }, [isAuthenticated, isLoading, navigate, location]);
 
   // Countdown timer for warning modal
   useEffect(() => {
@@ -111,23 +130,25 @@ function AuthenticatedRoutes() {
           remainingSeconds={countdown}
         />
       )}
-      <Router>
-        <Routes>
-          <Route path="/" element={<ProjectsPage />} />
-          <Route path="/project/:id" element={<ProjectDetail />} />
-          <Route path="/project/:id/board" element={<ProjectBoard />} />
-          <Route path="/admin" element={<AdminDashboard />} />
-        </Routes>
-      </Router>
+      <Routes>
+        <Route path="/login" element={<Login />} />
+        <Route path="/" element={<ProjectsPage />} />
+        <Route path="/project/:id" element={<ProjectDetail />} />
+        <Route path="/project/:id/board" element={<ProjectBoard />} />
+        <Route path="/project/:id/board/:ticketId" element={<ProjectBoard />} />
+        <Route path="/admin" element={<AdminDashboard />} />
+      </Routes>
     </>
   );
 }
 
 function App() {
   return (
-    <AuthProvider>
-      <AuthenticatedRoutes />
-    </AuthProvider>
+    <Router>
+      <AuthProvider>
+        <AuthenticatedRoutes />
+      </AuthProvider>
+    </Router>
   );
 }
 

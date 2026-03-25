@@ -178,7 +178,7 @@ const PRIORITY_COLORS = {
 };
 
 const ProjectBoard = () => {
-    const { id } = useParams<{ id: string }>();
+    const { id, ticketId } = useParams<{ id: string; ticketId?: string }>();
     const navigate = useNavigate();
     const { token } = useAuth();
     const [project, setProject] = useState<Project | null>(null);
@@ -261,7 +261,18 @@ const ProjectBoard = () => {
                     fetch(`${API_BASE_URL}/api/workitems/projects/${id}/sprints`, { headers }),
                 ]);
                 if (projRes.ok) setProject(await projRes.json());
-                if (itemsRes.ok) setWorkItems(await itemsRes.json());
+                if (itemsRes.ok) {
+                    const items = await itemsRes.json();
+                    setWorkItems(items);
+                    
+                    // If URL has ticketId, find and select that item
+                    if (ticketId) {
+                        const selectedItemFromUrl = items.find((item: WorkItem) => item.id === ticketId);
+                        if (selectedItemFromUrl) {
+                            setSelectedItem(selectedItemFromUrl);
+                        }
+                    }
+                }
                 if (sprintsRes.ok) setSprints(await sprintsRes.json());
             } catch (err) {
                 console.error('Failed to fetch data:', err);
@@ -271,7 +282,16 @@ const ProjectBoard = () => {
             }
         };
         fetchData();
-    }, [id, token]);
+    }, [id, token, ticketId]);
+
+    // Clear selected item when ticketId is removed from URL
+    useEffect(() => {
+        if (!ticketId) {
+            setSelectedItem(null);
+            setIsEditing(false);
+            setEditForm({});
+        }
+    }, [ticketId]);
 
     // Refresh project stats
     const refreshProjectStats = useCallback(async () => {
@@ -286,7 +306,12 @@ const ProjectBoard = () => {
 
     // Filtered items
     const filteredItems = workItems.filter(item => {
-        if (searchQuery && !item.title.toLowerCase().includes(searchQuery.toLowerCase())) return false;
+        if (searchQuery) {
+            const searchLower = searchQuery.toLowerCase();
+            const titleMatch = item.title.toLowerCase().includes(searchLower);
+            const keyMatch = item.key.toLowerCase().includes(searchLower);
+            if (!titleMatch && !keyMatch) return false;
+        }
         if (filterType !== 'all' && item.type !== filterType) return false;
         if (filterPriority !== 'all' && item.priority !== filterPriority) return false;
         if (filterAssignee !== 'all') {
@@ -507,13 +532,13 @@ const ProjectBoard = () => {
     const insertMention = (developer: { id: number; name: string }) => {
         const lastAtIndex = newComment.lastIndexOf('@');
         const beforeMention = newComment.substring(0, lastAtIndex);
-        setNewComment(`${beforeMention}@${developer.id} `);
+        setNewComment(`${beforeMention}@${developer.name} `);
         setShowMentions(false);
         setMentionFilter('');
     };
 
     // Submit comment
-    const handleSubmitComment = async (isBlocker: boolean = false) => {
+    const handleSubmitComment = async (commentType: 'comment' | 'blocker' | 'business_review' = 'comment') => {
         if (!selectedItem || !newComment.trim()) return;
 
         try {
@@ -524,33 +549,74 @@ const ProjectBoard = () => {
                     work_item_id: parseInt(selectedItem.id),
                     content: newComment,
                     author_id: project?.developers?.[0]?.id || 1, // TODO: Use actual logged-in user
-                    comment_type: isBlocker ? 'blocker' : 'comment',
+                    comment_type: commentType,
                 }),
             });
             if (response.ok) {
                 const newCommentData = await response.json();
                 setComments(prev => [newCommentData, ...prev]);
                 setNewComment('');
-                toast.success(isBlocker ? 'Blocker reported!' : 'Comment added!');
+                const messages = {
+                    'blocker': 'Blocker reported!',
+                    'business_review': 'Business Review comment added!',
+                    'comment': 'Comment added!'
+                };
+                toast.success(messages[commentType]);
             }
         } catch {
             toast.error('Failed to add comment');
         }
     };
 
-    // Render comment with mentions highlighted
-    const renderCommentContent = (content: string) => {
-        const parts = content.split(/(@\d+)/g);
+    // Render comment with mentions highlighted and links as clickable
+    const renderCommentContent = (content: string, mentions: number[] = []) => {
+        // Build a map of developer IDs to names for quick lookup
+        const devMap = new Map(allDevelopers.map(d => [d.id, d.name]));
+        
+        // Replace @name with highlighted version for each mentioned developer
+        let result = content;
+        mentions.forEach(devId => {
+            const devName = devMap.get(devId);
+            if (devName) {
+                // Replace @devName with highlighted version
+                const regex = new RegExp(`@${devName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'g');
+                result = result.replace(regex, `<<<MENTION_${devId}>>>`);
+            }
+        });
+        
+        // Also replace URLs with placeholders
+        const urlRegex = /(https?:\/\/[^\s]+)/g;
+        const urls: string[] = [];
+        result = result.replace(urlRegex, (match) => {
+            urls.push(match);
+            return `<<<URL_${urls.length - 1}>>>`;
+        });
+        
+        // Parse the result and highlight the placeholders
+        const parts = result.split(/(<<<MENTION_\d+>>>|<<<URL_\d+>>>)/g);
         return parts.map((part, index) => {
-            if (part.startsWith('@') && !isNaN(parseInt(part.substring(1)))) {
-                const devId = parseInt(part.substring(1));
-                const dev = allDevelopers.find(d => d.id === devId);
+            const mentionMatch = part.match(/<<<MENTION_(\d+)>>>/);
+            if (mentionMatch) {
+                const devId = parseInt(mentionMatch[1]);
+                const devName = devMap.get(devId);
                 return (
                     <span key={index} className="bg-[rgba(224,185,84,0.2)] text-[#E0B954] px-1.5 py-0.5 rounded-md font-medium">
-                        @{dev?.name || devId}
+                        @{devName}
                     </span>
                 );
             }
+            
+            const urlMatch = part.match(/<<<URL_(\d+)>>>/);
+            if (urlMatch) {
+                const urlIndex = parseInt(urlMatch[1]);
+                const url = urls[urlIndex];
+                return (
+                    <a key={index} href={url} target="_blank" rel="noopener noreferrer" className="text-[#E0B954] hover:text-[#C79E3B] underline hover:no-underline transition-colors break-all">
+                        {url}
+                    </a>
+                );
+            }
+            
             return part;
         });
     };
@@ -1148,7 +1214,7 @@ const ProjectBoard = () => {
                                                     key={item.id}
                                                     draggable
                                                     onDragStart={() => handleDragStart(item.id)}
-                                                    onClick={() => { setSelectedItem(item); setIsEditing(false); setEditForm({}); }}
+                                                    onClick={() => { navigate(`/project/${id}/board/${item.id}`); setIsEditing(false); setEditForm({}); }}
                                                     className={`group bg-[rgba(255,255,255,0.025)] rounded-xl border border-[rgba(255,255,255,0.05)] p-3.5 cursor-pointer transition-all duration-200 hover:border-[rgba(244,246,255,0.15)] hover:bg-[rgba(244,246,255,0.05)] hover:shadow-lg hover:shadow-black/20 ${draggedItem === item.id ? 'opacity-40 scale-95' : ''
                                                         }`}
                                                 >
@@ -1269,7 +1335,7 @@ const ProjectBoard = () => {
                                     return (
                                         <div
                                             key={item.id}
-                                            onClick={() => { setSelectedItem(item); setIsEditing(false); setEditForm({}); }}
+                                            onClick={() => { navigate(`/project/${id}/board/${item.id}`); setIsEditing(false); setEditForm({}); }}
                                             className="grid grid-cols-[1fr_120px_100px_100px_100px_120px] gap-4 px-5 py-3.5 border-b border-[rgba(255,255,255,0.03)] hover:bg-[rgba(255,255,255,0.025)] cursor-pointer transition-colors group"
                                         >
                                             <div className="flex items-center gap-3 min-w-0">
@@ -1311,7 +1377,7 @@ const ProjectBoard = () => {
             {/* Detail Slide-in Drawer */}
             {selectedItem && (
                 <>
-                    <div className="fixed inset-0 bg-black/40 z-40" onClick={() => setSelectedItem(null)} />
+                    <div className="fixed inset-0 bg-black/40 z-40" onClick={() => navigate(`/project/${id}/board`)} />
                     <div className="fixed right-0 top-0 bottom-0 w-full max-w-xl bg-[#080808] border-l border-[rgba(255,255,255,0.07)] z-50 flex flex-col shadow-2xl shadow-black/50 animate-in slide-in-from-right duration-300">
                         {/* Drawer Header */}
                         <div className="flex items-center justify-between p-5 border-b border-[rgba(255,255,255,0.05)]">
@@ -1337,7 +1403,7 @@ const ProjectBoard = () => {
                                     className="text-red-400 hover:text-red-300 hover:bg-red-400/10 rounded-lg h-8 px-2.5">
                                     <Trash2 className="w-3.5 h-3.5" />
                                 </Button>
-                                <Button size="sm" variant="ghost" onClick={() => setSelectedItem(null)}
+                                <Button size="sm" variant="ghost" onClick={() => navigate(`/project/${id}/board`)}
                                     className="text-[#737373] hover:text-white rounded-lg h-8 px-2.5">
                                     <X className="w-4 h-4" />
                                 </Button>
@@ -1499,7 +1565,7 @@ const ProjectBoard = () => {
                                                         <div
                                                             key={child.id}
                                                             className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.04)] cursor-pointer hover:border-[rgba(255,255,255,0.08)] transition-colors"
-                                                            onClick={() => setSelectedItem(child)}
+                                                            onClick={() => navigate(`/project/${id}/board/${child.id}`)}
                                                         >
                                                             <span className="text-xs font-mono text-[#737373] flex-shrink-0">{child.key}</span>
                                                             <span className="text-sm text-[#a3a3a3] truncate flex-1">{child.title}</span>
@@ -1661,10 +1727,10 @@ const ProjectBoard = () => {
                                                     )}
                                                 </div>
                                             )}
-                                            <div className="flex gap-2 mt-2">
+                                            <div className="flex gap-2 mt-2 flex-wrap">
                                                 <Button
                                                     size="sm"
-                                                    onClick={() => handleSubmitComment(false)}
+                                                    onClick={() => handleSubmitComment('comment')}
                                                     disabled={!newComment.trim()}
                                                     className="bg-[rgba(224,185,84,0.1)] border border-[rgba(224,185,84,0.3)] text-[#E0B954] hover:bg-[rgba(224,185,84,0.2)] rounded-lg text-xs h-8"
                                                 >
@@ -1673,12 +1739,21 @@ const ProjectBoard = () => {
                                                 </Button>
                                                 <Button
                                                     size="sm"
-                                                    onClick={() => handleSubmitComment(true)}
+                                                    onClick={() => handleSubmitComment('blocker')}
                                                     disabled={!newComment.trim()}
                                                     className="bg-[rgba(239,68,68,0.1)] border border-[rgba(239,68,68,0.3)] text-[#EF4444] hover:bg-[rgba(239,68,68,0.2)] rounded-lg text-xs h-8"
                                                 >
                                                     <AlertCircle className="w-3 h-3 mr-1" />
                                                     Report Blocker
+                                                </Button>
+                                                <Button
+                                                    size="sm"
+                                                    onClick={() => handleSubmitComment('business_review')}
+                                                    disabled={!newComment.trim()}
+                                                    className="bg-[rgba(167,139,250,0.1)] border border-[rgba(167,139,250,0.3)] text-[#A78BFA] hover:bg-[rgba(167,139,250,0.2)] rounded-lg text-xs h-8"
+                                                >
+                                                    <Target className="w-3 h-3 mr-1" />
+                                                    Business Review
                                                 </Button>
                                             </div>
                                         </div>
@@ -1693,13 +1768,17 @@ const ProjectBoard = () => {
                                                 comments.map(comment => (
                                                     <div key={comment.id} className={`p-3 rounded-xl ${
                                                         comment.comment_type === 'blocker' 
-                                                            ? 'bg-[rgba(239,68,68,0.05)] border border-[rgba(239,68,68,0.2)]' 
+                                                            ? 'bg-[rgba(239,68,68,0.05)] border border-[rgba(239,68,68,0.2)]'
+                                                            : comment.comment_type === 'business_review'
+                                                            ? 'bg-[rgba(167,139,250,0.05)] border border-[rgba(167,139,250,0.2)]'
                                                             : 'bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)]'
                                                     }`}>
                                                         <div className="flex items-center gap-2 mb-2">
                                                             <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs ${
                                                                 comment.comment_type === 'blocker' 
-                                                                    ? 'bg-[rgba(239,68,68,0.2)] text-[#EF4444]' 
+                                                                    ? 'bg-[rgba(239,68,68,0.2)] text-[#EF4444]'
+                                                                    : comment.comment_type === 'business_review'
+                                                                    ? 'bg-[rgba(167,139,250,0.2)] text-[#A78BFA]'
                                                                     : 'bg-[rgba(224,185,84,0.2)] text-[#E0B954]'
                                                             }`}>
                                                                 {comment.author_name?.charAt?.(0)?.toUpperCase() || '?'}
@@ -1708,12 +1787,15 @@ const ProjectBoard = () => {
                                                             {comment.comment_type === 'blocker' && (
                                                                 <span className="px-1.5 py-0.5 rounded-md bg-[rgba(239,68,68,0.2)] text-[#EF4444] text-[10px] font-medium">BLOCKER</span>
                                                             )}
+                                                            {comment.comment_type === 'business_review' && (
+                                                                <span className="px-1.5 py-0.5 rounded-md bg-[rgba(167,139,250,0.2)] text-[#A78BFA] text-[10px] font-medium">BUSINESS REVIEW</span>
+                                                            )}
                                                             <span className="text-xs text-[#737373] ml-auto">
                                                                 {new Date(comment.created_at).toLocaleDateString()}
                                                             </span>
                                                         </div>
                                                         <p className="text-sm text-[#a3a3a3] leading-relaxed">
-                                                            {renderCommentContent(comment.content)}
+                                                            {renderCommentContent(comment.content, comment.mentions)}
                                                         </p>
                                                     </div>
                                                 ))
