@@ -1182,8 +1182,10 @@ async def get_hours_analytics(
                 developers.append(dev)
                 existing_ids.add(dev_id)
     
-    # Build a map of work_item_id to assignee_id for entries with NULL developer_id
+    # Build maps for quick lookup
     work_item_assignee_map = {item.id: item.assignee_id for item in items}
+    work_item_map = {item.id: item for item in items}
+    dev_map = {d.id: d for d in developers}
     
     print(f"DEBUG: Found {len(all_time_entries)} time entries for project {project_id}")
     for te in all_time_entries:
