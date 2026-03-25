@@ -1,13 +1,15 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Clock, Users, Calendar, TrendingUp, AlertTriangle, Filter } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { API_BASE_URL } from '@/config/api';
+import HoursDebugPanel from './HoursDebugPanel';
 
 interface PMViewProps {
     projectId: string;
     token: string;
+    isAdmin?: boolean;
 }
 
 interface HoursAnalytics {
@@ -30,6 +32,33 @@ interface SprintHours {
     total_items: number;
 }
 
+interface TimeEntry {
+    hours: number;
+    logged_at: string;
+    is_this_week: boolean;
+    description?: string;
+}
+
+interface TicketBreakdown {
+    ticket_id: number;
+    key: string;
+    title: string;
+    status: string;
+    estimated_hours: number;
+    total_logged_on_ticket: number;
+    my_logged_hours: number;
+    remaining_hours: number;
+    time_entries: TimeEntry[];
+}
+
+interface HoursOnOthersTicket {
+    ticket_key: string;
+    ticket_title: string;
+    ticket_assignee: string;
+    hours: number;
+    logged_at: string;
+}
+
 interface DeveloperHours {
     developer_id: number;
     developer_name: string;
@@ -41,6 +70,9 @@ interface DeveloperHours {
     current_week_logged: number;
     total_items: number;
     completed_items: number;
+    my_tickets: TicketBreakdown[];
+    hours_logged_on_others_tickets: HoursOnOthersTicket[];
+    attribution_note: string;
 }
 
 interface WeeklyHours {
@@ -52,14 +84,20 @@ interface WeeklyHours {
     items_completed: number;
 }
 
-export default function PMView({ projectId, token }: PMViewProps) {
+export default function PMView({ projectId, token, isAdmin = false }: PMViewProps) {
     const [analytics, setAnalytics] = useState<HoursAnalytics | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [weekFilter, setWeekFilter] = useState<'all' | 'with-activity'>('all');
+    const [expandedDeveloper, setExpandedDeveloper] = useState<number | null>(null);
+    const [showDebugPanel, setShowDebugPanel] = useState(false);
 
     useEffect(() => {
         fetchAnalytics();
     }, [projectId]);
+
+    const toggleDeveloperExpand = (devId: number) => {
+        setExpandedDeveloper(expandedDeveloper === devId ? null : devId);
+    };
 
     const fetchAnalytics = async () => {
         try {
@@ -228,6 +266,10 @@ export default function PMView({ projectId, token }: PMViewProps) {
                         <Users className="w-5 h-5" />
                         Developer Hours Summary
                     </CardTitle>
+                    <p className="text-xs text-[#737373] mt-1">
+                        Click on a developer row to see detailed ticket breakdown. 
+                        <span className="text-[#C79E3B]"> Hours are attributed to the person who logged them.</span>
+                    </p>
                 </CardHeader>
                 <CardContent>
                     <div className="overflow-x-auto">
@@ -253,47 +295,132 @@ export default function PMView({ projectId, token }: PMViewProps) {
                                     </tr>
                                 ) : (
                                     analytics.developer_hours.map((dev) => {
+                                        const isExpanded = expandedDeveloper === dev.developer_id;
+                                        const hasHoursOnOthersTickets = dev.hours_logged_on_others_tickets && dev.hours_logged_on_others_tickets.length > 0;
+                                        
                                         return (
-                                            <tr key={dev.developer_id} className="border-b border-[rgba(255,255,255,0.03)] hover:bg-[rgba(255,255,255,0.02)]">
-                                                <td className="py-3 px-4">
-                                                    <div className="flex items-center gap-3">
-                                                        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#E0B954] to-[#B8872A] flex items-center justify-center text-white text-sm font-semibold">
-                                                            {dev.developer_name.charAt(0).toUpperCase()}
+                                            <React.Fragment key={dev.developer_id}>
+                                                <tr 
+                                                    className="border-b border-[rgba(255,255,255,0.03)] hover:bg-[rgba(255,255,255,0.02)] cursor-pointer"
+                                                    onClick={() => toggleDeveloperExpand(dev.developer_id)}
+                                                >
+                                                    <td className="py-3 px-4">
+                                                        <div className="flex items-center gap-3">
+                                                            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#E0B954] to-[#B8872A] flex items-center justify-center text-white text-sm font-semibold">
+                                                                {dev.developer_name.charAt(0).toUpperCase()}
+                                                            </div>
+                                                            <div>
+                                                                <p className="text-sm text-white">{dev.developer_name}</p>
+                                                                <p className="text-xs text-[#737373]">{dev.developer_email}</p>
+                                                            </div>
+                                                            {hasHoursOnOthersTickets && (
+                                                                <Badge className="bg-[#F59E0B]/20 text-[#F59E0B] border-0 text-xs">
+                                                                    +{dev.hours_logged_on_others_tickets.reduce((sum, t) => sum + t.hours, 0)}h on others' tickets
+                                                                </Badge>
+                                                            )}
                                                         </div>
-                                                        <div>
-                                                            <p className="text-sm text-white">{dev.developer_name}</p>
-                                                            <p className="text-xs text-[#737373]">{dev.developer_email}</p>
-                                                        </div>
-                                                    </div>
-                                                </td>
-                                                <td className="py-3 px-4">
-                                                    <Badge variant="outline" className="border-[rgba(255,255,255,0.08)] text-[#a3a3a3]">
-                                                        {dev.role}
-                                                    </Badge>
-                                                </td>
-                                                <td className="py-3 px-4 text-sm text-right text-white">{dev.allocated_hours}h</td>
-                                                <td className="py-3 px-4 text-sm text-right">
-                                                    <span className={dev.logged_hours > 0 ? 'text-[#E0B954]' : 'text-[#737373]'}>
-                                                        {dev.logged_hours}h
-                                                    </span>
-                                                </td>
-                                                <td className="py-3 px-4 text-sm text-right">
-                                                    <span className={dev.current_week_logged > 0 ? 'text-[#C79E3B] font-semibold' : 'text-[#737373]'}>
-                                                        {dev.current_week_logged}h
-                                                    </span>
-                                                </td>
-                                                <td className="py-3 px-4 text-sm text-right">
-                                                    <span className={dev.remaining_hours > 0 ? 'text-[#F59E0B]' : 'text-[#737373]'}>
-                                                        {dev.remaining_hours}h
-                                                    </span>
-                                                </td>
-                                                <td className="py-3 px-4 text-sm text-right text-white">{dev.total_items}</td>
-                                                <td className="py-3 px-4 text-sm text-right">
-                                                    <Badge className="bg-[#E0B954]/20 text-[#E0B954] border-0">
-                                                        {dev.completed_items}/{dev.total_items}
-                                                    </Badge>
-                                                </td>
-                                            </tr>
+                                                    </td>
+                                                    <td className="py-3 px-4">
+                                                        <Badge variant="outline" className="border-[rgba(255,255,255,0.08)] text-[#a3a3a3]">
+                                                            {dev.role}
+                                                        </Badge>
+                                                    </td>
+                                                    <td className="py-3 px-4 text-sm text-right text-white">{dev.allocated_hours}h</td>
+                                                    <td className="py-3 px-4 text-sm text-right">
+                                                        <span className={dev.logged_hours > 0 ? 'text-[#E0B954]' : 'text-[#737373]'}>
+                                                            {dev.logged_hours}h
+                                                        </span>
+                                                    </td>
+                                                    <td className="py-3 px-4 text-sm text-right">
+                                                        <span className={dev.current_week_logged > 0 ? 'text-[#C79E3B] font-semibold' : 'text-[#737373]'}>
+                                                            {dev.current_week_logged}h
+                                                        </span>
+                                                    </td>
+                                                    <td className="py-3 px-4 text-sm text-right">
+                                                        <span className={dev.remaining_hours > 0 ? 'text-[#F59E0B]' : 'text-[#737373]'}>
+                                                            {dev.remaining_hours}h
+                                                        </span>
+                                                    </td>
+                                                    <td className="py-3 px-4 text-sm text-right text-white">{dev.total_items}</td>
+                                                    <td className="py-3 px-4 text-sm text-right">
+                                                        <Badge className="bg-[#E0B954]/20 text-[#E0B954] border-0">
+                                                            {dev.completed_items}/{dev.total_items}
+                                                        </Badge>
+                                                    </td>
+                                                </tr>
+                                                
+                                                {/* Expanded Detail Row */}
+                                                {isExpanded && (
+                                                    <tr className="bg-[rgba(255,255,255,0.01)]">
+                                                        <td colSpan={8} className="py-4 px-4">
+                                                            <div className="space-y-4">
+                                                                {/* My Tickets Section */}
+                                                                <div>
+                                                                    <h4 className="text-xs font-medium text-[#737373] uppercase mb-2">My Assigned Tickets</h4>
+                                                                    {dev.my_tickets && dev.my_tickets.length > 0 ? (
+                                                                        <div className="space-y-2">
+                                                                            {dev.my_tickets.map((ticket) => (
+                                                                                <div key={ticket.ticket_id} className="flex items-center justify-between py-2 px-3 bg-[rgba(255,255,255,0.03)] rounded">
+                                                                                    <div className="flex items-center gap-3">
+                                                                                        <Badge 
+                                                                                            variant="outline" 
+                                                                                            className={`
+                                                                                                text-xs border-0
+                                                                                                ${ticket.status === 'done' ? 'bg-green-500/20 text-green-400' : ''}
+                                                                                                ${ticket.status === 'in_progress' ? 'bg-[#F59E0B]/20 text-[#F59E0B]' : ''}
+                                                                                                ${ticket.status === 'in_review' ? 'bg-blue-500/20 text-blue-400' : ''}
+                                                                                                ${ticket.status === 'todo' ? 'bg-[#737373]/20 text-[#737373]' : ''}
+                                                                                            `}
+                                                                                        >
+                                                                                            {ticket.status}
+                                                                                        </Badge>
+                                                                                        <span className="text-sm text-white">{ticket.key}</span>
+                                                                                        <span className="text-sm text-[#a3a3a3] truncate max-w-[200px]">{ticket.title}</span>
+                                                                                    </div>
+                                                                                    <div className="flex items-center gap-4 text-xs">
+                                                                                        <span className="text-[#737373]">Est: <span className="text-white">{ticket.estimated_hours}h</span></span>
+                                                                                        <span className="text-[#737373]">Total Logged: <span className="text-[#E0B954]">{ticket.total_logged_on_ticket}h</span></span>
+                                                                                        <span className="text-[#737373]">My Hours: <span className={ticket.my_logged_hours > 0 ? 'text-[#C79E3B]' : 'text-[#737373]'}>{ticket.my_logged_hours}h</span></span>
+                                                                                        <span className="text-[#737373]">Remaining: <span className="text-[#F59E0B]">{ticket.remaining_hours}h</span></span>
+                                                                                    </div>
+                                                                                </div>
+                                                                            ))}
+                                                                        </div>
+                                                                    ) : (
+                                                                        <p className="text-xs text-[#737373]">No assigned tickets</p>
+                                                                    )}
+                                                                </div>
+                                                                
+                                                                {/* Hours on Others' Tickets */}
+                                                                {hasHoursOnOthersTickets && (
+                                                                    <div>
+                                                                        <h4 className="text-xs font-medium text-[#737373] uppercase mb-2">Hours Logged on Others' Tickets</h4>
+                                                                        <div className="space-y-2">
+                                                                            {dev.hours_logged_on_others_tickets.map((entry, idx) => (
+                                                                                <div key={idx} className="flex items-center justify-between py-2 px-3 bg-[rgba(245,158,11,0.05)] rounded border border-[rgba(245,158,11,0.1)]">
+                                                                                    <div className="flex items-center gap-3">
+                                                                                        <span className="text-sm text-white">{entry.ticket_key}</span>
+                                                                                        <span className="text-sm text-[#a3a3a3] truncate max-w-[200px]">{entry.ticket_title}</span>
+                                                                                        <span className="text-xs text-[#737373]">(Assignee: {entry.ticket_assignee})</span>
+                                                                                    </div>
+                                                                                    <div className="flex items-center gap-4 text-xs">
+                                                                                        <span className="text-[#F59E0B] font-medium">{entry.hours}h logged</span>
+                                                                                        <span className="text-[#737373]">{new Date(entry.logged_at).toLocaleDateString()}</span>
+                                                                                    </div>
+                                                                                </div>
+                                                                            ))}
+                                                                        </div>
+                                                                    </div>
+                                                                )}
+                                                                
+                                                                <p className="text-xs text-[#737373] italic">
+                                                                    {dev.attribution_note}
+                                                                </p>
+                                                            </div>
+                                                        </td>
+                                                    </tr>
+                                                )}
+                                            </React.Fragment>
                                         );
                                     })
                                 )}
@@ -364,6 +491,27 @@ export default function PMView({ projectId, token }: PMViewProps) {
                     </div>
                 </CardContent>
             </Card>
+
+            {/* Debug Panel Toggle */}
+            <div className="flex justify-end">
+                <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setShowDebugPanel(!showDebugPanel)}
+                    className="text-xs text-[#737373] hover:text-white"
+                >
+                    {showDebugPanel ? 'Hide Diagnostics' : 'Show Diagnostics'}
+                </Button>
+            </div>
+
+            {/* Debug Panel */}
+            {showDebugPanel && (
+                <HoursDebugPanel 
+                    projectId={projectId} 
+                    token={token} 
+                    isAdmin={isAdmin}
+                />
+            )}
         </div>
     );
 }

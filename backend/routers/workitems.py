@@ -1241,6 +1241,47 @@ async def get_hours_analytics(
             if te.logged_at and current_week_start <= te.logged_at <= current_week_end
         )
         
+        # Build detailed ticket breakdown for this developer
+        ticket_breakdown = []
+        for item in dev_items:
+            # Get time entries for this ticket by this developer
+            ticket_entries = [te for te in dev_time_entries if te.work_item_id == item.id]
+            hours_on_this_ticket = sum(te.hours for te in ticket_entries)
+            
+            ticket_breakdown.append({
+                "ticket_id": item.id,
+                "key": item.key,
+                "title": item.title,
+                "status": item.status,
+                "estimated_hours": item.estimated_hours or 0,
+                "total_logged_on_ticket": item.logged_hours or 0,
+                "my_logged_hours": hours_on_this_ticket,
+                "remaining_hours": item.remaining_hours or 0,
+                "time_entries": [
+                    {
+                        "hours": te.hours,
+                        "logged_at": te.logged_at.isoformat() if te.logged_at else None,
+                        "is_this_week": te.logged_at and current_week_start <= te.logged_at <= current_week_end,
+                        "description": te.description
+                    }
+                    for te in ticket_entries
+                ]
+            })
+        
+        # Calculate hours logged on others' tickets
+        hours_on_others_tickets = []
+        for te in dev_time_entries:
+            wi = work_item_map.get(te.work_item_id)
+            if wi and wi.assignee_id != dev.id:
+                assignee = dev_map.get(wi.assignee_id)
+                hours_on_others_tickets.append({
+                    "ticket_key": wi.key,
+                    "ticket_title": wi.title,
+                    "ticket_assignee": assignee.name if assignee else "Unassigned",
+                    "hours": te.hours,
+                    "logged_at": te.logged_at.isoformat() if te.logged_at else None
+                })
+        
         developer_hours.append({
             "developer_id": dev.id,
             "developer_name": dev.name,
@@ -1252,7 +1293,10 @@ async def get_hours_analytics(
             "current_week_logged": current_week_logged,
             "in_progress_remaining": in_progress_remaining,
             "total_items": len(dev_items),
-            "completed_items": len(completed_items)
+            "completed_items": len(completed_items),
+            "my_tickets": ticket_breakdown,
+            "hours_logged_on_others_tickets": hours_on_others_tickets,
+            "attribution_note": "Hours attributed to the person who logged them, not the ticket assignee"
         })
     
     # Weekly breakdown - based on calendar weeks (Sunday to Saturday)
@@ -1522,6 +1566,245 @@ async def remove_item_dependency(
     db.delete(dependency)
     db.commit()
     return {"status": "deleted", "id": dep_id}
+
+
+# ============== DEBUG ENDPOINTS ==============
+
+@router.get("/projects/{project_id}/hours-debug")
+async def debug_hours_calculation(
+    project_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Debug endpoint to diagnose hours calculation issues.
+    Shows detailed breakdown of all time entries and their attribution.
+    """
+    from models.developer import Developer
+    from models.time_entry import TimeEntry
+    from datetime import timedelta
+    
+    # Verify project exists
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    # Get all work items
+    items = db.query(WorkItem).filter(WorkItem.project_id == project_id).all()
+    work_item_ids = [item.id for item in items]
+    
+    # Get all time entries
+    all_time_entries = db.query(TimeEntry).filter(TimeEntry.work_item_id.in_(work_item_ids)).all() if work_item_ids else []
+    
+    # Get all developers
+    all_developers = db.query(Developer).all()
+    dev_map = {d.id: d for d in all_developers}
+    
+    # Build work item map
+    work_item_map = {item.id: item for item in items}
+    
+    # Calculate week boundaries
+    today = datetime.utcnow()
+    days_since_sunday = (today.weekday() + 1) % 7
+    week_start = today - timedelta(days=days_since_sunday)
+    week_start = week_start.replace(hour=0, minute=0, second=0, microsecond=0)
+    week_end = week_start + timedelta(days=6, hours=23, minutes=59, seconds=59)
+    
+    # Detailed time entries breakdown
+    time_entry_details = []
+    for te in all_time_entries:
+        wi = work_item_map.get(te.work_item_id)
+        logger = dev_map.get(te.developer_id) if te.developer_id else None
+        assignee = dev_map.get(wi.assignee_id) if wi and wi.assignee_id else None
+        
+        time_entry_details.append({
+            "time_entry_id": te.id,
+            "work_item_id": te.work_item_id,
+            "work_item_key": wi.key if wi else "Unknown",
+            "work_item_title": wi.title if wi else "Unknown",
+            "work_item_status": wi.status if wi else "Unknown",
+            "logged_hours_on_ticket": wi.logged_hours if wi else 0,
+            "logger_developer_id": te.developer_id,
+            "logger_name": logger.name if logger else "Unknown",
+            "logger_email": logger.email if logger else "Unknown",
+            "ticket_assignee_id": wi.assignee_id if wi else None,
+            "ticket_assignee_name": assignee.name if assignee else "Unassigned",
+            "hours_logged": te.hours,
+            "logged_at": te.logged_at.isoformat() if te.logged_at else None,
+            "is_this_week": te.logged_at and week_start <= te.logged_at <= week_end,
+            "description": te.description
+        })
+    
+    # Developer attribution summary
+    developer_summary = {}
+    for dev in all_developers:
+        # Time entries where this dev is the logger
+        dev_entries = [te for te in all_time_entries if te.developer_id == dev.id]
+        total_logged = sum(te.hours for te in dev_entries)
+        this_week_logged = sum(
+            te.hours for te in dev_entries
+            if te.logged_at and week_start <= te.logged_at <= week_end
+        )
+        
+        # Tickets assigned to this dev
+        assigned_items = [wi for wi in items if wi.assignee_id == dev.id]
+        allocated = sum(wi.estimated_hours or 0 for wi in assigned_items)
+        
+        # Hours logged by OTHERS on this dev's tickets
+        others_on_my_tickets = []
+        for wi in assigned_items:
+            entries_on_my_ticket = [te for te in all_time_entries if te.work_item_id == wi.id and te.developer_id != dev.id]
+            for te in entries_on_my_ticket:
+                logger = dev_map.get(te.developer_id)
+                others_on_my_tickets.append({
+                    "ticket_key": wi.key,
+                    "ticket_title": wi.title,
+                    "logged_by": logger.name if logger else "Unknown",
+                    "hours": te.hours
+                })
+        
+        # Hours this dev logged on others' tickets
+        my_entries_on_others_tickets = []
+        for te in dev_entries:
+            wi = work_item_map.get(te.work_item_id)
+            if wi and wi.assignee_id != dev.id:
+                assignee = dev_map.get(wi.assignee_id)
+                my_entries_on_others_tickets.append({
+                    "ticket_key": wi.key,
+                    "ticket_title": wi.title,
+                    "ticket_assignee": assignee.name if assignee else "Unassigned",
+                    "hours": te.hours
+                })
+        
+        developer_summary[dev.id] = {
+            "developer_id": dev.id,
+            "name": dev.name,
+            "email": dev.email,
+            "total_logged_hours": total_logged,
+            "this_week_logged_hours": this_week_logged,
+            "allocated_hours": allocated,
+            "assigned_tickets_count": len(assigned_items),
+            "assigned_tickets": [{"key": wi.key, "title": wi.title, "estimated": wi.estimated_hours, "logged": wi.logged_hours} for wi in assigned_items],
+            "others_logged_on_my_tickets": others_on_my_tickets,
+            "i_logged_on_others_tickets": my_entries_on_others_tickets,
+            "my_time_entries": [{"ticket": work_item_map.get(te.work_item_id).key if work_item_map.get(te.work_item_id) else "Unknown", "hours": te.hours, "when": te.logged_at.isoformat() if te.logged_at else None} for te in dev_entries]
+        }
+    
+    # Data consistency checks
+    consistency_issues = []
+    for wi in items:
+        entries_for_item = [te for te in all_time_entries if te.work_item_id == wi.id]
+        sum_from_entries = sum(te.hours for te in entries_for_item)
+        stored_logged = wi.logged_hours or 0
+        
+        if stored_logged != sum_from_entries:
+            consistency_issues.append({
+                "ticket_key": wi.key,
+                "ticket_title": wi.title,
+                "stored_logged_hours": stored_logged,
+                "sum_from_time_entries": sum_from_entries,
+                "difference": stored_logged - sum_from_entries,
+                "time_entries_count": len(entries_for_item)
+            })
+    
+    return {
+        "project_id": project_id,
+        "project_name": project.name,
+        "week_range": {
+            "start": week_start.isoformat(),
+            "end": week_end.isoformat()
+        },
+        "total_work_items": len(items),
+        "total_time_entries": len(all_time_entries),
+        "time_entry_details": time_entry_details,
+        "developer_summary": developer_summary,
+        "consistency_issues": consistency_issues,
+        "data_summary": {
+            "total_hours_from_entries": sum(te.hours for te in all_time_entries),
+            "total_hours_from_work_items": sum(wi.logged_hours or 0 for wi in items),
+            "developers_with_entries": list(set(te.developer_id for te in all_time_entries if te.developer_id))
+        }
+    }
+
+
+@router.post("/projects/{project_id}/repair-hours")
+async def repair_hours_calculation(
+    project_id: int,
+    dry_run: bool = True,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Repair endpoint to fix hours calculation inconsistencies.
+    Syncs work_item.logged_hours with sum of time_entries.
+    
+    Parameters:
+    - dry_run: If True, only shows what would be changed without making changes
+    
+    Requires admin access.
+    """
+    from models.time_entry import TimeEntry
+    
+    # Check if user is admin
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    # Verify project exists
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    # Get all work items
+    items = db.query(WorkItem).filter(WorkItem.project_id == project_id).all()
+    work_item_ids = [item.id for item in items]
+    
+    # Get all time entries
+    all_time_entries = db.query(TimeEntry).filter(TimeEntry.work_item_id.in_(work_item_ids)).all() if work_item_ids else []
+    
+    # Group time entries by work item
+    entries_by_work_item = {}
+    for te in all_time_entries:
+        if te.work_item_id not in entries_by_work_item:
+            entries_by_work_item[te.work_item_id] = []
+        entries_by_work_item[te.work_item_id].append(te)
+    
+    repairs = []
+    for wi in items:
+        entries = entries_by_work_item.get(wi.id, [])
+        sum_from_entries = sum(te.hours for te in entries)
+        stored_logged = wi.logged_hours or 0
+        
+        if stored_logged != sum_from_entries:
+            repairs.append({
+                "ticket_id": wi.id,
+                "ticket_key": wi.key,
+                "ticket_title": wi.title,
+                "old_logged_hours": stored_logged,
+                "new_logged_hours": sum_from_entries,
+                "difference": sum_from_entries - stored_logged,
+                "time_entries_count": len(entries),
+                "would_update": not dry_run
+            })
+            
+            if not dry_run:
+                # Apply the fix
+                wi.logged_hours = sum_from_entries
+                # Recalculate remaining hours
+                wi.remaining_hours = max(0, (wi.estimated_hours or 0) - sum_from_entries)
+    
+    if not dry_run and repairs:
+        db.commit()
+    
+    return {
+        "project_id": project_id,
+        "project_name": project.name,
+        "dry_run": dry_run,
+        "repairs_found": len(repairs),
+        "repairs_applied": len([r for r in repairs if r["would_update"]]) if not dry_run else 0,
+        "repairs": repairs,
+        "message": f"Found {len(repairs)} inconsistencies. " + 
+                   ("No changes made (dry_run=True)." if dry_run else f"Applied {len(repairs)} fixes.")
+    }
 
 
 # ============== MY TASKS ==============
