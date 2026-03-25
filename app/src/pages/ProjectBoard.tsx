@@ -249,7 +249,24 @@ const ProjectBoard = () => {
         parent_id: null as number | null,
     });
 
-    // Fetch project and work items
+    // Client-side comment cache (cache-aside pattern) — avoids re-fetching on re-open
+    const commentCache = useRef<Map<string, Array<{
+        id: number; work_item_id: number; author_id: number; author_name: string;
+        content: string; mentions: number[]; comment_type: string;
+        created_at: string; updated_at: string;
+    }>>>(new Map());
+
+    // Prefetch comments for a ticket (call on hover) — data is ready before click
+    const prefetchComments = useCallback((itemId: string) => {
+        if (!token || commentCache.current.has(itemId)) return;
+        fetch(`${API_BASE_URL}/api/comments/workitem/${itemId}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        }).then(r => r.ok ? r.json() : null)
+          .then(data => { if (data) commentCache.current.set(itemId, data); })
+          .catch(() => {});
+    }, [token]);
+
+    // Fetch project and work items — NEVER re-runs on ticket click
     useEffect(() => {
         if (!id) return;
         const fetchData = async () => {
@@ -261,18 +278,7 @@ const ProjectBoard = () => {
                     fetch(`${API_BASE_URL}/api/workitems/projects/${id}/sprints`, { headers }),
                 ]);
                 if (projRes.ok) setProject(await projRes.json());
-                if (itemsRes.ok) {
-                    const items = await itemsRes.json();
-                    setWorkItems(items);
-                    
-                    // If URL has ticketId, find and select that item
-                    if (ticketId) {
-                        const selectedItemFromUrl = items.find((item: WorkItem) => item.id === ticketId);
-                        if (selectedItemFromUrl) {
-                            setSelectedItem(selectedItemFromUrl);
-                        }
-                    }
-                }
+                if (itemsRes.ok) setWorkItems(await itemsRes.json());
                 if (sprintsRes.ok) setSprints(await sprintsRes.json());
             } catch (err) {
                 console.error('Failed to fetch data:', err);
@@ -282,16 +288,21 @@ const ProjectBoard = () => {
             }
         };
         fetchData();
-    }, [id, token, ticketId]);
+    }, [id, token]); // ticketId intentionally excluded — clicking a ticket must NOT re-fetch all data
 
-    // Clear selected item when ticketId is removed from URL
+    // Handle URL-based ticket selection — reads from already-loaded workItems (instant)
     useEffect(() => {
         if (!ticketId) {
             setSelectedItem(null);
             setIsEditing(false);
             setEditForm({});
+            return;
         }
-    }, [ticketId]);
+        if (workItems.length > 0) {
+            const found = workItems.find(item => item.id === ticketId);
+            if (found) setSelectedItem(found);
+        }
+    }, [ticketId, workItems]);
 
     // Refresh project stats
     const refreshProjectStats = useCallback(async () => {
@@ -486,11 +497,17 @@ const ProjectBoard = () => {
         fetchAllDevelopers();
     }, [token]);
 
-    // Fetch comments when selectedItem changes
+    // Fetch comments — serves from cache if available (cache-aside pattern)
     useEffect(() => {
         const fetchComments = async () => {
             if (!selectedItem) {
                 setComments([]);
+                return;
+            }
+            // Serve from cache instantly if available
+            const cached = commentCache.current.get(selectedItem.id);
+            if (cached) {
+                setComments(cached);
                 return;
             }
             try {
@@ -498,7 +515,9 @@ const ProjectBoard = () => {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
                 if (response.ok) {
-                    setComments(await response.json());
+                    const data = await response.json();
+                    commentCache.current.set(selectedItem.id, data); // cache it
+                    setComments(data);
                 }
             } catch (error) {
                 console.error('Failed to fetch comments:', error);
@@ -554,7 +573,10 @@ const ProjectBoard = () => {
             });
             if (response.ok) {
                 const newCommentData = await response.json();
-                setComments(prev => [newCommentData, ...prev]);
+                const updated = [newCommentData, ...comments];
+                setComments(updated);
+                // Invalidate cache so next open fetches fresh
+                if (selectedItem) commentCache.current.delete(selectedItem.id);
                 setNewComment('');
                 const messages = {
                     'blocker': 'Blocker reported!',
@@ -1214,6 +1236,7 @@ const ProjectBoard = () => {
                                                     key={item.id}
                                                     draggable
                                                     onDragStart={() => handleDragStart(item.id)}
+                                                    onMouseEnter={() => prefetchComments(item.id)}
                                                     onClick={() => { navigate(`/project/${id}/board/${item.id}`); setIsEditing(false); setEditForm({}); }}
                                                     className={`group bg-[rgba(255,255,255,0.025)] rounded-xl border border-[rgba(255,255,255,0.05)] p-3.5 cursor-pointer transition-all duration-200 hover:border-[rgba(244,246,255,0.15)] hover:bg-[rgba(244,246,255,0.05)] hover:shadow-lg hover:shadow-black/20 ${draggedItem === item.id ? 'opacity-40 scale-95' : ''
                                                         }`}
@@ -1335,7 +1358,8 @@ const ProjectBoard = () => {
                                     return (
                                         <div
                                             key={item.id}
-                                            onClick={() => { navigate(`/project/${id}/board/${item.id}`); setIsEditing(false); setEditForm({}); }}
+                                            onMouseEnter={() => prefetchComments(item.id)}
+onClick={() => { navigate(`/project/${id}/board/${item.id}`); setIsEditing(false); setEditForm({}); }}
                                             className="grid grid-cols-[1fr_120px_100px_100px_100px_120px] gap-4 px-5 py-3.5 border-b border-[rgba(255,255,255,0.03)] hover:bg-[rgba(255,255,255,0.025)] cursor-pointer transition-colors group"
                                         >
                                             <div className="flex items-center gap-3 min-w-0">
