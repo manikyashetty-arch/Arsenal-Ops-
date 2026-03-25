@@ -16,10 +16,10 @@ interface WorkloadData {
     estimated_hours: number;
     logged_hours: number;
     remaining_hours: number;
-    this_week_in_progress_hours: number;  // Estimated hours on in-progress tickets
-    this_week_done_hours: number;  // Actual logged hours on done tickets this week
-    this_week_capacity_used: number;  // Total capacity used this week
-    this_week_remaining_capacity: number;  // Remaining capacity (40h - used)
+    this_week_in_progress_hours?: number;  // Estimated hours on in-progress tickets
+    this_week_done_hours?: number;  // Actual logged hours on done tickets this week
+    this_week_capacity_used?: number;  // Total capacity used this week
+    this_week_remaining_capacity?: number;  // Remaining capacity (40h - used)
 }
 
 interface WorkloadViewProps {
