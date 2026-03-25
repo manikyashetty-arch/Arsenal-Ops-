@@ -266,6 +266,11 @@ const ProjectDetail = () => {
         logged_hours: number;
         remaining_hours: number;
         this_week_remaining_hours?: number;
+        in_progress_remaining?: number;
+        this_week_in_progress_hours?: number;
+        this_week_done_hours?: number;
+        this_week_capacity_used?: number;
+        this_week_remaining_capacity?: number;
     }[]>([]);
     const [hubLoading, setHubLoading] = useState(true);
         const [sprintsExpanded, setSprintsExpanded] = useState(false);
@@ -273,7 +278,6 @@ const ProjectDetail = () => {
 
     // Files state
     const [files, setFiles] = useState<ProjectFile[]>([]);
-    const [filesLoading, setFilesLoading] = useState(false);
     const [uploadingFile, setUploadingFile] = useState(false);
 
     // Refetch all data (used on mount and when window regains focus)
@@ -501,7 +505,6 @@ const ProjectDetail = () => {
 
     const fetchFiles = async () => {
         if (!id) return;
-        setFilesLoading(true);
         try {
             const res = await fetch(`${API_BASE_URL}/api/projects/${id}/files`, {
                 headers: { 'Authorization': `Bearer ${token}` }
@@ -509,8 +512,6 @@ const ProjectDetail = () => {
             if (res.ok) setFiles(await res.json());
         } catch (err) {
             console.error('Failed to fetch files:', err);
-        } finally {
-            setFilesLoading(false);
         }
     };
 

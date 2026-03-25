@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { AlertCircle, Lock, Loader2 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
@@ -17,7 +16,6 @@ export function Login() {
   const [error, setError] = useState<string | null>(null);
   const [googleReady, setGoogleReady] = useState(false);
   const { loginWithGoogle } = useAuth();
-  const navigate = useNavigate();
 
   // Load Google Sign-In SDK and wait for it to be ready
   useEffect(() => {
