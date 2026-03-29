@@ -25,8 +25,8 @@ router = APIRouter(prefix="/api/projects", tags=["Projects"])
 
 def has_project_access(project: Project, user: User) -> bool:
     """Check if user has access to a project (admin or assigned developer)"""
-    # Admin has access to all projects
-    if user.role == UserRole.ADMIN.value:
+    # Admin has access to all projects (roles are comma-separated)
+    if 'admin' in user.role:
         return True
     
     # Check if user is assigned as a developer to this project
@@ -1144,3 +1144,77 @@ async def delete_project_file(
     
     return {"success": True, "message": "File deleted"}
 
+
+# Project Links Endpoints
+class ProjectLinkCreate(BaseModel):
+    name: str
+    url: str
+
+
+class ProjectLinkResponse(BaseModel):
+    id: int
+    name: str
+    url: str
+    created_at: str
+
+
+@router.get("/{project_id}/links", response_model=List[ProjectLinkResponse])
+async def get_project_links(project_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Get all links for a project"""
+    from models.project_link import ProjectLink
+    
+    require_project_access(project_id, user, db)
+    
+    links = db.query(ProjectLink).filter(ProjectLink.project_id == project_id).order_by(ProjectLink.created_at.desc()).all()
+    return [
+        {
+            "id": link.id,
+            "name": link.name,
+            "url": link.url,
+            "created_at": link.created_at.isoformat()
+        }
+        for link in links
+    ]
+
+
+@router.post("/{project_id}/links", response_model=ProjectLinkResponse)
+async def create_project_link(project_id: int, link_data: ProjectLinkCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Create a new link for a project"""
+    from models.project_link import ProjectLink
+    
+    require_project_access(project_id, user, db)
+    
+    new_link = ProjectLink(
+        project_id=project_id,
+        name=link_data.name,
+        url=link_data.url
+    )
+    
+    db.add(new_link)
+    db.commit()
+    db.refresh(new_link)
+    
+    return {
+        "id": new_link.id,
+        "name": new_link.name,
+        "url": new_link.url,
+        "created_at": new_link.created_at.isoformat()
+    }
+
+
+@router.delete("/{project_id}/links/{link_id}")
+async def delete_project_link(project_id: int, link_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Delete a link from a project"""
+    from models.project_link import ProjectLink
+    
+    require_project_access(project_id, user, db)
+    
+    link = db.query(ProjectLink).filter(ProjectLink.id == link_id, ProjectLink.project_id == project_id).first()
+    
+    if not link:
+        raise HTTPException(status_code=404, detail="Link not found")
+    
+    db.delete(link)
+    db.commit()
+    
+    return {"success": True, "message": "Link deleted"}
