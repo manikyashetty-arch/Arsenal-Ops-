@@ -53,6 +53,9 @@ class User(Base):
     last_login_at = Column(DateTime, nullable=True)
     password_changed_at = Column(DateTime, nullable=True)
     
+    # Relationships
+    personal_tasks = relationship("PersonalTask", back_populates="user", cascade="all, delete-orphan")
+    
     def to_dict(self):
         return {
             "id": self.id,
