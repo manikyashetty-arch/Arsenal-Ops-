@@ -43,6 +43,7 @@ class ConvertToTicketRequest(BaseModel):
     project_id: int
     type: Optional[str] = "task"
     estimated_hours: Optional[int] = None
+    assignee_developer_id: Optional[int] = None  # Optional: who to assign the ticket to
 
 
 @router.get("/")
@@ -175,6 +176,7 @@ async def convert_to_ticket(
 ):
     """Convert a personal task to a project ticket"""
     from models.developer import Developer
+    from services.email_service import email_service
     
     # Get the personal task
     task = db.query(PersonalTask).filter(
@@ -193,8 +195,11 @@ async def convert_to_ticket(
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     
-    # Get developer for assignee
-    developer = db.query(Developer).filter(Developer.email == current_user.email).first()
+    # Determine assignee: use explicitly chosen developer or fall back to current user
+    if request.assignee_developer_id:
+        assignee = db.query(Developer).filter(Developer.id == request.assignee_developer_id).first()
+    else:
+        assignee = db.query(Developer).filter(Developer.email == current_user.email).first()
     
     # Generate key BEFORE inserting (key is NOT NULL)
     from sqlalchemy import text
@@ -217,7 +222,7 @@ async def convert_to_ticket(
         priority=task.priority or "medium",
         estimated_hours=request.estimated_hours or task.estimated_hours or 0,
         remaining_hours=request.estimated_hours or task.estimated_hours or 0,
-        assignee_id=developer.id if developer else None,
+        assignee_id=assignee.id if assignee else None,
         tags=task.tags or [],
     )
     
@@ -234,6 +239,25 @@ async def convert_to_ticket(
     db.refresh(work_item)
     db.refresh(task)
     
+    # Send assignment email notification
+    if assignee and assignee.email:
+        try:
+            assigner = db.query(Developer).filter(Developer.email == current_user.email).first()
+            assigner_name = assigner.name if assigner else current_user.name
+            email_service.send_task_assignment_notification(
+                to_email=assignee.email,
+                to_name=assignee.name,
+                assigner_name=assigner_name,
+                work_item_key=work_item.key,
+                work_item_title=work_item.title,
+                work_item_description=work_item.description or "",
+                project_id=work_item.project_id,
+                work_item_id=work_item.id,
+                priority=work_item.priority,
+            )
+        except Exception as e:
+            print(f"[EMAIL ERROR] Failed to send assignment notification: {e}")
+    
     return {
         "status": "converted",
         "personal_task": task.to_dict(),
@@ -243,5 +267,6 @@ async def convert_to_ticket(
             "title": work_item.title,
             "project_id": work_item.project_id,
             "status": work_item.status,
+            "assignee_name": assignee.name if assignee else None,
         }
     }

@@ -157,6 +157,8 @@ const ProjectsPage = () => {
     const [showConvertDialog, setShowConvertDialog] = useState(false);
     const [convertingTask, setConvertingTask] = useState<PersonalTask | null>(null);
     const [convertProjectId, setConvertProjectId] = useState('');
+    const [convertAssigneeId, setConvertAssigneeId] = useState('');
+    const [projectMembers, setProjectMembers] = useState<{id: number; name: string; email: string}[]>([]);
     const [addingTask, setAddingTask] = useState(false);
     const [convertingTicket, setConvertingTicket] = useState(false);
     const [newPersonalTask, setNewPersonalTask] = useState({
@@ -243,6 +245,18 @@ const ProjectsPage = () => {
         finally { setAddingTask(false); }
     };
 
+    const fetchProjectMembers = async (projectId: string) => {
+        try {
+            const res = await fetch(`${API_BASE_URL}/api/projects/${projectId}`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (res.ok) {
+                const data = await res.json();
+                setProjectMembers(data.developers || []);
+            }
+        } catch { setProjectMembers([]); }
+    };
+
     const convertToTicket = async () => {
         if (!convertingTask || !convertProjectId) return;
         setConvertingTicket(true);
@@ -250,14 +264,21 @@ const ProjectsPage = () => {
             const res = await fetch(`${API_BASE_URL}/api/personal-tasks/${convertingTask.id}/convert-to-ticket`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                body: JSON.stringify({ project_id: parseInt(convertProjectId), type: 'task' })
+                body: JSON.stringify({
+                    project_id: parseInt(convertProjectId),
+                    type: 'task',
+                    assignee_developer_id: convertAssigneeId ? parseInt(convertAssigneeId) : undefined
+                })
             });
             if (res.ok) {
                 const data = await res.json();
-                toast.success(`Converted to ticket ${data.work_item.key}!`);
+                const assigneeName = data.work_item.assignee_name ? ` → assigned to ${data.work_item.assignee_name}` : '';
+                toast.success(`Ticket ${data.work_item.key} created!${assigneeName}`);
                 setShowConvertDialog(false);
                 setConvertingTask(null);
                 setConvertProjectId('');
+                setConvertAssigneeId('');
+                setProjectMembers([]);
                 fetchPersonalTasks();
             } else { toast.error('Failed to convert'); }
         } catch { toast.error('Failed to convert'); }
@@ -1171,7 +1192,10 @@ const ProjectsPage = () => {
             </Dialog>
 
             {/* Convert to Project Ticket Dialog */}
-            <Dialog open={showConvertDialog} onOpenChange={setShowConvertDialog}>
+            <Dialog open={showConvertDialog} onOpenChange={(open) => {
+                setShowConvertDialog(open);
+                if (!open) { setConvertProjectId(''); setConvertAssigneeId(''); setProjectMembers([]); }
+            }}>
                 <DialogContent className="bg-[#0d0d0d] border-[rgba(255,255,255,0.08)] text-white">
                     <DialogHeader>
                         <DialogTitle>Tag to Project</DialogTitle>
@@ -1185,7 +1209,11 @@ const ProjectsPage = () => {
                         )}
                         <div>
                             <label className="text-xs text-[#737373] mb-1 block">Select Project</label>
-                            <Select value={convertProjectId} onValueChange={setConvertProjectId}>
+                            <Select value={convertProjectId} onValueChange={(v) => {
+                                setConvertProjectId(v);
+                                setConvertAssigneeId('');
+                                fetchProjectMembers(v);
+                            }}>
                                 <SelectTrigger className="bg-[#0A0A14] border-[rgba(255,255,255,0.08)] text-white">
                                     <SelectValue placeholder="Choose a project..." />
                                 </SelectTrigger>
@@ -1198,6 +1226,31 @@ const ProjectsPage = () => {
                                 </SelectContent>
                             </Select>
                         </div>
+                        {projectMembers.length > 0 && (
+                            <div>
+                                <label className="text-xs text-[#737373] mb-1 block">Assign To <span className="text-[#555]">(optional — defaults to you)</span></label>
+                                <Select value={convertAssigneeId} onValueChange={setConvertAssigneeId}>
+                                    <SelectTrigger className="bg-[#0A0A14] border-[rgba(255,255,255,0.08)] text-white">
+                                        <SelectValue placeholder="Select team member..." />
+                                    </SelectTrigger>
+                                    <SelectContent className="bg-[#0d0d0d] border-[rgba(255,255,255,0.08)]">
+                                        {projectMembers.map((member) => (
+                                            <SelectItem key={member.id} value={member.id.toString()}>
+                                                <div className="flex items-center gap-2">
+                                                    <div className="w-5 h-5 rounded-full bg-gradient-to-br from-[#E0B954] to-[#C79E3B] flex items-center justify-center text-[#080808] text-xs font-bold">
+                                                        {member.name.charAt(0).toUpperCase()}
+                                                    </div>
+                                                    {member.name}
+                                                </div>
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                                {convertAssigneeId && (
+                                    <p className="text-xs text-[#E0B954] mt-1">An email notification will be sent to the assignee</p>
+                                )}
+                            </div>
+                        )}
                         <Button
                             onClick={convertToTicket}
                             disabled={convertingTicket || !convertProjectId}
