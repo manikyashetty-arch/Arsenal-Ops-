@@ -25,7 +25,9 @@ import {
     ExternalLink,
     Tag,
     ChevronRight,
+    Loader2,
 } from 'lucide-react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -130,11 +132,36 @@ const ProjectsPage = () => {
 
     // My Tasks
     const [myTasks, setMyTasks] = useState<MyTask[]>([]);
-    const [myTaskTab, setMyTaskTab] = useState<'upcoming' | 'overdue' | 'completed'>('upcoming');
+    const [myTaskTab, setMyTaskTab] = useState<'upcoming' | 'overdue' | 'completed' | 'personal'>('upcoming');
     const [myTasksLoading, setMyTasksLoading] = useState(false);
     const [showAllTasks, setShowAllTasks] = useState(false);
     const [showAllDueSoon, setShowAllDueSoon] = useState(false);
     const [selectedTask, setSelectedTask] = useState<MyTask | null>(null);
+
+    // Personal Tasks
+    interface PersonalTask {
+        id: number;
+        title: string;
+        description: string;
+        status: string;
+        priority: string;
+        estimated_hours: number;
+        due_date?: string;
+        tags: string[];
+        is_converted: boolean;
+        project_id?: number;
+        work_item_id?: number;
+    }
+    const [personalTasks, setPersonalTasks] = useState<PersonalTask[]>([]);
+    const [showAddTaskDialog, setShowAddTaskDialog] = useState(false);
+    const [showConvertDialog, setShowConvertDialog] = useState(false);
+    const [convertingTask, setConvertingTask] = useState<PersonalTask | null>(null);
+    const [convertProjectId, setConvertProjectId] = useState('');
+    const [addingTask, setAddingTask] = useState(false);
+    const [convertingTicket, setConvertingTicket] = useState(false);
+    const [newPersonalTask, setNewPersonalTask] = useState({
+        title: '', description: '', priority: 'medium', estimated_hours: 0, due_date: ''
+    });
 
     // Private Notepad
     const [notepadContent, setNotepadContent] = useState('');
@@ -187,6 +214,66 @@ const ProjectsPage = () => {
         }
     }, [showCreateModal]);
 
+    // Fetch personal tasks
+    const fetchPersonalTasks = async () => {
+        try {
+            const res = await fetch(`${API_BASE_URL}/api/personal-tasks/`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (res.ok) setPersonalTasks(await res.json());
+        } catch (err) { console.error('Failed to fetch personal tasks:', err); }
+    };
+
+    const createPersonalTask = async () => {
+        if (!newPersonalTask.title.trim()) { toast.error('Title is required'); return; }
+        setAddingTask(true);
+        try {
+            const res = await fetch(`${API_BASE_URL}/api/personal-tasks/`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({ ...newPersonalTask, due_date: newPersonalTask.due_date || undefined })
+            });
+            if (res.ok) {
+                toast.success('Task created!');
+                setShowAddTaskDialog(false);
+                setNewPersonalTask({ title: '', description: '', priority: 'medium', estimated_hours: 0, due_date: '' });
+                fetchPersonalTasks();
+            } else { toast.error('Failed to create task'); }
+        } catch { toast.error('Failed to create task'); }
+        finally { setAddingTask(false); }
+    };
+
+    const convertToTicket = async () => {
+        if (!convertingTask || !convertProjectId) return;
+        setConvertingTicket(true);
+        try {
+            const res = await fetch(`${API_BASE_URL}/api/personal-tasks/${convertingTask.id}/convert-to-ticket`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({ project_id: parseInt(convertProjectId), type: 'task' })
+            });
+            if (res.ok) {
+                const data = await res.json();
+                toast.success(`Converted to ticket ${data.work_item.key}!`);
+                setShowConvertDialog(false);
+                setConvertingTask(null);
+                setConvertProjectId('');
+                fetchPersonalTasks();
+            } else { toast.error('Failed to convert'); }
+        } catch { toast.error('Failed to convert'); }
+        finally { setConvertingTicket(false); }
+    };
+
+    const deletePersonalTask = async (taskId: number) => {
+        if (!confirm('Delete this task?')) return;
+        try {
+            const res = await fetch(`${API_BASE_URL}/api/personal-tasks/${taskId}`, {
+                method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (res.ok) { toast.success('Task deleted'); fetchPersonalTasks(); }
+        } catch { toast.error('Failed to delete task'); }
+    };
+
     // Fetch my tasks
     const fetchMyTasks = async () => {
         setMyTasksLoading(true);
@@ -204,7 +291,7 @@ const ProjectsPage = () => {
 
     // Load my tasks on mount
     useEffect(() => {
-        if (token) fetchMyTasks();
+        if (token) { fetchMyTasks(); fetchPersonalTasks(); }
     }, [token]);
 
     // Load notepad from localStorage per user
@@ -460,19 +547,30 @@ const ProjectsPage = () => {
                                         <Lock className="w-3.5 h-3.5 text-[#737373]" />
                                     </div>
                                 </div>
-                                <div className="flex items-center gap-2 text-xs text-[#737373]">
-                                    <CheckCircle2 className="w-3.5 h-3.5 text-[#E0B954]" />
-                                    <span>{myTasks.filter(t => t.status === 'done').length} completed</span>
+                                <div className="flex items-center gap-2">
+                                    <div className="text-xs text-[#737373] flex items-center gap-1">
+                                        <CheckCircle2 className="w-3.5 h-3.5 text-[#E0B954]" />
+                                        <span>{myTasks.filter(t => t.status === 'done').length} completed</span>
+                                    </div>
+                                    <button
+                                        onClick={() => setShowAddTaskDialog(true)}
+                                        className="w-7 h-7 flex items-center justify-center rounded-lg bg-gradient-to-r from-[#E0B954] to-[#C79E3B] hover:opacity-90 text-[#080808] transition-opacity"
+                                        title="Add personal task"
+                                    >
+                                        <Plus className="w-4 h-4" />
+                                    </button>
                                 </div>
                             </div>
 
                             {/* Sub-tabs */}
                             <div className="flex gap-0 px-5 border-b border-[rgba(255,255,255,0.05)] flex-shrink-0">
-                                {(['upcoming', 'overdue', 'completed'] as const).map(tab => {
+                                {(['upcoming', 'overdue', 'completed', 'personal'] as const).map(tab => {
                                     const count = tab === 'upcoming'
                                         ? myTasks.filter(t => t.status !== 'done' && !t.is_overdue).length
                                         : tab === 'overdue'
                                         ? myTasks.filter(t => t.is_overdue).length
+                                        : tab === 'personal'
+                                        ? personalTasks.filter(t => !t.is_converted).length
                                         : myTasks.filter(t => t.status === 'done').length;
                                     return (
                                         <button
@@ -489,6 +587,11 @@ const ProjectsPage = () => {
                                                     Overdue
                                                     <span className="bg-red-500/20 text-red-400 text-xs px-1.5 py-0.5 rounded-full">{count}</span>
                                                 </span>
+                                            ) : tab === 'personal' ? (
+                                                <span className="flex items-center gap-1.5">
+                                                    Personal
+                                                    {count > 0 && <span className="bg-[#E0B954]/20 text-[#E0B954] text-xs px-1.5 py-0.5 rounded-full">{count}</span>}
+                                                </span>
                                             ) : (
                                                 <span className="capitalize">{tab}</span>
                                             )}
@@ -499,7 +602,51 @@ const ProjectsPage = () => {
 
                             {/* Task list */}
                             <div className="flex-1 overflow-y-auto p-4 space-y-0.5">
-                                {myTasksLoading ? (
+                                {myTaskTab === 'personal' ? (
+                                    // Personal tasks tab
+                                    personalTasks.filter(t => !t.is_converted).length === 0 ? (
+                                        <div className="flex flex-col items-center justify-center py-10 text-center">
+                                            <CheckCircle2 className="w-8 h-8 text-[#E0B954]/30 mb-2" />
+                                            <p className="text-sm text-[#737373]">No personal tasks yet</p>
+                                            <button
+                                                onClick={() => setShowAddTaskDialog(true)}
+                                                className="mt-3 text-xs text-[#E0B954] hover:text-[#C79E3B] flex items-center gap-1"
+                                            >
+                                                <Plus className="w-3 h-3" /> Add your first task
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-1.5">
+                                            {personalTasks.filter(t => !t.is_converted).map(task => (
+                                                <div key={task.id} className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-[rgba(255,255,255,0.03)] transition-colors group">
+                                                    <div className="w-4 h-4 rounded-full border-2 border-[#444] group-hover:border-[#E0B954]/50 flex-shrink-0" />
+                                                    <span className="flex-1 text-sm text-[#f5f5f5] truncate">{task.title}</span>
+                                                    {task.priority !== 'medium' && (
+                                                        <span className={`text-xs px-1.5 py-0.5 rounded flex-shrink-0 ${
+                                                            task.priority === 'critical' ? 'bg-red-500/20 text-red-400' :
+                                                            task.priority === 'high' ? 'bg-orange-500/20 text-orange-400' :
+                                                            'bg-gray-500/20 text-gray-400'
+                                                        }`}>{task.priority}</span>
+                                                    )}
+                                                    <button
+                                                        onClick={() => { setConvertingTask(task); setShowConvertDialog(true); }}
+                                                        className="opacity-0 group-hover:opacity-100 flex items-center gap-1 text-xs text-[#E0B954] hover:text-[#C79E3B] flex-shrink-0 transition-opacity"
+                                                        title="Convert to project ticket"
+                                                    >
+                                                        <ArrowRight className="w-3.5 h-3.5" />
+                                                        Tag to project
+                                                    </button>
+                                                    <button
+                                                        onClick={() => deletePersonalTask(task.id)}
+                                                        className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-red-500/10 text-[#737373] hover:text-red-400 transition-all"
+                                                    >
+                                                        <X className="w-3 h-3" />
+                                                    </button>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )
+                                ) : myTasksLoading ? (
                                     <div className="flex items-center justify-center py-10">
                                         <div className="w-5 h-5 border-2 border-[#E0B954]/30 border-t-[#E0B954] rounded-full animate-spin" />
                                     </div>
@@ -959,6 +1106,108 @@ const ProjectsPage = () => {
                     </div>
                 </>
             )}
+
+            {/* Add Personal Task Dialog */}
+            <Dialog open={showAddTaskDialog} onOpenChange={setShowAddTaskDialog}>
+                <DialogContent className="bg-[#0d0d0d] border-[rgba(255,255,255,0.08)] text-white">
+                    <DialogHeader>
+                        <DialogTitle>Add Personal Task</DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-4 pt-2">
+                        <div>
+                            <label className="text-xs text-[#737373] mb-1 block">Title *</label>
+                            <Input
+                                value={newPersonalTask.title}
+                                onChange={(e) => setNewPersonalTask({ ...newPersonalTask, title: e.target.value })}
+                                placeholder="What needs to be done?"
+                                className="bg-[#0A0A14] border-[rgba(255,255,255,0.08)] text-white"
+                                onKeyDown={(e) => e.key === 'Enter' && createPersonalTask()}
+                            />
+                        </div>
+                        <div>
+                            <label className="text-xs text-[#737373] mb-1 block">Description</label>
+                            <Textarea
+                                value={newPersonalTask.description}
+                                onChange={(e) => setNewPersonalTask({ ...newPersonalTask, description: e.target.value })}
+                                placeholder="Add details..."
+                                className="bg-[#0A0A14] border-[rgba(255,255,255,0.08)] text-white resize-none"
+                                rows={3}
+                            />
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                            <div>
+                                <label className="text-xs text-[#737373] mb-1 block">Priority</label>
+                                <Select value={newPersonalTask.priority} onValueChange={(v) => setNewPersonalTask({ ...newPersonalTask, priority: v })}>
+                                    <SelectTrigger className="bg-[#0A0A14] border-[rgba(255,255,255,0.08)] text-white">
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent className="bg-[#0d0d0d] border-[rgba(255,255,255,0.08)]">
+                                        <SelectItem value="low">Low</SelectItem>
+                                        <SelectItem value="medium">Medium</SelectItem>
+                                        <SelectItem value="high">High</SelectItem>
+                                        <SelectItem value="critical">Critical</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                            <div>
+                                <label className="text-xs text-[#737373] mb-1 block">Due Date</label>
+                                <Input
+                                    type="date"
+                                    value={newPersonalTask.due_date}
+                                    onChange={(e) => setNewPersonalTask({ ...newPersonalTask, due_date: e.target.value })}
+                                    className="bg-[#0A0A14] border-[rgba(255,255,255,0.08)] text-white"
+                                />
+                            </div>
+                        </div>
+                        <Button
+                            onClick={createPersonalTask}
+                            disabled={addingTask || !newPersonalTask.title.trim()}
+                            className="w-full bg-gradient-to-r from-[#E0B954] to-[#C79E3B] text-[#080808] font-semibold hover:opacity-90"
+                        >
+                            {addingTask ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Create Task'}
+                        </Button>
+                    </div>
+                </DialogContent>
+            </Dialog>
+
+            {/* Convert to Project Ticket Dialog */}
+            <Dialog open={showConvertDialog} onOpenChange={setShowConvertDialog}>
+                <DialogContent className="bg-[#0d0d0d] border-[rgba(255,255,255,0.08)] text-white">
+                    <DialogHeader>
+                        <DialogTitle>Tag to Project</DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-4 pt-2">
+                        {convertingTask && (
+                            <div className="p-3 bg-[#0A0A14] rounded-lg border border-[rgba(255,255,255,0.05)]">
+                                <p className="text-white font-medium text-sm">{convertingTask.title}</p>
+                                <p className="text-[#737373] text-xs mt-0.5 capitalize">{convertingTask.priority} priority</p>
+                            </div>
+                        )}
+                        <div>
+                            <label className="text-xs text-[#737373] mb-1 block">Select Project</label>
+                            <Select value={convertProjectId} onValueChange={setConvertProjectId}>
+                                <SelectTrigger className="bg-[#0A0A14] border-[rgba(255,255,255,0.08)] text-white">
+                                    <SelectValue placeholder="Choose a project..." />
+                                </SelectTrigger>
+                                <SelectContent className="bg-[#0d0d0d] border-[rgba(255,255,255,0.08)]">
+                                    {projects.map((project) => (
+                                        <SelectItem key={project.id} value={project.id.toString()}>
+                                            {project.name}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
+                        <Button
+                            onClick={convertToTicket}
+                            disabled={convertingTicket || !convertProjectId}
+                            className="w-full bg-gradient-to-r from-[#E0B954] to-[#C79E3B] text-[#080808] font-semibold hover:opacity-90"
+                        >
+                            {convertingTicket ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Create Project Ticket'}
+                        </Button>
+                    </div>
+                </DialogContent>
+            </Dialog>
 
             {/* Create Project Modal */}
             {showCreateModal && (
