@@ -10,6 +10,12 @@ interface PMViewProps {
     projectId: string;
     token: string;
     isAdmin?: boolean;
+    userRestrictions?: Array<{
+        id: number;
+        name: string;
+        tab_name: string;
+        subsection: string;
+    }>;
 }
 
 interface HoursAnalytics {
@@ -84,12 +90,20 @@ interface WeeklyHours {
     items_completed: number;
 }
 
-export default function PMView({ projectId, token, isAdmin = false }: PMViewProps) {
+export default function PMView({ projectId, token, isAdmin = false, userRestrictions = [] }: PMViewProps) {
     const [analytics, setAnalytics] = useState<HoursAnalytics | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [weekFilter, setWeekFilter] = useState<'all' | 'with-activity'>('all');
     const [expandedDeveloper, setExpandedDeveloper] = useState<number | null>(null);
     const [showDebugPanel, setShowDebugPanel] = useState(false);
+
+    // Helper function to check if a subsection is restricted
+    const isSubsectionRestricted = (subsectionName: string): boolean => {
+        return userRestrictions.some(r => 
+            r.tab_name.toLowerCase() === 'pm' && 
+            r.subsection.toLowerCase() === subsectionName.toLowerCase()
+        );
+    };
 
     useEffect(() => {
         fetchAnalytics();
@@ -137,6 +151,7 @@ export default function PMView({ projectId, token, isAdmin = false }: PMViewProp
     return (
         <div className="space-y-6">
             {/* Summary Cards */}
+            {!isSubsectionRestricted('summary-cards') && (
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <Card className="bg-[rgba(255,255,255,0.02)] border-[rgba(255,255,255,0.05)]">
                     <CardContent className="p-4">
@@ -194,8 +209,10 @@ export default function PMView({ projectId, token, isAdmin = false }: PMViewProp
                     </CardContent>
                 </Card>
             </div>
+            )}
 
             {/* Weekly Hours Table */}
+            {!isSubsectionRestricted('weekly hours breakdown') && (
             <Card className="bg-[rgba(255,255,255,0.02)] border-[rgba(255,255,255,0.05)]">
                 <CardHeader className="flex flex-row items-center justify-between">
                     <CardTitle className="text-white flex items-center gap-2">
@@ -258,8 +275,10 @@ export default function PMView({ projectId, token, isAdmin = false }: PMViewProp
                     </div>
                 </CardContent>
             </Card>
+            )}
 
             {/* Developer Hours Table */}
+            {!isSubsectionRestricted('developer hours summary') && (
             <Card className="bg-[rgba(255,255,255,0.02)] border-[rgba(255,255,255,0.05)]">
                 <CardHeader>
                     <CardTitle className="text-white flex items-center gap-2">
@@ -429,8 +448,10 @@ export default function PMView({ projectId, token, isAdmin = false }: PMViewProp
                     </div>
                 </CardContent>
             </Card>
+            )}
 
             {/* Sprint Hours Table */}
+            {!isSubsectionRestricted('sprint hours breakdown') && (
             <Card className="bg-[rgba(255,255,255,0.02)] border-[rgba(255,255,255,0.05)]">
                 <CardHeader>
                     <CardTitle className="text-white flex items-center gap-2">
@@ -491,6 +512,7 @@ export default function PMView({ projectId, token, isAdmin = false }: PMViewProp
                     </div>
                 </CardContent>
             </Card>
+            )}
 
             {/* Debug Panel Toggle */}
             <div className="flex justify-end">

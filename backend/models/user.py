@@ -53,6 +53,13 @@ class User(Base):
     last_login_at = Column(DateTime, nullable=True)
     password_changed_at = Column(DateTime, nullable=True)
     
+    # Relationships
+    custom_restrictions = relationship(
+        "CustomRestriction",
+        secondary="user_custom_restrictions",
+        back_populates="users"
+    )
+    
     def to_dict(self):
         return {
             "id": self.id,
