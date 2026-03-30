@@ -1055,7 +1055,7 @@ const AdminDashboard = () => {
                                                         </span>
                                                     </td>
                                                     <td className="py-3 px-4 text-sm text-[#a3a3a3]">{toPascalCase(restriction.tab_name)}</td>
-                                                    <td className="py-3 px-4 text-sm text-[#a3a3a3]">{toPascalCase(restriction.subsection)}</td>
+                                                    <td className="py-3 px-4 text-sm text-[#a3a3a3]">{restriction.subsection}</td>
                                                     <td className="py-3 px-4 text-sm text-[#737373]">
                                                         {new Date(restriction.created_at).toLocaleDateString()}
                                                     </td>
@@ -1178,7 +1178,7 @@ const AdminDashboard = () => {
                                     className="w-full bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl h-10 px-3 text-sm"
                                 >
                                     <option value="">Select a tab...</option>
-                                    <option value="pm">Project Manager</option>
+                                    <option value="project_manager">Project Manager</option>
                                 </select>
                             </div>
                             <div>

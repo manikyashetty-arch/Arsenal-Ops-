@@ -2343,12 +2343,12 @@ const ProjectDetail = () => {
                             </div>
                         )}
 
-                        {!isSubsectionRestricted('pm', 'pmview') && (
+                        {!isSubsectionRestricted('project_manager', 'pmview') && (
                         <PMView projectId={id!} token={token!} userRestrictions={userRestrictions} />
                         )}
 
                         {/* Workload Section */}
-                        {!isSubsectionRestricted('pm', 'team workload') && (
+                        {!isSubsectionRestricted('project_manager', 'team workload') && (
                         <div>
                             <div className="flex items-center gap-3 mb-4">
                                 <div className="w-9 h-9 rounded-xl bg-[#E0B954]/10 flex items-center justify-center">

@@ -392,7 +392,7 @@ const ProjectsPage = () => {
                                 <span className="text-sm text-[#a3a3a3] hidden md:block">{user.name}</span>
                             </div>
                         )}
-                        {user?.role === 'admin' && (
+                        {user?.role.includes('admin') && (
                             <Button
                                 variant="ghost"
                                 onClick={() => navigate('/admin')}
@@ -572,7 +572,7 @@ const ProjectsPage = () => {
                                         className="pl-8 w-32 bg-[rgba(255,255,255,0.03)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-lg h-7 text-xs focus:border-[#E0B954]/50"
                                     />
                                 </div>
-                                {user?.role === 'admin' && (
+                                {user?.role.includes('admin') && (
                                     <button
                                         onClick={() => setShowCreateModal(true)}
                                         className="w-7 h-7 flex items-center justify-center rounded-lg bg-gradient-to-r from-[#E0B954] to-[#C79E3B] hover:opacity-90 text-[#080808] transition-opacity"
@@ -623,7 +623,7 @@ const ProjectsPage = () => {
                                                     </div>
                                                 </div>
                                                 <div className="flex items-center gap-1 flex-shrink-0">
-                                                    {user?.role === 'admin' && (
+                                                {user?.role.includes('admin') && (
                                                         <button
                                                             onClick={(e) => handleDeleteProject(e, project.id)}
                                                             className="p-1 rounded-lg opacity-0 group-hover:opacity-100 hover:bg-red-500/10 text-[#737373] hover:text-red-400 transition-all"
