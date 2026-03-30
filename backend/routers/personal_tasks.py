@@ -196,10 +196,21 @@ async def convert_to_ticket(
     # Get developer for assignee
     developer = db.query(Developer).filter(Developer.email == current_user.email).first()
     
-    # Create work item
+    # Generate key BEFORE inserting (key is NOT NULL)
+    from sqlalchemy import text
+    key_prefix = project.key_prefix or "TASK"
+    result = db.execute(text("""
+        SELECT COALESCE(MAX(CAST(REGEXP_REPLACE(key, '^.*-', '') AS INTEGER)), 0) + 1
+        FROM work_items WHERE key LIKE :prefix
+    """), {"prefix": f"{key_prefix}-%"})
+    next_number = result.scalar() or 1
+    generated_key = f"{key_prefix}-{next_number}"
+    
+    # Create work item with key already set
     work_item = WorkItem(
         project_id=request.project_id,
         type=request.type or "task",
+        key=generated_key,
         title=task.title,
         description=task.description or "",
         status=WorkItemStatus.TODO.value,
@@ -212,16 +223,6 @@ async def convert_to_ticket(
     
     db.add(work_item)
     db.flush()  # Get the work_item.id
-    
-    # Generate key
-    from sqlalchemy import text
-    key_prefix = project.key_prefix or "TASK"
-    result = db.execute(text("""
-        SELECT COALESCE(MAX(CAST(REGEXP_REPLACE(key, '^.*-', '') AS INTEGER)), 0) + 1
-        FROM work_items WHERE key LIKE :prefix
-    """), {"prefix": f"{key_prefix}-%"})
-    next_number = result.scalar() or 1
-    work_item.key = f"{key_prefix}-{next_number}"
     
     # Update personal task
     task.is_converted = True

@@ -440,7 +440,7 @@ def init_db():
         market_insight, developer, work_item, sprint,
         architecture, user, time_entry, task_dependency,
         project_goal, project_milestone, activity_log, project_file,
-        custom_restriction
+        custom_restriction, personal_task
     )
     Base.metadata.create_all(bind=engine)
     

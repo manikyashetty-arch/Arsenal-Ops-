@@ -160,7 +160,7 @@ const ProjectsPage = () => {
     const [addingTask, setAddingTask] = useState(false);
     const [convertingTicket, setConvertingTicket] = useState(false);
     const [newPersonalTask, setNewPersonalTask] = useState({
-        title: '', description: '', priority: 'medium', estimated_hours: 0, due_date: ''
+        title: '', description: '', priority: 'medium', estimated_hours: 0, due_date: '', project_id: ''
     });
 
     // Private Notepad
@@ -236,7 +236,7 @@ const ProjectsPage = () => {
             if (res.ok) {
                 toast.success('Task created!');
                 setShowAddTaskDialog(false);
-                setNewPersonalTask({ title: '', description: '', priority: 'medium', estimated_hours: 0, due_date: '' });
+                setNewPersonalTask({ title: '', description: '', priority: 'medium', estimated_hours: 0, due_date: '', project_id: '' });
                 fetchPersonalTasks();
             } else { toast.error('Failed to create task'); }
         } catch { toast.error('Failed to create task'); }
