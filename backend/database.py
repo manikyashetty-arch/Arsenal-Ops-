@@ -335,13 +335,112 @@ def run_migrations():
         except Exception as e:
             print(f"[MIGRATION ERROR] {e}")
 
+        # Migration: Create project_links table if not exists
+        try:
+            result = conn.execute(text("""
+                SELECT table_name 
+                FROM information_schema.tables 
+                WHERE table_name = 'project_links'
+            """))
+            
+            if not result.fetchone():
+                print("[MIGRATION] Creating project_links table...")
+                conn.execute(text("""
+                    CREATE TABLE project_links (
+                        id SERIAL PRIMARY KEY,
+                        project_id INTEGER REFERENCES projects(id) ON DELETE CASCADE NOT NULL,
+                        name VARCHAR(255) NOT NULL,
+                        url VARCHAR(500) NOT NULL,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        CONSTRAINT fk_project_links_project FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+                    )
+                """))
+                conn.execute(text("CREATE INDEX idx_project_links_project ON project_links(project_id)"))
+                conn.execute(text("CREATE INDEX idx_project_links_created ON project_links(created_at)"))
+                conn.commit()
+                print("[MIGRATION] project_links table created!")
+        except Exception as e:
+            print(f"[MIGRATION ERROR] {e}")
+
+        # Migration: Increase role column size in users table
+        try:
+            result = conn.execute(text("""
+                SELECT column_name, character_maximum_length
+                FROM information_schema.columns 
+                WHERE table_name = 'users' AND column_name = 'role'
+            """))
+            
+            row = result.fetchone()
+            if row and row[1] and row[1] < 255:
+                print("[MIGRATION] Increasing role column size in users table...")
+                conn.execute(text("""
+                    ALTER TABLE users 
+                    ALTER COLUMN role TYPE VARCHAR(255)
+                """))
+                conn.commit()
+                print("[MIGRATION] role column size increased successfully!")
+        except Exception as e:
+            print(f"[MIGRATION ERROR] {e}")
+
+        # Migration: Create custom_restrictions table if not exists
+        try:
+            result = conn.execute(text("""
+                SELECT table_name 
+                FROM information_schema.tables 
+                WHERE table_name = 'custom_restrictions'
+            """))
+            
+            if not result.fetchone():
+                print("[MIGRATION] Creating custom_restrictions table...")
+                conn.execute(text("""
+                    CREATE TABLE custom_restrictions (
+                        id SERIAL PRIMARY KEY,
+                        name VARCHAR(255) NOT NULL UNIQUE,
+                        tab_name VARCHAR(100) NOT NULL,
+                        subsection VARCHAR(100) NOT NULL,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        CONSTRAINT fk_custom_restrictions_name UNIQUE (name)
+                    )
+                """))
+                conn.execute(text("CREATE INDEX idx_custom_restrictions_name ON custom_restrictions(name)"))
+                conn.execute(text("CREATE INDEX idx_custom_restrictions_created ON custom_restrictions(created_at)"))
+                conn.commit()
+                print("[MIGRATION] custom_restrictions table created!")
+        except Exception as e:
+            print(f"[MIGRATION ERROR] {e}")
+
+        # Migration: Create user_custom_restrictions junction table if not exists
+        try:
+            result = conn.execute(text("""
+                SELECT table_name 
+                FROM information_schema.tables 
+                WHERE table_name = 'user_custom_restrictions'
+            """))
+            
+            if not result.fetchone():
+                print("[MIGRATION] Creating user_custom_restrictions table...")
+                conn.execute(text("""
+                    CREATE TABLE user_custom_restrictions (
+                        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+                        custom_restriction_id INTEGER REFERENCES custom_restrictions(id) ON DELETE CASCADE,
+                        PRIMARY KEY (user_id, custom_restriction_id)
+                    )
+                """))
+                conn.execute(text("CREATE INDEX idx_user_custom_restrictions_user ON user_custom_restrictions(user_id)"))
+                conn.execute(text("CREATE INDEX idx_user_custom_restrictions_restriction ON user_custom_restrictions(custom_restriction_id)"))
+                conn.commit()
+                print("[MIGRATION] user_custom_restrictions table created!")
+        except Exception as e:
+            print(f"[MIGRATION ERROR] {e}")
+
 def init_db():
     """Initialize database tables"""
     from models import (
         project, task, persona, user_story, 
         market_insight, developer, work_item, sprint,
         architecture, user, time_entry, task_dependency,
-        project_goal, project_milestone, activity_log, project_file
+        project_goal, project_milestone, activity_log, project_file,
+        custom_restriction
     )
     Base.metadata.create_all(bind=engine)
     

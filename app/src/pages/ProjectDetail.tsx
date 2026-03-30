@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
     PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line
@@ -34,9 +34,7 @@ import {
     Activity,
     ChevronDown,
     ChevronUp,
-    Upload,
-    File,
-    Download,
+    Link2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import PMView from '@/components/PMView';
@@ -162,7 +160,7 @@ interface Project {
     architectures: Architecture[];
 }
 
-type TabType = 'overview' | 'hub' | 'tracker' | 'calendar' | 'business' | 'goals' | 'activity' | 'files' | 'pm';
+type TabType = 'overview' | 'hub' | 'tracker' | 'calendar' | 'business' | 'goals' | 'activity' | 'pm';
 
 interface HubWorkItem {
     id: string;
@@ -214,14 +212,19 @@ interface ActivityItem {
     user_email?: string;
 }
 
-interface ProjectFile {
+interface ProjectLink {
     id: number;
-    file_name: string;
-    file_size: number;
-    file_type: string;
-    file_url: string;
-    uploaded_by: string;
-    created_at: string;
+    name: string;
+    url: string;
+    created_at?: string;
+}
+
+interface CustomRestriction {
+    id: number;
+    name: string;
+    tab_name: string;
+    subsection: string;
+    created_at?: string;
 }
 
 const ProjectDetail = () => {
@@ -275,10 +278,23 @@ const ProjectDetail = () => {
     const [hubLoading, setHubLoading] = useState(true);
         const [sprintsExpanded, setSprintsExpanded] = useState(false);
         const [progressExpanded, setProgressExpanded] = useState(false);
+    
+    // Files/Links state
+    const [links, setLinks] = useState<ProjectLink[]>([]);
+    const [showAddLink, setShowAddLink] = useState(false);
+    const [newLink, setNewLink] = useState({ name: '', url: '' });
+    const [linksLoading, setLinksLoading] = useState(false);
+    const addLinkFormRef = useRef<HTMLDivElement>(null);
 
-    // Files state
-    const [files, setFiles] = useState<ProjectFile[]>([]);
-    const [uploadingFile, setUploadingFile] = useState(false);
+    // Scroll to add link form when it opens
+    useEffect(() => {
+        if (showAddLink && addLinkFormRef.current) {
+            addLinkFormRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+    }, [showAddLink]);
+
+    // Custom restrictions state
+    const [userRestrictions, setUserRestrictions] = useState<CustomRestriction[]>([]);
 
     // Refetch all data (used on mount and when window regains focus)
     const refetchAll = () => {
@@ -287,6 +303,8 @@ const ProjectDetail = () => {
         fetchAllDevelopers();
         fetchSprints();
         fetchHubData(); // analytics is now included inside fetchHubData
+        fetchLinks();
+        fetchUserRestrictions();
     };
 
     // Fetch project data on mount
@@ -310,13 +328,6 @@ const ProjectDetail = () => {
             window.removeEventListener('focus', handleFocus);
         };
     }, [id]);
-
-    // Fetch files when files tab becomes active
-    useEffect(() => {
-        if (activeTab === 'files') {
-            fetchFiles();
-        }
-    }, [activeTab, id]);
 
     const fetchProject = async () => {
         try {
@@ -404,6 +415,80 @@ const ProjectDetail = () => {
             }
         } catch (err) {
             console.error('Failed to fetch PRD analysis:', err);
+        }
+    };
+
+    const fetchLinks = async () => {
+        if (!id) return;
+        setLinksLoading(true);
+        try {
+            const res = await fetch(`${API_BASE_URL}/api/projects/${id}/links`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (res.ok) {
+                const data = await res.json();
+                setLinks(data);
+            }
+        } catch (err) {
+            console.error('Failed to fetch links:', err);
+        } finally {
+            setLinksLoading(false);
+        }
+    };
+
+    const fetchUserRestrictions = async () => {
+        try {
+            const res = await fetch(`${API_BASE_URL}/api/auth/me/custom-restrictions`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (res.ok) {
+                const data = await res.json();
+                setUserRestrictions(data || []);
+            }
+        } catch (err) {
+            console.error('Failed to fetch user restrictions:', err);
+        }
+    };
+
+    const handleAddLink = async () => {
+        if (!id || !newLink.name || !newLink.url) return;
+        try {
+            const res = await fetch(`${API_BASE_URL}/api/projects/${id}/links`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify(newLink)
+            });
+            if (res.ok) {
+                toast.success('Link added!');
+                setNewLink({ name: '', url: '' });
+                setShowAddLink(false);
+                fetchLinks();
+            } else {
+                toast.error('Failed to add link');
+            }
+        } catch (err) {
+            toast.error('Error adding link');
+        }
+    };
+
+    const handleDeleteLink = async (linkId: number) => {
+        if (!id) return;
+        try {
+            const res = await fetch(`${API_BASE_URL}/api/projects/${id}/links/${linkId}`, {
+                method: 'DELETE',
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (res.ok) {
+                toast.success('Link deleted!');
+                fetchLinks();
+            } else {
+                toast.error('Failed to delete link');
+            }
+        } catch (err) {
+            toast.error('Error deleting link');
         }
     };
 
@@ -500,93 +585,6 @@ const ProjectDetail = () => {
             if (res.ok) setWorkload(await res.json());
         } catch (err) {
             console.error('Failed to fetch workload:', err);
-        }
-    };
-
-    const fetchFiles = async () => {
-        if (!id) return;
-        try {
-            const res = await fetch(`${API_BASE_URL}/api/projects/${id}/files`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            if (res.ok) setFiles(await res.json());
-        } catch (err) {
-            console.error('Failed to fetch files:', err);
-        }
-    };
-
-    const handleUploadFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
-        if (!id || !event.target.files || event.target.files.length === 0) return;
-
-        const file = event.target.files[0];
-        const formData = new FormData();
-        formData.append('file', file);
-
-        setUploadingFile(true);
-        try {
-            const res = await fetch(`${API_BASE_URL}/api/projects/${id}/files`, {
-                method: 'POST',
-                headers: { 'Authorization': `Bearer ${token}` },
-                body: formData,
-            });
-            if (res.ok) {
-                toast.success('File uploaded successfully!');
-                fetchFiles();
-                // Reset input
-                event.target.value = '';
-            } else {
-                toast.error('Failed to upload file');
-            }
-        } catch (err) {
-            console.error('Failed to upload file:', err);
-            toast.error('Failed to upload file');
-        } finally {
-            setUploadingFile(false);
-        }
-    };
-
-    const handleDownloadFile = async (file: ProjectFile) => {
-        try {
-            const res = await fetch(`${API_BASE_URL}${file.file_url}`, {
-                headers: { 'Authorization': `Bearer ${token}` },
-            });
-            if (res.ok) {
-                const blob = await res.blob();
-                const url = window.URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = file.file_name;
-                document.body.appendChild(a);
-                a.click();
-                window.URL.revokeObjectURL(url);
-                document.body.removeChild(a);
-            } else {
-                toast.error('Failed to download file');
-            }
-        } catch (err) {
-            console.error('Failed to download file:', err);
-            toast.error('Failed to download file');
-        }
-    };
-
-    const handleDeleteFile = async (fileId: number) => {
-        if (!confirm('Delete this file?')) return;
-        if (!id) return;
-
-        try {
-            const res = await fetch(`${API_BASE_URL}/api/projects/${id}/files/${fileId}`, {
-                method: 'DELETE',
-                headers: { 'Authorization': `Bearer ${token}` },
-            });
-            if (res.ok) {
-                toast.success('File deleted');
-                fetchFiles();
-            } else {
-                toast.error('Failed to delete file');
-            }
-        } catch (err) {
-            console.error('Failed to delete file:', err);
-            toast.error('Failed to delete file');
         }
     };
 
@@ -880,7 +878,6 @@ const ProjectDetail = () => {
         { id: 'business' as TabType, label: 'Business Review', icon: TrendingUp },
         { id: 'goals' as TabType, label: 'Goals', icon: Target },
         { id: 'activity' as TabType, label: 'Activity', icon: Activity },
-        { id: 'files' as TabType, label: 'Files', icon: Upload },
         // PM tab only for admins and project managers
         ...(isProjectManager(user) ? [{ id: 'pm' as TabType, label: 'Project Manager', icon: Clock }] : []),
     ];
@@ -889,6 +886,14 @@ const ProjectDetail = () => {
     const availableDevelopers = allDevelopers.filter(
         d => !project.developers.some(pd => pd.id === d.id)
     );
+
+    // Helper function to check if a subsection is restricted
+    const isSubsectionRestricted = (tabName: TabType, subsectionName: string): boolean => {
+        return userRestrictions.some(r => 
+            r.tab_name.toLowerCase() === tabName.toLowerCase() && 
+            r.subsection.toLowerCase() === subsectionName.toLowerCase()
+        );
+    };
 
     return (
         <div className="min-h-screen bg-[#080808] text-[#F4F6FF]">
@@ -1205,7 +1210,7 @@ const ProjectDetail = () => {
                         </div>
 
                         {/* PRD Analysis Section */}
-                        {prdAnalysis && (
+                        {prdAnalysis && !isSubsectionRestricted('overview', 'prd analysis') && (
                             <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-2xl p-5">
                                 <div className="flex items-center gap-3 mb-4">
                                     <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#E0B954] to-[#B8872A] flex items-center justify-center">
@@ -1394,7 +1399,7 @@ const ProjectDetail = () => {
                         )}
 
                         {/* Architecture Section */}
-                        {project.selected_architecture && (() => {
+                        {project.selected_architecture && !isSubsectionRestricted('overview', 'architecture') && (() => {
                             const arch = project.selected_architecture!;
                             return (
                             <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-2xl overflow-hidden">
@@ -1573,7 +1578,8 @@ const ProjectDetail = () => {
                         })()}
 
                         {/* Team Section */}
-                        <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-2xl p-4">
+                        {!isSubsectionRestricted('overview', 'team') && (
+                        <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-2xl p-5 mb-4">
                             <div className="flex items-center justify-between mb-3">
                                 <div className="flex items-center gap-3">
                                     <div className="w-10 h-10 rounded-xl bg-[#E0B954]/10 flex items-center justify-center">
@@ -1649,8 +1655,116 @@ const ProjectDetail = () => {
                                 </div>
                             )}
                         </div>
+                        )}
                         </div>
                     )
+                )}
+
+                {/* Files/Links Section */}
+                {activeTab === 'overview' && !hubLoading && !isSubsectionRestricted('overview', 'resources') && (
+                    <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-2xl p-5 mb-4 mt-6">
+                        <div className="flex items-center justify-between mb-4">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-xl bg-[#E0B954]/10 flex items-center justify-center">
+                                    <Link2 className="w-5 h-5 text-[#E0B954]" />
+                                </div>
+                                <div>
+                                    <h3 className="font-semibold text-white">Resources</h3>
+                                    <p className="text-xs text-[#737373]">Useful links and resources</p>
+                                </div>
+                            </div>
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => setShowAddLink(!showAddLink)}
+                                className="text-[#E0B954] hover:bg-[#E0B954]/10"
+                            >
+                                <Plus className="w-4 h-4 mr-2" />
+                                Add Link
+                            </Button>
+                        </div>
+
+                        {/* Add Link Form */}
+                        {showAddLink && (
+                            <div ref={addLinkFormRef} className="bg-[rgba(255,255,255,0.01)] border border-[rgba(224,185,84,0.2)] rounded-xl p-4 mb-4">
+                                <div className="space-y-3">
+                                    <div>
+                                        <label className="text-xs font-medium text-[#737373] block mb-1.5">Link Name</label>
+                                        <Input
+                                            value={newLink.name}
+                                            onChange={(e) => setNewLink(l => ({ ...l, name: e.target.value }))}
+                                            placeholder="e.g., API Documentation"
+                                            className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="text-xs font-medium text-[#737373] block mb-1.5">URL</label>
+                                        <Input
+                                            value={newLink.url}
+                                            onChange={(e) => setNewLink(l => ({ ...l, url: e.target.value }))}
+                                            placeholder="https://example.com"
+                                            className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl"
+                                        />
+                                    </div>
+                                    <div className="flex justify-end gap-2">
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            onClick={() => { setShowAddLink(false); setNewLink({ name: '', url: '' }); }}
+                                            className="text-[#737373] hover:text-white"
+                                        >
+                                            Cancel
+                                        </Button>
+                                        <Button
+                                            size="sm"
+                                            onClick={handleAddLink}
+                                            disabled={!newLink.name || !newLink.url}
+                                            className="bg-[#E0B954] hover:bg-[#C79E3B] text-white rounded-xl disabled:opacity-50"
+                                        >
+                                            Add Link
+                                        </Button>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Links List */}
+                        {linksLoading ? (
+                            <div className="space-y-2">
+                                {[...Array(2)].map((_, i) => (
+                                    <div key={i} className="h-12 bg-[rgba(255,255,255,0.02)] rounded-lg animate-pulse" />
+                                ))}
+                            </div>
+                        ) : links.length > 0 ? (
+                            <div className="space-y-2">
+                                {links.map((link) => (
+                                    <div key={link.id} className="flex items-center justify-between p-3 bg-[rgba(255,255,255,0.01)] border border-[rgba(255,255,255,0.04)] rounded-lg hover:bg-[rgba(255,255,255,0.02)] transition">
+                                        <a 
+                                            href={link.url} 
+                                            target="_blank" 
+                                            rel="noopener noreferrer"
+                                            className="flex items-center gap-2 flex-1 min-w-0"
+                                        >
+                                            <ExternalLink className="w-4 h-4 text-[#E0B954] flex-shrink-0" />
+                                            <span className="text-sm text-[#E0B954] hover:underline truncate">{link.name}</span>
+                                        </a>
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            onClick={() => handleDeleteLink(link.id)}
+                                            className="text-red-400 hover:text-red-300 hover:bg-red-400/10 ml-2"
+                                        >
+                                            <Trash2 className="w-4 h-4" />
+                                        </Button>
+                                    </div>
+                                ))}
+                            </div>
+                        ) : (
+                            <div className="text-center py-6">
+                                <p className="text-sm text-[#737373]">No links added yet</p>
+                            </div>
+                        )}
+                    </div>
                 )}
 
                 {/* Add Developer Modal (shared across overview & hub) */}
@@ -1758,7 +1872,7 @@ const ProjectDetail = () => {
                     ) : (
                     <div className="space-y-4">
                         {/* Active Sprints in Hub */}
-                        {sprints.length > 0 && (
+                        {sprints.length > 0 && !isSubsectionRestricted('hub', 'active sprints') && (
                             <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(224,185,84,0.12)] rounded-2xl p-5">
                                 <div className="flex items-center justify-between mb-4">
                                     <div className="flex items-center gap-3">
@@ -1832,7 +1946,7 @@ const ProjectDetail = () => {
                         )}
 
                         {/* Work Items List */}
-                        {hubLoading ? (
+                        {!isSubsectionRestricted('hub', 'work items') && (hubLoading ? (
                             <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-2xl p-5 space-y-3 animate-pulse">
                                 <div className="h-4 w-32 bg-[rgba(255,255,255,0.07)] rounded" />
                                 {[...Array(5)].map((_, i) => (
@@ -1848,7 +1962,7 @@ const ProjectDetail = () => {
                             </div>
                         ) : (
                             <ListView workItems={hubWorkItems} />
-                        )}
+                        ))}
                     </div>
                     )
                 )}
@@ -1875,7 +1989,7 @@ const ProjectDetail = () => {
                     ) : (
                         <div className="space-y-4">
                         {/* Analytics Charts */}
-                        {analytics && analytics.total_items > 0 && (
+                        {analytics && analytics.total_items > 0 && !isSubsectionRestricted('tracker', 'analytics') && (
                             <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-2xl p-5">
                                 <div className="flex items-center gap-3 mb-4">
                                     <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#E0B954] to-[#C79E3B] flex items-center justify-center">
@@ -1946,6 +2060,7 @@ const ProjectDetail = () => {
                             </div>
                         )}
 
+                        {!isSubsectionRestricted('tracker', 'timeline') && (
                         <TimelineView
                                 workItems={hubWorkItems}
                                 milestones={milestones}
@@ -1956,6 +2071,7 @@ const ProjectDetail = () => {
                                 onTaskUpdate={handleTaskUpdate}
                                 onTaskCreate={handleTaskCreate}
                             />
+                        )}
                         </div>
                     )
                 )}
@@ -1969,8 +2085,10 @@ const ProjectDetail = () => {
                                 <div key={r} className="grid grid-cols-7 gap-2 mb-2">{[...Array(7)].map((_,c) => <div key={c} className="h-16 bg-[rgba(255,255,255,0.03)] rounded" />)}</div>
                             ))}
                         </div>
-                    ) : (
+                    ) : !isSubsectionRestricted('calendar', 'calendar') ? (
                         <CalendarView workItems={hubWorkItems} milestones={milestones} goals={goals} />
+                    ) : (
+                        <div className="text-center py-12 text-[#737373]">This section is restricted from your view.</div>
                     )
                 )}
 
@@ -1985,7 +2103,7 @@ const ProjectDetail = () => {
                                 </div>
                             ))}
                         </div>
-                    ) : (
+                    ) : !isSubsectionRestricted('business', 'business review') ? (
                         <BusinessReviewView
                             project={project}
                             analytics={analytics}
@@ -1994,6 +2112,8 @@ const ProjectDetail = () => {
                             workItems={hubWorkItems}
                             goals={goals}
                         />
+                    ) : (
+                        <div className="text-center py-12 text-[#737373]">This section is restricted from your view.</div>
                     )
                 )}
 
@@ -2012,7 +2132,7 @@ const ProjectDetail = () => {
                                 </div>
                             ))}
                         </div>
-                    ) : (
+                    ) : !isSubsectionRestricted('goals', 'goals') ? (
                         <GoalsView
                             goals={goals}
                             milestones={milestones}
@@ -2023,6 +2143,8 @@ const ProjectDetail = () => {
                             onDeleteGoal={handleDeleteGoal}
                             onDeleteMilestone={handleDeleteMilestone}
                         />
+                    ) : (
+                        <div className="text-center py-12 text-[#737373]">This section is restricted from your view.</div>
                     )
                 )}
 
@@ -2040,107 +2162,14 @@ const ProjectDetail = () => {
                                 </div>
                             ))}
                         </div>
-                    ) : (
+                    ) : !isSubsectionRestricted('activity', 'activity feed') ? (
                         <ActivityFeed activities={activities} />
+                    ) : (
+                        <div className="text-center py-12 text-[#737373]">This section is restricted from your view.</div>
                     )
                 )}
 
                 {/* Files Tab */}
-                {activeTab === 'files' && (
-                    <div className="space-y-4">
-                        {/* Upload Section */}
-                        <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-2xl p-6">
-                            <div className="flex items-center justify-between mb-4">
-                                <div className="flex items-center gap-3">
-                                    <div className="w-10 h-10 rounded-xl bg-[#E0B954]/10 flex items-center justify-center">
-                                        <Upload className="w-5 h-5 text-[#E0B954]" />
-                                    </div>
-                                    <div>
-                                        <h3 className="font-semibold text-white">Upload Files</h3>
-                                        <p className="text-xs text-[#737373]">Share project files and documents</p>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <label className="cursor-pointer">
-                                <div className="border-2 border-dashed border-[rgba(224,185,84,0.3)] rounded-xl p-8 text-center hover:border-[rgba(224,185,84,0.6)] transition-colors">
-                                    <input
-                                        type="file"
-                                        onChange={handleUploadFile}
-                                        disabled={uploadingFile}
-                                        className="hidden"
-                                        accept="*/*"
-                                    />
-                                    <Upload className="w-8 h-8 text-[#E0B954] mx-auto mb-2" />
-                                    <p className="text-sm text-[#f5f5f5] font-medium mb-1">
-                                        {uploadingFile ? 'Uploading...' : 'Click to upload or drag and drop'}
-                                    </p>
-                                    <p className="text-xs text-[#737373]">Any file type, up to 50MB</p>
-                                </div>
-                            </label>
-                        </div>
-
-                        {/* Files List */}
-                        <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-2xl overflow-hidden">
-                            <div className="p-4 border-b border-[rgba(255,255,255,0.05)]">
-                                <h3 className="font-semibold text-white flex items-center gap-2">
-                                    <File className="w-5 h-5 text-[#E0B954]" />
-                                    Project Files {files.length > 0 && `(${files.length})`}
-                                </h3>
-                            </div>
-
-                            {files.length === 0 ? (
-                                <div className="p-8 text-center">
-                                    <File className="w-12 h-12 text-[#737373] mx-auto mb-3 opacity-50" />
-                                    <p className="text-[#737373]">No files uploaded yet</p>
-                                    <p className="text-xs text-[#737373] mt-1">Upload files to share with your team</p>
-                                </div>
-                            ) : (
-                                <div className="divide-y divide-[rgba(255,255,255,0.05)]">
-                                    {files.map((file) => (
-                                        <div key={file.id} className="p-4 hover:bg-[rgba(255,255,255,0.02)] transition-colors flex items-center justify-between">
-                                            <div className="flex items-center gap-3 flex-1 min-w-0">
-                                                <div className="w-10 h-10 rounded-lg bg-[#E0B954]/10 flex items-center justify-center flex-shrink-0">
-                                                    <File className="w-5 h-5 text-[#E0B954]" />
-                                                </div>
-                                                <div className="flex-1 min-w-0">
-                                                    <div className="flex items-center gap-2">
-                                                        <p className="text-sm text-[#f5f5f5] font-medium truncate">{file.file_name}</p>
-                                                        <span className="text-xs text-[#737373] flex-shrink-0">
-                                                            ({(file.file_size / 1024 / 1024).toFixed(2)} MB)
-                                                        </span>
-                                                    </div>
-                                                    <div className="flex items-center gap-2 text-xs text-[#737373] mt-1">
-                                                        <span>Uploaded by {file.uploaded_by}</span>
-                                                        <span>•</span>
-                                                        <span>{new Date(file.created_at).toLocaleDateString()}</span>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                            <div className="flex items-center gap-2 ml-2 flex-shrink-0">
-                                                <button
-                                                    onClick={() => handleDownloadFile(file)}
-                                                    className="p-2 hover:bg-[rgba(224,185,84,0.1)] rounded-lg transition-colors text-[#E0B954]"
-                                                    title="Download"
-                                                >
-                                                    <Download className="w-4 h-4" />
-                                                </button>
-                                                <button
-                                                    onClick={() => handleDeleteFile(file.id)}
-                                                    className="p-2 hover:bg-[rgba(244,63,94,0.1)] rounded-lg transition-colors text-[#F43F5E]"
-                                                    title="Delete"
-                                                >
-                                                    <Trash2 className="w-4 h-4" />
-                                                </button>
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
-                        </div>
-                    </div>
-                )}
-
                 {/* Project Manager Tab */}
                 {activeTab === 'pm' && isProjectManager(user) && (
                     hubLoading ? (
@@ -2314,9 +2343,12 @@ const ProjectDetail = () => {
                             </div>
                         )}
 
-                        <PMView projectId={id!} token={token!} />
+                        {!isSubsectionRestricted('pm', 'pmview') && (
+                        <PMView projectId={id!} token={token!} userRestrictions={userRestrictions} />
+                        )}
 
                         {/* Workload Section */}
+                        {!isSubsectionRestricted('pm', 'team workload') && (
                         <div>
                             <div className="flex items-center gap-3 mb-4">
                                 <div className="w-9 h-9 rounded-xl bg-[#E0B954]/10 flex items-center justify-center">
@@ -2332,6 +2364,7 @@ const ProjectDetail = () => {
                                 onDeveloperClick={(devId) => console.log('Developer clicked:', devId)}
                             />
                         </div>
+                        )}
                     </div>
                     )
                 )}

@@ -41,7 +41,7 @@ class User(Base):
     email = Column(String(255), unique=True, nullable=False, index=True)
     name = Column(String(255), nullable=False)
     hashed_password = Column(String(255), nullable=True)  # Nullable for SSO users
-    role = Column(String(20), default=UserRole.DEVELOPER.value)
+    role = Column(String(255), default=UserRole.DEVELOPER.value)  # Supports comma-separated roles
     
     # Account status
     is_active = Column(Boolean, default=True)
@@ -55,6 +55,11 @@ class User(Base):
     
     # Relationships
     personal_tasks = relationship("PersonalTask", back_populates="user", cascade="all, delete-orphan")
+    custom_restrictions = relationship(
+        "CustomRestriction",
+        secondary="user_custom_restrictions",
+        back_populates="users"
+    )
     
     def to_dict(self):
         return {

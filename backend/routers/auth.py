@@ -113,7 +113,8 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
 
 
 def get_current_admin(current_user: User = Depends(get_current_user)):
-    if current_user.role != UserRole.ADMIN.value:
+    # Check if user has admin role (roles are comma-separated)
+    if 'admin' not in current_user.role:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin access required"
@@ -301,8 +302,10 @@ async def update_user_role(
         )
     
     # Prevent removing the last admin
-    if user.role == UserRole.ADMIN.value and role_data.role != UserRole.ADMIN.value:
-        admin_count = db.query(User).filter(User.role == UserRole.ADMIN.value).count()
+    if 'admin' in user.role and 'admin' not in role_data.role:
+        # Count users with admin role (roles are comma-separated)
+        all_users = db.query(User).all()
+        admin_count = sum(1 for u in all_users if 'admin' in u.role)
         if admin_count <= 1:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -342,8 +345,10 @@ async def delete_user(
         )
     
     # Prevent deleting the last admin
-    if user.role == UserRole.ADMIN.value:
-        admin_count = db.query(User).filter(User.role == UserRole.ADMIN.value).count()
+    if 'admin' in user.role:
+        # Count users with admin role (roles are comma-separated)
+        all_users = db.query(User).all()
+        admin_count = sum(1 for u in all_users if 'admin' in u.role)
         if admin_count <= 1:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -483,3 +488,276 @@ async def get_google_config():
     return {
         "client_id": google_oauth_service.google_client_id
     }
+
+
+# ============= Custom Restrictions Management =============
+
+class CustomRestrictionRequest(BaseModel):
+    name: str
+    tab_name: str
+    subsection: str
+
+class CustomRestrictionResponse(BaseModel):
+    id: int
+    name: str
+    tab_name: str
+    subsection: str
+    created_at: str
+    
+    class Config:
+        from_attributes = True
+
+
+@router.get("/admin/custom-restrictions")
+async def list_custom_restrictions(db: Session = Depends(get_db), current_user: User = Depends(get_current_admin)):
+    """
+    List all custom restrictions
+    Admin only
+    """
+    from models.custom_restriction import CustomRestriction
+    
+    restrictions = db.query(CustomRestriction).order_by(CustomRestriction.created_at.desc()).all()
+    return [
+        {
+            "id": r.id,
+            "name": r.name,
+            "tab_name": r.tab_name,
+            "subsection": r.subsection,
+            "created_at": r.created_at.isoformat()
+        }
+        for r in restrictions
+    ]
+
+
+@router.post("/admin/custom-restrictions")
+async def create_custom_restriction(
+    req: CustomRestrictionRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin)
+):
+    """
+    Create a new custom restriction
+    Admin only
+    """
+    from models.custom_restriction import CustomRestriction
+    
+    # Check if restriction with this name already exists
+    existing = db.query(CustomRestriction).filter(CustomRestriction.name == req.name).first()
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Custom restriction with this name already exists"
+        )
+    
+    restriction = CustomRestriction(
+        name=req.name,
+        tab_name=req.tab_name,
+        subsection=req.subsection
+    )
+    db.add(restriction)
+    db.commit()
+    db.refresh(restriction)
+    
+    return {
+        "id": restriction.id,
+        "name": restriction.name,
+        "tab_name": restriction.tab_name,
+        "subsection": restriction.subsection,
+        "created_at": restriction.created_at.isoformat()
+    }
+
+
+@router.put("/admin/custom-restrictions/{restriction_id}")
+async def update_custom_restriction(
+    restriction_id: int,
+    req: CustomRestrictionRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin)
+):
+    """
+    Update a custom restriction
+    Admin only
+    """
+    from models.custom_restriction import CustomRestriction
+    
+    restriction = db.query(CustomRestriction).filter(CustomRestriction.id == restriction_id).first()
+    if not restriction:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Custom restriction not found"
+        )
+    
+    # Check if new name conflicts with another restriction
+    if req.name != restriction.name:
+        existing = db.query(CustomRestriction).filter(CustomRestriction.name == req.name).first()
+        if existing:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Custom restriction with this name already exists"
+            )
+    
+    restriction.name = req.name
+    restriction.tab_name = req.tab_name
+    restriction.subsection = req.subsection
+    db.commit()
+    db.refresh(restriction)
+    
+    return {
+        "id": restriction.id,
+        "name": restriction.name,
+        "tab_name": restriction.tab_name,
+        "subsection": restriction.subsection,
+        "created_at": restriction.created_at.isoformat()
+    }
+
+
+@router.delete("/admin/custom-restrictions/{restriction_id}")
+async def delete_custom_restriction(
+    restriction_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin)
+):
+    """
+    Delete a custom restriction
+    Admin only
+    """
+    from models.custom_restriction import CustomRestriction
+    
+    restriction = db.query(CustomRestriction).filter(CustomRestriction.id == restriction_id).first()
+    if not restriction:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Custom restriction not found"
+        )
+    
+    db.delete(restriction)
+    db.commit()
+    
+    return {"message": "Custom restriction deleted successfully"}
+
+
+@router.post("/admin/users/{user_id}/custom-restrictions/{restriction_id}")
+async def assign_restriction_to_user(
+    user_id: int,
+    restriction_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin)
+):
+    """
+    Assign a custom restriction to a user
+    Admin only
+    """
+    from models.custom_restriction import CustomRestriction
+    
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+    
+    restriction = db.query(CustomRestriction).filter(CustomRestriction.id == restriction_id).first()
+    if not restriction:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Custom restriction not found"
+        )
+    
+    # Check if already assigned
+    if restriction in user.custom_restrictions:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Restriction already assigned to user"
+        )
+    
+    user.custom_restrictions.append(restriction)
+    db.commit()
+    
+    return {"message": "Restriction assigned to user successfully"}
+
+
+@router.delete("/admin/users/{user_id}/custom-restrictions/{restriction_id}")
+async def remove_restriction_from_user(
+    user_id: int,
+    restriction_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin)
+):
+    """
+    Remove a custom restriction from a user
+    Admin only
+    """
+    from models.custom_restriction import CustomRestriction
+    
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+    
+    restriction = db.query(CustomRestriction).filter(CustomRestriction.id == restriction_id).first()
+    if not restriction:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Custom restriction not found"
+        )
+    
+    # Check if assigned
+    if restriction not in user.custom_restrictions:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Restriction not assigned to user"
+        )
+    
+    user.custom_restrictions.remove(restriction)
+    db.commit()
+    
+    return {"message": "Restriction removed from user successfully"}
+
+
+@router.get("/admin/users/{user_id}/custom-restrictions")
+async def get_user_custom_restrictions(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin)
+):
+    """
+    Get all custom restrictions for a user
+    Admin only
+    """
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+    
+    return [
+        {
+            "id": r.id,
+            "name": r.name,
+            "tab_name": r.tab_name,
+            "subsection": r.subsection,
+            "created_at": r.created_at.isoformat()
+        }
+        for r in user.custom_restrictions
+    ]
+
+
+@router.get("/me/custom-restrictions")
+async def get_my_custom_restrictions(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """
+    Get current user's custom restrictions
+    Accessible to all authenticated users
+    """
+    return [
+        {
+            "id": r.id,
+            "name": r.name,
+            "tab_name": r.tab_name,
+            "subsection": r.subsection,
+            "created_at": r.created_at.isoformat()
+        }
+        for r in current_user.custom_restrictions
+    ]

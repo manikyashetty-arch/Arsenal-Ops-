@@ -17,7 +17,6 @@ import {
     ExternalLink,
     Shield,
     UserCog,
-    Key,
     Mail,
     CheckCircle2,
     AlertCircle,
@@ -93,7 +92,7 @@ interface DashboardStats {
 
 const AdminDashboard = () => {
     const navigate = useNavigate();
-    const [activeTab, setActiveTab] = useState<'dashboard' | 'employees' | 'projects' | 'users' | 'developers-capacity'>('dashboard');
+    const [activeTab, setActiveTab] = useState<'dashboard' | 'employees' | 'projects' | 'users' | 'developers-capacity' | 'custom-restrictions'>('dashboard');
     const [stats, setStats] = useState<DashboardStats | null>(null);
     const [employees, setEmployees] = useState<Employee[]>([]);
     const [developerCapacities, setDeveloperCapacities] = useState<DeveloperCapacity[]>([]);
@@ -101,6 +100,33 @@ const AdminDashboard = () => {
     const [users, setUsers] = useState<User[]>([]);
     const [loading, setLoading] = useState(true);
     const { token } = useAuth();
+    
+    // Custom restrictions state
+    const [customRestrictions, setCustomRestrictions] = useState<any[]>([]);
+    const [showRestrictionModal, setShowRestrictionModal] = useState(false);
+    const [editingRestriction, setEditingRestriction] = useState<any | null>(null);
+    const [restrictionForm, setRestrictionForm] = useState({
+        name: '',
+        tab_name: '',
+        subsection: ''
+    });
+    
+    // User restrictions management state
+    const [showUserRestrictionsModal, setShowUserRestrictionsModal] = useState(false);
+    const [selectedUserForRestrictions, setSelectedUserForRestrictions] = useState<User | null>(null);
+    const [userRestrictionsList, setUserRestrictionsList] = useState<number[]>([]);
+    const [userRestrictionsLoading, setUserRestrictionsLoading] = useState(false);
+    
+    // Role dropdown state
+    const [openRoleDropdown, setOpenRoleDropdown] = useState<number | null>(null);
+    
+    // Helper function to convert role to Pascal Case
+    const toPascalCase = (str: string): string => {
+        return str
+            .split('_')
+            .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+            .join('');
+    };
     
     // Employee form state
     const [showEmployeeModal, setShowEmployeeModal] = useState(false);
@@ -129,7 +155,7 @@ const AdminDashboard = () => {
     const fetchData = async () => {
         setLoading(true);
         try {
-            const [statsRes, employeesRes, projectsRes, usersRes, capacityRes] = await Promise.all([
+            const [statsRes, employeesRes, projectsRes, usersRes, capacityRes, restrictionsRes] = await Promise.all([
                 fetch(`${API_BASE_URL}/api/admin/stats`),
                 fetch(`${API_BASE_URL}/api/admin/employees`),
                 fetch(`${API_BASE_URL}/api/admin/projects`),
@@ -137,6 +163,9 @@ const AdminDashboard = () => {
                     headers: { 'Authorization': `Bearer ${token}` }
                 }),
                 fetch(`${API_BASE_URL}/api/admin/developers/capacity`),
+                fetch(`${API_BASE_URL}/api/auth/admin/custom-restrictions`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                }),
             ]);
 
             if (statsRes.ok) setStats(await statsRes.json());
@@ -144,6 +173,7 @@ const AdminDashboard = () => {
             if (projectsRes.ok) setProjects(await projectsRes.json());
             if (usersRes.ok) setUsers(await usersRes.json());
             if (capacityRes.ok) setDeveloperCapacities(await capacityRes.json());
+            if (restrictionsRes.ok) setCustomRestrictions(await restrictionsRes.json());
         } catch (error) {
             console.error('Failed to fetch admin data:', error);
             toast.error('Failed to load dashboard data');
@@ -365,30 +395,6 @@ const AdminDashboard = () => {
         }
     };
 
-    const handleResetPassword = async (user: User) => {
-        if (!confirm(`Reset password for ${user.name}? They will need to change it on next login.`)) return;
-
-        try {
-            const response = await fetch(`${API_BASE_URL}/api/auth/admin/reset-password`, {
-                method: 'POST',
-                headers: { 
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
-                body: JSON.stringify({ user_id: user.id, new_password: 'TempPass123!' }),
-            });
-
-            if (response.ok) {
-                toast.success('Password reset! New password: TempPass123!');
-                fetchData();
-            } else {
-                toast.error('Failed to reset password');
-            }
-        } catch {
-            toast.error('Failed to reset password');
-        }
-    };
-
     const handleDeleteUser = async (user: User) => {
         if (!confirm(`Are you sure you want to deactivate ${user.name}? They will no longer be able to login.`)) return;
 
@@ -409,6 +415,135 @@ const AdminDashboard = () => {
             }
         } catch {
             toast.error('Failed to delete user');
+        }
+    };
+
+    // Custom Restrictions Handlers
+    const handleCreateRestriction = () => {
+        setEditingRestriction(null);
+        setRestrictionForm({ name: '', tab_name: '', subsection: '' });
+        setShowRestrictionModal(true);
+    };
+
+    const handleEditRestriction = (restriction: any) => {
+        setEditingRestriction(restriction);
+        setRestrictionForm({
+            name: restriction.name,
+            tab_name: restriction.tab_name,
+            subsection: restriction.subsection
+        });
+        setShowRestrictionModal(true);
+    };
+
+    const handleSaveRestriction = async () => {
+        if (!restrictionForm.name.trim() || !restrictionForm.tab_name || !restrictionForm.subsection) {
+            toast.error('All fields are required');
+            return;
+        }
+
+        try {
+            const url = editingRestriction
+                ? `${API_BASE_URL}/api/auth/admin/custom-restrictions/${editingRestriction.id}`
+                : `${API_BASE_URL}/api/auth/admin/custom-restrictions`;
+            const method = editingRestriction ? 'PUT' : 'POST';
+
+            const response = await fetch(url, {
+                method,
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify(restrictionForm),
+            });
+
+            if (response.ok) {
+                toast.success(editingRestriction ? 'Restriction updated!' : 'Restriction created!');
+                setShowRestrictionModal(false);
+                fetchData();
+            } else {
+                const error = await response.json();
+                toast.error(error.detail || 'Failed to save restriction');
+            }
+        } catch {
+            toast.error('Failed to save restriction');
+        }
+    };
+
+    const handleDeleteRestriction = async (restrictionId: number) => {
+        if (!confirm('Are you sure you want to delete this custom restriction?')) return;
+
+        try {
+            const response = await fetch(`${API_BASE_URL}/api/auth/admin/custom-restrictions/${restrictionId}`, {
+                method: 'DELETE',
+                headers: { 
+                    'Authorization': `Bearer ${token}`
+                },
+            });
+
+            if (response.ok) {
+                toast.success('Restriction deleted!');
+                fetchData();
+            } else {
+                const error = await response.json();
+                toast.error(error.detail || 'Failed to delete restriction');
+            }
+        } catch {
+            toast.error('Failed to delete restriction');
+        }
+    };
+
+    // User Restrictions Management Handlers
+    const handleOpenUserRestrictionsModal = async (user: User) => {
+        setSelectedUserForRestrictions(user);
+        setUserRestrictionsLoading(true);
+        
+        try {
+            const response = await fetch(`${API_BASE_URL}/api/auth/admin/users/${user.id}/custom-restrictions`, {
+                headers: { 
+                    'Authorization': `Bearer ${token}`
+                },
+            });
+            
+            if (response.ok) {
+                const userRestrictions = await response.json();
+                setUserRestrictionsList(userRestrictions.map((r: any) => r.id));
+            }
+        } catch {
+            toast.error('Failed to load user restrictions');
+        } finally {
+            setUserRestrictionsLoading(false);
+            setShowUserRestrictionsModal(true);
+        }
+    };
+
+    const handleToggleUserRestriction = async (restrictionId: number, isChecked: boolean) => {
+        if (!selectedUserForRestrictions) return;
+
+        try {
+            const method = isChecked ? 'POST' : 'DELETE';
+            const response = await fetch(
+                `${API_BASE_URL}/api/auth/admin/users/${selectedUserForRestrictions.id}/custom-restrictions/${restrictionId}`,
+                {
+                    method,
+                    headers: { 
+                        'Authorization': `Bearer ${token}`
+                    },
+                }
+            );
+
+            if (response.ok) {
+                if (isChecked) {
+                    setUserRestrictionsList([...userRestrictionsList, restrictionId]);
+                } else {
+                    setUserRestrictionsList(userRestrictionsList.filter(id => id !== restrictionId));
+                }
+                toast.success(isChecked ? 'Restriction assigned!' : 'Restriction removed!');
+            } else {
+                const error = await response.json();
+                toast.error(error.detail || 'Failed to update restriction');
+            }
+        } catch {
+            toast.error('Failed to update restriction');
         }
     };
 
@@ -439,12 +574,13 @@ const AdminDashboard = () => {
             {/* Tabs */}
             <div className="border-b border-[rgba(255,255,255,0.05)]">
                 <div className="max-w-7xl mx-auto px-6">
-                    <div className="flex gap-1">
+                    <div className="flex gap-1 overflow-x-auto pb-2">
                         {[
                             { id: 'dashboard', label: 'Dashboard', icon: BarChart3 },
                             { id: 'employees', label: 'Employees', icon: Users },
                             { id: 'projects', label: 'Projects', icon: FolderKanban },
                             { id: 'users', label: 'Users', icon: Shield },
+                            { id: 'custom-restrictions', label: 'Restrictions', icon: Settings },
                         ].map(tab => (
                             <button
                                 key={tab.id}
@@ -766,19 +902,20 @@ const AdminDashboard = () => {
                                         Add User
                                     </Button>
                                 </div>
-                                <div className="bg-[#0d0d0d] border border-[rgba(255,255,255,0.05)] rounded-xl overflow-hidden">
+                                <div className="bg-[#0d0d0d] border border-[rgba(255,255,255,0.05)] rounded-xl overflow-visible">
                                     <table className="w-full">
                                         <thead className="bg-[rgba(255,255,255,0.02)]">
                                             <tr>
                                                 <th className="text-left text-xs font-medium text-[#737373] py-3 px-4">User</th>
-                                                <th className="text-left text-xs font-medium text-[#737373] py-3 px-4">Role</th>
+                                                <th className="text-left text-xs font-medium text-[#737373] py-3 px-4">Roles</th>
                                                 <th className="text-left text-xs font-medium text-[#737373] py-3 px-4">Status</th>
                                                 <th className="text-left text-xs font-medium text-[#737373] py-3 px-4">Last Login</th>
+                                                <th className="text-left text-xs font-medium text-[#737373] py-3 px-4">Restrictions</th>
                                                 <th className="text-right text-xs font-medium text-[#737373] py-3 px-4">Actions</th>
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-[rgba(255,255,255,0.03)]">
-                                            {users.map(user => (
+                                            {users.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).map(user => (
                                                 <tr key={user.id} className="hover:bg-[rgba(255,255,255,0.02)]">
                                                     <td className="py-3 px-4">
                                                         <div className="flex items-center gap-3">
@@ -792,22 +929,39 @@ const AdminDashboard = () => {
                                                         </div>
                                                     </td>
                                                     <td className="py-3 px-4">
-                                                        <div className="flex flex-wrap gap-1">
-                                                            {user.role.split(',').map((r, i) => (
-                                                                <span key={i} className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs ${
-                                                                    r.trim() === 'admin' 
-                                                                        ? 'bg-[#E0B954]/20 text-[#E0B954] border border-[#E0B954]/30' 
-                                                                        : r.trim() === 'project_manager'
-                                                                        ? 'bg-[#C79E3B]/20 text-[#C79E3B] border border-[#C79E3B]/30'
-                                                                        : 'bg-[rgba(255,255,255,0.05)] text-[#a3a3a3]'
-                                                                }`}>
-                                                                    {r.trim() === 'admin' && <Shield className="w-3 h-3" />}
-                                                                    {r.trim() === 'project_manager' && <UserCog className="w-3 h-3" />}
-                                                                    {r.trim() === 'developer' && <UserCog className="w-3 h-3" />}
-                                                                    {r.trim().replace('_', ' ')}
-                                                                </span>
-                                                            ))}
+                                                        <div className="flex flex-wrap gap-1 mb-2 items-center">
+                                                            {user.role.split(',').slice(0, 2).map((r, i) => {
+                                                                const role = r.trim();
+                                                                return (
+                                                                    <span
+                                                                        key={i}
+                                                                        className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs ${
+                                                                            role === 'admin' 
+                                                                                ? 'bg-[#E0B954]/20 text-[#E0B954]' 
+                                                                                : 'bg-[#E0B954]/20 text-[#E0B954]'
+                                                                        }`}
+                                                                    >
+                                                                        {role === 'admin' && <Shield className="w-3 h-3" />}
+                                                                        {role === 'project_manager' && <UserCog className="w-3 h-3" />}
+                                                                        {toPascalCase(role)}
+                                                                    </span>
+                                                                );
+                                                            })}
+                                                            {user.role.split(',').length > 2 && (
+                                                                <button
+                                                                    onClick={() => setOpenRoleDropdown(user.id)}
+                                                                    className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs bg-[#E0B954]/20 text-[#E0B954] hover:bg-[#E0B954]/30 transition cursor-pointer"
+                                                                >
+                                                                    +{user.role.split(',').length - 2}
+                                                                </button>
+                                                            )}
                                                         </div>
+                                                        <button 
+                                                            onClick={() => setOpenRoleDropdown(user.id)}
+                                                            className="text-xs px-2 py-1 rounded bg-[rgba(224,185,84,0.1)] text-[#E0B954] hover:bg-[rgba(224,185,84,0.2)] transition"
+                                                        >
+                                                            Edit Roles
+                                                        </button>
                                                     </td>
                                                     <td className="py-3 px-4">
                                                         {user.is_active ? (
@@ -831,35 +985,19 @@ const AdminDashboard = () => {
                                                             : 'Never'
                                                         }
                                                     </td>
-                                                    <td className="py-3 px-4 text-right">
+                                                    <td className="py-3 px-4">
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="sm"
+                                                            onClick={() => handleOpenUserRestrictionsModal(user)}
+                                                            className="text-[#737373] hover:text-[#E0B954] hover:bg-[#E0B954]/10 h-8"
+                                                        >
+                                                            <Shield className="w-3.5 h-3.5 mr-1" />
+                                                            Restrictions
+                                                        </Button>
+                                                    </td>
+                                                    <td className="py-3 px-4">
                                                         <div className="flex items-center justify-end gap-2">
-                                                            <Button
-                                                                variant="ghost"
-                                                                size="sm"
-                                                                onClick={() => handleToggleUserRole(user, 'admin')}
-                                                                className={`h-8 ${user.role.includes('admin') ? 'text-[#E0B954]' : 'text-[#737373]'}`}
-                                                            >
-                                                                <Shield className="w-3.5 h-3.5 mr-1" />
-                                                                {user.role.includes('admin') ? 'Remove Admin' : 'Add Admin'}
-                                                            </Button>
-                                                            <Button
-                                                                variant="ghost"
-                                                                size="sm"
-                                                                onClick={() => handleToggleUserRole(user, 'project_manager')}
-                                                                className={`h-8 ${user.role.includes('project_manager') ? 'text-[#C79E3B]' : 'text-[#737373]'}`}
-                                                            >
-                                                                <UserCog className="w-3.5 h-3.5 mr-1" />
-                                                                {user.role.includes('project_manager') ? 'Remove PM' : 'Add PM'}
-                                                            </Button>
-                                                            <Button
-                                                                variant="ghost"
-                                                                size="sm"
-                                                                onClick={() => handleResetPassword(user)}
-                                                                className="text-[#737373] hover:text-[#F59E0B] h-8"
-                                                            >
-                                                                <Key className="w-3.5 h-3.5 mr-1" />
-                                                                Reset
-                                                            </Button>
                                                             <Button
                                                                 variant="ghost"
                                                                 size="sm"
@@ -883,9 +1021,197 @@ const AdminDashboard = () => {
                                 </div>
                             </div>
                         )}
+                        {/* Custom Restrictions Tab */}
+                        {activeTab === 'custom-restrictions' && (
+                            <div className="space-y-4">
+                                <div className="flex items-center justify-between">
+                                    <h2 className="text-lg font-semibold text-white">Custom Restrictions Management</h2>
+                                    <Button
+                                        onClick={handleCreateRestriction}
+                                        className="bg-gradient-to-r from-[#E0B954] to-[#B8872A] hover:from-[#C79E3B] hover:to-[#B8872A] text-white rounded-xl h-10 px-4"
+                                    >
+                                        <Plus className="w-4 h-4 mr-2" />
+                                        Add Restriction
+                                    </Button>
+                                </div>
+                                <div className="bg-[#0d0d0d] border border-[rgba(255,255,255,0.05)] rounded-xl overflow-visible">
+                                    <table className="w-full">
+                                        <thead className="bg-[rgba(255,255,255,0.02)]">
+                                            <tr>
+                                                <th className="text-left text-xs font-medium text-[#737373] py-3 px-4">Name</th>
+                                                <th className="text-left text-xs font-medium text-[#737373] py-3 px-4">Tab</th>
+                                                <th className="text-left text-xs font-medium text-[#737373] py-3 px-4">Subsection</th>
+                                                <th className="text-left text-xs font-medium text-[#737373] py-3 px-4">Created</th>
+                                                <th className="text-right text-xs font-medium text-[#737373] py-3 px-4">Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-[rgba(255,255,255,0.03)]">
+                                            {customRestrictions.map(restriction => (
+                                                <tr key={restriction.id} className="hover:bg-[rgba(255,255,255,0.02)]">
+                                                    <td className="py-3 px-4">
+                                                        <span className="inline-flex items-center gap-2 px-2 py-1 rounded text-xs bg-[#E0B954]/20 text-[#E0B954]">
+                                                            <Shield className="w-3 h-3" />
+                                                            {restriction.name}
+                                                        </span>
+                                                    </td>
+                                                    <td className="py-3 px-4 text-sm text-[#a3a3a3]">{toPascalCase(restriction.tab_name)}</td>
+                                                    <td className="py-3 px-4 text-sm text-[#a3a3a3]">{toPascalCase(restriction.subsection)}</td>
+                                                    <td className="py-3 px-4 text-sm text-[#737373]">
+                                                        {new Date(restriction.created_at).toLocaleDateString()}
+                                                    </td>
+                                                    <td className="py-3 px-4 text-right">
+                                                        <div className="flex items-center justify-end gap-2">
+                                                            <Button
+                                                                variant="ghost"
+                                                                size="sm"
+                                                                onClick={() => handleEditRestriction(restriction)}
+                                                                className="text-[#737373] hover:text-red-400 h-8"
+                                                            >
+                                                                <Pencil className="w-3.5 h-3.5 mr-1" />
+                                                                Edit
+                                                            </Button>
+                                                            <Button
+                                                                variant="ghost"
+                                                                size="sm"
+                                                                onClick={() => handleDeleteRestriction(restriction.id)}
+                                                                className="text-[#737373] hover:text-red-400 h-8"
+                                                            >
+                                                                <Trash2 className="w-3.5 h-3.5 mr-1" />
+                                                                Delete
+                                                            </Button>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                    {customRestrictions.length === 0 && (
+                                        <div className="text-center py-12 text-[#737373]">
+                                            No custom restrictions yet. Click "Add Restriction" to create one.
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
                     </>
                 )}
             </div>
+
+            {/* Role Management Modal */}
+            {openRoleDropdown && users.find(u => u.id === openRoleDropdown) && (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setOpenRoleDropdown(null)}>
+                    <div className="bg-[#0d0d0d] border border-[rgba(255,255,255,0.07)] rounded-2xl w-full max-w-sm shadow-2xl" onClick={e => e.stopPropagation()}>
+                        <div className="flex items-center justify-between p-5 border-b border-[rgba(255,255,255,0.05)]">
+                            <h2 className="text-lg font-bold text-white">
+                                Edit Roles - {users.find(u => u.id === openRoleDropdown)?.name}
+                            </h2>
+                            <button 
+                                onClick={() => setOpenRoleDropdown(null)}
+                                className="p-2 rounded-lg hover:bg-[rgba(244,246,255,0.05)] text-[#737373] hover:text-white"
+                            >
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+                        <div className="p-5 space-y-3">
+                            {['admin', 'project_manager', 'developer'].map(role => {
+                                const user = users.find(u => u.id === openRoleDropdown);
+                                const isChecked = user?.role.includes(role) || false;
+                                return (
+                                    <label key={role} className="flex items-center gap-3 p-3 rounded-lg hover:bg-[rgba(255,255,255,0.02)] cursor-pointer transition">
+                                        <input
+                                            type="checkbox"
+                                            checked={isChecked}
+                                            onChange={() => user && handleToggleUserRole(user, role)}
+                                            className="w-5 h-5 rounded cursor-pointer"
+                                        />
+                                        <div className="flex-1">
+                                            <span className="text-sm text-white font-medium">{toPascalCase(role)}</span>
+                                            <p className="text-xs text-[#737373] mt-0.5">
+                                                {role === 'admin' && 'Full system access and user management'}
+                                                {role === 'project_manager' && 'Manage projects and team workload'}
+                                                {role === 'developer' && 'Access to assigned projects and tasks'}
+                                            </p>
+                                        </div>
+                                    </label>
+                                );
+                            })}
+                        </div>
+                        <div className="flex justify-end gap-2 p-5 border-t border-[rgba(255,255,255,0.05)]">
+                            <button
+                                onClick={() => setOpenRoleDropdown(null)}
+                                className="px-4 py-2 rounded-lg text-[#737373] hover:bg-[rgba(255,255,255,0.05)] transition"
+                            >
+                                Done
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Custom Restriction Modal */}
+            {showRestrictionModal && (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setShowRestrictionModal(false)}>
+                    <div className="bg-[#0d0d0d] border border-[rgba(255,255,255,0.07)] rounded-2xl w-full max-w-md shadow-2xl" onClick={e => e.stopPropagation()}>
+                        <div className="flex items-center justify-between p-5 border-b border-[rgba(255,255,255,0.05)]">
+                            <h2 className="text-lg font-bold text-white">
+                                {editingRestriction ? 'Edit Restriction' : 'Add Custom Restriction'}
+                            </h2>
+                            <button onClick={() => setShowRestrictionModal(false)} className="p-2 rounded-lg hover:bg-[rgba(244,246,255,0.05)] text-[#737373] hover:text-white">
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+                        <div className="p-5 space-y-4">
+                            <div>
+                                <label className="text-xs font-medium text-[#737373] block mb-1.5">Restriction Name *</label>
+                                <Input
+                                    value={restrictionForm.name}
+                                    onChange={e => setRestrictionForm(f => ({ ...f, name: e.target.value }))}
+                                    placeholder="e.g., NoWorkload, NoAnalytics"
+                                    className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl h-10"
+                                />
+                            </div>
+                            <div>
+                                <label className="text-xs font-medium text-[#737373] block mb-1.5">Tab Name *</label>
+                                <select
+                                    value={restrictionForm.tab_name}
+                                    onChange={e => setRestrictionForm(f => ({ ...f, tab_name: e.target.value }))}
+                                    className="w-full bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl h-10 px-3 text-sm"
+                                >
+                                    <option value="">Select a tab...</option>
+                                    <option value="pm">Project Manager</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label className="text-xs font-medium text-[#737373] block mb-1.5">Subsection *</label>
+                                <Input
+                                    value={restrictionForm.subsection}
+                                    onChange={e => setRestrictionForm(f => ({ ...f, subsection: e.target.value }))}
+                                    placeholder="e.g., workload, analytics, timeline"
+                                    className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl h-10"
+                                />
+                                <p className="text-[10px] text-[#737373] mt-1">
+                                    The subsection within the tab that will be hidden from users with this restriction.
+                                </p>
+                            </div>
+                        </div>
+                        <div className="flex justify-end gap-2 p-5 border-t border-[rgba(255,255,255,0.05)]">
+                            <button
+                                onClick={() => setShowRestrictionModal(false)}
+                                className="px-4 py-2 rounded-lg text-[#737373] hover:bg-[rgba(255,255,255,0.05)] transition"
+                            >
+                                Cancel
+                            </button>
+                            <Button
+                                onClick={handleSaveRestriction}
+                                className="bg-gradient-to-r from-[#E0B954] to-[#B8872A] text-white rounded-xl px-6 font-medium shadow-lg shadow-[#B8872A]/20"
+                            >
+                                <Save className="w-4 h-4 mr-2" />
+                                {editingRestriction ? 'Update' : 'Create'}
+                            </Button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Employee Modal */}
             {showEmployeeModal && (
@@ -1079,6 +1405,57 @@ const AdminDashboard = () => {
                                     Create User
                                 </Button>
                             )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* User Restrictions Modal */}
+            {showUserRestrictionsModal && selectedUserForRestrictions && (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setShowUserRestrictionsModal(false)}>
+                    <div className="bg-[#0d0d0d] border border-[rgba(255,255,255,0.07)] rounded-2xl w-full max-w-md shadow-2xl" onClick={e => e.stopPropagation()}>
+                        <div className="flex items-center justify-between p-5 border-b border-[rgba(255,255,255,0.05)]">
+                            <div>
+                                <h2 className="text-lg font-bold text-white">Manage Restrictions</h2>
+                                <p className="text-xs text-[#737373] mt-0.5">{selectedUserForRestrictions.name}</p>
+                            </div>
+                            <button onClick={() => setShowUserRestrictionsModal(false)} className="p-2 rounded-lg hover:bg-[rgba(244,246,255,0.05)] text-[#737373] hover:text-white">
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+                        <div className="p-5 space-y-2 max-h-96 overflow-y-auto">
+                            {userRestrictionsLoading ? (
+                                <div className="flex items-center justify-center py-8">
+                                    <div className="animate-spin w-6 h-6 border-2 border-[#E0B954] border-t-transparent rounded-full" />
+                                </div>
+                            ) : customRestrictions.length === 0 ? (
+                                <p className="text-sm text-[#737373] text-center py-8">No custom restrictions available</p>
+                            ) : (
+                                customRestrictions.map(restriction => (
+                                    <label key={restriction.id} className="flex items-center gap-3 p-3 rounded-lg hover:bg-[rgba(255,255,255,0.02)] cursor-pointer transition">
+                                        <input
+                                            type="checkbox"
+                                            checked={userRestrictionsList.includes(restriction.id)}
+                                            onChange={e => handleToggleUserRestriction(restriction.id, e.target.checked)}
+                                            className="w-5 h-5 rounded cursor-pointer"
+                                        />
+                                        <div className="flex-1 min-w-0">
+                                            <span className="text-sm text-white font-medium block">{restriction.name}</span>
+                                            <p className="text-xs text-[#737373] mt-0.5">
+                                                {toPascalCase(restriction.tab_name)} → {toPascalCase(restriction.subsection)}
+                                            </p>
+                                        </div>
+                                    </label>
+                                ))
+                            )}
+                        </div>
+                        <div className="flex justify-end gap-2 p-5 border-t border-[rgba(255,255,255,0.05)]">
+                            <button
+                                onClick={() => setShowUserRestrictionsModal(false)}
+                                className="px-4 py-2 rounded-lg text-[#737373] hover:bg-[rgba(255,255,255,0.05)] transition"
+                            >
+                                Done
+                            </button>
                         </div>
                     </div>
                 </div>
