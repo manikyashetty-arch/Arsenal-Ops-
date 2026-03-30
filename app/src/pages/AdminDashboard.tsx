@@ -17,7 +17,6 @@ import {
     ExternalLink,
     Shield,
     UserCog,
-    Key,
     Mail,
     CheckCircle2,
     AlertCircle,
@@ -101,6 +100,17 @@ const AdminDashboard = () => {
     const [users, setUsers] = useState<User[]>([]);
     const [loading, setLoading] = useState(true);
     const { token } = useAuth();
+    
+    // Role dropdown state
+    const [openRoleDropdown, setOpenRoleDropdown] = useState<number | null>(null);
+    
+    // Helper function to convert role to Pascal Case
+    const toPascalCase = (str: string): string => {
+        return str
+            .split('_')
+            .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+            .join('');
+    };
     
     // Employee form state
     const [showEmployeeModal, setShowEmployeeModal] = useState(false);
@@ -362,30 +372,6 @@ const AdminDashboard = () => {
             }
         } catch {
             toast.error('Failed to update role');
-        }
-    };
-
-    const handleResetPassword = async (user: User) => {
-        if (!confirm(`Reset password for ${user.name}? They will need to change it on next login.`)) return;
-
-        try {
-            const response = await fetch(`${API_BASE_URL}/api/auth/admin/reset-password`, {
-                method: 'POST',
-                headers: { 
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
-                body: JSON.stringify({ user_id: user.id, new_password: 'TempPass123!' }),
-            });
-
-            if (response.ok) {
-                toast.success('Password reset! New password: TempPass123!');
-                fetchData();
-            } else {
-                toast.error('Failed to reset password');
-            }
-        } catch {
-            toast.error('Failed to reset password');
         }
     };
 
@@ -766,19 +752,19 @@ const AdminDashboard = () => {
                                         Add User
                                     </Button>
                                 </div>
-                                <div className="bg-[#0d0d0d] border border-[rgba(255,255,255,0.05)] rounded-xl overflow-hidden">
+                                <div className="bg-[#0d0d0d] border border-[rgba(255,255,255,0.05)] rounded-xl overflow-visible">
                                     <table className="w-full">
                                         <thead className="bg-[rgba(255,255,255,0.02)]">
                                             <tr>
                                                 <th className="text-left text-xs font-medium text-[#737373] py-3 px-4">User</th>
-                                                <th className="text-left text-xs font-medium text-[#737373] py-3 px-4">Role</th>
+                                                <th className="text-left text-xs font-medium text-[#737373] py-3 px-4">Roles</th>
                                                 <th className="text-left text-xs font-medium text-[#737373] py-3 px-4">Status</th>
                                                 <th className="text-left text-xs font-medium text-[#737373] py-3 px-4">Last Login</th>
                                                 <th className="text-right text-xs font-medium text-[#737373] py-3 px-4">Actions</th>
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-[rgba(255,255,255,0.03)]">
-                                            {users.map(user => (
+                                            {users.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).map(user => (
                                                 <tr key={user.id} className="hover:bg-[rgba(255,255,255,0.02)]">
                                                     <td className="py-3 px-4">
                                                         <div className="flex items-center gap-3">
@@ -792,22 +778,33 @@ const AdminDashboard = () => {
                                                         </div>
                                                     </td>
                                                     <td className="py-3 px-4">
-                                                        <div className="flex flex-wrap gap-1">
-                                                            {user.role.split(',').map((r, i) => (
-                                                                <span key={i} className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs ${
-                                                                    r.trim() === 'admin' 
-                                                                        ? 'bg-[#E0B954]/20 text-[#E0B954] border border-[#E0B954]/30' 
-                                                                        : r.trim() === 'project_manager'
-                                                                        ? 'bg-[#C79E3B]/20 text-[#C79E3B] border border-[#C79E3B]/30'
-                                                                        : 'bg-[rgba(255,255,255,0.05)] text-[#a3a3a3]'
-                                                                }`}>
-                                                                    {r.trim() === 'admin' && <Shield className="w-3 h-3" />}
-                                                                    {r.trim() === 'project_manager' && <UserCog className="w-3 h-3" />}
-                                                                    {r.trim() === 'developer' && <UserCog className="w-3 h-3" />}
-                                                                    {r.trim().replace('_', ' ')}
-                                                                </span>
-                                                            ))}
+                                                        <div className="flex flex-wrap gap-1 mb-2">
+                                                            {user.role.split(',').map((r, i) => {
+                                                                const role = r.trim();
+                                                                return (
+                                                                    <span
+                                                                        key={i}
+                                                                        className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs ${
+                                                                            role === 'admin' 
+                                                                                ? 'bg-[#E0B954]/20 text-[#E0B954]' 
+                                                                                : role === 'project_manager'
+                                                                                ? 'bg-[#C79E3B]/20 text-[#C79E3B]'
+                                                                                : 'bg-[rgba(255,255,255,0.05)] text-[#a3a3a3]'
+                                                                        }`}
+                                                                    >
+                                                                        {role === 'admin' && <Shield className="w-3 h-3" />}
+                                                                        {role === 'project_manager' && <UserCog className="w-3 h-3" />}
+                                                                        {toPascalCase(role)}
+                                                                    </span>
+                                                                );
+                                                            })}
                                                         </div>
+                                                        <button 
+                                                            onClick={() => setOpenRoleDropdown(user.id)}
+                                                            className="text-xs px-2 py-1 rounded bg-[rgba(224,185,84,0.1)] text-[#E0B954] hover:bg-[rgba(224,185,84,0.2)] transition"
+                                                        >
+                                                            Edit Roles
+                                                        </button>
                                                     </td>
                                                     <td className="py-3 px-4">
                                                         {user.is_active ? (
@@ -836,33 +833,6 @@ const AdminDashboard = () => {
                                                             <Button
                                                                 variant="ghost"
                                                                 size="sm"
-                                                                onClick={() => handleToggleUserRole(user, 'admin')}
-                                                                className={`h-8 ${user.role.includes('admin') ? 'text-[#E0B954]' : 'text-[#737373]'}`}
-                                                            >
-                                                                <Shield className="w-3.5 h-3.5 mr-1" />
-                                                                {user.role.includes('admin') ? 'Remove Admin' : 'Add Admin'}
-                                                            </Button>
-                                                            <Button
-                                                                variant="ghost"
-                                                                size="sm"
-                                                                onClick={() => handleToggleUserRole(user, 'project_manager')}
-                                                                className={`h-8 ${user.role.includes('project_manager') ? 'text-[#C79E3B]' : 'text-[#737373]'}`}
-                                                            >
-                                                                <UserCog className="w-3.5 h-3.5 mr-1" />
-                                                                {user.role.includes('project_manager') ? 'Remove PM' : 'Add PM'}
-                                                            </Button>
-                                                            <Button
-                                                                variant="ghost"
-                                                                size="sm"
-                                                                onClick={() => handleResetPassword(user)}
-                                                                className="text-[#737373] hover:text-[#F59E0B] h-8"
-                                                            >
-                                                                <Key className="w-3.5 h-3.5 mr-1" />
-                                                                Reset
-                                                            </Button>
-                                                            <Button
-                                                                variant="ghost"
-                                                                size="sm"
                                                                 onClick={() => handleDeleteUser(user)}
                                                                 className="text-[#737373] hover:text-red-400 h-8"
                                                             >
@@ -886,6 +856,57 @@ const AdminDashboard = () => {
                     </>
                 )}
             </div>
+
+            {/* Role Management Modal */}
+            {openRoleDropdown && users.find(u => u.id === openRoleDropdown) && (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setOpenRoleDropdown(null)}>
+                    <div className="bg-[#0d0d0d] border border-[rgba(255,255,255,0.07)] rounded-2xl w-full max-w-sm shadow-2xl" onClick={e => e.stopPropagation()}>
+                        <div className="flex items-center justify-between p-5 border-b border-[rgba(255,255,255,0.05)]">
+                            <h2 className="text-lg font-bold text-white">
+                                Edit Roles - {users.find(u => u.id === openRoleDropdown)?.name}
+                            </h2>
+                            <button 
+                                onClick={() => setOpenRoleDropdown(null)}
+                                className="p-2 rounded-lg hover:bg-[rgba(244,246,255,0.05)] text-[#737373] hover:text-white"
+                            >
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+                        <div className="p-5 space-y-3">
+                            {['admin', 'project_manager', 'developer'].map(role => {
+                                const user = users.find(u => u.id === openRoleDropdown);
+                                const isChecked = user?.role.includes(role) || false;
+                                return (
+                                    <label key={role} className="flex items-center gap-3 p-3 rounded-lg hover:bg-[rgba(255,255,255,0.02)] cursor-pointer transition">
+                                        <input
+                                            type="checkbox"
+                                            checked={isChecked}
+                                            onChange={() => user && handleToggleUserRole(user, role)}
+                                            className="w-5 h-5 rounded cursor-pointer"
+                                        />
+                                        <div className="flex-1">
+                                            <span className="text-sm text-white font-medium">{toPascalCase(role)}</span>
+                                            <p className="text-xs text-[#737373] mt-0.5">
+                                                {role === 'admin' && 'Full system access and user management'}
+                                                {role === 'project_manager' && 'Manage projects and team workload'}
+                                                {role === 'developer' && 'Access to assigned projects and tasks'}
+                                            </p>
+                                        </div>
+                                    </label>
+                                );
+                            })}
+                        </div>
+                        <div className="flex justify-end gap-2 p-5 border-t border-[rgba(255,255,255,0.05)]">
+                            <button
+                                onClick={() => setOpenRoleDropdown(null)}
+                                className="px-4 py-2 rounded-lg text-[#737373] hover:bg-[rgba(255,255,255,0.05)] transition"
+                            >
+                                Done
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Employee Modal */}
             {showEmployeeModal && (

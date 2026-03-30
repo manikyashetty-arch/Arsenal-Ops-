@@ -500,50 +500,6 @@ const BusinessReviewView: React.FC<BusinessReviewViewProps> = ({
                 </div>
             </div>
 
-            {/* Team Performance (if available) */}
-            {analytics?.team_performance && analytics.team_performance.length > 0 && (
-                <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-2xl p-6">
-                    <div className="flex items-center gap-3 mb-5">
-                        <div className="w-9 h-9 rounded-xl bg-[#E0B954]/10 flex items-center justify-center">
-                            <Users className="w-4 h-4 text-[#E0B954]" />
-                        </div>
-                        <h3 className="text-sm font-semibold text-white">Team Capacity</h3>
-                    </div>
-                    <div className="space-y-3">
-                        {analytics.team_performance.slice(0, 5).map(member => {
-                            const pct =
-                                member.total_items > 0
-                                    ? Math.round((member.completed_items / member.total_items) * 100)
-                                    : 0;
-                            return (
-                                <div key={member.name} className="flex items-center gap-4">
-                                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#E0B954] to-[#B8872A] flex items-center justify-center text-white text-xs font-semibold flex-shrink-0">
-                                        {member.name.charAt(0).toUpperCase()}
-                                    </div>
-                                    <div className="flex-1 min-w-0">
-                                        <div className="flex items-center justify-between mb-1">
-                                            <span className="text-sm text-[#f5f5f5] truncate">{member.name}</span>
-                                            <span className="text-xs text-[#737373] ml-2">
-                                                {member.completed_items}/{member.total_items}
-                                            </span>
-                                        </div>
-                                        <div className="h-1.5 bg-[rgba(255,255,255,0.05)] rounded-full overflow-hidden">
-                                            <div
-                                                className="h-full bg-gradient-to-r from-[#E0B954] to-[#E0B954] rounded-full"
-                                                style={{ width: `${pct}%` }}
-                                            />
-                                        </div>
-                                    </div>
-                                    <span className="text-xs font-medium text-[#E0B954] w-10 text-right">
-                                        {pct}%
-                                    </span>
-                                </div>
-                            );
-                        })}
-                    </div>
-                </div>
-            )}
-
             {/* Business Review Comments */}
             {businessReviewComments.length > 0 && (
                 <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-2xl p-6">

@@ -113,7 +113,8 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
 
 
 def get_current_admin(current_user: User = Depends(get_current_user)):
-    if current_user.role != UserRole.ADMIN.value:
+    # Check if user has admin role (roles are comma-separated)
+    if 'admin' not in current_user.role:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin access required"
@@ -301,8 +302,10 @@ async def update_user_role(
         )
     
     # Prevent removing the last admin
-    if user.role == UserRole.ADMIN.value and role_data.role != UserRole.ADMIN.value:
-        admin_count = db.query(User).filter(User.role == UserRole.ADMIN.value).count()
+    if 'admin' in user.role and 'admin' not in role_data.role:
+        # Count users with admin role (roles are comma-separated)
+        all_users = db.query(User).all()
+        admin_count = sum(1 for u in all_users if 'admin' in u.role)
         if admin_count <= 1:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -342,8 +345,10 @@ async def delete_user(
         )
     
     # Prevent deleting the last admin
-    if user.role == UserRole.ADMIN.value:
-        admin_count = db.query(User).filter(User.role == UserRole.ADMIN.value).count()
+    if 'admin' in user.role:
+        # Count users with admin role (roles are comma-separated)
+        all_users = db.query(User).all()
+        admin_count = sum(1 for u in all_users if 'admin' in u.role)
         if admin_count <= 1:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,

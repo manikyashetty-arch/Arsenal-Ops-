@@ -298,6 +298,53 @@ def run_migrations():
         except Exception as e:
             print(f"[MIGRATION ERROR] {e}")
 
+        # Migration: Create project_links table if not exists
+        try:
+            result = conn.execute(text("""
+                SELECT table_name 
+                FROM information_schema.tables 
+                WHERE table_name = 'project_links'
+            """))
+            
+            if not result.fetchone():
+                print("[MIGRATION] Creating project_links table...")
+                conn.execute(text("""
+                    CREATE TABLE project_links (
+                        id SERIAL PRIMARY KEY,
+                        project_id INTEGER REFERENCES projects(id) ON DELETE CASCADE NOT NULL,
+                        name VARCHAR(255) NOT NULL,
+                        url VARCHAR(500) NOT NULL,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        CONSTRAINT fk_project_links_project FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+                    )
+                """))
+                conn.execute(text("CREATE INDEX idx_project_links_project ON project_links(project_id)"))
+                conn.execute(text("CREATE INDEX idx_project_links_created ON project_links(created_at)"))
+                conn.commit()
+                print("[MIGRATION] project_links table created!")
+        except Exception as e:
+            print(f"[MIGRATION ERROR] {e}")
+
+        # Migration: Increase role column size in users table
+        try:
+            result = conn.execute(text("""
+                SELECT column_name, character_maximum_length
+                FROM information_schema.columns 
+                WHERE table_name = 'users' AND column_name = 'role'
+            """))
+            
+            row = result.fetchone()
+            if row and row[1] and row[1] < 255:
+                print("[MIGRATION] Increasing role column size in users table...")
+                conn.execute(text("""
+                    ALTER TABLE users 
+                    ALTER COLUMN role TYPE VARCHAR(255)
+                """))
+                conn.commit()
+                print("[MIGRATION] role column size increased successfully!")
+        except Exception as e:
+            print(f"[MIGRATION ERROR] {e}")
+
 def init_db():
     """Initialize database tables"""
     from models import (
