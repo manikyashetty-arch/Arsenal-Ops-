@@ -297,6 +297,43 @@ def run_migrations():
                 print("[MIGRATION] project_files table created!")
         except Exception as e:
             print(f"[MIGRATION ERROR] {e}")
+        
+        # Migration: Create personal_tasks table if not exists
+        try:
+            result = conn.execute(text("""
+                SELECT table_name 
+                FROM information_schema.tables 
+                WHERE table_name = 'personal_tasks'
+            """))
+            
+            if not result.fetchone():
+                print("[MIGRATION] Creating personal_tasks table...")
+                conn.execute(text("""
+                    CREATE TABLE personal_tasks (
+                        id SERIAL PRIMARY KEY,
+                        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE NOT NULL,
+                        title VARCHAR(255) NOT NULL,
+                        description TEXT,
+                        status VARCHAR(50) DEFAULT 'todo',
+                        priority VARCHAR(50) DEFAULT 'medium',
+                        project_id INTEGER REFERENCES projects(id) ON DELETE SET NULL,
+                        work_item_id INTEGER REFERENCES work_items(id) ON DELETE SET NULL,
+                        estimated_hours INTEGER DEFAULT 0,
+                        due_date TIMESTAMP,
+                        tags JSON DEFAULT '[]',
+                        is_converted BOOLEAN DEFAULT FALSE,
+                        converted_at TIMESTAMP,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """))
+                conn.execute(text("CREATE INDEX idx_personal_tasks_user ON personal_tasks(user_id)"))
+                conn.execute(text("CREATE INDEX idx_personal_tasks_status ON personal_tasks(status)"))
+                conn.execute(text("CREATE INDEX idx_personal_tasks_project ON personal_tasks(project_id)"))
+                conn.commit()
+                print("[MIGRATION] personal_tasks table created!")
+        except Exception as e:
+            print(f"[MIGRATION ERROR] {e}")
 
         # Migration: Create project_links table if not exists
         try:
@@ -403,7 +440,7 @@ def init_db():
         market_insight, developer, work_item, sprint,
         architecture, user, time_entry, task_dependency,
         project_goal, project_milestone, activity_log, project_file,
-        custom_restriction
+        custom_restriction, personal_task
     )
     Base.metadata.create_all(bind=engine)
     

@@ -54,6 +54,7 @@ class User(Base):
     password_changed_at = Column(DateTime, nullable=True)
     
     # Relationships
+    personal_tasks = relationship("PersonalTask", back_populates="user", cascade="all, delete-orphan")
     custom_restrictions = relationship(
         "CustomRestriction",
         secondary="user_custom_restrictions",

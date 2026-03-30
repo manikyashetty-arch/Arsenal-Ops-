@@ -22,6 +22,7 @@ from routers.prd_analysis import router as prd_router
 from routers.comments import router as comments_router
 from routers.admin import router as admin_router
 from routers.auth import router as auth_router
+from routers.personal_tasks import router as personal_tasks_router
 
 # Create FastAPI app
 app = FastAPI(
@@ -97,6 +98,7 @@ app.include_router(developers_router)
 app.include_router(prd_router)
 app.include_router(comments_router)
 app.include_router(admin_router)
+app.include_router(personal_tasks_router)
 
 # Startup event for database initialization
 @app.on_event("startup")

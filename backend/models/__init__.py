@@ -17,9 +17,10 @@ from models.activity_log import ActivityLog
 from models.project_file import ProjectFile
 from models.project_link import ProjectLink
 from models.custom_restriction import CustomRestriction
+from models.personal_task import PersonalTask
 
 __all__ = [
     "Project", "Task", "Persona", "UserStory", "MarketInsight", "Milestone",
     "Developer", "project_developers", "WorkItem", "WorkItemType", "WorkItemStatus", "WorkItemPriority",
-    "Sprint", "Comment", "TimeEntry", "TaskDependency", "ProjectGoal", "ProjectMilestone", "ActivityLog", "ProjectFile", "ProjectLink", "CustomRestriction"
+    "Sprint", "Comment", "TimeEntry", "TaskDependency", "ProjectGoal", "ProjectMilestone", "ActivityLog", "ProjectFile", "ProjectLink", "CustomRestriction", "PersonalTask"
 ]
