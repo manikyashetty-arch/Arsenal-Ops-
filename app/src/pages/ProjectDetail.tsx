@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
     PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line
@@ -219,6 +219,14 @@ interface ProjectLink {
     created_at?: string;
 }
 
+interface CustomRestriction {
+    id: number;
+    name: string;
+    tab_name: string;
+    subsection: string;
+    created_at?: string;
+}
+
 const ProjectDetail = () => {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
@@ -276,6 +284,17 @@ const ProjectDetail = () => {
     const [showAddLink, setShowAddLink] = useState(false);
     const [newLink, setNewLink] = useState({ name: '', url: '' });
     const [linksLoading, setLinksLoading] = useState(false);
+    const addLinkFormRef = useRef<HTMLDivElement>(null);
+
+    // Scroll to add link form when it opens
+    useEffect(() => {
+        if (showAddLink && addLinkFormRef.current) {
+            addLinkFormRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+    }, [showAddLink]);
+
+    // Custom restrictions state
+    const [userRestrictions, setUserRestrictions] = useState<CustomRestriction[]>([]);
 
     // Refetch all data (used on mount and when window regains focus)
     const refetchAll = () => {
@@ -285,6 +304,7 @@ const ProjectDetail = () => {
         fetchSprints();
         fetchHubData(); // analytics is now included inside fetchHubData
         fetchLinks();
+        fetchUserRestrictions();
     };
 
     // Fetch project data on mount
@@ -413,6 +433,20 @@ const ProjectDetail = () => {
             console.error('Failed to fetch links:', err);
         } finally {
             setLinksLoading(false);
+        }
+    };
+
+    const fetchUserRestrictions = async () => {
+        try {
+            const res = await fetch(`${API_BASE_URL}/api/auth/me/custom-restrictions`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (res.ok) {
+                const data = await res.json();
+                setUserRestrictions(data || []);
+            }
+        } catch (err) {
+            console.error('Failed to fetch user restrictions:', err);
         }
     };
 
@@ -853,6 +887,14 @@ const ProjectDetail = () => {
         d => !project.developers.some(pd => pd.id === d.id)
     );
 
+    // Helper function to check if a subsection is restricted
+    const isSubsectionRestricted = (tabName: TabType, subsectionName: string): boolean => {
+        return userRestrictions.some(r => 
+            r.tab_name.toLowerCase() === tabName.toLowerCase() && 
+            r.subsection.toLowerCase() === subsectionName.toLowerCase()
+        );
+    };
+
     return (
         <div className="min-h-screen bg-[#080808] text-[#F4F6FF]">
             <Toaster position="top-right" theme="dark" richColors />
@@ -1168,7 +1210,7 @@ const ProjectDetail = () => {
                         </div>
 
                         {/* PRD Analysis Section */}
-                        {prdAnalysis && (
+                        {prdAnalysis && !isSubsectionRestricted('overview', 'prd analysis') && (
                             <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-2xl p-5">
                                 <div className="flex items-center gap-3 mb-4">
                                     <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#E0B954] to-[#B8872A] flex items-center justify-center">
@@ -1357,7 +1399,7 @@ const ProjectDetail = () => {
                         )}
 
                         {/* Architecture Section */}
-                        {project.selected_architecture && (() => {
+                        {project.selected_architecture && !isSubsectionRestricted('overview', 'architecture') && (() => {
                             const arch = project.selected_architecture!;
                             return (
                             <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-2xl overflow-hidden">
@@ -1536,7 +1578,8 @@ const ProjectDetail = () => {
                         })()}
 
                         {/* Team Section */}
-                        <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-2xl p-4">
+                        {!isSubsectionRestricted('overview', 'team') && (
+                        <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-2xl p-5 mb-4">
                             <div className="flex items-center justify-between mb-3">
                                 <div className="flex items-center gap-3">
                                     <div className="w-10 h-10 rounded-xl bg-[#E0B954]/10 flex items-center justify-center">
@@ -1612,13 +1655,14 @@ const ProjectDetail = () => {
                                 </div>
                             )}
                         </div>
+                        )}
                         </div>
                     )
                 )}
 
                 {/* Files/Links Section */}
-                {activeTab === 'overview' && !hubLoading && (
-                    <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-2xl p-5 mb-4">
+                {activeTab === 'overview' && !hubLoading && !isSubsectionRestricted('overview', 'resources') && (
+                    <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-2xl p-5 mb-4 mt-6">
                         <div className="flex items-center justify-between mb-4">
                             <div className="flex items-center gap-3">
                                 <div className="w-10 h-10 rounded-xl bg-[#E0B954]/10 flex items-center justify-center">
@@ -1642,7 +1686,7 @@ const ProjectDetail = () => {
 
                         {/* Add Link Form */}
                         {showAddLink && (
-                            <div className="bg-[rgba(255,255,255,0.01)] border border-[rgba(224,185,84,0.2)] rounded-xl p-4 mb-4">
+                            <div ref={addLinkFormRef} className="bg-[rgba(255,255,255,0.01)] border border-[rgba(224,185,84,0.2)] rounded-xl p-4 mb-4">
                                 <div className="space-y-3">
                                     <div>
                                         <label className="text-xs font-medium text-[#737373] block mb-1.5">Link Name</label>
@@ -1828,7 +1872,7 @@ const ProjectDetail = () => {
                     ) : (
                     <div className="space-y-4">
                         {/* Active Sprints in Hub */}
-                        {sprints.length > 0 && (
+                        {sprints.length > 0 && !isSubsectionRestricted('hub', 'active sprints') && (
                             <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(224,185,84,0.12)] rounded-2xl p-5">
                                 <div className="flex items-center justify-between mb-4">
                                     <div className="flex items-center gap-3">
@@ -1902,7 +1946,7 @@ const ProjectDetail = () => {
                         )}
 
                         {/* Work Items List */}
-                        {hubLoading ? (
+                        {!isSubsectionRestricted('hub', 'work items') && (hubLoading ? (
                             <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-2xl p-5 space-y-3 animate-pulse">
                                 <div className="h-4 w-32 bg-[rgba(255,255,255,0.07)] rounded" />
                                 {[...Array(5)].map((_, i) => (
@@ -1918,7 +1962,7 @@ const ProjectDetail = () => {
                             </div>
                         ) : (
                             <ListView workItems={hubWorkItems} />
-                        )}
+                        ))}
                     </div>
                     )
                 )}
@@ -1945,7 +1989,7 @@ const ProjectDetail = () => {
                     ) : (
                         <div className="space-y-4">
                         {/* Analytics Charts */}
-                        {analytics && analytics.total_items > 0 && (
+                        {analytics && analytics.total_items > 0 && !isSubsectionRestricted('tracker', 'analytics') && (
                             <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-2xl p-5">
                                 <div className="flex items-center gap-3 mb-4">
                                     <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#E0B954] to-[#C79E3B] flex items-center justify-center">
@@ -2016,6 +2060,7 @@ const ProjectDetail = () => {
                             </div>
                         )}
 
+                        {!isSubsectionRestricted('tracker', 'timeline') && (
                         <TimelineView
                                 workItems={hubWorkItems}
                                 milestones={milestones}
@@ -2026,6 +2071,7 @@ const ProjectDetail = () => {
                                 onTaskUpdate={handleTaskUpdate}
                                 onTaskCreate={handleTaskCreate}
                             />
+                        )}
                         </div>
                     )
                 )}
@@ -2039,8 +2085,10 @@ const ProjectDetail = () => {
                                 <div key={r} className="grid grid-cols-7 gap-2 mb-2">{[...Array(7)].map((_,c) => <div key={c} className="h-16 bg-[rgba(255,255,255,0.03)] rounded" />)}</div>
                             ))}
                         </div>
-                    ) : (
+                    ) : !isSubsectionRestricted('calendar', 'calendar') ? (
                         <CalendarView workItems={hubWorkItems} milestones={milestones} goals={goals} />
+                    ) : (
+                        <div className="text-center py-12 text-[#737373]">This section is restricted from your view.</div>
                     )
                 )}
 
@@ -2055,7 +2103,7 @@ const ProjectDetail = () => {
                                 </div>
                             ))}
                         </div>
-                    ) : (
+                    ) : !isSubsectionRestricted('business', 'business review') ? (
                         <BusinessReviewView
                             project={project}
                             analytics={analytics}
@@ -2064,6 +2112,8 @@ const ProjectDetail = () => {
                             workItems={hubWorkItems}
                             goals={goals}
                         />
+                    ) : (
+                        <div className="text-center py-12 text-[#737373]">This section is restricted from your view.</div>
                     )
                 )}
 
@@ -2082,7 +2132,7 @@ const ProjectDetail = () => {
                                 </div>
                             ))}
                         </div>
-                    ) : (
+                    ) : !isSubsectionRestricted('goals', 'goals') ? (
                         <GoalsView
                             goals={goals}
                             milestones={milestones}
@@ -2093,6 +2143,8 @@ const ProjectDetail = () => {
                             onDeleteGoal={handleDeleteGoal}
                             onDeleteMilestone={handleDeleteMilestone}
                         />
+                    ) : (
+                        <div className="text-center py-12 text-[#737373]">This section is restricted from your view.</div>
                     )
                 )}
 
@@ -2110,8 +2162,10 @@ const ProjectDetail = () => {
                                 </div>
                             ))}
                         </div>
-                    ) : (
+                    ) : !isSubsectionRestricted('activity', 'activity feed') ? (
                         <ActivityFeed activities={activities} />
+                    ) : (
+                        <div className="text-center py-12 text-[#737373]">This section is restricted from your view.</div>
                     )
                 )}
 
@@ -2289,9 +2343,12 @@ const ProjectDetail = () => {
                             </div>
                         )}
 
-                        <PMView projectId={id!} token={token!} />
+                        {!isSubsectionRestricted('pm', 'pmview') && (
+                        <PMView projectId={id!} token={token!} userRestrictions={userRestrictions} />
+                        )}
 
                         {/* Workload Section */}
+                        {!isSubsectionRestricted('pm', 'team workload') && (
                         <div>
                             <div className="flex items-center gap-3 mb-4">
                                 <div className="w-9 h-9 rounded-xl bg-[#E0B954]/10 flex items-center justify-center">
@@ -2307,6 +2364,7 @@ const ProjectDetail = () => {
                                 onDeveloperClick={(devId) => console.log('Developer clicked:', devId)}
                             />
                         </div>
+                        )}
                     </div>
                     )
                 )}
