@@ -160,7 +160,7 @@ interface Project {
     architectures: Architecture[];
 }
 
-type TabType = 'overview' | 'hub' | 'tracker' | 'calendar' | 'business' | 'goals' | 'activity' | 'pm';
+type TabType = 'overview' | 'hub' | 'tracker' | 'calendar' | 'business' | 'goals' | 'activity' | 'project_manager';
 
 interface HubWorkItem {
     id: string;
@@ -2171,7 +2171,7 @@ const ProjectDetail = () => {
 
                 {/* Files Tab */}
                 {/* Project Manager Tab */}
-                {activeTab === 'pm' && isProjectManager(user) && (
+                {activeTab === 'project_manager' && isProjectManager(user) && (
                     hubLoading ? (
                         <div className="space-y-4 animate-pulse">
                             {/* Sprint Progress skeleton */}
@@ -2343,12 +2343,12 @@ const ProjectDetail = () => {
                             </div>
                         )}
 
-                        {!isSubsectionRestricted('pm', 'pmview') && (
+                        {!isSubsectionRestricted('project_manager', 'pmview') && (
                         <PMView projectId={id!} token={token!} userRestrictions={userRestrictions} />
                         )}
 
                         {/* Workload Section */}
-                        {!isSubsectionRestricted('pm', 'team workload') && (
+                        {!isSubsectionRestricted('project_manager', 'team workload') && (
                         <div>
                             <div className="flex items-center gap-3 mb-4">
                                 <div className="w-9 h-9 rounded-xl bg-[#E0B954]/10 flex items-center justify-center">

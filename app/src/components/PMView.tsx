@@ -100,7 +100,7 @@ export default function PMView({ projectId, token, isAdmin = false, userRestrict
     // Helper function to check if a subsection is restricted
     const isSubsectionRestricted = (subsectionName: string): boolean => {
         return userRestrictions.some(r => 
-            r.tab_name.toLowerCase() === 'pm' && 
+            r.tab_name.toLowerCase() === 'project_manager' && 
             r.subsection.toLowerCase() === subsectionName.toLowerCase()
         );
     };
@@ -151,7 +151,7 @@ export default function PMView({ projectId, token, isAdmin = false, userRestrict
     return (
         <div className="space-y-6">
             {/* Summary Cards */}
-            {!isSubsectionRestricted('summary-cards') && (
+            {!isSubsectionRestricted('summary cards') && (
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <Card className="bg-[rgba(255,255,255,0.02)] border-[rgba(255,255,255,0.05)]">
                     <CardContent className="p-4">

@@ -188,7 +188,74 @@ async def get_developers_capacity(db: Session = Depends(get_db)):
     return result
 
 
-@router.post("/employees", response_model=EmployeeResponse)
+class EmployeeTicketResponse(BaseModel):
+    id: int
+    title: str
+    description: Optional[str]
+    status: str
+    priority: str
+    project_id: int
+    project_name: str
+    assigned_to: Optional[int]
+    assigned_to_name: Optional[str]
+    estimated_hours: Optional[int]
+    logged_hours: int
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+@router.get("/employees/{employee_id}/in-progress-tickets", response_model=List[EmployeeTicketResponse])
+async def get_employee_in_progress_tickets(employee_id: int, db: Session = Depends(get_db)):
+    """Get all in-progress tickets assigned to an employee across all projects, sorted by priority"""
+    from sqlalchemy import case
+    
+    # Verify employee exists
+    employee = db.query(Developer).filter(Developer.id == employee_id).first()
+    if not employee:
+        raise HTTPException(status_code=404, detail="Employee not found")
+    
+    # Priority order: critical > high > medium > low
+    priority_order = case(
+        (WorkItem.priority == "critical", 1),
+        (WorkItem.priority == "high", 2),
+        (WorkItem.priority == "medium", 3),
+        (WorkItem.priority == "low", 4),
+        else_=5
+    )
+    
+    # Get all in-progress work items assigned to this employee, sorted by priority
+    work_items = db.query(WorkItem).filter(
+        WorkItem.assignee_id == employee_id,
+        WorkItem.status == "in_progress"
+    ).order_by(priority_order).all()
+    
+    result = []
+    for item in work_items:
+        # Get project name
+        project_name = item.project.name if item.project else "Unknown Project"
+        
+        result.append(EmployeeTicketResponse(
+            id=item.id,
+            title=item.title,
+            description=item.description,
+            status=item.status,
+            priority=item.priority,
+            project_id=item.project_id,
+            project_name=project_name,
+            assigned_to=item.assignee_id,
+            assigned_to_name=employee.name,
+            estimated_hours=item.estimated_hours,
+            logged_hours=item.logged_hours or 0,
+            created_at=item.created_at,
+            updated_at=item.updated_at
+        ))
+    
+    return result
+
+
 async def create_employee(employee: EmployeeCreate, db: Session = Depends(get_db)):
     """Create a new employee/developer"""
     # Check if email already exists
