@@ -2171,7 +2171,7 @@ const ProjectDetail = () => {
 
                 {/* Files Tab */}
                 {/* Project Manager Tab */}
-                {activeTab === 'pm' && isProjectManager(user) && (
+                {activeTab === 'project_manager' && isProjectManager(user) && (
                     hubLoading ? (
                         <div className="space-y-4 animate-pulse">
                             {/* Sprint Progress skeleton */}

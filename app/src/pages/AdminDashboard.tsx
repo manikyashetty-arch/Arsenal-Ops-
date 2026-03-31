@@ -20,7 +20,6 @@ import {
     Mail,
     CheckCircle2,
     AlertCircle,
-    Bold,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -1628,7 +1627,7 @@ const AdminDashboard = () => {
                                                             </span>
                                                         </div>
                                                         {truncatedDescription && (
-                                                            <p className="text-xs text-[#a3a3a3] mb-2" title={ticket.description}>{truncatedDescription}</p>
+                                                            <p className="text-xs text-[#a3a3a3] mb-2" title={ticket.description ?? undefined}>{truncatedDescription}</p>
                                                         )}
                                                         <div className="flex items-center justify-between mt-2 text-xs">
                                                             <div className="flex items-center gap-4 text-[#737373]">
