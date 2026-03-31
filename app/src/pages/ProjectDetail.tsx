@@ -2169,7 +2169,7 @@ const ProjectDetail = () => {
                     )
                 )}
 
-                {/* Files Tab */}
+                
                 {/* Project Manager Tab */}
                 {activeTab === 'project_manager' && isProjectManager(user) && (
                     hubLoading ? (
