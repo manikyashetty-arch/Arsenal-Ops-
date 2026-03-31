@@ -20,6 +20,7 @@ import {
     Mail,
     CheckCircle2,
     AlertCircle,
+    Bold,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -90,6 +91,22 @@ interface DashboardStats {
     tickets_by_priority: Record<string, number>;
 }
 
+interface WorkItem {
+    id: number;
+    title: string;
+    description: string | null;
+    status: string;
+    priority: string;
+    project_id: number;
+    project_name: string;
+    assigned_to: number | null;
+    assigned_to_name: string | null;
+    estimated_hours: number | null;
+    logged_hours: number;
+    created_at: string;
+    updated_at: string;
+}
+
 const AdminDashboard = () => {
     const navigate = useNavigate();
     const [activeTab, setActiveTab] = useState<'dashboard' | 'employees' | 'projects' | 'users' | 'developers-capacity' | 'custom-restrictions'>('dashboard');
@@ -147,6 +164,12 @@ const AdminDashboard = () => {
         github_token: '',
     });
     const [invitingProjectId, setInvitingProjectId] = useState<number | null>(null);
+
+    // Employee tickets modal state
+    const [showEmployeeTicketsModal, setShowEmployeeTicketsModal] = useState(false);
+    const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
+    const [employeeTickets, setEmployeeTickets] = useState<WorkItem[]>([]);
+    const [ticketsLoading, setTicketsLoading] = useState(false);
 
     useEffect(() => {
         fetchData();
@@ -246,6 +269,31 @@ const AdminDashboard = () => {
             }
         } catch {
             toast.error('Failed to delete employee');
+        }
+    };
+
+    const handleViewEmployeeTickets = async (employee: Employee) => {
+        setSelectedEmployee(employee);
+        setTicketsLoading(true);
+        setShowEmployeeTicketsModal(true);
+
+        try {
+            const response = await fetch(`${API_BASE_URL}/api/admin/employees/${employee.id}/in-progress-tickets`);
+            if (response.ok) {
+                const tickets = await response.json();
+                // Sort by priority: critical > high > medium > low
+                const priorityOrder: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 };
+                const sorted = tickets.sort((a: WorkItem, b: WorkItem) => {
+                    return (priorityOrder[a.priority.toLowerCase()] ?? 99) - (priorityOrder[b.priority.toLowerCase()] ?? 99);
+                });
+                setEmployeeTickets(sorted);
+            } else {
+                toast.error('Failed to fetch employee tickets');
+            }
+        } catch {
+            toast.error('Failed to fetch employee tickets');
+        } finally {
+            setTicketsLoading(false);
         }
     };
 
@@ -734,7 +782,7 @@ const AdminDashboard = () => {
                                                     <td className="px-5 py-4 text-sm text-[#737373]">{emp.github_username || '-'}</td>
                                                     <td className="px-5 py-4 text-sm text-[#a3a3a3]">{emp.project_count}</td>
                                                     <td className="px-5 py-4 text-sm text-[#a3a3a3]">{emp.assigned_items_count}</td>
-                                                    <td className="px-5 py-4">
+                                                    <td className="px-5 py-4 cursor-pointer hover:opacity-80 transition-opacity" onClick={() => handleViewEmployeeTickets(emp)}>
                                                         <div className="flex items-center gap-2">
                                                             <div className="flex-1 h-2 bg-[rgba(255,255,255,0.05)] rounded-full overflow-hidden max-w-xs">
                                                                 <div
@@ -1516,6 +1564,95 @@ const AdminDashboard = () => {
                                 <Github className="w-4 h-4 mr-2" />
                                 Save Settings
                             </Button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Employee In-Progress Tickets Modal */}
+            {showEmployeeTicketsModal && selectedEmployee && (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setShowEmployeeTicketsModal(false)}>
+                    <div className="bg-[#0d0d0d] border border-[rgba(255,255,255,0.07)] rounded-2xl w-full max-w-2xl shadow-2xl" onClick={e => e.stopPropagation()}>
+                        <div className="flex items-center justify-between p-5 border-b border-[rgba(255,255,255,0.05)]">
+                            <div>
+                                <h2 className="text-lg font-bold text-white">In-Progress Tickets</h2>
+                                <p className="text-xs text-[#737373] mt-0.5">{selectedEmployee.name} • {employeeTickets.length} ticket{employeeTickets.length !== 1 ? 's' : ''}</p>
+                            </div>
+                            <button onClick={() => setShowEmployeeTicketsModal(false)} className="p-2 rounded-lg hover:bg-[rgba(244,246,255,0.05)] text-[#737373] hover:text-white">
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+                        <div className="p-5 max-h-96 overflow-y-auto">
+                            {ticketsLoading ? (
+                                <div className="flex items-center justify-center py-10">
+                                    <div className="w-5 h-5 border-2 border-[#E0B954]/30 border-t-[#E0B954] rounded-full animate-spin" />
+                                </div>
+                            ) : employeeTickets.length === 0 ? (
+                                <div className="text-center py-8 text-[#737373]">
+                                    <Ticket className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                                    <p>No in-progress tickets</p>
+                                </div>
+                            ) : (
+                                <div className="space-y-3">
+                                    {employeeTickets.map(ticket => {
+                                        const priorityColor = ticket.priority.toLowerCase() === 'critical' ? '#EF4444'
+                                            : ticket.priority.toLowerCase() === 'high' ? '#F97316'
+                                            : ticket.priority.toLowerCase() === 'medium' ? '#F59E0B'
+                                            : '#E0B954';
+                                        
+                                        // Truncate description to 80 characters
+                                        const truncatedDescription = ticket.description
+                                            ? ticket.description.length > 80
+                                                ? ticket.description.substring(0, 80) + '...'
+                                                : ticket.description
+                                            : '';
+                                        
+                                        return (
+                                            <div key={ticket.id} className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-lg p-4 hover:border-[rgba(255,255,255,0.08)] transition">
+                                                <div className="flex items-start justify-between gap-3">
+                                                    <div className="flex-1">
+                                                        <div className="flex items-center gap-2 mb-1">
+                                                            <button
+                                                                onClick={() => {
+                                                                    window.open(`/project/${ticket.project_id}/board/${ticket.id}`, '_blank');
+                                                                }}
+                                                                className="text-sm font-medium text-[#E0B954] hover:text-white hover:underline transition text-left"
+                                                            >
+                                                                {ticket.title}
+                                                            </button>
+                                                            <span
+                                                                className="px-2 py-0.5 rounded text-xs font-medium text-white whitespace-nowrap"
+                                                                style={{ backgroundColor: `${priorityColor}30`, color: priorityColor }}
+                                                            >
+                                                                {ticket.priority.charAt(0).toUpperCase() + ticket.priority.slice(1)}
+                                                            </span>
+                                                        </div>
+                                                        {truncatedDescription && (
+                                                            <p className="text-xs text-[#a3a3a3] mb-2" title={ticket.description}>{truncatedDescription}</p>
+                                                        )}
+                                                        <div className="flex items-center justify-between mt-2 text-xs">
+                                                            <div className="flex items-center gap-4 text-[#737373]">
+                                                                <button
+                                                                    onClick={() => window.open(`/project/${ticket.project_id}`, '_blank')}
+                                                                    className="font-bold text-[#E0B954] hover:text-white hover:underline transition"
+                                                                >
+                                                                    {ticket.project_name}
+                                                                </button>
+                                                            
+                                                            </div>
+                                                            {ticket.estimated_hours !== null && (
+                                                                <span className="bg-[rgba(224,185,84,0.1)] text-[#E0B954] px-2 py-0.5 rounded whitespace-nowrap">
+                                                                    {Math.max(0, ticket.estimated_hours - ticket.logged_hours)}h left
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
                         </div>
                     </div>
                 </div>
