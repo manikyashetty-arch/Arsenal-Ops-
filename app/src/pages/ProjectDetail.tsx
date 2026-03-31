@@ -879,7 +879,7 @@ const ProjectDetail = () => {
         { id: 'goals' as TabType, label: 'Goals', icon: Target },
         { id: 'activity' as TabType, label: 'Activity', icon: Activity },
         // PM tab only for admins and project managers
-        ...(isProjectManager(user) ? [{ id: 'pm' as TabType, label: 'Project Manager', icon: Clock }] : []),
+        ...(isProjectManager(user) ? [{ id: 'project_manager' as TabType, label: 'Project Manager', icon: Clock }] : []),
     ];
 
     // Filter out developers already in project
