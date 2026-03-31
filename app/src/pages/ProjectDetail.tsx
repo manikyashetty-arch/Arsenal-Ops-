@@ -160,7 +160,7 @@ interface Project {
     architectures: Architecture[];
 }
 
-type TabType = 'overview' | 'hub' | 'tracker' | 'calendar' | 'business' | 'goals' | 'activity' | 'pm';
+type TabType = 'overview' | 'hub' | 'tracker' | 'calendar' | 'business' | 'goals' | 'activity' | 'project_manager';
 
 interface HubWorkItem {
     id: string;
