@@ -6,6 +6,8 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Calendar as CalendarIcon } from '@/components/ui/calendar';
 import { API_BASE_URL } from '@/config/api';
 import { Plus, Briefcase, CheckCircle2, Calendar, ArrowRight, Loader2, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -42,6 +44,7 @@ export default function PersonalTasks({ token }: PersonalTasksProps) {
     const [showAddDialog, setShowAddDialog] = useState(false);
     const [showConvertDialog, setShowConvertDialog] = useState(false);
     const [selectedTask, setSelectedTask] = useState<PersonalTask | null>(null);
+    const [showCalendar, setShowCalendar] = useState(false);
     
     // Form states
     const [newTask, setNewTask] = useState({
@@ -261,12 +264,52 @@ export default function PersonalTasks({ token }: PersonalTasksProps) {
                             </div>
                             <div>
                                 <label className="text-sm text-[#737373]">Due Date</label>
-                                <Input
-                                    type="date"
-                                    value={newTask.due_date}
-                                    onChange={(e) => setNewTask({ ...newTask, due_date: e.target.value })}
-                                    className="bg-[#0A0A14] border-[rgba(255,255,255,0.08)] text-white"
-                                />
+                                <Popover open={showCalendar} onOpenChange={setShowCalendar}>
+                                    <PopoverTrigger asChild>
+                                        <Button
+                                            variant="outline"
+                                            className="w-full bg-[#0A0A14] border-[rgba(255,255,255,0.08)] text-white justify-start text-left font-normal hover:bg-[#0A0A14] hover:text-white"
+                                        >
+                                            {newTask.due_date ? new Date(newTask.due_date).toLocaleDateString() : 'Pick a date'}
+                                        </Button>
+                                    </PopoverTrigger>
+                                    <PopoverContent side="bottom" align="start" className="w-auto p-3 bg-[#0d0d0d] border border-[rgba(224,185,84,0.2)]">
+                                        <CalendarIcon
+                                            mode="single"
+                                            selected={newTask.due_date ? new Date(newTask.due_date) : undefined}
+                                            onSelect={(date) => {
+                                                if (date) {
+                                                    setNewTask({ ...newTask, due_date: date.toISOString().split('T')[0] });
+                                                    setShowCalendar(false);
+                                                }
+                                            }}
+                                            disabled={(date) => date < new Date(new Date().setHours(0, 0, 0, 0))}
+                                            classNames={{
+                                                months: "flex flex-col",
+                                                month: "space-y-4",
+                                                caption: "flex justify-between items-center px-0 pb-4 relative h-7 mb-2",
+                                                caption_label: "text-sm font-medium text-white",
+                                                nav: "space-x-1 flex items-center",
+                                                nav_button: "text-white hover:bg-[rgba(224,185,84,0.1)] rounded p-1",
+                                                nav_button_previous: "absolute left-0",
+                                                nav_button_next: "absolute right-0",
+                                                table: "w-full border-collapse space-y-1",
+                                                head_row: "flex",
+                                                head_cell: "text-xs font-medium text-[#737373] w-8 h-8 flex items-center justify-center rounded",
+                                                row: "flex w-full gap-1",
+                                                cell: "relative p-0 text-center text-sm focus-within:relative focus-within:z-20 [&:has([aria-selected])]:bg-transparent",
+                                                day: "h-8 w-8 p-0 font-normal",
+                                                day_button: "text-white hover:bg-[rgba(224,185,84,0.1)] rounded-lg h-8 w-8 transition-colors",
+                                                day_selected: "bg-[#E0B954] text-[#0d0d0d] hover:bg-[#E0B954] font-semibold",
+                                                day_today: "bg-[rgba(224,185,84,0.2)] text-[#E0B954] font-semibold",
+                                                day_outside: "text-[#444]",
+                                                day_disabled: "text-[#333] opacity-50 cursor-not-allowed",
+                                                day_range_middle: "aria-selected:bg-[rgba(224,185,84,0.1)] aria-selected:text-white",
+                                                day_hidden: "invisible",
+                                            }}
+                                        />
+                                    </PopoverContent>
+                                </Popover>
                             </div>
                             <Button
                                 onClick={createTask}
