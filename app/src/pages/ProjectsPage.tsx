@@ -26,12 +26,16 @@ import {
     Tag,
     ChevronRight,
     Loader2,
+    Edit2,
+    Calendar,
 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Calendar as CalendarIcon } from '@/components/ui/calendar';
 import { toast, Toaster } from 'sonner';
 import {
     Select,
@@ -43,6 +47,13 @@ import {
 import { useAuth } from '@/contexts/AuthContext';
 
 import { API_BASE_URL } from '@/config/api';
+
+// Helper function to parse YYYY-MM-DD string to local Date object (avoids UTC timezone issues)
+const parseLocalDate = (dateString: string | undefined): Date | undefined => {
+    if (!dateString) return undefined;
+    const [year, month, day] = dateString.split('-');
+    return new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+};
 
 interface ProjectStats {
     total: number;
@@ -154,6 +165,7 @@ const ProjectsPage = () => {
     }
     const [personalTasks, setPersonalTasks] = useState<PersonalTask[]>([]);
     const [showAddTaskDialog, setShowAddTaskDialog] = useState(false);
+    const [showCalendarAddTask, setShowCalendarAddTask] = useState(false);
     const [showConvertDialog, setShowConvertDialog] = useState(false);
     const [convertingTask, setConvertingTask] = useState<PersonalTask | null>(null);
     const [convertProjectId, setConvertProjectId] = useState('');
@@ -162,7 +174,18 @@ const ProjectsPage = () => {
     const [addingTask, setAddingTask] = useState(false);
     const [convertingTicket, setConvertingTicket] = useState(false);
     const [newPersonalTask, setNewPersonalTask] = useState({
-        title: '', description: '', priority: 'medium', estimated_hours: 0, due_date: '', project_id: ''
+        title: '',
+        description: '',
+        priority: 'medium',
+        due_date: '',
+        project_id: '',
+        assignee_developer_id: '',
+    });
+    const [isEditingPersonalTask, setIsEditingPersonalTask] = useState(false);
+    const [editingPersonalTask, setEditingPersonalTask] = useState<PersonalTask | null>(null);
+    const [showCalendarEditPersonalTask, setShowCalendarEditPersonalTask] = useState(false);
+    const [editPersonalTaskForm, setEditPersonalTaskForm] = useState({
+        title: '', description: '', priority: 'medium', due_date: ''
     });
 
     // Private Notepad
@@ -230,15 +253,34 @@ const ProjectsPage = () => {
         if (!newPersonalTask.title.trim()) { toast.error('Title is required'); return; }
         setAddingTask(true);
         try {
+            // Step 1: Create the personal task
             const res = await fetch(`${API_BASE_URL}/api/personal-tasks/`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                body: JSON.stringify({ ...newPersonalTask, due_date: newPersonalTask.due_date || undefined })
+                body: JSON.stringify({
+                    title: newPersonalTask.title,
+                    description: newPersonalTask.description,
+                    priority: newPersonalTask.priority,
+                    due_date: newPersonalTask.due_date || undefined
+                })
             });
             if (res.ok) {
+                const createdTask = await res.json();
+                // Step 2: If project is selected, convert to ticket
+                if (newPersonalTask.project_id) {
+                    await fetch(`${API_BASE_URL}/api/personal-tasks/${createdTask.id}/convert-to-ticket`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                        body: JSON.stringify({
+                            project_id: parseInt(newPersonalTask.project_id),
+                            assignee_developer_id: newPersonalTask.assignee_developer_id ? parseInt(newPersonalTask.assignee_developer_id) : undefined
+                        })
+                    });
+                }
                 toast.success('Task created!');
                 setShowAddTaskDialog(false);
-                setNewPersonalTask({ title: '', description: '', priority: 'medium', estimated_hours: 0, due_date: '', project_id: '' });
+                setNewPersonalTask({ title: '', description: '', priority: 'medium', due_date: '', project_id: '', assignee_developer_id: '' });
+                setProjectMembers([]);
                 fetchPersonalTasks();
             } else { toast.error('Failed to create task'); }
         } catch { toast.error('Failed to create task'); }
@@ -293,6 +335,61 @@ const ProjectsPage = () => {
             });
             if (res.ok) { toast.success('Task deleted'); fetchPersonalTasks(); }
         } catch { toast.error('Failed to delete task'); }
+    };
+
+    const updatePersonalTask = async () => {
+        if (!editingPersonalTask) return;
+        if (!editPersonalTaskForm.title.trim()) {
+            toast.error('Title is required');
+            return;
+        }
+        setAddingTask(true);
+        try {
+            const res = await fetch(`${API_BASE_URL}/api/personal-tasks/${editingPersonalTask.id}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({
+                    title: editPersonalTaskForm.title,
+                    description: editPersonalTaskForm.description,
+                    priority: editPersonalTaskForm.priority,
+                    due_date: editPersonalTaskForm.due_date || null,
+                })
+            });
+
+            if (res.ok) {
+                toast.success('Task updated successfully');
+                setIsEditingPersonalTask(false);
+                setEditingPersonalTask(null);
+                setEditPersonalTaskForm({ title: '', description: '', priority: 'medium', due_date: '' });
+                fetchPersonalTasks();
+            } else {
+                toast.error('Failed to update task');
+            }
+        } catch (err) {
+            toast.error('Failed to update task');
+        } finally {
+            setAddingTask(false);
+        }
+    };
+
+    const startEditPersonalTask = (task: PersonalTask) => {
+        setEditingPersonalTask(task);
+        setEditPersonalTaskForm({
+            title: task.title,
+            description: task.description,
+            priority: task.priority,
+            due_date: task.due_date || '',
+        });
+        setIsEditingPersonalTask(true);
+    };
+
+    const cancelEditPersonalTask = () => {
+        setIsEditingPersonalTask(false);
+        setEditingPersonalTask(null);
+        setEditPersonalTaskForm({ title: '', description: '', priority: 'medium', due_date: '' });
     };
 
     // Fetch my tasks
@@ -650,6 +747,14 @@ const ProjectsPage = () => {
                                                         }`}>{task.priority}</span>
                                                     )}
                                                     <button
+                                                        onClick={() => startEditPersonalTask(task)}
+                                                        className="opacity-0 group-hover:opacity-100 flex items-center gap-1 text-xs text-[#E0B954] hover:text-[#C79E3B] flex-shrink-0 transition-opacity"
+                                                        title="Edit task"
+                                                    >
+                                                        <Edit2 className="w-3.5 h-3.5" />
+                                                        Edit
+                                                    </button>
+                                                    <button
                                                         onClick={() => { setConvertingTask(task); setShowConvertDialog(true); }}
                                                         className="opacity-0 group-hover:opacity-100 flex items-center gap-1 text-xs text-[#E0B954] hover:text-[#C79E3B] flex-shrink-0 transition-opacity"
                                                         title="Convert to project ticket"
@@ -706,7 +811,7 @@ const ProjectsPage = () => {
                                                 <span className={`text-xs flex-shrink-0 ${
                                                     task.is_overdue ? 'text-red-400' : 'text-[#737373]'
                                                 }`}>
-                                                    {new Date(task.due_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                                                    {parseLocalDate(task.due_date)?.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                                                 </span>
                                             )}
                                         </div>
@@ -947,7 +1052,7 @@ const ProjectsPage = () => {
                                     {(() => {
                                         const allDue = myTasks
                                             .filter(t => t.due_date && t.status !== 'done')
-                                            .sort((a, b) => new Date(a.due_date!).getTime() - new Date(b.due_date!).getTime());
+                                            .sort((a, b) => parseLocalDate(a.due_date!)!.getTime() - parseLocalDate(b.due_date!)!.getTime());
                                         const dueSoon = showAllDueSoon ? allDue : allDue.slice(0, 4);
                                         return allDue.length > 0 ? (
                                             <div>
@@ -961,7 +1066,7 @@ const ProjectsPage = () => {
                                                             <div className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: STATUS_COLOR[t.status] || '#555' }} />
                                                             <span className="text-[#a3a3a3] truncate flex-1">{t.title}</span>
                                                             <span className={`flex-shrink-0 ${t.is_overdue ? 'text-red-400' : 'text-[#737373]'}`}>
-                                                                {new Date(t.due_date!).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                                                                {parseLocalDate(t.due_date!)?.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                                                             </span>
                                                         </div>
                                                     ))}
@@ -1063,7 +1168,7 @@ const ProjectsPage = () => {
                             <div className="space-y-0">
                                 {[
                                     { label: 'Assignee', value: selectedTask.assignee || 'Unassigned' },
-                                    { label: 'Due Date', value: selectedTask.due_date ? new Date(selectedTask.due_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Not set' },
+                                    { label: 'Due Date', value: selectedTask.due_date ? parseLocalDate(selectedTask.due_date)?.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Not set' },
                                     { label: 'Project', value: selectedTask.project_name },
                                 ].map(({ label, value }) => (
                                     <div key={label} className="flex items-center justify-between py-2.5 border-b border-[rgba(255,255,255,0.04)]">
@@ -1129,7 +1234,16 @@ const ProjectsPage = () => {
             )}
 
             {/* Add Personal Task Dialog */}
-            <Dialog open={showAddTaskDialog} onOpenChange={setShowAddTaskDialog}>
+            <Dialog
+                open={showAddTaskDialog}
+                onOpenChange={(open) => {
+                    setShowAddTaskDialog(open);
+                    if (!open) {
+                        setNewPersonalTask({ title: '', description: '', priority: 'medium', due_date: '', project_id: '', assignee_developer_id: '' });
+                        setProjectMembers([]);
+                    }
+                }}
+            >
                 <DialogContent className="bg-[#0d0d0d] border-[rgba(255,255,255,0.08)] text-white">
                     <DialogHeader>
                         <DialogTitle>Add Personal Task</DialogTitle>
@@ -1155,7 +1269,7 @@ const ProjectsPage = () => {
                                 rows={3}
                             />
                         </div>
-                        <div className="grid grid-cols-2 gap-3">
+                        <div className="grid grid-cols-2 gap-4">
                             <div>
                                 <label className="text-xs text-[#737373] mb-1 block">Priority</label>
                                 <Select value={newPersonalTask.priority} onValueChange={(v) => setNewPersonalTask({ ...newPersonalTask, priority: v })}>
@@ -1172,13 +1286,106 @@ const ProjectsPage = () => {
                             </div>
                             <div>
                                 <label className="text-xs text-[#737373] mb-1 block">Due Date</label>
-                                <Input
-                                    type="date"
-                                    value={newPersonalTask.due_date}
-                                    onChange={(e) => setNewPersonalTask({ ...newPersonalTask, due_date: e.target.value })}
-                                    className="bg-[#0A0A14] border-[rgba(255,255,255,0.08)] text-white"
-                                />
+                                <Popover open={showCalendarAddTask} onOpenChange={setShowCalendarAddTask}>
+                                    <PopoverTrigger asChild>
+                                        <Button
+                                            variant="outline"
+                                            className="w-full bg-[#0A0A14] border-[rgba(255,255,255,0.08)] text-white justify-start text-left font-normal hover:bg-[#0A0A14] hover:text-white"
+                                        >
+                                            {newPersonalTask.due_date ? parseLocalDate(newPersonalTask.due_date)?.toLocaleDateString() : 'Pick a date'}
+                                        </Button>
+                                    </PopoverTrigger>
+                                    <PopoverContent side="bottom" align="start" className="w-auto p-3 bg-[#0d0d0d] border border-[rgba(224,185,84,0.2)]">
+                                        <CalendarIcon
+                                            mode="single"
+                                            selected={parseLocalDate(newPersonalTask.due_date)}
+                                            onSelect={(date) => {
+                                                if (date) {
+                                                    const year = date.getFullYear();
+                                                    const month = String(date.getMonth() + 1).padStart(2, '0');
+                                                    const day = String(date.getDate()).padStart(2, '0');
+                                                    const localDate = `${year}-${month}-${day}`;
+                                                    setNewPersonalTask({ ...newPersonalTask, due_date: localDate });
+                                                    setShowCalendarAddTask(false);
+                                                }
+                                            }}
+                                            disabled={(date) => date < new Date(new Date().setHours(0, 0, 0, 0))}
+                                            classNames={{
+                                                months: "flex flex-col",
+                                                month: "space-y-4",
+                                                caption: "flex justify-between items-center px-0 pb-4 relative h-7 mb-2",
+                                                caption_label: "text-sm font-medium text-white",
+                                                nav: "space-x-1 flex items-center",
+                                                nav_button: "text-white hover:bg-[rgba(224,185,84,0.1)] rounded p-1",
+                                                nav_button_previous: "absolute left-0",
+                                                nav_button_next: "absolute right-0",
+                                                table: "w-full border-collapse space-y-1",
+                                                head_row: "flex",
+                                                head_cell: "text-xs font-medium text-[#737373] w-8 h-8 flex items-center justify-center rounded",
+                                                row: "flex w-full gap-1",
+                                                cell: "relative p-0 text-center text-sm focus-within:relative focus-within:z-20 [&:has([aria-selected])]:bg-transparent",
+                                                day: "h-8 w-8 p-0 font-normal",
+                                                day_button: "text-white hover:bg-[rgba(224,185,84,0.1)] rounded-lg h-8 w-8 transition-colors",
+                                                day_selected: "bg-[#E0B954] text-[#0d0d0d] hover:bg-[#E0B954] font-semibold",
+                                                day_today: "bg-[rgba(224,185,84,0.2)] text-[#E0B954] font-semibold",
+                                                day_outside: "text-[#444]",
+                                                day_disabled: "text-[#333] opacity-50 cursor-not-allowed",
+                                                day_range_middle: "aria-selected:bg-[rgba(224,185,84,0.1)] aria-selected:text-white",
+                                                day_hidden: "invisible",
+                                            }}
+                                        />
+                                    </PopoverContent>
+                                </Popover>
                             </div>
+                        </div>
+                            {/* Project and Assignee dropdowns */}
+                        <div className="grid grid-cols-2 gap-4">
+                            <div>
+                                <label className="text-xs text-[#737373] mb-1 block">Project <span className="text-[#555]">(optional)</span></label>
+                                <Select
+                                    value={newPersonalTask.project_id}
+                                    onValueChange={v => {
+                                        setNewPersonalTask({ ...newPersonalTask, project_id: v, assignee_developer_id: '' });
+                                        if (v) fetchProjectMembers(v); else setProjectMembers([]);
+                                    }}
+                                >
+                                    <SelectTrigger className="bg-[#0A0A14] border-[rgba(255,255,255,0.08)] text-white">
+                                        <SelectValue placeholder="Choose a project..." />
+                                    </SelectTrigger>
+                                    <SelectContent className="bg-[#0d0d0d] border-[rgba(255,255,255,0.08)]">
+                                        {projects.map((project) => (
+                                            <SelectItem key={project.id} value={project.id.toString()}>
+                                                {project.name}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                            {projectMembers.length > 0 && (
+                                <div>
+                                    <label className="text-xs text-[#737373] mb-1 block">Assign To <span className="text-[#555]">(optional — defaults to you)</span></label>
+                                    <Select
+                                        value={newPersonalTask.assignee_developer_id}
+                                        onValueChange={v => setNewPersonalTask({ ...newPersonalTask, assignee_developer_id: v })}
+                                    >
+                                        <SelectTrigger className="bg-[#0A0A14] border-[rgba(255,255,255,0.08)] text-white">
+                                            <SelectValue placeholder="Select team member..." />
+                                        </SelectTrigger>
+                                        <SelectContent className="bg-[#0d0d0d] border-[rgba(255,255,255,0.08)]">
+                                            {projectMembers.map((member) => (
+                                                <SelectItem key={member.id} value={member.id.toString()}>
+                                                    <div className="flex items-center gap-2">
+                                                        <div className="w-5 h-5 rounded-full bg-gradient-to-br from-[#E0B954] to-[#C79E3B] flex items-center justify-center text-[#080808] text-xs font-bold">
+                                                            {member.name.charAt(0).toUpperCase()}
+                                                        </div>
+                                                        {member.name}
+                                                    </div>
+                                                </SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+                            )}
                         </div>
                         <Button
                             onClick={createPersonalTask}
@@ -1258,6 +1465,122 @@ const ProjectsPage = () => {
                         >
                             {convertingTicket ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Create Project Ticket'}
                         </Button>
+                    </div>
+                </DialogContent>
+            </Dialog>
+
+            {/* Edit Personal Task Dialog */}
+            <Dialog open={isEditingPersonalTask} onOpenChange={(open) => { if (!open) cancelEditPersonalTask(); }}>
+                <DialogContent className="bg-[#0d0d0d] border-[rgba(255,255,255,0.08)] text-white">
+                    <DialogHeader>
+                        <DialogTitle>Edit Personal Task</DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-4 pt-2">
+                        <div>
+                            <label className="text-xs text-[#737373] mb-1 block">Title</label>
+                            <Input
+                                value={editPersonalTaskForm.title}
+                                onChange={(e) => setEditPersonalTaskForm({ ...editPersonalTaskForm, title: e.target.value })}
+                                placeholder="What needs to be done?"
+                                className="bg-[#0A0A14] border-[rgba(255,255,255,0.08)] text-white"
+                            />
+                        </div>
+                        <div>
+                            <label className="text-xs text-[#737373] mb-1 block">Description</label>
+                            <Textarea
+                                value={editPersonalTaskForm.description}
+                                onChange={(e) => setEditPersonalTaskForm({ ...editPersonalTaskForm, description: e.target.value })}
+                                placeholder="Add more details..."
+                                className="bg-[#0A0A14] border-[rgba(255,255,255,0.08)] text-white"
+                            />
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                            <div>
+                                <label className="text-xs text-[#737373] mb-1 block">Priority</label>
+                                <Select value={editPersonalTaskForm.priority} onValueChange={(value) => setEditPersonalTaskForm({ ...editPersonalTaskForm, priority: value })}>
+                                    <SelectTrigger className="bg-[#0A0A14] border-[rgba(255,255,255,0.08)] text-white">
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent className="bg-[#0d0d0d] border-[rgba(255,255,255,0.08)]">
+                                        <SelectItem value="low">Low</SelectItem>
+                                        <SelectItem value="medium">Medium</SelectItem>
+                                        <SelectItem value="high">High</SelectItem>
+                                        <SelectItem value="critical">Critical</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                            <div>
+                                <label className="text-xs text-[#737373] mb-1 block">Due Date</label>
+                                <Popover open={showCalendarEditPersonalTask} onOpenChange={setShowCalendarEditPersonalTask}>
+                                    <PopoverTrigger asChild>
+                                        <Button
+                                            variant="outline"
+                                            className="w-full justify-start text-left font-normal bg-[#0A0A14] border-[rgba(255,255,255,0.08)] text-white hover:bg-[#0A0A14] hover:text-white"
+                                        >
+                                        <Calendar className="w-4 h-4 mr-2" />
+                                        {editPersonalTaskForm.due_date ? parseLocalDate(editPersonalTaskForm.due_date)?.toLocaleDateString() : 'Pick a date'}
+                                    </Button>
+                                    </PopoverTrigger>
+                                    <PopoverContent className="w-auto p-0 bg-[#0A0A14] border-[rgba(255,255,255,0.08)]">
+                                        <CalendarIcon
+                                        mode="single"
+                                        selected={parseLocalDate(editPersonalTaskForm.due_date)}
+                                        onSelect={(date) => {
+                                            if (date) {
+                                                const year = date.getFullYear();
+                                                const month = String(date.getMonth() + 1).padStart(2, '0');
+                                                const day = String(date.getDate()).padStart(2, '0');
+                                                const localDate = `${year}-${month}-${day}`;
+                                                setEditPersonalTaskForm({ ...editPersonalTaskForm, due_date: localDate });
+                                                setShowCalendarEditPersonalTask(false);
+                                            }
+                                        }}
+                                        disabled={(date) => date < new Date(new Date().setHours(0, 0, 0, 0))}
+                                        classNames={{
+                                            months: "flex flex-col",
+                                            month: "space-y-4",
+                                            caption: "flex justify-between items-center px-0 pb-4 relative h-7 mb-2",
+                                            caption_label: "text-sm font-medium text-white",
+                                            nav: "space-x-1 flex items-center",
+                                            nav_button: "text-white hover:bg-[rgba(224,185,84,0.1)] rounded p-1",
+                                            nav_button_previous: "absolute left-0",
+                                            nav_button_next: "absolute right-0",
+                                            table: "w-full border-collapse space-y-1",
+                                            head_row: "flex",
+                                            head_cell: "text-xs font-medium text-[#737373] w-8 h-8 flex items-center justify-center rounded",
+                                            row: "flex w-full gap-1",
+                                            cell: "relative p-0 text-center text-sm focus-within:relative focus-within:z-20 [&:has([aria-selected])]:bg-transparent",
+                                            day: "h-8 w-8 p-0 font-normal",
+                                            day_button: "text-white hover:bg-[rgba(224,185,84,0.1)] rounded-lg h-8 w-8 transition-colors",
+                                            day_selected: "bg-[#E0B954] text-[#0d0d0d] hover:bg-[#E0B954] font-semibold",
+                                            day_today: "bg-[rgba(224,185,84,0.2)] text-[#E0B954] font-semibold",
+                                            day_outside: "text-[#444]",
+                                            day_disabled: "text-[#333] opacity-50 cursor-not-allowed",
+                                            day_range_middle: "aria-selected:bg-[rgba(224,185,84,0.1)] aria-selected:text-white",
+                                            day_hidden: "invisible",
+                                        }}
+                                    />
+                                    </PopoverContent>
+                                </Popover>
+                            </div>
+                        </div>
+                        <div className="flex gap-2 pt-2">
+                            <Button
+                                onClick={updatePersonalTask}
+                                disabled={addingTask}
+                                className="flex-1 bg-gradient-to-r from-[#E0B954] to-[#C79E3B] text-[#080808] font-semibold hover:opacity-90"
+                            >
+                                {addingTask ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Save Changes'}
+                            </Button>
+                            <Button
+                                onClick={cancelEditPersonalTask}
+                                disabled={addingTask}
+                                variant="outline"
+                                className="flex-1 bg-[#0A0A14] border-[rgba(255,255,255,0.08)] text-white hover:bg-[#0A0A14] hover:text-white"
+                            >
+                                Cancel
+                            </Button>
+                        </div>
                     </div>
                 </DialogContent>
             </Dialog>
