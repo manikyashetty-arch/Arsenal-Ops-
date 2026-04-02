@@ -2376,7 +2376,7 @@ onClick={() => { navigate(`/project/${id}/board/${item.id}`); setIsEditing(false
                                                 <div className="mb-4 pb-4 border-b border-[rgba(255,255,255,0.07)]">
                                                     <p className="text-xs font-medium text-[#737373] mb-2">Team Members</p>
                                                     <div className="flex flex-wrap gap-2">
-                                                        {roadmapSummary.assignees.map((assignee, i) => (
+                                                        {roadmapSummary.assignees.map((assignee: string, i: number) => (
                                                             <span key={i} className="px-2.5 py-1 rounded-lg bg-[rgba(255,255,255,0.05)] text-[#a3a3a3] text-xs">
                                                                 {assignee}
                                                             </span>
@@ -2390,7 +2390,7 @@ onClick={() => { navigate(`/project/${id}/board/${item.id}`); setIsEditing(false
                                                 <div className="mb-4">
                                                     <p className="text-xs font-medium text-[#f59e0b] mb-2">⚠️ Warnings ({roadmapSummary.warnings.length})</p>
                                                     <div className="space-y-1.5">
-                                                        {roadmapSummary.warnings.slice(0, 3).map((warning, i) => (
+                                                        {roadmapSummary.warnings.slice(0, 3).map((warning: any, i: number) => (
                                                             <div key={i} className="text-xs text-[#737373] bg-[rgba(245,158,11,0.08)] p-2 rounded">
                                                                 <p className="font-medium text-[#f59e0b]">{warning.issue}</p>
                                                                 <p className="text-xs">{warning.task}: {warning.detail}</p>
@@ -2405,7 +2405,7 @@ onClick={() => { navigate(`/project/${id}/board/${item.id}`); setIsEditing(false
                                                 <div>
                                                     <p className="text-xs font-medium text-[#ef4444] mb-2">🔴 Conflicts ({roadmapSummary.conflicts.length})</p>
                                                     <div className="space-y-1.5">
-                                                        {roadmapSummary.conflicts.slice(0, 2).map((conflict, i) => (
+                                                        {roadmapSummary.conflicts.slice(0, 2).map((conflict: any, i: number) => (
                                                             <div key={i} className="text-xs text-[#737373] bg-[rgba(239,68,68,0.08)] p-2 rounded">
                                                                 <p className="font-medium text-[#ef4444]">{conflict.assignee} - Week {conflict.week}</p>
                                                                 <p>{conflict.total_hrs}h scheduled (tasks: {conflict.tasks.join(', ')})</p>
@@ -2549,9 +2549,6 @@ onClick={() => { navigate(`/project/${id}/board/${item.id}`); setIsEditing(false
                                         <CheckCircle2 className="w-10 h-10 text-[#E0B954]" />
                                     </div>
                                     <h3 className="text-2xl font-bold text-white mb-2">All Done!</h3>
-                                    <p className="text-[#737373] text-center max-w-md mb-6">
-                                        {generatedTickets.length} tickets have been created and assigned to your team.
-                                    </p>
                                     <Button
                                         onClick={() => setShowAIModal(false)}
                                         className="bg-gradient-to-r from-[#E0B954] to-[#B8872A] text-white rounded-xl px-8"

@@ -19,6 +19,10 @@ from models.developer import Developer
 from models.work_item import WorkItem, WorkItemType
 from routers.auth import get_current_user
 from parser import parse as parse_roadmap
+from services.roadmap_ai_parser import get_roadmap_ai_parser, excel_to_readable_text
+from logging_config import setup_logger
+
+logger = setup_logger("roadmap")
 
 # NOTE: Roadmap bulk creation does NOT send email notifications to assignees
 # For bulk ticket creation from roadmaps, email notifications are disabled
@@ -135,8 +139,33 @@ async def parse_roadmap_file(
             tmp.write(file_content)
             tmp_path = tmp.name
         
-        # Parse the roadmap
-        parsed_result = parse_roadmap(tmp_path)
+        # Try the standard structured parser first
+        parser_used = "standard"
+        parsed_result = None
+        parse_error = None
+        
+        try:
+            parsed_result = parse_roadmap(tmp_path)
+        except Exception as e:
+            parse_error = str(e)
+            logger.debug(f"Standard parser failed: {parse_error}")
+            logger.debug("Attempting AI-powered parser as fallback...")
+            
+            # Fallback to AI parser
+            try:
+                ai_parser = get_roadmap_ai_parser()
+                excel_text = excel_to_readable_text(tmp_path)
+                parsed_result = await ai_parser.parse_excel_with_ai(excel_text, file.filename)
+                parser_used = "ai"
+                logger.debug(f"AI parser succeeded for {file.filename}")
+            except Exception as ai_error:
+                logger.debug(f"AI parser failed: {str(ai_error)}")
+                raise ValueError(f"Both structured and AI parsers failed. Standard: {parse_error}, AI: {str(ai_error)}")
+        
+        # Add parser metadata for debugging
+        if "meta" not in parsed_result:
+            parsed_result["meta"] = {}
+        parsed_result["meta"]["parser_used"] = parser_used
         
         # Clean up temp file
         import os
@@ -233,9 +262,13 @@ async def commit_roadmap_tickets(
         tickets = parsed_data.get("tickets", [])
         
         # Debug: log the number of tickets received
-        print(f"DEBUG: Received {len(tickets)} tickets from parsed_data")
+        logger.info(f"Received {len(tickets)} tickets from parsed_data")
+        logger.debug(f"Parsed data keys: {list(parsed_data.keys())}")
         if not tickets:
-            print(f"DEBUG: parsed_data keys: {parsed_data.keys()}")
+            logger.warning(f"No tickets found! parsed_data structure:")
+            for key, value in parsed_data.items():
+                if key != "schedule" and key != "meta":  # Skip large nested structures
+                    logger.debug(f"  {key}: {type(value)} - {str(value)[:100]}")
         
         # Step 1: Create epics
         # Build a map of epic names to their work item IDs
@@ -253,12 +286,14 @@ async def commit_roadmap_tickets(
                     title=epic_name,
                     description=f"Epic: {epic_name}",
                     item_type=WorkItemType.EPIC.value,
-                    priority="high",
+                    priority="medium",  # Use "medium" by default, not hardcoded "high"
                     effort_hrs=None,
                     assignee_id=None,
                     epic_id=None,
                 )
                 epic_map[epic_name] = epic
+        
+        logger.info(f"Created {len(epic_map)} epics")
         
         # Step 2: Create tasks linked to epics
         created_tasks = 0
@@ -310,17 +345,23 @@ async def commit_roadmap_tickets(
             )
             
             created_tasks += 1
+            logger.info(f"Created task #{created_tasks}: {task_name} (ID:{task.id})")
+        
+        logger.info(f"Created {created_tasks} tasks. Assignees not found: {assignee_not_found_count}")
         
         # Commit all changes
         db.commit()
         
-        return {
+        response_data = {
             "status": "success",
             "tickets_created": created_tasks,
             "epics_created": len(epic_map),
             "assignees_not_found": assignee_not_found_count,
             "message": f"Created {len(epic_map)} epics and {created_tasks} tasks from roadmap"
         }
+        
+        logger.debug(f"Returning response: {response_data}")
+        return response_data
         
     except Exception as e:
         db.rollback()

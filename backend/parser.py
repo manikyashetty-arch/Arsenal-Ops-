@@ -19,21 +19,12 @@ import json
 import datetime
 import argparse
 import openpyxl
+from logging_config import setup_logger
+
+logger = setup_logger("parser")
 
 # ── Constants ─────────────────────────────────────────────────────────────────
-WEEK_COL_START = 9          # col index 9 = col I (1-based) = first week column
 HOURS_PER_WEEK = 40         # threshold for "fully booked"
-
-LEFT_COLS = {
-    "type":        0,   # A
-    "name":        1,   # B
-    "description": 2,   # C
-    "milestone":   3,   # D
-    "epic":        4,   # E
-    "priority":    5,   # F
-    "effort_hrs":  6,   # G
-    "assignee":    7,   # H
-}
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -66,27 +57,158 @@ def date_key(dt):
 
 def parse(filepath: str) -> dict:
     wb = openpyxl.load_workbook(filepath, data_only=True)
-    ws = wb.active  # assumes Roadmap is the first/active sheet
+    
+    # ── Find the sheet with roadmap data (support multiple sheets) ─────────────
+    # Try all sheets to find one with the required structure
+    ws = None
+    sheet_names = wb.sheetnames
+    
+    if not sheet_names:
+        raise ValueError("Excel file has no sheets")
+    
+    # First, try to find a sheet with "roadmap" in the name
+    for sheet_name in sheet_names:
+        if "roadmap" in sheet_name.lower():
+            ws = wb[sheet_name]
+            break
+    
+    # If not found, try all sheets and use the first one with valid structure
+    if ws is None:
+        for sheet_name in sheet_names:
+            candidate_ws = wb[sheet_name]
+            candidate_rows = list(candidate_ws.iter_rows(min_row=1, values_only=True))
+            
+            if candidate_rows:
+                header_row = candidate_rows[0]
+                # Check if this sheet has the required columns (type and name)
+                header_lower = [str(h).strip().lower() if h else "" for h in header_row]
+                has_type = any("type" in h for h in header_lower)
+                has_name = any("name" in h or "title" in h for h in header_lower)
+                
+                if has_type and has_name:
+                    ws = candidate_ws
+                    break
+    
+    # Fallback: use first sheet if no valid structure found
+    if ws is None:
+        ws = wb.active
+        logger.warning(f"Could not identify roadmap sheet, using default: {ws.title}")
+    
+    logger.info(f"Using sheet: {ws.title}")
 
     all_rows = list(ws.iter_rows(min_row=1, values_only=True))
+    
+    # ── Step 0: Build column mapping from header row ────────────────────────────
+    # Find columns by name instead of hard-coded positions for flexibility
+    header_row = all_rows[0] if all_rows else []
+    
+    # Define what column names we're looking for (case-insensitive)
+    column_names_to_find = {
+        "type": ["type", "row type", "item type", "task type"],
+        "name": ["name", "title", "task name", "task title"],
+        "description": ["description", "details", "desc"],
+        "milestone": ["milestone", "phase", "release"],
+        "epic": ["epic", "feature", "epic name"],
+        "priority": ["priority", "p", "prio"],
+        "effort_hrs": ["effort", "effort_hrs", "effort hours", "hours", "hrs", "estimate"],
+        "assignee": ["assignee", "assigned to", "owner", "developer", "dev"],
+    }
+    
+    # Build column index mapping
+    col_mapping = {}
+    for field_name, possible_names in column_names_to_find.items():
+        for col_idx, header_cell in enumerate(header_row):
+            if header_cell is None:
+                continue
+            header_lower = str(header_cell).strip().lower()
+            # For priority, be VERY specific - must contain "priority" or be exactly "p" or "prio"
+            if field_name == "priority":
+                # Priority: be more strict, only match if "priority" is a standalone word
+                if "priority" in header_lower or header_lower in ["p", "prio"]:
+                    col_mapping[field_name] = col_idx
+                    break
+            else:
+                if any(name.lower() in header_lower for name in possible_names):
+                    col_mapping[field_name] = col_idx
+                    break
+    
+    # Debug: Show header row
+    logger.debug(f"═══ HEADER ROW ANALYSIS ═══")
+    logger.debug(f"Total columns: {len(header_row)}")
+    logger.debug(f"All Column Headers:")
+    for idx, h in enumerate(header_row):
+        col_letter = col_index_to_letter(idx + 1)
+        logger.debug(f"  [{col_letter}] (idx {idx}): '{h}'")
+    
+    # Verify we found all critical columns
+    required_cols = ["type", "name"]
+    missing = [c for c in required_cols if c not in col_mapping]
+    if missing:
+        raise ValueError(
+            f"Could not find required columns: {missing}. "
+            f"Available columns: {[str(h) for h in header_row if h]}"
+        )
+    
+    # Use default indices if columns not found (fallback to old behavior)
+    # BUT: Only for columns that make sense to have defaults
+    # For optional columns like priority, don't use fallback indices - use None instead
+    if "description" not in col_mapping:
+        col_mapping["description"] = 2
+    if "milestone" not in col_mapping:
+        col_mapping["milestone"] = 3
+    if "epic" not in col_mapping:
+        col_mapping["epic"] = 4
+    # NOTE: priority, effort_hrs, assignee - if not found, leave out of col_mapping
+    # Don't use fallback indices for these as they might point to wrong columns
+    if "effort_hrs" not in col_mapping:
+        col_mapping["effort_hrs"] = 6
+    if "assignee" not in col_mapping:
+        col_mapping["assignee"] = 7
+    
+    # Debug: log the column mapping
+    logger.debug(f"═══ IDENTIFIED COLUMNS ═══")
+    for field, col_idx in sorted(col_mapping.items(), key=lambda x: x[1]):
+        col_letter = col_index_to_letter(col_idx + 1)  # Convert to 1-based for display
+        header_val = header_row[col_idx] if col_idx < len(header_row) else "?"
+        status = "✓ Found" if header_row[col_idx] else "⚠ Default"
+        logger.debug(f"  {field:15} → [{col_letter}] idx {col_idx:2d} = '{header_val}' {status}")
+    
+    # Find the first week column by looking at the MILESTONE row (which has actual dates)
+    # This is more reliable than looking at headers since week columns might not have headers
+    week_col_start = max(col_mapping.values()) + 1
+    
+    # Scan MILESTONE rows to find where the week dates start
+    for row in all_rows[1:]:  # Skip header row
+        row_type = row[col_mapping["type"]]
+        row_type = str(row_type).strip().upper() if row_type else ""
+        
+        if row_type == "MILESTONE":
+            # Found a MILESTONE row - scan its columns to find where dates start
+            for col_idx in range(week_col_start, len(row)):
+                cell = row[col_idx]
+                if isinstance(cell, (datetime.datetime, datetime.date)):
+                    # Found the first date column - this is where weeks start
+                    week_col_start = col_idx
+                    break
+            break  # Use the first MILESTONE row we find
 
     # ── Step 1: build per-milestone week date map ─────────────────────────────
-    # Each MILESTONE row has its own week sequence starting at col I (index 8).
+    # Each MILESTONE row has its own week sequence starting from week_col_start.
     # We walk all rows once, and every time we hit a MILESTONE we record its
     # week dates. TASK rows then use the week dates of their current milestone.
     #
     # milestone_weeks: { milestone_name: ['YYYY-MM-DD', ...] }
     milestone_weeks = {}
 
-    for row in all_rows:
-        row_type = row[LEFT_COLS["type"]]
+    for row in all_rows[1:]:  # Skip header row
+        row_type = row[col_mapping["type"]]
         # Normalize row type
         row_type = str(row_type).strip().upper() if row_type else ""
         
         if row_type == "MILESTONE":
-            name = row[LEFT_COLS["name"]]
+            name = row[col_mapping["name"]]
             dates = []
-            for v in row[WEEK_COL_START - 1:]:   # 0-based slice from col I
+            for v in row[week_col_start:]:
                 if isinstance(v, (datetime.datetime, datetime.date)):
                     dates.append(date_key(v))
             if dates:
@@ -95,7 +217,7 @@ def parse(filepath: str) -> dict:
     if not milestone_weeks:
         raise ValueError(
             "No MILESTONE row with week dates found. "
-            "Check that col I of a MILESTONE row contains a date."
+            f"Check that columns starting from column {col_index_to_letter(week_col_start + 1)} contain dates."
         )
 
     # ── Step 2: walk every row ────────────────────────────────────────────────
@@ -105,34 +227,39 @@ def parse(filepath: str) -> dict:
     milestones = []
     current_milestone_weeks = []   # week dates of the milestone currently in scope
 
-    for row_num, row in enumerate(all_rows, start=1):
-        row_type = row[LEFT_COLS["type"]]
+    for row_num, row in enumerate(all_rows[1:], start=2):  # Start from row 2 (skip header)
+        row_type = row[col_mapping["type"]]
         
         # Normalize row type to uppercase for case-insensitive matching
         row_type = str(row_type).strip().upper() if row_type else ""
 
         if row_type == "MILESTONE":
-            m_name = row[LEFT_COLS["name"]]
+            m_name = row[col_mapping["name"]]
             milestones.append(m_name)
             # Switch active week dates to this milestone's sequence
             current_milestone_weeks = milestone_weeks.get(m_name, [])
             continue
 
         if row_type == "EPIC":
-            epics[row[LEFT_COLS["name"]]] = row[LEFT_COLS["milestone"]]
+            epics[row[col_mapping["name"]]] = row[col_mapping["milestone"]]
             continue
 
         if row_type != "TASK":
             continue  # skip header row, totals row, blank rows
 
         # ── Extract left-column fields ────────────────────────────────────────
-        name        = row[LEFT_COLS["name"]]
-        description = row[LEFT_COLS["description"]]
-        milestone   = row[LEFT_COLS["milestone"]]
-        epic        = row[LEFT_COLS["epic"]]
-        priority    = row[LEFT_COLS["priority"]]
-        effort_raw  = row[LEFT_COLS["effort_hrs"]]
-        assignee    = row[LEFT_COLS["assignee"]]
+        name        = row[col_mapping["name"]]
+        description = row[col_mapping["description"]] if col_mapping["description"] < len(row) else None
+        milestone   = row[col_mapping["milestone"]] if col_mapping["milestone"] < len(row) else None
+        epic        = row[col_mapping["epic"]] if col_mapping["epic"] < len(row) else None
+        # Priority: only extract if column exists, otherwise default to "medium"
+        priority    = None
+        if "priority" in col_mapping and col_mapping["priority"] < len(row):
+            priority = row[col_mapping["priority"]]
+        if not priority:
+            priority = "Medium"  # Default priority if not specified
+        effort_raw  = row[col_mapping["effort_hrs"]] if col_mapping["effort_hrs"] < len(row) else None
+        assignee    = row[col_mapping["assignee"]] if col_mapping["assignee"] < len(row) else None
 
         effort_hrs  = parse_effort(effort_raw)
         assignee    = assignee.strip() if assignee else None
@@ -143,9 +270,9 @@ def parse(filepath: str) -> dict:
         week_dates    = current_milestone_weeks
         week_col_count = len(week_dates)
 
-        # ── Extract week hours (cols I onward) ────────────────────────────────
+        # ── Extract week hours (cols from week_col_start onward) ────────────────
         week_hours = {}   # { 'YYYY-MM-DD': hours_float }
-        week_vals  = row[WEEK_COL_START - 1:]   # 0-based
+        week_vals  = row[week_col_start:]   # 0-based
 
         planned_total = 0.0
         for i, val in enumerate(week_vals[:week_col_count]):
@@ -202,6 +329,18 @@ def parse(filepath: str) -> dict:
             "planned_total": planned_total,    # sum of week cols
             "active_weeks": sorted(week_hours.keys()),
         }
+        
+        # Debug: log first few tickets to verify priority extraction
+        if row_num <= 5:
+            logger.debug(f"ROW {row_num} '{name}':")
+            logger.debug(f"  Row type (col {col_mapping.get('type', '?')}): {row[col_mapping['type']] if col_mapping['type'] < len(row) else 'N/A'}")
+            if "priority" in col_mapping:
+                priority_col_idx = col_mapping['priority']
+                priority_col_letter = col_index_to_letter(priority_col_idx + 1)
+                logger.debug(f"  Priority (col {priority_col_letter} idx {priority_col_idx}): '{row[priority_col_idx] if priority_col_idx < len(row) else 'N/A'}' → Extracted as '{priority}'")
+            else:
+                logger.debug(f"  Priority: NOT FOUND IN COLUMNS → Using default 'medium'")
+        
         tickets.append(ticket)
 
     # ── Step 3: per-assignee schedule ─────────────────────────────────────────
