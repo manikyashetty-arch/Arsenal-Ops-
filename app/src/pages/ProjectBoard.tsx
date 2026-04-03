@@ -215,6 +215,7 @@ const ProjectBoard = () => {
     const [roadmapFile, setRoadmapFile] = useState<File | null>(null);
     const [roadmapSummary, setRoadmapSummary] = useState<any>(null);
     const [roadmapParsedData, setRoadmapParsedData] = useState<any>(null);
+    const [createdTicketCount, setCreatedTicketCount] = useState<number>(0);
     const fileInputRef = useRef<HTMLInputElement>(null);
     
     // Sprint and timeline states
@@ -952,6 +953,7 @@ const ProjectBoard = () => {
                 
                 setAiStep('done');
                 toast.success(`Created ${data.tickets_created} tickets${data.sprints?.length ? ` in ${data.sprints.length} sprints` : ''}!`);
+                setCreatedTicketCount(data.tickets_created);
                 
                 // Refresh work items and sprints with auth headers
                 const [itemsRes, sprintsRes] = await Promise.all([
@@ -1009,6 +1011,7 @@ const ProjectBoard = () => {
                 
                 setAiStep('done');
                 toast.success(`Created ${data.tickets_created} tasks in ${data.epics_created} epics!${data.assignees_not_found > 0 ? ` (${data.assignees_not_found} auto-assigned)` : ''}`);
+                setCreatedTicketCount(data.tickets_created);
                 
                 // Refresh work items
                 const itemsRes = await fetch(`${API_BASE_URL}/api/workitems/?project_id=${project.id}`, {
@@ -2101,7 +2104,7 @@ onClick={() => { navigate(`/project/${id}/board/${item.id}`); setIsEditing(false
                                                     : 'bg-[rgba(255,255,255,0.08)] text-[#a3a3a3] hover:bg-[rgba(255,255,255,0.12)]'
                                             }`}
                                         >
-                                            📄 PRD Document
+                                            PRD Document
                                         </button>
                                         <button
                                             onClick={() => setUploadMode('roadmap')}
@@ -2111,7 +2114,7 @@ onClick={() => { navigate(`/project/${id}/board/${item.id}`); setIsEditing(false
                                                     : 'bg-[rgba(255,255,255,0.08)] text-[#a3a3a3] hover:bg-[rgba(255,255,255,0.12)]'
                                             }`}
                                         >
-                                            📊 Roadmap File
+                                            Roadmap File
                                         </button>
                                     </div>
 
@@ -2273,7 +2276,7 @@ onClick={() => { navigate(`/project/${id}/board/${item.id}`); setIsEditing(false
                                             <div className="bg-[rgba(102,184,255,0.1)] border border-[rgba(102,184,255,0.3)] rounded-xl p-4">
                                                 <p className="text-xs text-[#66b8ff] flex gap-2 items-start">
                                                     <span className="mt-0.5">ℹ️</span>
-                                                    <span>Roadmap file should contain tables with columns: Type, Name, Description, Milestone, Epic, Priority, Effort (hrs), Assignee, and Weekly hours.</span>
+                                                    <span>Roadmap file should contain tables with columns: Type, Name, Description, Milestone, Epic, Priority, Effort, Assignee, and Weekly hours.</span>
                                                 </p>
                                             </div>
                                         </div>
@@ -2549,6 +2552,9 @@ onClick={() => { navigate(`/project/${id}/board/${item.id}`); setIsEditing(false
                                         <CheckCircle2 className="w-10 h-10 text-[#E0B954]" />
                                     </div>
                                     <h3 className="text-2xl font-bold text-white mb-2">All Done!</h3>
+                                    <p className="text-[#a3a3a3] mb-6">
+                                        <span className="text-2xl font-bold text-[#E0B954]">{createdTicketCount}</span> tickets created successfully
+                                    </p>
                                     <Button
                                         onClick={() => setShowAIModal(false)}
                                         className="bg-gradient-to-r from-[#E0B954] to-[#B8872A] text-white rounded-xl px-8"
