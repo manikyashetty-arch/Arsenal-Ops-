@@ -29,6 +29,7 @@ import {
     Edit2,
     Calendar,
     Circle,
+    Flag,
 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -720,7 +721,7 @@ const ProjectsPage = () => {
                                         : tab === 'overdue'
                                         ? myTasks.filter(t => t.is_overdue).length
                                         : tab === 'personal'
-                                        ? personalTasks.filter(t => !t.is_converted).length
+                                        ? personalTasks.filter(t => !t.is_converted && t.status !== 'done').length
                                         : myTasks.filter(t => t.status === 'done').length;
                                     return (
                                         <button
@@ -771,8 +772,12 @@ const ProjectsPage = () => {
                                                 // Completed tasks always last
                                                 if (a.status === 'done' && b.status !== 'done') return 1;
                                                 if (a.status !== 'done' && b.status === 'done') return -1;
-                                                return 0;
-                                            }).map(task => (
+                                                // Sort by priority
+                                                const priorityOrder: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 };
+                                                const aPriority = priorityOrder[a.priority?.toLowerCase() || 'medium'] ?? 999;
+                                                const bPriority = priorityOrder[b.priority?.toLowerCase() || 'medium'] ?? 999;
+                                                return aPriority - bPriority;
+                                            }).slice(0, 5).map(task => (
                                                 <div key={task.id} className={`flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-[rgba(255,255,255,0.03)] transition-colors group ${
                                                     task.status === 'done' ? 'opacity-60' : ''
                                                 }`}>
@@ -790,12 +795,25 @@ const ProjectsPage = () => {
                                                     <span className={`flex-1 text-sm truncate ${
                                                         task.status === 'done' ? 'line-through text-[#737373]' : 'text-[#f5f5f5]'
                                                     }`}>{task.title}</span>
-                                                    <span className={`text-xs px-1.5 py-0.5 rounded flex-shrink-0 ${
-                                                        task.priority === 'critical' ? 'bg-red-500/20 text-red-400' :
-                                                        task.priority === 'high' ? 'bg-orange-500/20 text-orange-400' :
-                                                        task.priority === 'medium' ? 'bg-yellow-500/20 text-yellow-400' :
-                                                        'bg-gray-500/20 text-gray-400'
-                                                    }`}>{task.priority}</span>
+                                                    <Badge
+                                                        variant="outline"
+                                                        className="text-xs"
+                                                        style={{
+                                                            borderColor: (['critical', 'high', 'medium', 'low'].includes(task.priority) ? 
+                                                                (task.priority === 'critical' ? '#EF4444' :
+                                                                task.priority === 'high' ? '#F97316' :
+                                                                task.priority === 'medium' ? '#F59E0B' : '#737373') : '#737373') + '40',
+                                                            color: task.priority === 'critical' ? '#EF4444' :
+                                                                task.priority === 'high' ? '#F97316' :
+                                                                task.priority === 'medium' ? '#F59E0B' : '#737373',
+                                                            backgroundColor: (task.priority === 'critical' ? '#EF4444' :
+                                                                task.priority === 'high' ? '#F97316' :
+                                                                task.priority === 'medium' ? '#F59E0B' : '#737373') + '15',
+                                                        }}
+                                                    >
+                                                        <Flag className="w-3 h-3 mr-1" />
+                                                        {task.priority.charAt(0).toUpperCase() + task.priority.slice(1)}
+                                                    </Badge>
                                                     <button
                                                         onClick={() => startEditPersonalTask(task)}
                                                         className="opacity-0 group-hover:opacity-100 flex items-center gap-1 text-xs text-[#E0B954] hover:text-[#C79E3B] flex-shrink-0 transition-opacity"
@@ -820,12 +838,14 @@ const ProjectsPage = () => {
                                                     </button>
                                                 </div>
                                             ))}
-                                            <button
-                                                onClick={() => navigate('/personal-tasks')}
-                                                className="w-full text-center text-xs text-[#737373] hover:text-[#E0B954] py-2.5 transition-colors"
-                                            >
-                                                View all →
-                                            </button>
+                                            {personalTasks.filter(t => !t.is_converted).length > 5 && (
+                                                <button
+                                                    onClick={() => navigate('/personal-tasks')}
+                                                    className="w-full text-center text-xs text-[#737373] hover:text-[#E0B954] py-2.5 transition-colors"
+                                                >
+                                                    View all ({personalTasks.filter(t => !t.is_converted).length - 5} more) →
+                                                </button>
+                                            )}
                                         </div>
                                     )
                                 ) : myTasksLoading ? (

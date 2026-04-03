@@ -61,7 +61,7 @@ const PersonalTasksPage = () => {
     const [showEditDialog, setShowEditDialog] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
     const [filterStatus, setFilterStatus] = useState<'all' | 'todo' | 'done'>('all');
-    const [sortBy, setSortBy] = useState<'date-desc' | 'date-asc' | 'priority'>('date-desc');
+    const [sortBy, setSortBy] = useState<'date-desc' | 'date-asc' | 'priority'>('priority');
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [editingTask, setEditingTask] = useState<PersonalTask | null>(null);
     const [showDatePickerAdd, setShowDatePickerAdd] = useState(false);
