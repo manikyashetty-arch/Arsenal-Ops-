@@ -28,6 +28,7 @@ import {
     Loader2,
     Edit2,
     Calendar,
+    Circle,
 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -392,6 +393,37 @@ const ProjectsPage = () => {
         setEditPersonalTaskForm({ title: '', description: '', priority: 'medium', due_date: '' });
     };
 
+    // Toggle personal task completion
+    const togglePersonalTaskComplete = async (task: PersonalTask) => {
+        if (task.is_converted) {
+            toast.error('Cannot modify a converted task');
+            return;
+        }
+
+        const newStatus = task.status === 'done' ? 'todo' : 'done';
+        try {
+            const res = await fetch(`${API_BASE_URL}/api/personal-tasks/${task.id}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({ status: newStatus })
+            });
+
+            if (res.ok) {
+                setPersonalTasks(personalTasks.map(t =>
+                    t.id === task.id ? { ...t, status: newStatus } : t
+                ));
+                toast.success(newStatus === 'done' ? 'Task completed! 🎉' : 'Task reopened');
+            } else {
+                toast.error('Failed to update task');
+            }
+        } catch (err) {
+            toast.error('Failed to update task');
+        }
+    };
+
     // Fetch my tasks
     const fetchMyTasks = async () => {
         setMyTasksLoading(true);
@@ -735,17 +767,35 @@ const ProjectsPage = () => {
                                         </div>
                                     ) : (
                                         <div className="space-y-1.5">
-                                            {personalTasks.filter(t => !t.is_converted).map(task => (
-                                                <div key={task.id} className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-[rgba(255,255,255,0.03)] transition-colors group">
-                                                    <div className="w-4 h-4 rounded-full border-2 border-[#444] group-hover:border-[#E0B954]/50 flex-shrink-0" />
-                                                    <span className="flex-1 text-sm text-[#f5f5f5] truncate">{task.title}</span>
-                                                    {task.priority !== 'medium' && (
-                                                        <span className={`text-xs px-1.5 py-0.5 rounded flex-shrink-0 ${
-                                                            task.priority === 'critical' ? 'bg-red-500/20 text-red-400' :
-                                                            task.priority === 'high' ? 'bg-orange-500/20 text-orange-400' :
-                                                            'bg-gray-500/20 text-gray-400'
-                                                        }`}>{task.priority}</span>
-                                                    )}
+                                            {personalTasks.filter(t => !t.is_converted).sort((a, b) => {
+                                                // Completed tasks always last
+                                                if (a.status === 'done' && b.status !== 'done') return 1;
+                                                if (a.status !== 'done' && b.status === 'done') return -1;
+                                                return 0;
+                                            }).map(task => (
+                                                <div key={task.id} className={`flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-[rgba(255,255,255,0.03)] transition-colors group ${
+                                                    task.status === 'done' ? 'opacity-60' : ''
+                                                }`}>
+                                                    <button
+                                                        onClick={() => togglePersonalTaskComplete(task)}
+                                                        className="flex-shrink-0 text-[#737373] hover:text-[#E0B954] transition-colors"
+                                                        title={task.status === 'done' ? 'Mark as pending' : 'Mark as complete'}
+                                                    >
+                                                        {task.status === 'done' ? (
+                                                            <CheckCircle2 className="w-4 h-4" />
+                                                        ) : (
+                                                            <Circle className="w-4 h-4" />
+                                                        )}
+                                                    </button>
+                                                    <span className={`flex-1 text-sm truncate ${
+                                                        task.status === 'done' ? 'line-through text-[#737373]' : 'text-[#f5f5f5]'
+                                                    }`}>{task.title}</span>
+                                                    <span className={`text-xs px-1.5 py-0.5 rounded flex-shrink-0 ${
+                                                        task.priority === 'critical' ? 'bg-red-500/20 text-red-400' :
+                                                        task.priority === 'high' ? 'bg-orange-500/20 text-orange-400' :
+                                                        task.priority === 'medium' ? 'bg-yellow-500/20 text-yellow-400' :
+                                                        'bg-gray-500/20 text-gray-400'
+                                                    }`}>{task.priority}</span>
                                                     <button
                                                         onClick={() => startEditPersonalTask(task)}
                                                         className="opacity-0 group-hover:opacity-100 flex items-center gap-1 text-xs text-[#E0B954] hover:text-[#C79E3B] flex-shrink-0 transition-opacity"
@@ -770,6 +820,12 @@ const ProjectsPage = () => {
                                                     </button>
                                                 </div>
                                             ))}
+                                            <button
+                                                onClick={() => navigate('/personal-tasks')}
+                                                className="w-full text-center text-xs text-[#737373] hover:text-[#E0B954] py-2.5 transition-colors"
+                                            >
+                                                View all →
+                                            </button>
                                         </div>
                                     )
                                 ) : myTasksLoading ? (

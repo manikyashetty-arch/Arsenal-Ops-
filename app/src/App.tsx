@@ -4,6 +4,7 @@ import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { Login } from './components/Login';
 import { PasswordChange } from './components/PasswordChange';
 import ProjectsPage from './pages/ProjectsPage';
+import PersonalTasksPage from './pages/PersonalTasksPage';
 import ProjectBoard from './pages/ProjectBoard';
 import ProjectDetail from './pages/ProjectDetail';
 import AdminDashboard from './pages/AdminDashboard';
@@ -133,6 +134,7 @@ function AuthenticatedRoutes() {
       <Routes>
         <Route path="/login" element={<Login />} />
         <Route path="/" element={<ProjectsPage />} />
+        <Route path="/personal-tasks" element={<PersonalTasksPage />} />
         <Route path="/project/:id" element={<ProjectDetail />} />
         <Route path="/project/:id/board" element={<ProjectBoard />} />
         <Route path="/project/:id/board/:ticketId" element={<ProjectBoard />} />
