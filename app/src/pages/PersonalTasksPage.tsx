@@ -13,6 +13,7 @@ import {
     Filter,
     LogOut,
     Settings,
+    Tag,
 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -66,6 +67,13 @@ const PersonalTasksPage = () => {
     const [editingTask, setEditingTask] = useState<PersonalTask | null>(null);
     const [showDatePickerAdd, setShowDatePickerAdd] = useState(false);
     const [showDatePickerEdit, setShowDatePickerEdit] = useState(false);
+    const [showConvertDialog, setShowConvertDialog] = useState(false);
+    const [convertingTask, setConvertingTask] = useState<PersonalTask | null>(null);
+    const [projects, setProjects] = useState<any[]>([]);
+    const [projectMembers, setProjectMembers] = useState<any[]>([]);
+    const [convertProjectId, setConvertProjectId] = useState('');
+    const [convertAssigneeId, setConvertAssigneeId] = useState('');
+    const [convertingTicket, setConvertingTicket] = useState(false);
     const [newTask, setNewTask] = useState({
         title: '',
         description: '',
@@ -101,6 +109,7 @@ const PersonalTasksPage = () => {
     useEffect(() => {
         if (token) {
             fetchTasks();
+            fetchProjects();
         }
     }, [token]);
 
@@ -224,6 +233,70 @@ const PersonalTasksPage = () => {
             }
         } catch (err) {
             toast.error('Failed to delete task');
+        }
+    };
+
+    // Fetch projects
+    const fetchProjects = async () => {
+        try {
+            const response = await fetch(`${API_BASE_URL}/api/projects/`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (response.ok) {
+                setProjects(await response.json());
+            }
+        } catch (err) {
+            console.error('Failed to fetch projects:', err);
+        }
+    };
+
+    // Fetch project members
+    const fetchProjectMembers = async (projectId: string) => {
+        try {
+            const res = await fetch(`${API_BASE_URL}/api/projects/${projectId}`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (res.ok) {
+                const data = await res.json();
+                setProjectMembers(data.developers || []);
+            }
+        } catch (err) {
+            setProjectMembers([]);
+        }
+    };
+
+    // Convert to ticket
+    const convertToTicket = async () => {
+        if (!convertingTask || !convertProjectId) return;
+        setConvertingTicket(true);
+        try {
+            const res = await fetch(`${API_BASE_URL}/api/personal-tasks/${convertingTask.id}/convert-to-ticket`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({
+                    project_id: parseInt(convertProjectId),
+                    type: 'task',
+                    assignee_developer_id: convertAssigneeId ? parseInt(convertAssigneeId) : undefined
+                })
+            });
+            if (res.ok) {
+                const data = await res.json();
+                const assigneeName = data.work_item.assignee_name ? ` → assigned to ${data.work_item.assignee_name}` : '';
+                toast.success(`Ticket ${data.work_item.key} created!${assigneeName}`);
+                setShowConvertDialog(false);
+                setConvertingTask(null);
+                setConvertProjectId('');
+                setConvertAssigneeId('');
+                setProjectMembers([]);
+                fetchTasks();
+            } else {
+                toast.error('Failed to convert');
+            }
+        } catch (err) {
+            toast.error('Failed to convert');
+        }
+        finally {
+            setConvertingTicket(false);
         }
     };
 
@@ -493,6 +566,13 @@ const PersonalTasksPage = () => {
                                     {!task.is_converted && (
                                         <div className="flex-shrink-0 flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                                             <button
+                                                onClick={() => { setConvertingTask(task); setConvertProjectId(''); setConvertAssigneeId(''); setShowConvertDialog(true); }}
+                                                className="p-2 rounded-lg hover:bg-[rgba(224,185,84,0.1)] text-[#737373] hover:text-[#E0B954] transition-colors"
+                                                title="Tag to project"
+                                            >
+                                                <Tag className="w-4 h-4" />
+                                            </button>
+                                            <button
                                                 onClick={() => startEdit(task)}
                                                 className="p-2 rounded-lg hover:bg-[rgba(244,246,255,0.08)] text-[#737373] hover:text-[#E0B954] transition-colors"
                                             >
@@ -731,6 +811,74 @@ const PersonalTasksPage = () => {
                                 Cancel
                             </Button>
                         </div>
+                    </div>
+                </DialogContent>
+            </Dialog>
+
+            {/* Convert to Project Ticket Dialog */}
+            <Dialog open={showConvertDialog} onOpenChange={(open) => {
+                setShowConvertDialog(open);
+                if (!open) {
+                    setConvertProjectId('');
+                    setConvertAssigneeId('');
+                    setProjectMembers([]);
+                }
+            }}>
+                <DialogContent className="bg-[#0d0d0d] border-[rgba(255,255,255,0.08)] text-white">
+                    <DialogHeader>
+                        <DialogTitle>Tag to Project</DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-4 pt-2">
+                        {convertingTask && (
+                            <div className="p-3 bg-[#0A0A14] rounded-lg border border-[rgba(255,255,255,0.05)]">
+                                <p className="text-sm text-[#a3a3a3]"><span className="font-semibold text-white">{convertingTask.title}</span></p>
+                            </div>
+                        )}
+                        <div>
+                            <label className="text-xs text-[#737373] mb-1 block">Select Project</label>
+                            <Select value={convertProjectId} onValueChange={(v) => {
+                                setConvertProjectId(v);
+                                fetchProjectMembers(v);
+                            }}>
+                                <SelectTrigger className="bg-[#0A0A14] border-[rgba(255,255,255,0.08)] text-white">
+                                    <SelectValue placeholder="Choose a project..." />
+                                </SelectTrigger>
+                                <SelectContent className="bg-[#0d0d0d] border-[rgba(255,255,255,0.08)]">
+                                    {projects.map((project) => (
+                                        <SelectItem key={project.id} value={project.id.toString()}>
+                                            {project.name}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
+                        {projectMembers.length > 0 && (
+                            <div>
+                                <label className="text-xs text-[#737373] mb-1 block">Assign To <span className="text-[#555]">(optional)</span></label>
+                                <Select value={convertAssigneeId} onValueChange={setConvertAssigneeId}>
+                                    <SelectTrigger className="bg-[#0A0A14] border-[rgba(255,255,255,0.08)] text-white">
+                                        <SelectValue placeholder="Select team member..." />
+                                    </SelectTrigger>
+                                    <SelectContent className="bg-[#0d0d0d] border-[rgba(255,255,255,0.08)]">
+                                        {projectMembers.map((member) => (
+                                            <SelectItem key={member.id} value={member.id.toString()}>
+                                                {member.name}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                                {convertAssigneeId && (
+                                    <p className="text-xs text-[#E0B954] mt-1">An email notification will be sent to the assignee</p>
+                                )}
+                            </div>
+                        )}
+                        <Button
+                            onClick={convertToTicket}
+                            disabled={convertingTicket || !convertProjectId}
+                            className="w-full bg-gradient-to-r from-[#E0B954] to-[#C79E3B] text-[#080808] font-semibold hover:opacity-90"
+                        >
+                            {convertingTicket ? 'Creating...' : 'Create Project Ticket'}
+                        </Button>
                     </div>
                 </DialogContent>
             </Dialog>
