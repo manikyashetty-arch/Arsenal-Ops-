@@ -428,7 +428,7 @@ async def google_login(
         user = User(
             email=user_info['email'],
             name=user_info['name'],
-            hashed_password='',  # SSO users don't have password, use empty string
+            hashed_password=None,  # SSO users have no password
             role=UserRole.DEVELOPER.value,
             is_active=True,
             is_first_login=False,  # SSO users don't need password change

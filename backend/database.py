@@ -433,6 +433,24 @@ def run_migrations():
         except Exception as e:
             print(f"[MIGRATION ERROR] {e}")
 
+        # Migration: Make hashed_password nullable for SSO users
+        try:
+            result = conn.execute(text("""
+                SELECT is_nullable
+                FROM information_schema.columns
+                WHERE table_name = 'users' AND column_name = 'hashed_password'
+            """))
+            row = result.fetchone()
+            if row and row[0] == 'NO':
+                print("[MIGRATION] Making hashed_password nullable for SSO users...")
+                conn.execute(text("""
+                    ALTER TABLE users ALTER COLUMN hashed_password DROP NOT NULL
+                """))
+                conn.commit()
+                print("[MIGRATION] hashed_password is now nullable!")
+        except Exception as e:
+            print(f"[MIGRATION ERROR] hashed_password nullable: {e}")
+
 def init_db():
     """Initialize database tables"""
     from models import (
