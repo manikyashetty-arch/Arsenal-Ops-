@@ -360,12 +360,6 @@ const AdminDashboard = () => {
     const [userForm, setUserForm] = useState<{ email: string; name: string; roles: string[] }>({ email: '', name: '', roles: ['developer'] });
     const [generatedPassword, setGeneratedPassword] = useState<string | null>(null);
 
-    const handleCreateUser = () => {
-        setUserForm({ email: '', name: '', roles: ['developer'] });
-        setGeneratedPassword(null);
-        setShowUserModal(true);
-    };
-
     const handleRoleToggle = (role: string) => {
         setUserForm(f => {
             const roles = f.roles.includes(role)
@@ -439,29 +433,6 @@ const AdminDashboard = () => {
             }
         } catch {
             toast.error('Failed to update role');
-        }
-    };
-
-    const handleDeleteUser = async (user: User) => {
-        if (!confirm(`Are you sure you want to deactivate ${user.name}? They will no longer be able to login.`)) return;
-
-        try {
-            const response = await fetch(`${API_BASE_URL}/api/auth/admin/users/${user.id}`, {
-                method: 'DELETE',
-                headers: { 
-                    'Authorization': `Bearer ${token}`
-                },
-            });
-
-            if (response.ok) {
-                toast.success(`User ${user.name} has been deactivated`);
-                fetchData();
-            } else {
-                const error = await response.json();
-                toast.error(error.detail || 'Failed to delete user');
-            }
-        } catch {
-            toast.error('Failed to delete user');
         }
     };
 
@@ -941,13 +912,6 @@ const AdminDashboard = () => {
                             <div className="space-y-4">
                                 <div className="flex items-center justify-between">
                                     <h2 className="text-lg font-semibold text-white">User Management</h2>
-                                    <Button
-                                        onClick={handleCreateUser}
-                                        className="bg-gradient-to-r from-[#E0B954] to-[#B8872A] hover:from-[#C79E3B] hover:to-[#B8872A] text-white rounded-xl h-10 px-4"
-                                    >
-                                        <Plus className="w-4 h-4 mr-2" />
-                                        Add User
-                                    </Button>
                                 </div>
                                 <div className="bg-[#0d0d0d] border border-[rgba(255,255,255,0.05)] rounded-xl overflow-visible">
                                     <table className="w-full">
@@ -958,7 +922,6 @@ const AdminDashboard = () => {
                                                 <th className="text-left text-xs font-medium text-[#737373] py-3 px-4">Status</th>
                                                 <th className="text-left text-xs font-medium text-[#737373] py-3 px-4">Last Login</th>
                                                 <th className="text-left text-xs font-medium text-[#737373] py-3 px-4">Restrictions</th>
-                                                <th className="text-right text-xs font-medium text-[#737373] py-3 px-4">Actions</th>
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-[rgba(255,255,255,0.03)]">
@@ -1042,19 +1005,6 @@ const AdminDashboard = () => {
                                                             <Shield className="w-3.5 h-3.5 mr-1" />
                                                             Restrictions
                                                         </Button>
-                                                    </td>
-                                                    <td className="py-3 px-4">
-                                                        <div className="flex items-center justify-end gap-2">
-                                                            <Button
-                                                                variant="ghost"
-                                                                size="sm"
-                                                                onClick={() => handleDeleteUser(user)}
-                                                                className="text-[#737373] hover:text-red-400 h-8"
-                                                            >
-                                                                <Trash2 className="w-3.5 h-3.5 mr-1" />
-                                                                Delete
-                                                            </Button>
-                                                        </div>
                                                     </td>
                                                 </tr>
                                             ))}

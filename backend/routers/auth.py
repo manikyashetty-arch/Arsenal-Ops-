@@ -447,15 +447,20 @@ async def google_login(
         db.commit()
         db.refresh(user)
         
-        # Also create as Developer/Employee
-        existing_dev = db.query(Developer).filter(Developer.email == user_info['email']).first()
-        if not existing_dev:
-            new_developer = Developer(
-                name=user_info['name'],
-                email=user_info['email']
-            )
-            db.add(new_developer)
-            db.commit()
+        # Also create as Developer/Employee - ensure this always happens
+        try:
+            existing_dev = db.query(Developer).filter(Developer.email == user_info['email']).first()
+            if not existing_dev:
+                new_developer = Developer(
+                    name=user_info['name'],
+                    email=user_info['email']
+                )
+                db.add(new_developer)
+                db.commit()
+        except Exception as dev_error:
+            db.rollback()
+            print(f"Warning: Failed to create developer record for {user_info['email']}: {dev_error}")
+            # Continue anyway - user account was created successfully
     
     # Update last login timestamp
     user.last_login_at = datetime.utcnow()

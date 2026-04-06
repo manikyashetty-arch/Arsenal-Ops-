@@ -75,6 +75,24 @@ SPECIALIZATIONS = [
 async def get_dashboard_stats(db: Session = Depends(get_db)):
     """Get admin dashboard statistics"""
     from models.sprint import Sprint
+    from models.developer import Developer
+    from models.user import User
+    
+    # Sync users to developers - ensure every user has a developer record
+    try:
+        users = db.query(User).filter(User.is_active == True).all()
+        for user in users:
+            existing_dev = db.query(Developer).filter(Developer.email == user.email).first()
+            if not existing_dev:
+                new_developer = Developer(
+                    name=user.name,
+                    email=user.email
+                )
+                db.add(new_developer)
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        print(f"Warning: Failed to sync users to developers: {e}")
     
     total_employees = db.query(Developer).count()
     total_projects = db.query(Project).count()
@@ -259,7 +277,9 @@ async def get_employee_in_progress_tickets(employee_id: int, db: Session = Depen
 @router.post("/employees", response_model=EmployeeResponse)
 async def create_employee(employee: EmployeeCreate, db: Session = Depends(get_db)):
     """Create a new employee/developer"""
-    # Check if email already exists
+    from models.user import User, UserRole
+    
+    # Check if email already exists in developers
     existing = db.query(Developer).filter(Developer.email == employee.email).first()
     if existing:
         raise HTTPException(status_code=400, detail="Email already exists")
@@ -282,6 +302,20 @@ async def create_employee(employee: EmployeeCreate, db: Session = Depends(get_db
     db.add(new_employee)
     db.commit()
     db.refresh(new_employee)
+    
+    # Also create a User record if it doesn't exist
+    existing_user = db.query(User).filter(User.email == employee.email).first()
+    if not existing_user:
+        new_user = User(
+            email=employee.email,
+            name=employee.name,
+            hashed_password='',  # Empty password for manually created employees
+            role=UserRole.DEVELOPER.value,
+            is_active=True,
+            is_first_login=False
+        )
+        db.add(new_user)
+        db.commit()
     
     return EmployeeResponse(
         id=new_employee.id,
@@ -350,7 +384,9 @@ async def update_employee(
 
 @router.delete("/employees/{employee_id}")
 async def delete_employee(employee_id: int, db: Session = Depends(get_db)):
-    """Delete an employee/developer"""
+    """Delete an employee/developer and their user account"""
+    from models.user import User
+    
     employee = db.query(Developer).filter(Developer.id == employee_id).first()
     if not employee:
         raise HTTPException(status_code=404, detail="Employee not found")
@@ -360,10 +396,16 @@ async def delete_employee(employee_id: int, db: Session = Depends(get_db)):
         {"assignee_id": None}
     )
     
+    # Delete corresponding user record
+    user = db.query(User).filter(User.email == employee.email).first()
+    if user:
+        db.delete(user)
+    
+    # Delete employee
     db.delete(employee)
     db.commit()
     
-    return {"message": "Employee deleted"}
+    return {"message": "Employee and user account deleted"}
 
 
 @router.get("/specializations")
