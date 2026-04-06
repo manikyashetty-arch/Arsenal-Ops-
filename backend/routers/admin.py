@@ -256,6 +256,7 @@ async def get_employee_in_progress_tickets(employee_id: int, db: Session = Depen
     return result
 
 
+@router.post("/employees", response_model=EmployeeResponse)
 async def create_employee(employee: EmployeeCreate, db: Session = Depends(get_db)):
     """Create a new employee/developer"""
     # Check if email already exists
