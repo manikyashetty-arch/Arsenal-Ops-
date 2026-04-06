@@ -202,6 +202,7 @@ const ProjectBoard = () => {
     // AI Planning flow states
     const [showAIModal, setShowAIModal] = useState(false);
     const [aiStep, setAiStep] = useState<AIStep>('upload');
+    const [uploadMode, setUploadMode] = useState<'prd' | 'roadmap'>('prd');  // Toggle between PRD and Roadmap
     const [prdFile, setPrdFile] = useState<File | null>(null);
     const [prdText, setPrdText] = useState('');
     const [additionalContext, setAdditionalContext] = useState('');
@@ -211,6 +212,10 @@ const ProjectBoard = () => {
     const [editingArchitecture, setEditingArchitecture] = useState<Architecture | null>(null);
     const [generatedTickets, setGeneratedTickets] = useState<GeneratedTicket[]>([]);
     const [ticketsSummary, setTicketsSummary] = useState<{ total_story_points: number; total_estimated_hours: number; sprint_recommendation: string } | null>(null);
+    const [roadmapFile, setRoadmapFile] = useState<File | null>(null);
+    const [roadmapSummary, setRoadmapSummary] = useState<any>(null);
+    const [roadmapParsedData, setRoadmapParsedData] = useState<any>(null);
+    const [createdTicketCount, setCreatedTicketCount] = useState<number>(0);
     const fileInputRef = useRef<HTMLInputElement>(null);
     
     // Sprint and timeline states
@@ -712,6 +717,7 @@ const ProjectBoard = () => {
     const handleAIGenerate = () => {
         setShowAIModal(true);
         setAiStep('upload');
+        setUploadMode('prd');
         setPrdFile(null);
         setPrdText('');
         setAdditionalContext('');
@@ -720,6 +726,9 @@ const ProjectBoard = () => {
         setSelectedArchitectureId(null);
         setGeneratedTickets([]);
         setTicketsSummary(null);
+        setRoadmapFile(null);
+        setRoadmapSummary(null);
+        setRoadmapParsedData(null);
     };
 
     // Handle file upload
@@ -732,6 +741,22 @@ const ProjectBoard = () => {
                 return;
             }
             setPrdFile(file);
+        }
+    };
+
+    // Handle roadmap file upload
+    const handleRoadmapFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (file) {
+            const isExcel = file.type === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' || 
+                           file.type === 'application/vnd.ms-excel' ||
+                           file.name.endsWith('.xlsx') ||
+                           file.name.endsWith('.xls');
+            if (!isExcel) {
+                toast.error('Please upload an Excel file (.xlsx or .xls)');
+                return;
+            }
+            setRoadmapFile(file);
         }
     };
 
@@ -786,6 +811,46 @@ const ProjectBoard = () => {
             }
         } catch (err) {
             toast.error('Failed to analyze PRD');
+            setAiStep('upload');
+        } finally {
+            setIsGenerating(false);
+        }
+    };
+
+    // Parse Roadmap
+    const handleParseRoadmap = async () => {
+        if (!project || !roadmapFile) {
+            toast.error('Please select a roadmap file');
+            return;
+        }
+
+        setAiStep('analyzing');
+        setIsGenerating(true);
+
+        try {
+            const formData = new FormData();
+            formData.append('file', roadmapFile);
+            formData.append('project_id', String(project.id));
+            
+            const response = await fetch(`${API_BASE_URL}/api/roadmap/parse-file`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}` },
+                body: formData,
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                setRoadmapSummary(data.summary);
+                setRoadmapParsedData(data.parsed_data);
+                setAiStep('architectures');  // Reuse architectures step for summary display
+                toast.success('Roadmap parsed successfully!');
+            } else {
+                const error = await response.json();
+                toast.error(error.detail || 'Failed to parse roadmap');
+                setAiStep('upload');
+            }
+        } catch (err) {
+            toast.error('Failed to parse roadmap');
             setAiStep('upload');
         } finally {
             setIsGenerating(false);
@@ -858,7 +923,7 @@ const ProjectBoard = () => {
         }
     };
 
-    // Commit architecture and create tickets
+    // Commit architecture and create tickets (PRD mode)
     const handleCommitArchitecture = async () => {
         if (!project || !selectedArchitectureId) return;
 
@@ -888,6 +953,7 @@ const ProjectBoard = () => {
                 
                 setAiStep('done');
                 toast.success(`Created ${data.tickets_created} tickets${data.sprints?.length ? ` in ${data.sprints.length} sprints` : ''}!`);
+                setCreatedTicketCount(data.tickets_created);
                 
                 // Refresh work items and sprints with auth headers
                 const [itemsRes, sprintsRes] = await Promise.all([
@@ -917,6 +983,56 @@ const ProjectBoard = () => {
             }
         } catch (err) {
             toast.error('Failed to commit architecture');
+            setAiStep('preview');
+        } finally {
+            setIsGenerating(false);
+        }
+    };
+
+    // Commit roadmap and create tickets (Roadmap mode)
+    const handleCommitRoadmap = async () => {
+        if (!project || !roadmapParsedData) return;
+
+        setAiStep('committing');
+        setIsGenerating(true);
+
+        try {
+            const response = await fetch(`${API_BASE_URL}/api/roadmap/commit`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({
+                    project_id: project.id,
+                    parsed_data: roadmapParsedData,
+                }),
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                
+                setAiStep('done');
+                toast.success(`Created ${data.tickets_created} tasks in ${data.epics_created} epics!${data.assignees_not_found > 0 ? ` (${data.assignees_not_found} auto-assigned)` : ''}`);
+                setCreatedTicketCount(data.tickets_created);
+                
+                // Refresh work items
+                const itemsRes = await fetch(`${API_BASE_URL}/api/workitems/?project_id=${project.id}`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (itemsRes.ok) {
+                    setWorkItems(await itemsRes.json());
+                }
+                refreshProjectStats();
+                
+                // Close modal after delay
+                setTimeout(() => {
+                    setShowAIModal(false);
+                }, 2000);
+            } else {
+                const error = await response.json();
+                toast.error(error.detail || 'Failed to commit roadmap');
+                setAiStep('preview');
+            }
+        } catch (err) {
+            toast.error('Failed to commit roadmap');
             setAiStep('preview');
         } finally {
             setIsGenerating(false);
@@ -1978,8 +2094,33 @@ onClick={() => { navigate(`/project/${id}/board/${item.id}`); setIsEditing(false
                             {/* Step: Upload */}
                             {aiStep === 'upload' && (
                                 <div className="space-y-6">
-                                    {/* File Upload Zone */}
-                                    <div>
+                                    {/* Upload Mode Toggle */}
+                                    <div className="flex gap-3">
+                                        <button
+                                            onClick={() => setUploadMode('prd')}
+                                            className={`flex-1 py-3 px-4 rounded-lg font-medium transition-all ${
+                                                uploadMode === 'prd'
+                                                    ? 'bg-[#E0B954] text-black'
+                                                    : 'bg-[rgba(255,255,255,0.08)] text-[#a3a3a3] hover:bg-[rgba(255,255,255,0.12)]'
+                                            }`}
+                                        >
+                                            PRD Document
+                                        </button>
+                                        <button
+                                            onClick={() => setUploadMode('roadmap')}
+                                            className={`flex-1 py-3 px-4 rounded-lg font-medium transition-all ${
+                                                uploadMode === 'roadmap'
+                                                    ? 'bg-[#E0B954] text-black'
+                                                    : 'bg-[rgba(255,255,255,0.08)] text-[#a3a3a3] hover:bg-[rgba(255,255,255,0.12)]'
+                                            }`}
+                                        >
+                                            Roadmap File
+                                        </button>
+                                    </div>
+
+                                    {/* PRD Mode */}
+                                    {uploadMode === 'prd' && (
+                                        <div className="space-y-6">
                                         <label className="text-sm font-medium text-[#a3a3a3] block mb-3">Upload PRD Document</label>
                                         <div 
                                             onClick={() => fileInputRef.current?.click()}
@@ -2020,70 +2161,126 @@ onClick={() => { navigate(`/project/${id}/board/${item.id}`); setIsEditing(false
                                                 </>
                                             )}
                                         </div>
-                                    </div>
 
-                                    {/* OR Divider */}
-                                    <div className="flex items-center gap-4">
-                                        <div className="flex-1 h-px bg-[rgba(255,255,255,0.07)]" />
-                                        <span className="text-xs text-[#737373] font-medium">OR</span>
-                                        <div className="flex-1 h-px bg-[rgba(255,255,255,0.07)]" />
-                                    </div>
+                                        {/* OR Divider */}
+                                        <div className="flex items-center gap-4">
+                                            <div className="flex-1 h-px bg-[rgba(255,255,255,0.07)]" />
+                                            <span className="text-xs text-[#737373] font-medium">OR</span>
+                                            <div className="flex-1 h-px bg-[rgba(255,255,255,0.07)]" />
+                                        </div>
 
-                                    {/* Text Input */}
-                                    <div>
-                                        <label className="text-sm font-medium text-[#a3a3a3] block mb-3">Enter PRD Content Manually</label>
-                                        <Textarea
-                                            value={prdText}
-                                            onChange={(e) => setPrdText(e.target.value)}
-                                            placeholder="Describe your project requirements, features, user stories, technical specifications..."
-                                            className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl min-h-[180px] placeholder:text-[#334155] resize-none"
-                                        />
-                                    </div>
+                                        {/* Text Input */}
+                                        <div>
+                                            <label className="text-sm font-medium text-[#a3a3a3] block mb-3">Enter PRD Content Manually</label>
+                                            <Textarea
+                                                value={prdText}
+                                                onChange={(e) => setPrdText(e.target.value)}
+                                                placeholder="Describe your project requirements, features, user stories, technical specifications..."
+                                                className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl min-h-[180px] placeholder:text-[#334155] resize-none"
+                                            />
+                                        </div>
 
-                                    {/* Additional Context */}
-                                    <div>
-                                        <label className="text-sm font-medium text-[#a3a3a3] block mb-3">Additional Context (Optional)</label>
-                                        <Textarea
-                                            value={additionalContext}
-                                            onChange={(e) => setAdditionalContext(e.target.value)}
-                                            placeholder="Budget constraints, team size, timeline, preferred technologies, existing infrastructure..."
-                                            className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl min-h-[100px] placeholder:text-[#334155] resize-none"
-                                        />
-                                    </div>
+                                        {/* Additional Context */}
+                                        <div>
+                                            <label className="text-sm font-medium text-[#a3a3a3] block mb-3">Additional Context (Optional)</label>
+                                            <Textarea
+                                                value={additionalContext}
+                                                onChange={(e) => setAdditionalContext(e.target.value)}
+                                                placeholder="Budget constraints, team size, timeline, preferred technologies, existing infrastructure..."
+                                                className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl min-h-[100px] placeholder:text-[#334155] resize-none"
+                                            />
+                                        </div>
 
-                                    {/* Timeline */}
-                                    <div>
-                                        <label className="text-sm font-medium text-[#a3a3a3] block mb-3">
-                                            <Calendar className="w-4 h-4 inline mr-2" />
-                                            Project Timeline (Optional)
-                                        </label>
-                                        <div className="grid grid-cols-2 gap-4">
-                                            <div>
-                                                <label className="text-xs text-[#737373] block mb-1.5">Start Date</label>
-                                                <Input
-                                                    type="date"
-                                                    value={startDate}
-                                                    onChange={(e) => setStartDate(e.target.value)}
-                                                    className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl h-10"
-                                                />
+                                        {/* Timeline */}
+                                        <div>
+                                            <label className="text-sm font-medium text-[#a3a3a3] block mb-3">
+                                                <Calendar className="w-4 h-4 inline mr-2" />
+                                                Project Timeline (Optional)
+                                            </label>
+                                            <div className="grid grid-cols-2 gap-4">
+                                                <div>
+                                                    <label className="text-xs text-[#737373] block mb-1.5">Start Date</label>
+                                                    <Input
+                                                        type="date"
+                                                        value={startDate}
+                                                        onChange={(e) => setStartDate(e.target.value)}
+                                                        className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl h-10"
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="text-xs text-[#737373] block mb-1.5">End Date</label>
+                                                    <Input
+                                                        type="date"
+                                                        value={endDate}
+                                                        onChange={(e) => setEndDate(e.target.value)}
+                                                        className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl h-10"
+                                                    />
+                                                </div>
                                             </div>
+                                            {startDate && endDate && (
+                                                <p className="text-xs text-[#737373] mt-2">
+                                                    {Math.ceil((new Date(endDate).getTime() - new Date(startDate).getTime()) / (1000 * 60 * 60 * 24 * 7))} weeks 
+                                                    = ~{Math.max(1, Math.ceil((new Date(endDate).getTime() - new Date(startDate).getTime()) / (1000 * 60 * 60 * 24 * 14)))} sprints (2-week each)
+                                                </p>
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
+                                    {uploadMode === 'roadmap' && (
+                                        <div className="space-y-6">
                                             <div>
-                                                <label className="text-xs text-[#737373] block mb-1.5">End Date</label>
-                                                <Input
-                                                    type="date"
-                                                    value={endDate}
-                                                    onChange={(e) => setEndDate(e.target.value)}
-                                                    className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl h-10"
-                                                />
+                                                <label className="text-sm font-medium text-[#a3a3a3] block mb-3">Upload Roadmap File</label>
+                                                <div 
+                                                    onClick={() => {
+                                                        const input = document.createElement('input');
+                                                        input.type = 'file';
+                                                        input.accept = '.xlsx,.xls';
+                                                        input.onchange = (e) => {
+                                                            const file = (e.target as HTMLInputElement).files?.[0];
+                                                            if (file) handleRoadmapFileUpload({target: {files: [file]}} as any);
+                                                        };
+                                                        input.click();
+                                                    }}
+                                                    className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all ${
+                                                        roadmapFile 
+                                                            ? 'border-[#E0B954] bg-[#E0B954]/5' 
+                                                            : 'border-[rgba(255,255,255,0.08)] hover:border-[#E0B954]/50 hover:bg-[rgba(255,255,255,0.02)]'
+                                                    }`}
+                                                >
+                                                    {roadmapFile ? (
+                                                        <div className="flex items-center justify-center gap-3">
+                                                            <div className="w-12 h-12 rounded-xl bg-[#E0B954]/20 flex items-center justify-center">
+                                                                <FileText className="w-6 h-6 text-[#E0B954]" />
+                                                            </div>
+                                                            <div className="text-left">
+                                                                <p className="text-white font-medium">{roadmapFile.name}</p>
+                                                                <p className="text-xs text-[#737373]">{(roadmapFile.size / 1024).toFixed(1)} KB</p>
+                                                            </div>
+                                                            <button 
+                                                                onClick={(e) => { e.stopPropagation(); setRoadmapFile(null); }}
+                                                                className="p-2 rounded-lg hover:bg-[rgba(255,255,255,0.08)] text-[#737373] hover:text-red-400"
+                                                            >
+                                                                <X className="w-4 h-4" />
+                                                            </button>
+                                                        </div>
+                                                    ) : (
+                                                        <>
+                                                            <Upload className="w-10 h-10 text-[#737373] mx-auto mb-3" />
+                                                            <p className="text-[#a3a3a3] mb-1">Click to upload or drag and drop</p>
+                                                            <p className="text-xs text-[#737373]">Excel files (.xlsx, .xls)</p>
+                                                        </>
+                                                    )}
+                                                </div>
+                                            </div>
+
+                                            <div className="bg-[rgba(102,184,255,0.1)] border border-[rgba(102,184,255,0.3)] rounded-xl p-4">
+                                                <p className="text-xs text-[#66b8ff] flex gap-2 items-start">
+                                                    <span className="mt-0.5">ℹ️</span>
+                                                    <span>Roadmap file should contain tables with columns: Type, Name, Description, Milestone, Epic, Priority, Effort, Assignee, and Weekly hours.</span>
+                                                </p>
                                             </div>
                                         </div>
-                                        {startDate && endDate && (
-                                            <p className="text-xs text-[#737373] mt-2">
-                                                {Math.ceil((new Date(endDate).getTime() - new Date(startDate).getTime()) / (1000 * 60 * 60 * 24 * 7))} weeks 
-                                                = ~{Math.max(1, Math.ceil((new Date(endDate).getTime() - new Date(startDate).getTime()) / (1000 * 60 * 60 * 24 * 14)))} sprints (2-week each)
-                                            </p>
-                                        )}
-                                    </div>
+                                    )}
                                 </div>
                             )}
 
@@ -2101,10 +2298,10 @@ onClick={() => { navigate(`/project/${id}/board/${item.id}`); setIsEditing(false
                                 </div>
                             )}
 
-                            {/* Step: Architecture Selection */}
+                            {/* Step: Architecture Selection / Roadmap Summary */}
                             {aiStep === 'architectures' && (
                                 <div className="space-y-6">
-                                    {/* Analysis Summary */}
+                                    {/* PRD Analysis Summary */}
                                     {analysis && (
                                         <div className="bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.07)] rounded-xl p-5">
                                             <h3 className="text-sm font-semibold text-white mb-3 flex items-center gap-2">
@@ -2141,21 +2338,105 @@ onClick={() => { navigate(`/project/${id}/board/${item.id}`); setIsEditing(false
                                         </div>
                                     )}
 
-                                    {/* Architecture Cards */}
-                                    <div>
-                                        <h3 className="text-sm font-semibold text-white mb-4">Select Architecture</h3>
-                                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                                            {architectures.map((arch) => (
-                                                <ArchitectureCard
-                                                    key={arch.id}
-                                                    architecture={arch}
-                                                    isSelected={selectedArchitectureId === arch.id}
-                                                    onSelect={() => handleSelectArchitecture(arch.id)}
-                                                    onViewFullScreen={() => setEditingArchitecture(arch)}
-                                                />
-                                            ))}
+                                    {/* Roadmap Summary */}
+                                    {roadmapSummary && (
+                                        <div className="bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.07)] rounded-xl p-5">
+                                            <h3 className="text-sm font-semibold text-white mb-4 flex items-center gap-2">
+                                                <Target className="w-4 h-4 text-[#E0B954]" />
+                                                Roadmap Summary
+                                            </h3>
+
+                                            {/* Key Stats */}
+                                            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+                                                <div className="bg-[rgba(102,184,255,0.1)] rounded-lg p-3">
+                                                    <p className="text-xs text-[#737373] mb-1">Epics</p>
+                                                    <p className="text-lg font-bold text-[#66b8ff]">{roadmapSummary.total_epics}</p>
+                                                </div>
+                                                <div className="bg-[rgba(224,185,84,0.1)] rounded-lg p-3">
+                                                    <p className="text-xs text-[#737373] mb-1">Tasks</p>
+                                                    <p className="text-lg font-bold text-[#E0B954]">{roadmapSummary.total_tasks}</p>
+                                                </div>
+                                                <div className="bg-[rgba(16,185,129,0.1)] rounded-lg p-3">
+                                                    <p className="text-xs text-[#737373] mb-1">Team Size</p>
+                                                    <p className="text-lg font-bold text-[#10b981]">{roadmapSummary.total_assignees}</p>
+                                                </div>
+                                                <div className="bg-[rgba(245,158,11,0.1)] rounded-lg p-3">
+                                                    <p className="text-xs text-[#737373] mb-1">Duration</p>
+                                                    <p className="text-lg font-bold text-[#F59E0B]">{roadmapSummary.timeline.duration_weeks}w</p>
+                                                </div>
+                                            </div>
+
+                                            {/* Timeline */}
+                                            <div className="mb-4 pb-4 border-b border-[rgba(255,255,255,0.07)]">
+                                                <p className="text-xs font-medium text-[#737373] mb-2">Timeline</p>
+                                                <p className="text-sm text-[#a3a3a3]">
+                                                    {roadmapSummary.timeline.start} → {roadmapSummary.timeline.end}
+                                                </p>
+                                            </div>
+
+                                            {/* Team Members */}
+                                            {roadmapSummary.assignees && roadmapSummary.assignees.length > 0 && (
+                                                <div className="mb-4 pb-4 border-b border-[rgba(255,255,255,0.07)]">
+                                                    <p className="text-xs font-medium text-[#737373] mb-2">Team Members</p>
+                                                    <div className="flex flex-wrap gap-2">
+                                                        {roadmapSummary.assignees.map((assignee: string, i: number) => (
+                                                            <span key={i} className="px-2.5 py-1 rounded-lg bg-[rgba(255,255,255,0.05)] text-[#a3a3a3] text-xs">
+                                                                {assignee}
+                                                            </span>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {/* Warnings */}
+                                            {roadmapSummary.warnings && roadmapSummary.warnings.length > 0 && (
+                                                <div className="mb-4">
+                                                    <p className="text-xs font-medium text-[#f59e0b] mb-2">⚠️ Warnings ({roadmapSummary.warnings.length})</p>
+                                                    <div className="space-y-1.5">
+                                                        {roadmapSummary.warnings.slice(0, 3).map((warning: any, i: number) => (
+                                                            <div key={i} className="text-xs text-[#737373] bg-[rgba(245,158,11,0.08)] p-2 rounded">
+                                                                <p className="font-medium text-[#f59e0b]">{warning.issue}</p>
+                                                                <p className="text-xs">{warning.task}: {warning.detail}</p>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {/* Conflicts */}
+                                            {roadmapSummary.conflicts && roadmapSummary.conflicts.length > 0 && (
+                                                <div>
+                                                    <p className="text-xs font-medium text-[#ef4444] mb-2">🔴 Conflicts ({roadmapSummary.conflicts.length})</p>
+                                                    <div className="space-y-1.5">
+                                                        {roadmapSummary.conflicts.slice(0, 2).map((conflict: any, i: number) => (
+                                                            <div key={i} className="text-xs text-[#737373] bg-[rgba(239,68,68,0.08)] p-2 rounded">
+                                                                <p className="font-medium text-[#ef4444]">{conflict.assignee} - Week {conflict.week}</p>
+                                                                <p>{conflict.total_hrs}h scheduled (tasks: {conflict.tasks.join(', ')})</p>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
                                         </div>
-                                    </div>
+                                    )}
+
+                                    {/* Architecture Cards (PRD Mode) */}
+                                    {!roadmapSummary && (
+                                        <div>
+                                            <h3 className="text-sm font-semibold text-white mb-4">Select Architecture</h3>
+                                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                                                {architectures.map((arch) => (
+                                                    <ArchitectureCard
+                                                        key={arch.id}
+                                                        architecture={arch}
+                                                        isSelected={selectedArchitectureId === arch.id}
+                                                        onSelect={() => handleSelectArchitecture(arch.id)}
+                                                        onViewFullScreen={() => setEditingArchitecture(arch)}
+                                                    />
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
                             )}
 
@@ -2271,8 +2552,8 @@ onClick={() => { navigate(`/project/${id}/board/${item.id}`); setIsEditing(false
                                         <CheckCircle2 className="w-10 h-10 text-[#E0B954]" />
                                     </div>
                                     <h3 className="text-2xl font-bold text-white mb-2">All Done!</h3>
-                                    <p className="text-[#737373] text-center max-w-md mb-6">
-                                        {generatedTickets.length} tickets have been created and assigned to your team.
+                                    <p className="text-[#a3a3a3] mb-6">
+                                        <span className="text-2xl font-bold text-[#E0B954]">{createdTicketCount}</span> tickets created successfully
                                     </p>
                                     <Button
                                         onClick={() => setShowAIModal(false)}
@@ -2300,34 +2581,60 @@ onClick={() => { navigate(`/project/${id}/board/${item.id}`); setIsEditing(false
                                 </Button>
 
                                 {aiStep === 'upload' && (
-                                    <Button
-                                        onClick={handleAnalyzePRD}
-                                        disabled={!prdFile && !prdText.trim()}
-                                        className="bg-gradient-to-r from-[#E0B954] to-[#B8872A] text-white rounded-xl px-6 font-medium shadow-lg shadow-[#B8872A]/20 disabled:opacity-50"
-                                    >
-                                        <Sparkles className="w-4 h-4 mr-2" />
-                                        Analyze PRD
-                                    </Button>
+                                    <>
+                                        {uploadMode === 'prd' && (
+                                            <Button
+                                                onClick={handleAnalyzePRD}
+                                                disabled={!prdFile && !prdText.trim()}
+                                                className="bg-gradient-to-r from-[#E0B954] to-[#B8872A] text-white rounded-xl px-6 font-medium shadow-lg shadow-[#B8872A]/20 disabled:opacity-50"
+                                            >
+                                                <Sparkles className="w-4 h-4 mr-2" />
+                                                Analyze PRD
+                                            </Button>
+                                        )}
+                                        {uploadMode === 'roadmap' && (
+                                            <Button
+                                                onClick={handleParseRoadmap}
+                                                disabled={!roadmapFile}
+                                                className="bg-gradient-to-r from-[#E0B954] to-[#B8872A] text-white rounded-xl px-6 font-medium shadow-lg shadow-[#B8872A]/20 disabled:opacity-50"
+                                            >
+                                                <Sparkles className="w-4 h-4 mr-2" />
+                                                Parse Roadmap
+                                            </Button>
+                                        )}
+                                    </>
                                 )}
 
                                 {aiStep === 'architectures' && (
-                                    <Button
-                                        onClick={handlePreviewTickets}
-                                        disabled={!selectedArchitectureId}
-                                        className="bg-gradient-to-r from-[#E0B954] to-[#B8872A] text-white rounded-xl px-6 font-medium shadow-lg shadow-[#B8872A]/20 disabled:opacity-50"
-                                    >
-                                        <ArrowRight className="w-4 h-4 mr-2" />
-                                        Preview Tickets
-                                    </Button>
+                                    <>
+                                        {uploadMode === 'prd' ? (
+                                            <Button
+                                                onClick={handlePreviewTickets}
+                                                disabled={!selectedArchitectureId}
+                                                className="bg-gradient-to-r from-[#E0B954] to-[#B8872A] text-white rounded-xl px-6 font-medium shadow-lg shadow-[#B8872A]/20 disabled:opacity-50"
+                                            >
+                                                <ArrowRight className="w-4 h-4 mr-2" />
+                                                Preview Tickets
+                                            </Button>
+                                        ) : (
+                                            <Button
+                                                onClick={() => setAiStep('preview')}
+                                                className="bg-gradient-to-r from-[#E0B954] to-[#B8872A] text-white rounded-xl px-6 font-medium shadow-lg shadow-[#B8872A]/20"
+                                            >
+                                                <ArrowRight className="w-4 h-4 mr-2" />
+                                                Create Tickets from Roadmap
+                                            </Button>
+                                        )}
+                                    </>
                                 )}
 
                                 {aiStep === 'preview' && (
                                     <Button
-                                        onClick={handleCommitArchitecture}
+                                        onClick={uploadMode === 'prd' ? handleCommitArchitecture : handleCommitRoadmap}
                                         className="bg-gradient-to-r from-[#E0B954] to-[#C79E3B] text-white rounded-xl px-6 font-medium shadow-lg shadow-[#E0B954]/20"
                                     >
                                         <GitCommit className="w-4 h-4 mr-2" />
-                                        Commit & Create Tickets
+                                        {uploadMode === 'prd' ? 'Commit & Create Tickets' : 'Create Tickets from Roadmap'}
                                     </Button>
                                 )}
                             </div>

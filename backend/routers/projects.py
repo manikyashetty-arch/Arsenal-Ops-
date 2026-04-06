@@ -295,7 +295,11 @@ async def delete_project(
 ):
     """Delete a project and its work items (requires admin access)"""
     # Only admins can delete projects
-    if current_user.role != UserRole.ADMIN.value:
+    # Check if user has admin role (handles multi-role users like 'admin,developer')
+    user_roles = [role.strip() for role in current_user.role.split(',')]
+    is_admin = UserRole.ADMIN.value in user_roles
+    
+    if not is_admin:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only admins can delete projects"
