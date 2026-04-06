@@ -2070,7 +2070,7 @@ onClick={() => { navigate(`/project/${id}/board/${item.id}`); setIsEditing(false
                                     <Sparkles className="w-5 h-5 text-white" />
                                 </div>
                                 <div>
-                                    <h2 className="text-lg font-bold text-white">AI Project Planning</h2>
+                                    <h2 className="text-lg font-bold text-white">Project Planning</h2>
                                     <p className="text-xs text-[#737373]">
                                         {aiStep === 'upload' && 'Upload PRD or enter project details'}
                                         {aiStep === 'analyzing' && 'Analyzing project requirements...'}
@@ -2392,8 +2392,8 @@ onClick={() => { navigate(`/project/${id}/board/${item.id}`); setIsEditing(false
                                             {roadmapSummary.warnings && roadmapSummary.warnings.length > 0 && (
                                                 <div className="mb-4">
                                                     <p className="text-xs font-medium text-[#f59e0b] mb-2">⚠️ Warnings ({roadmapSummary.warnings.length})</p>
-                                                    <div className="space-y-1.5">
-                                                        {roadmapSummary.warnings.slice(0, 3).map((warning: any, i: number) => (
+                                                    <div className="space-y-1.5 max-h-[200px] overflow-y-auto pr-2">
+                                                        {roadmapSummary.warnings.map((warning: any, i: number) => (
                                                             <div key={i} className="text-xs text-[#737373] bg-[rgba(245,158,11,0.08)] p-2 rounded">
                                                                 <p className="font-medium text-[#f59e0b]">{warning.issue}</p>
                                                                 <p className="text-xs">{warning.task}: {warning.detail}</p>
@@ -2407,8 +2407,8 @@ onClick={() => { navigate(`/project/${id}/board/${item.id}`); setIsEditing(false
                                             {roadmapSummary.conflicts && roadmapSummary.conflicts.length > 0 && (
                                                 <div>
                                                     <p className="text-xs font-medium text-[#ef4444] mb-2">🔴 Conflicts ({roadmapSummary.conflicts.length})</p>
-                                                    <div className="space-y-1.5">
-                                                        {roadmapSummary.conflicts.slice(0, 2).map((conflict: any, i: number) => (
+                                                    <div className="space-y-1.5 max-h-[200px] overflow-y-auto pr-2">
+                                                        {roadmapSummary.conflicts.map((conflict: any, i: number) => (
                                                             <div key={i} className="text-xs text-[#737373] bg-[rgba(239,68,68,0.08)] p-2 rounded">
                                                                 <p className="font-medium text-[#ef4444]">{conflict.assignee} - Week {conflict.week}</p>
                                                                 <p>{conflict.total_hrs}h scheduled (tasks: {conflict.tasks.join(', ')})</p>
@@ -2443,8 +2443,8 @@ onClick={() => { navigate(`/project/${id}/board/${item.id}`); setIsEditing(false
                             {/* Step: Preview Tickets */}
                             {aiStep === 'preview' && (
                                 <div className="space-y-6">
-                                    {/* Summary Stats */}
-                                    {ticketsSummary && (
+                                    {/* PRD Mode - Summary Stats */}
+                                    {uploadMode === 'prd' && ticketsSummary && (
                                         <div className="grid grid-cols-3 gap-4">
                                             <div className="bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.07)] rounded-xl p-4 text-center">
                                                 <p className="text-2xl font-bold text-[#E0B954]">{generatedTickets.length}</p>
@@ -2461,73 +2461,151 @@ onClick={() => { navigate(`/project/${id}/board/${item.id}`); setIsEditing(false
                                         </div>
                                     )}
 
-                                    {/* Sprint Recommendation */}
-                                    {ticketsSummary?.sprint_recommendation && (
+                                    {/* Roadmap Mode - Summary Stats */}
+                                    {uploadMode === 'roadmap' && roadmapSummary && (
+                                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                                            <div className="bg-[rgba(102,184,255,0.1)] rounded-lg p-3">
+                                                <p className="text-xs text-[#737373] mb-1">Epics</p>
+                                                <p className="text-lg font-bold text-[#66b8ff]">{roadmapSummary.total_epics}</p>
+                                            </div>
+                                            <div className="bg-[rgba(224,185,84,0.1)] rounded-lg p-3">
+                                                <p className="text-xs text-[#737373] mb-1">Tasks</p>
+                                                <p className="text-lg font-bold text-[#E0B954]">{roadmapSummary.total_tasks}</p>
+                                            </div>
+                                            <div className="bg-[rgba(16,185,129,0.1)] rounded-lg p-3">
+                                                <p className="text-xs text-[#737373] mb-1">Team Size</p>
+                                                <p className="text-lg font-bold text-[#10b981]">{roadmapSummary.total_assignees}</p>
+                                            </div>
+                                            <div className="bg-[rgba(245,158,11,0.1)] rounded-lg p-3">
+                                                <p className="text-xs text-[#737373] mb-1">Duration</p>
+                                                <p className="text-lg font-bold text-[#F59E0B]">{roadmapSummary.timeline?.duration_weeks || '?'}w</p>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Sprint Recommendation (PRD only) */}
+                                    {uploadMode === 'prd' && ticketsSummary?.sprint_recommendation && (
                                         <div className="bg-[#E0B954]/10 border border-[#E0B954]/20 rounded-xl p-4">
                                             <p className="text-sm text-[#E0B954] font-medium">Sprint Recommendation</p>
                                             <p className="text-xs text-[#a3a3a3] mt-1">{ticketsSummary.sprint_recommendation}</p>
                                         </div>
                                     )}
 
-                                    {/* Tickets List */}
-                                    <div>
-                                        <h3 className="text-sm font-semibold text-white mb-4 flex items-center gap-2">
-                                            <ClipboardList className="w-4 h-4 text-[#E0B954]" />
-                                            Generated Tickets
-                                        </h3>
-                                        <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2">
-                                            {generatedTickets.map((ticket, index) => {
-                                                const typeInfo = TYPE_CONFIG[ticket.type as keyof typeof TYPE_CONFIG] || TYPE_CONFIG.task;
-                                                const TypeIcon = typeInfo.icon;
-                                                return (
-                                                    <div key={index} className="bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.07)] rounded-xl p-4">
-                                                        <div className="flex items-start justify-between gap-4">
-                                                            <div className="flex-1 min-w-0">
-                                                                <div className="flex items-center gap-2 mb-2">
-                                                                    <div className="flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium" style={{ backgroundColor: typeInfo.bg, color: typeInfo.color }}>
-                                                                        <TypeIcon className="w-3 h-3" />
-                                                                        {typeInfo.label}
+                                    {/* Tickets List - PRD Mode */}
+                                    {uploadMode === 'prd' && (
+                                        <div>
+                                            <h3 className="text-sm font-semibold text-white mb-4 flex items-center gap-2">
+                                                <ClipboardList className="w-4 h-4 text-[#E0B954]" />
+                                                Generated Tickets ({generatedTickets.length})
+                                            </h3>
+                                            <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2">
+                                                {generatedTickets.length === 0 ? (
+                                                    <div className="text-center py-8 text-[#737373]">
+                                                        <p>No tickets generated. Please try again.</p>
+                                                    </div>
+                                                ) : (
+                                                    generatedTickets.map((ticket, index) => {
+                                                        const typeInfo = TYPE_CONFIG[ticket.type as keyof typeof TYPE_CONFIG] || TYPE_CONFIG.task;
+                                                        const TypeIcon = typeInfo.icon;
+                                                        return (
+                                                            <div key={index} className="bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.07)] rounded-xl p-4">
+                                                                <div className="flex items-start justify-between gap-4">
+                                                                    <div className="flex-1 min-w-0">
+                                                                        <div className="flex items-center gap-2 mb-2">
+                                                                            <div className="flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium" style={{ backgroundColor: typeInfo.bg, color: typeInfo.color }}>
+                                                                                <TypeIcon className="w-3 h-3" />
+                                                                                {typeInfo.label}
+                                                                            </div>
+                                                                            <Badge variant="outline" className={`text-[10px] ${
+                                                                                ticket.priority === 'critical' ? 'border-red-500/60 text-red-400' :
+                                                                                ticket.priority === 'high' ? 'border-orange-500/60 text-orange-400' :
+                                                                                ticket.priority === 'medium' ? 'border-yellow-500/50 text-yellow-400' :
+                                                                                'border-emerald-500/50 text-emerald-400'
+                                                                            }`}>
+                                                                                {ticket.priority}
+                                                                            </Badge>
+                                                                        </div>
+                                                                        <h4 className="text-sm font-medium text-white mb-1">{ticket.title}</h4>
+                                                                        <p className="text-xs text-[#737373] line-clamp-2">{ticket.description}</p>
                                                                     </div>
-                                                                    <Badge variant="outline" className={`text-[10px] ${
-                                                                        ticket.priority === 'critical' ? 'border-red-500/60 text-red-400' :
-                                                                        ticket.priority === 'high' ? 'border-orange-500/60 text-orange-400' :
-                                                                        ticket.priority === 'medium' ? 'border-yellow-500/50 text-yellow-400' :
-                                                                        'border-emerald-500/50 text-emerald-400'
-                                                                    }`}>
-                                                                        {ticket.priority}
-                                                                    </Badge>
+                                                                    <div className="flex flex-col items-end gap-2 flex-shrink-0">
+                                                                        <div className="flex items-center gap-2">
+                                                                            <span className="text-xs text-[#737373]">{ticket.story_points} pts</span>
+                                                                            <span className="text-xs text-[#737373]">{ticket.estimated_hours}h</span>
+                                                                        </div>
+                                                                        {ticket.assignee_name && (
+                                                                            <div className="flex items-center gap-2 bg-[rgba(244,246,255,0.05)] rounded-lg px-2 py-1">
+                                                                                <Users className="w-3 h-3 text-[#E0B954]" />
+                                                                                <span className="text-xs text-[#a3a3a3]">{ticket.assignee_name}</span>
+                                                                            </div>
+                                                                        )}
+                                                                    </div>
                                                                 </div>
-                                                                <h4 className="text-sm font-medium text-white mb-1">{ticket.title}</h4>
-                                                                <p className="text-xs text-[#737373] line-clamp-2">{ticket.description}</p>
-                                                            </div>
-                                                            <div className="flex flex-col items-end gap-2 flex-shrink-0">
-                                                                <div className="flex items-center gap-2">
-                                                                    <span className="text-xs text-[#737373]">{ticket.story_points} pts</span>
-                                                                    <span className="text-xs text-[#737373]">{ticket.estimated_hours}h</span>
-                                                                </div>
-                                                                {ticket.assignee_name && (
-                                                                    <div className="flex items-center gap-2 bg-[rgba(244,246,255,0.05)] rounded-lg px-2 py-1">
-                                                                        <Users className="w-3 h-3 text-[#E0B954]" />
-                                                                        <span className="text-xs text-[#a3a3a3]">{ticket.assignee_name}</span>
+                                                                {ticket.assignee_reasoning && (
+                                                                    <p className="text-[10px] text-[#737373] mt-2 italic">Assignment: {ticket.assignee_reasoning}</p>
+                                                                )}
+                                                                {ticket.tags && ticket.tags.length > 0 && (
+                                                                    <div className="flex flex-wrap gap-1 mt-2">
+                                                                        {ticket.tags.map(tag => (
+                                                                            <span key={tag} className="text-[10px] px-1.5 py-0.5 rounded-md bg-[rgba(255,255,255,0.05)] text-[#737373]">{tag}</span>
+                                                                        ))}
                                                                     </div>
                                                                 )}
                                                             </div>
-                                                        </div>
-                                                        {ticket.assignee_reasoning && (
-                                                            <p className="text-[10px] text-[#737373] mt-2 italic">Assignment: {ticket.assignee_reasoning}</p>
-                                                        )}
-                                                        {ticket.tags && ticket.tags.length > 0 && (
-                                                            <div className="flex flex-wrap gap-1 mt-2">
-                                                                {ticket.tags.map(tag => (
-                                                                    <span key={tag} className="text-[10px] px-1.5 py-0.5 rounded-md bg-[rgba(255,255,255,0.05)] text-[#737373]">{tag}</span>
-                                                                ))}
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                );
-                                            })}
+                                                        );
+                                                    })
+                                                )}
+                                            </div>
                                         </div>
-                                    </div>
+                                    )}
+
+                                    {/* Tickets List - Roadmap Mode */}
+                                    {uploadMode === 'roadmap' && roadmapParsedData && (
+                                        <div>
+                                            <h3 className="text-sm font-semibold text-white mb-4 flex items-center gap-2">
+                                                <ClipboardList className="w-4 h-4 text-[#E0B954]" />
+                                                Roadmap Tickets ({roadmapParsedData.tickets?.length || 0})
+                                            </h3>
+                                            <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2">
+                                                {!roadmapParsedData.tickets || roadmapParsedData.tickets.length === 0 ? (
+                                                    <div className="text-center py-8 text-[#737373]">
+                                                        <p>No tickets found in roadmap.</p>
+                                                    </div>
+                                                ) : (
+                                                    roadmapParsedData.tickets.map((ticket: any, index: number) => (
+                                                        <div key={index} className="bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.07)] rounded-xl p-4">
+                                                            <div className="flex items-start justify-between gap-4">
+                                                                <div className="flex-1 min-w-0">
+                                                                    <div className="flex items-center gap-2 mb-2">
+                                                                        <Badge className="text-[10px] bg-[#E0B954]/20 text-[#E0B954] border-0">
+                                                                            {ticket.priority || 'medium'}
+                                                                        </Badge>
+                                                                    </div>
+                                                                    <h4 className="text-sm font-medium text-white mb-1">{ticket.name}</h4>
+                                                                    <p className="text-xs text-[#737373] line-clamp-2">{ticket.description || 'No description'}</p>
+                                                                </div>
+                                                                <div className="flex flex-col items-end gap-2 flex-shrink-0">
+                                                                    <span className="text-xs text-[#737373]">{ticket.effort_hrs || 0}h</span>
+                                                                    {ticket.assignee && (
+                                                                        <div className="flex items-center gap-2 bg-[rgba(244,246,255,0.05)] rounded-lg px-2 py-1">
+                                                                            <Users className="w-3 h-3 text-[#E0B954]" />
+                                                                            <span className="text-xs text-[#a3a3a3]">{ticket.assignee}</span>
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                            {ticket.milestone && (
+                                                                <p className="text-[10px] text-[#737373] mt-2">Milestone: {ticket.milestone}</p>
+                                                            )}
+                                                            {ticket.epic && (
+                                                                <p className="text-[10px] text-[#737373]">Epic: {ticket.epic}</p>
+                                                            )}
+                                                        </div>
+                                                    ))
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
                             )}
 
