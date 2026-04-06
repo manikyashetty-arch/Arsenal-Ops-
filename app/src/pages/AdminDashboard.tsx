@@ -360,12 +360,6 @@ const AdminDashboard = () => {
     const [userForm, setUserForm] = useState<{ email: string; name: string; roles: string[] }>({ email: '', name: '', roles: ['developer'] });
     const [generatedPassword, setGeneratedPassword] = useState<string | null>(null);
 
-    const handleCreateUser = () => {
-        setUserForm({ email: '', name: '', roles: ['developer'] });
-        setGeneratedPassword(null);
-        setShowUserModal(true);
-    };
-
     const handleRoleToggle = (role: string) => {
         setUserForm(f => {
             const roles = f.roles.includes(role)
@@ -439,29 +433,6 @@ const AdminDashboard = () => {
             }
         } catch {
             toast.error('Failed to update role');
-        }
-    };
-
-    const handleDeleteUser = async (user: User) => {
-        if (!confirm(`Are you sure you want to deactivate ${user.name}? They will no longer be able to login.`)) return;
-
-        try {
-            const response = await fetch(`${API_BASE_URL}/api/auth/admin/users/${user.id}`, {
-                method: 'DELETE',
-                headers: { 
-                    'Authorization': `Bearer ${token}`
-                },
-            });
-
-            if (response.ok) {
-                toast.success(`User ${user.name} has been deactivated`);
-                fetchData();
-            } else {
-                const error = await response.json();
-                toast.error(error.detail || 'Failed to delete user');
-            }
-        } catch {
-            toast.error('Failed to delete user');
         }
     };
 
