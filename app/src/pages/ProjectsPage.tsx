@@ -172,6 +172,7 @@ const ProjectsPage = () => {
     const [convertingTask, setConvertingTask] = useState<PersonalTask | null>(null);
     const [convertProjectId, setConvertProjectId] = useState('');
     const [convertAssigneeId, setConvertAssigneeId] = useState('');
+    const [convertEstimatedHours, setConvertEstimatedHours] = useState('');
     const [projectMembers, setProjectMembers] = useState<{id: number; name: string; email: string}[]>([]);
     const [addingTask, setAddingTask] = useState(false);
     const [convertingTicket, setConvertingTicket] = useState(false);
@@ -182,6 +183,7 @@ const ProjectsPage = () => {
         due_date: '',
         project_id: '',
         assignee_developer_id: '',
+        estimated_hours: '',
     });
     const [isEditingPersonalTask, setIsEditingPersonalTask] = useState(false);
     const [editingPersonalTask, setEditingPersonalTask] = useState<PersonalTask | null>(null);
@@ -263,7 +265,8 @@ const ProjectsPage = () => {
                     title: newPersonalTask.title,
                     description: newPersonalTask.description,
                     priority: newPersonalTask.priority,
-                    due_date: newPersonalTask.due_date || undefined
+                    due_date: newPersonalTask.due_date || undefined,
+                    estimated_hours: newPersonalTask.estimated_hours ? parseInt(newPersonalTask.estimated_hours) : 0
                 })
             });
             if (res.ok) {
@@ -281,7 +284,7 @@ const ProjectsPage = () => {
                 }
                 toast.success('Task created!');
                 setShowAddTaskDialog(false);
-                setNewPersonalTask({ title: '', description: '', priority: 'medium', due_date: '', project_id: '', assignee_developer_id: '' });
+                setNewPersonalTask({ title: '', description: '', priority: 'medium', due_date: '', project_id: '', assignee_developer_id: '', estimated_hours: '' });
                 setProjectMembers([]);
                 fetchPersonalTasks();
             } else { toast.error('Failed to create task'); }
@@ -311,6 +314,7 @@ const ProjectsPage = () => {
                 body: JSON.stringify({
                     project_id: parseInt(convertProjectId),
                     type: 'task',
+                    estimated_hours: convertEstimatedHours ? parseInt(convertEstimatedHours) : convertingTask.estimated_hours,
                     assignee_developer_id: convertAssigneeId ? parseInt(convertAssigneeId) : undefined
                 })
             });
@@ -322,6 +326,7 @@ const ProjectsPage = () => {
                 setConvertingTask(null);
                 setConvertProjectId('');
                 setConvertAssigneeId('');
+                setConvertEstimatedHours('');
                 setProjectMembers([]);
                 fetchPersonalTasks();
             } else { toast.error('Failed to convert'); }
@@ -1315,7 +1320,7 @@ const ProjectsPage = () => {
                 onOpenChange={(open) => {
                     setShowAddTaskDialog(open);
                     if (!open) {
-                        setNewPersonalTask({ title: '', description: '', priority: 'medium', due_date: '', project_id: '', assignee_developer_id: '' });
+                        setNewPersonalTask({ title: '', description: '', priority: 'medium', due_date: '', project_id: '', assignee_developer_id: '', estimated_hours: '' });
                         setProjectMembers([]);
                     }
                 }}
@@ -1437,7 +1442,7 @@ const ProjectsPage = () => {
                                     </SelectContent>
                                 </Select>
                             </div>
-                            {projectMembers.length > 0 && (
+                            {newPersonalTask.project_id && (
                                 <div>
                                     <label className="text-xs text-[#737373] mb-1 block">Assign To <span className="text-[#555]">(optional — defaults to you)</span></label>
                                     <Select
@@ -1448,7 +1453,10 @@ const ProjectsPage = () => {
                                             <SelectValue placeholder="Select team member..." />
                                         </SelectTrigger>
                                         <SelectContent className="bg-[#0d0d0d] border-[rgba(255,255,255,0.08)]">
-                                            {projectMembers.map((member) => (
+                                            {projectMembers.length === 0 ? (
+                                                <div className="p-2 text-xs text-[#737373]">No team members in this project</div>
+                                            ) : (
+                                                projectMembers.map((member) => (
                                                 <SelectItem key={member.id} value={member.id.toString()}>
                                                     <div className="flex items-center gap-2">
                                                         <div className="w-5 h-5 rounded-full bg-gradient-to-br from-[#E0B954] to-[#C79E3B] flex items-center justify-center text-[#080808] text-xs font-bold">
@@ -1457,12 +1465,23 @@ const ProjectsPage = () => {
                                                         {member.name}
                                                     </div>
                                                 </SelectItem>
-                                            ))}
+                                            ))
+                                            )}
                                         </SelectContent>
                                     </Select>
                                 </div>
                             )}
                         </div>
+                        {newPersonalTask.project_id && (
+                            <div>
+                                <label className="text-xs text-[#737373] mb-1 block">Estimated Hours <span className="text-[#555]">(optional)</span></label>
+                                <Input
+                                    value={newPersonalTask.estimated_hours}
+                                    onChange={(e) => setNewPersonalTask({ ...newPersonalTask, estimated_hours: e.target.value })}
+                                    className="bg-[#0A0A14] border-[rgba(255,255,255,0.08)] text-white placeholder-[#444]"
+                                />
+                            </div>
+                        )}
                         <Button
                             onClick={createPersonalTask}
                             disabled={addingTask || !newPersonalTask.title.trim()}
@@ -1477,7 +1496,7 @@ const ProjectsPage = () => {
             {/* Convert to Project Ticket Dialog */}
             <Dialog open={showConvertDialog} onOpenChange={(open) => {
                 setShowConvertDialog(open);
-                if (!open) { setConvertProjectId(''); setConvertAssigneeId(''); setProjectMembers([]); }
+                if (!open) { setConvertProjectId(''); setConvertAssigneeId(''); setConvertEstimatedHours(''); setProjectMembers([]); }
             }}>
                 <DialogContent className="bg-[#0d0d0d] border-[rgba(255,255,255,0.08)] text-white">
                     <DialogHeader>
@@ -1509,7 +1528,15 @@ const ProjectsPage = () => {
                                 </SelectContent>
                             </Select>
                         </div>
-                        {projectMembers.length > 0 && (
+                        <div>
+                            <label className="text-xs text-[#737373] mb-1 block">Estimated Hours</label>
+                            <Input
+                                value={convertEstimatedHours}
+                                onChange={(e) => setConvertEstimatedHours(e.target.value)}
+                                className="bg-[#0A0A14] border-[rgba(255,255,255,0.08)] text-white"
+                            />
+                        </div>
+                        {convertProjectId && (
                             <div>
                                 <label className="text-xs text-[#737373] mb-1 block">Assign To <span className="text-[#555]">(optional — defaults to you)</span></label>
                                 <Select value={convertAssigneeId} onValueChange={setConvertAssigneeId}>
@@ -1517,21 +1544,22 @@ const ProjectsPage = () => {
                                         <SelectValue placeholder="Select team member..." />
                                     </SelectTrigger>
                                     <SelectContent className="bg-[#0d0d0d] border-[rgba(255,255,255,0.08)]">
-                                        {projectMembers.map((member) => (
-                                            <SelectItem key={member.id} value={member.id.toString()}>
-                                                <div className="flex items-center gap-2">
-                                                    <div className="w-5 h-5 rounded-full bg-gradient-to-br from-[#E0B954] to-[#C79E3B] flex items-center justify-center text-[#080808] text-xs font-bold">
-                                                        {member.name.charAt(0).toUpperCase()}
+                                        {projectMembers.length === 0 ? (
+                                            <div className="p-2 text-xs text-[#737373]">No team members in this project</div>
+                                        ) : (
+                                            projectMembers.map((member) => (
+                                                <SelectItem key={member.id} value={member.id.toString()}>
+                                                    <div className="flex items-center gap-2">
+                                                        <div className="w-5 h-5 rounded-full bg-gradient-to-br from-[#E0B954] to-[#C79E3B] flex items-center justify-center text-[#080808] text-xs font-bold">
+                                                            {member.name.charAt(0).toUpperCase()}
+                                                        </div>
+                                                        {member.name}
                                                     </div>
-                                                    {member.name}
-                                                </div>
-                                            </SelectItem>
-                                        ))}
+                                                </SelectItem>
+                                            ))
+                                        )}
                                     </SelectContent>
                                 </Select>
-                                {convertAssigneeId && (
-                                    <p className="text-xs text-[#E0B954] mt-1">An email notification will be sent to the assignee</p>
-                                )}
                             </div>
                         )}
                         <Button

@@ -62,6 +62,8 @@ export default function PersonalTasks({ token }: PersonalTasksProps) {
         description: '',
         priority: 'medium',
         due_date: '',
+        project_id: '',
+        estimated_hours: '',
     });
     const [editForm, setEditForm] = useState({
         title: '',
@@ -70,6 +72,9 @@ export default function PersonalTasks({ token }: PersonalTasksProps) {
         due_date: '',
     });
     const [convertProjectId, setConvertProjectId] = useState('');
+    const [convertEstimatedHours, setConvertEstimatedHours] = useState('');
+    const [convertAssigneeId, setConvertAssigneeId] = useState('');
+    const [projectMembers, setProjectMembers] = useState<any[]>([]);
 
     useEffect(() => {
         fetchTasks();
@@ -102,6 +107,20 @@ export default function PersonalTasks({ token }: PersonalTasksProps) {
         }
     };
 
+    const fetchProjectMembers = async (projectId: string) => {
+        try {
+            const res = await fetch(`${API_BASE_URL}/api/projects/${projectId}`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (res.ok) {
+                const data = await res.json();
+                setProjectMembers(data.developers || []);
+            }
+        } catch (err) {
+            setProjectMembers([]);
+        }
+    };
+
     const createTask = async () => {
         if (!newTask.title.trim()) {
             toast.error('Title is required');
@@ -117,15 +136,18 @@ export default function PersonalTasks({ token }: PersonalTasksProps) {
                     'Authorization': `Bearer ${token}`
                 },
                 body: JSON.stringify({
-                    ...newTask,
+                    title: newTask.title,
+                    description: newTask.description,
+                    priority: newTask.priority,
                     due_date: newTask.due_date || undefined,
+                    estimated_hours: newTask.estimated_hours ? parseInt(newTask.estimated_hours) : 0,
                 })
             });
 
             if (res.ok) {
                 toast.success('Task created successfully');
                 setShowAddDialog(false);
-                setNewTask({ title: '', description: '', priority: 'medium', due_date: '' });
+                setNewTask({ title: '', description: '', priority: 'medium', due_date: '', project_id: '', estimated_hours: '' });
                 fetchTasks();
             } else {
                 toast.error('Failed to create task');
@@ -153,6 +175,7 @@ export default function PersonalTasks({ token }: PersonalTasksProps) {
                     body: JSON.stringify({
                         project_id: parseInt(convertProjectId),
                         type: 'task',
+                        estimated_hours: convertEstimatedHours ? parseInt(convertEstimatedHours) : selectedTask.estimated_hours,
                     })
                 }
             );
@@ -163,6 +186,7 @@ export default function PersonalTasks({ token }: PersonalTasksProps) {
                 setShowConvertDialog(false);
                 setSelectedTask(null);
                 setConvertProjectId('');
+                setConvertEstimatedHours('');
                 fetchTasks();
             } else {
                 toast.error('Failed to convert task');
@@ -275,7 +299,10 @@ export default function PersonalTasks({ token }: PersonalTasksProps) {
                     <Briefcase className="w-5 h-5" />
                     My Personal Tasks
                 </CardTitle>
-                <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
+                <Dialog open={showAddDialog} onOpenChange={(open) => {
+                    setShowAddDialog(open);
+                    if (!open) setNewTask({ title: '', description: '', priority: 'medium', due_date: '', project_id: '', estimated_hours: '' });
+                }}>
                     <DialogTrigger asChild>
                         <Button size="sm" className="bg-[#E0B954] hover:bg-[#C79E3B] text-black">
                             <Plus className="w-4 h-4 mr-1" />
@@ -375,6 +402,35 @@ export default function PersonalTasks({ token }: PersonalTasksProps) {
                                         />
                                     </PopoverContent>
                                 </Popover>                                </div>                            </div>
+                            <div>
+                                <label className="text-sm text-[#737373]">Project</label>
+                                <Select
+                                    value={newTask.project_id}
+                                    onValueChange={(v) => setNewTask({ ...newTask, project_id: v })}
+                                >
+                                    <SelectTrigger className="bg-[#0A0A14] border-[rgba(255,255,255,0.08)] text-white">
+                                        <SelectValue placeholder="Choose a project..." />
+                                    </SelectTrigger>
+                                    <SelectContent className="bg-[#0A0A14] border-[rgba(255,255,255,0.08)]">
+                                        <SelectItem value="">None</SelectItem>
+                                        {projects.map((project) => (
+                                            <SelectItem key={project.id} value={project.id.toString()}>
+                                                {project.name}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                            {newTask.project_id && (
+                                <div>
+                                    <label className="text-sm text-[#737373]">Estimated Hours</label>
+                                    <Input
+                                        value={newTask.estimated_hours}
+                                        onChange={(e) => setNewTask({ ...newTask, estimated_hours: e.target.value })}
+                                        className="bg-[#0A0A14] border-[rgba(255,255,255,0.08)] text-white placeholder-[#444]"
+                                    />
+                                </div>
+                            )}
                             <Button
                                 onClick={createTask}
                                 disabled={loading}
@@ -486,7 +542,13 @@ export default function PersonalTasks({ token }: PersonalTasksProps) {
             </CardContent>
 
             {/* Convert Dialog */}
-            <Dialog open={showConvertDialog} onOpenChange={setShowConvertDialog}>
+            <Dialog open={showConvertDialog} onOpenChange={(open) => {
+                setShowConvertDialog(open);
+                if (!open) {
+                    setConvertProjectId('');
+                    setConvertEstimatedHours('');
+                }
+            }}>
                 <DialogContent className="bg-[#0d0d0d] border-[rgba(255,255,255,0.08)] text-white">
                     <DialogHeader>
                         <DialogTitle>Convert to Project Ticket</DialogTitle>
@@ -495,12 +557,16 @@ export default function PersonalTasks({ token }: PersonalTasksProps) {
                         {selectedTask && (
                             <div className="p-3 bg-[#0A0A14] rounded border border-[rgba(255,255,255,0.05)]">
                                 <p className="text-white font-medium">{selectedTask.title}</p>
-                                <p className="text-[#737373] text-sm">{selectedTask.estimated_hours}h · {selectedTask.priority}</p>
+                                <p className="text-[#737373] text-sm">{selectedTask.priority}</p>
                             </div>
                         )}
                         <div>
                             <label className="text-sm text-[#737373]">Select Project</label>
-                            <Select value={convertProjectId} onValueChange={setConvertProjectId}>
+                            <Select value={convertProjectId} onValueChange={(v) => {
+                                setConvertProjectId(v);
+                                setConvertAssigneeId('');
+                                if (v) fetchProjectMembers(v); else setProjectMembers([]);
+                            }}>
                                 <SelectTrigger className="bg-[#0A0A14] border-[rgba(255,255,255,0.08)] text-white">
                                     <SelectValue placeholder="Choose a project..." />
                                 </SelectTrigger>
@@ -513,6 +579,40 @@ export default function PersonalTasks({ token }: PersonalTasksProps) {
                                 </SelectContent>
                             </Select>
                         </div>
+                        <div>
+                            <label className="text-sm text-[#737373]">Estimated Hours</label>
+                            <Input
+                                value={convertEstimatedHours}
+                                onChange={(e) => setConvertEstimatedHours(e.target.value)}
+                                className="bg-[#0A0A14] border-[rgba(255,255,255,0.08)] text-white"
+                            />
+                        </div>
+                        {convertProjectId && (
+                            <div>
+                                <label className="text-sm text-[#737373]">Assign To (optional)</label>
+                                <Select value={convertAssigneeId} onValueChange={setConvertAssigneeId}>
+                                    <SelectTrigger className="bg-[#0A0A14] border-[rgba(255,255,255,0.08)] text-white">
+                                        <SelectValue placeholder="Select team member..." />
+                                    </SelectTrigger>
+                                    <SelectContent className="bg-[#0A0A14] border-[rgba(255,255,255,0.08)]">
+                                        {projectMembers.length === 0 ? (
+                                            <div className="p-2 text-xs text-[#737373]">No team members in this project</div>
+                                        ) : (
+                                            projectMembers.map((member) => (
+                                                <SelectItem key={member.id} value={member.id.toString()}>
+                                                    <div className="flex items-center gap-2">
+                                                        <div className="w-4 h-4 rounded-full bg-gradient-to-br from-[#E0B954] to-[#C79E3B] flex items-center justify-center text-[#080808] text-xs font-bold">
+                                                            {member.name.charAt(0).toUpperCase()}
+                                                        </div>
+                                                        {member.name}
+                                                    </div>
+                                                </SelectItem>
+                                            ))
+                                        )}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                        )}
                         <Button
                             onClick={convertToTicket}
                             disabled={loading || !convertProjectId}

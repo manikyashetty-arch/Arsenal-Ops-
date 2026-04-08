@@ -73,12 +73,15 @@ const PersonalTasksPage = () => {
     const [projectMembers, setProjectMembers] = useState<any[]>([]);
     const [convertProjectId, setConvertProjectId] = useState('');
     const [convertAssigneeId, setConvertAssigneeId] = useState('');
+    const [convertEstimatedHours, setConvertEstimatedHours] = useState('');
     const [convertingTicket, setConvertingTicket] = useState(false);
     const [newTask, setNewTask] = useState({
         title: '',
         description: '',
         priority: 'medium',
         due_date: '',
+        project_id: '',
+        estimated_hours: '',
     });
 
     const PRIORITY_CONFIG: Record<string, { color: string; label: string }> = {
@@ -163,14 +166,15 @@ const PersonalTasksPage = () => {
                     title: newTask.title,
                     description: newTask.description,
                     priority: newTask.priority,
-                    due_date: newTask.due_date || undefined
+                    due_date: newTask.due_date || undefined,
+                    estimated_hours: newTask.estimated_hours ? parseInt(newTask.estimated_hours) : 0
                 })
             });
 
             if (response.ok) {
                 const createdTask = await response.json();
                 setTasks([createdTask, ...tasks]);
-                setNewTask({ title: '', description: '', priority: 'medium', due_date: '' });
+                setNewTask({ title: '', description: '', priority: 'medium', due_date: '', project_id: '', estimated_hours: '' });
                 setShowAddDialog(false);
                 toast.success('Task created!');
             }
@@ -276,6 +280,7 @@ const PersonalTasksPage = () => {
                 body: JSON.stringify({
                     project_id: parseInt(convertProjectId),
                     type: 'task',
+                    estimated_hours: convertEstimatedHours ? parseInt(convertEstimatedHours) : convertingTask.estimated_hours,
                     assignee_developer_id: convertAssigneeId ? parseInt(convertAssigneeId) : undefined
                 })
             });
@@ -287,6 +292,7 @@ const PersonalTasksPage = () => {
                 setConvertingTask(null);
                 setConvertProjectId('');
                 setConvertAssigneeId('');
+                setConvertEstimatedHours('');
                 setProjectMembers([]);
                 fetchTasks();
             } else {
@@ -301,7 +307,7 @@ const PersonalTasksPage = () => {
     };
 
     const resetForm = () => {
-        setNewTask({ title: '', description: '', priority: 'medium', due_date: '' });
+        setNewTask({ title: '', description: '', priority: 'medium', due_date: '', project_id: '', estimated_hours: '' });
         setEditingTask(null);
         setShowEditDialog(false);
     };
@@ -313,6 +319,8 @@ const PersonalTasksPage = () => {
             description: task.description,
             priority: task.priority,
             due_date: task.due_date || '',
+            project_id: '',
+            estimated_hours: '',
         });
         setShowEditDialog(true);
     };
@@ -594,7 +602,10 @@ const PersonalTasksPage = () => {
             </div>
 
             {/* Add Task Dialog */}
-            <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
+            <Dialog open={showAddDialog} onOpenChange={(open) => {
+                setShowAddDialog(open);
+                if (!open) resetForm();
+            }}>
                 <DialogContent className="bg-[#0d0d0d] border-[rgba(255,255,255,0.08)] text-white">
                     <DialogHeader>
                         <DialogTitle>Create Personal Task</DialogTitle>
@@ -688,6 +699,34 @@ const PersonalTasksPage = () => {
                                 </Popover>
                             </div>
                         </div>
+                        <div>
+                            <label className="text-xs text-[#737373] mb-1 block">Project <span className="text-[#555]">(optional)</span></label>
+                            <Select value={newTask.project_id} onValueChange={(v) => {
+                                setNewTask({ ...newTask, project_id: v });
+                                if (v) fetchProjectMembers(v); else setProjectMembers([]);
+                            }}>
+                                <SelectTrigger className="bg-[#0A0A14] border-[rgba(255,255,255,0.08)] text-white h-10">
+                                    <SelectValue placeholder="Choose a project..." />
+                                </SelectTrigger>
+                                <SelectContent className="bg-[#0A0A14] border-[rgba(255,255,255,0.08)]">
+                                    {projects.map((project) => (
+                                        <SelectItem key={project.id} value={project.id.toString()}>
+                                            {project.name}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
+                        {newTask.project_id && (
+                            <div>
+                                <label className="text-xs text-[#737373] mb-1 block">Estimated Hours <span className="text-[#555]">(optional)</span></label>
+                                <Input
+                                    value={newTask.estimated_hours}
+                                    onChange={(e) => setNewTask({ ...newTask, estimated_hours: e.target.value })}
+                                    className="bg-[#0A0A14] border-[rgba(255,255,255,0.08)] text-white placeholder-[#444]"
+                                />
+                            </div>
+                        )}
                         <Button
                             onClick={createTask}
                             disabled={isSubmitting || !newTask.title.trim()}
@@ -821,6 +860,7 @@ const PersonalTasksPage = () => {
                 if (!open) {
                     setConvertProjectId('');
                     setConvertAssigneeId('');
+                    setConvertEstimatedHours('');
                     setProjectMembers([]);
                 }
             }}>
@@ -852,7 +892,15 @@ const PersonalTasksPage = () => {
                                 </SelectContent>
                             </Select>
                         </div>
-                        {projectMembers.length > 0 && (
+                        <div>
+                            <label className="text-xs text-[#737373] mb-1 block">Estimated Hours</label>
+                            <Input
+                                value={convertEstimatedHours}
+                                onChange={(e) => setConvertEstimatedHours(e.target.value)}
+                                className="bg-[#0A0A14] border-[rgba(255,255,255,0.08)] text-white"
+                            />
+                        </div>
+                        {convertProjectId && (
                             <div>
                                 <label className="text-xs text-[#737373] mb-1 block">Assign To <span className="text-[#555]">(optional)</span></label>
                                 <Select value={convertAssigneeId} onValueChange={setConvertAssigneeId}>
@@ -860,16 +908,22 @@ const PersonalTasksPage = () => {
                                         <SelectValue placeholder="Select team member..." />
                                     </SelectTrigger>
                                     <SelectContent className="bg-[#0d0d0d] border-[rgba(255,255,255,0.08)]">
-                                        {projectMembers.map((member) => (
-                                            <SelectItem key={member.id} value={member.id.toString()}>
-                                                {member.name}
-                                            </SelectItem>
-                                        ))}
+                                        {projectMembers.length === 0 ? (
+                                            <div className="p-2 text-xs text-[#737373]">No team members in this project</div>
+                                        ) : (
+                                            projectMembers.map((member) => (
+                                                <SelectItem key={member.id} value={member.id.toString()}>
+                                                    <div className="flex items-center gap-2">
+                                                        <div className="w-5 h-5 rounded-full bg-gradient-to-br from-[#E0B954] to-[#C79E3B] flex items-center justify-center text-[#080808] text-xs font-bold">
+                                                            {member.name.charAt(0).toUpperCase()}
+                                                        </div>
+                                                        {member.name}
+                                                    </div>
+                                                </SelectItem>
+                                            ))
+                                        )}
                                     </SelectContent>
                                 </Select>
-                                {convertAssigneeId && (
-                                    <p className="text-xs text-[#E0B954] mt-1">An email notification will be sent to the assignee</p>
-                                )}
                             </div>
                         )}
                         <Button
