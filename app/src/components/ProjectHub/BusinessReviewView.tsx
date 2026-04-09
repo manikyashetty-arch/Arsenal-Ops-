@@ -2,11 +2,9 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Badge } from '@/components/ui/badge';
 import {
-    TrendingUp,
     CheckCircle2,
     AlertTriangle,
     Clock,
-    Users,
     Target,
     Activity,
     AlertCircle,
@@ -25,14 +23,6 @@ interface WorkItem {
     status: string;
     priority: string;
     assignee?: string;
-    due_date?: string;
-}
-
-interface Goal {
-    id: number;
-    title: string;
-    status: string;
-    progress: number;
     due_date?: string;
 }
 
@@ -88,7 +78,6 @@ interface BusinessReviewViewProps {
     sprints: Sprint[];
     milestones: Milestone[];
     workItems: WorkItem[];
-    goals: Goal[];
 }
 
 const BusinessReviewView: React.FC<BusinessReviewViewProps> = ({
@@ -97,7 +86,6 @@ const BusinessReviewView: React.FC<BusinessReviewViewProps> = ({
     sprints,
     milestones,
     workItems,
-    goals,
 }) => {
     const navigate = useNavigate();
     const { token } = useAuth();
@@ -173,14 +161,6 @@ const BusinessReviewView: React.FC<BusinessReviewViewProps> = ({
 
     const activeSprint = sprints.find(s => s.status === 'active');
 
-    const avgVelocity =
-        analytics?.velocity_data && analytics.velocity_data.length > 0
-            ? Math.round(
-                  analytics.velocity_data.reduce((sum, d) => sum + d.completed, 0) /
-                      analytics.velocity_data.length
-              )
-            : 0;
-
     const completionPct =
         analytics && analytics.total_story_points > 0
             ? Math.round((analytics.completed_points / analytics.total_story_points) * 100)
@@ -207,7 +187,6 @@ const BusinessReviewView: React.FC<BusinessReviewViewProps> = ({
             ? Math.round(((analytics.status_distribution?.done || 0) / analytics.total_items) * 100)
             : 0;
 
-    const unassigned = workItems.filter(i => !i.assignee && i.status !== 'done').length;
     const criticalOpen = workItems.filter(i => i.priority === 'critical' && i.status !== 'done').length;
 
     const renderTextWithNewlines = (text: string) => {
@@ -258,30 +237,23 @@ const BusinessReviewView: React.FC<BusinessReviewViewProps> = ({
                     </span>
                 </div>
 
-                {/* Sprint Velocity */}
-                <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-2xl p-5">
-                    <div className="flex items-center gap-2 mb-3">
-                        <div className="w-8 h-8 rounded-xl bg-[#E0B954]/10 flex items-center justify-center">
-                            <TrendingUp className="w-4 h-4 text-[#E0B954]" />
-                        </div>
-                        <span className="text-xs text-[#737373]">Sprint Velocity</span>
-                    </div>
-                    <p className="text-2xl font-bold text-white">{avgVelocity}</p>
-                    <p className="text-xs text-[#737373] mt-1">pts avg / sprint</p>
-                </div>
-
                 {/* On-Time Delivery */}
                 <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-2xl p-5">
                     <div className="flex items-center gap-2 mb-3">
-                        <div className="w-8 h-8 rounded-xl bg-[#E0B954]/10 flex items-center justify-center">
-                            <CheckCircle2 className="w-4 h-4 text-[#E0B954]" />
+                        <div className="w-8 h-8 rounded-xl bg-[#34D399]/10 flex items-center justify-center">
+                            <CheckCircle2 className="w-4 h-4 text-[#34D399]" />
                         </div>
-                        <span className="text-xs text-[#737373]">On-Time Delivery</span>
+                        <span className="text-xs text-[#737373]">On-Time Delivery & Overdue</span>
                     </div>
-                    <p className="text-2xl font-bold text-white">{onTimeDeliveryPct}%</p>
-                    <p className="text-xs text-[#737373] mt-1">
-                        {analytics?.status_distribution?.done || 0} / {analytics?.total_items || 0} done
-                    </p>
+                    <div className="space-y-2">
+                        <div>
+                            <p className="text-2xl font-bold text-white">{onTimeDeliveryPct}%</p>
+                            <p className="text-xs text-[#737373]">{analytics?.status_distribution?.done || 0} / {analytics?.total_items || 0} completed</p>
+                        </div>
+                        <div className="border-t border-[rgba(255,255,255,0.05)] pt-2">
+                            <p className="text-xs text-[#EF4444] font-medium">{overdueItems} overdue</p>
+                        </div>
+                    </div>
                 </div>
 
                 {/* Open Bugs */}
@@ -293,7 +265,19 @@ const BusinessReviewView: React.FC<BusinessReviewViewProps> = ({
                         <span className="text-xs text-[#737373]">Open Bugs</span>
                     </div>
                     <p className="text-2xl font-bold text-white">{openBugs}</p>
-                    <p className="text-xs text-[#737373] mt-1">{overdueItems} items overdue</p>
+                    <p className="text-xs text-[#737373] mt-1">issues to resolve</p>
+                </div>
+
+                {/* Critical Items */}
+                <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-2xl p-5">
+                    <div className="flex items-center gap-2 mb-3">
+                        <div className="w-8 h-8 rounded-xl bg-[#F97316]/10 flex items-center justify-center">
+                            <AlertTriangle className="w-4 h-4 text-[#F97316]" />
+                        </div>
+                        <span className="text-xs text-[#737373]">Critical Items Open</span>
+                    </div>
+                    <p className="text-2xl font-bold text-white">{criticalOpen}</p>
+                    <p className="text-xs text-[#737373] mt-1">awaiting attention</p>
                 </div>
             </div>
 
@@ -372,53 +356,6 @@ const BusinessReviewView: React.FC<BusinessReviewViewProps> = ({
                 </div>
             )}
 
-            {/* Risk Indicators */}
-            <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-2xl p-6">
-                <div className="flex items-center gap-3 mb-5">
-                    <div className="w-9 h-9 rounded-xl bg-[#F59E0B]/10 flex items-center justify-center">
-                        <AlertTriangle className="w-4 h-4 text-[#F59E0B]" />
-                    </div>
-                    <h3 className="text-sm font-semibold text-white">Risk Indicators</h3>
-                </div>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    {[
-                        {
-                            label: 'Overdue Tasks',
-                            value: overdueItems,
-                            color: overdueItems > 5 ? '#EF4444' : overdueItems > 0 ? '#F59E0B' : '#E0B954',
-                            icon: Clock,
-                        },
-                        {
-                            label: 'Open Bugs',
-                            value: openBugs,
-                            color: openBugs > 10 ? '#EF4444' : openBugs > 3 ? '#F59E0B' : '#E0B954',
-                            icon: AlertCircle,
-                        },
-                        {
-                            label: 'Unassigned',
-                            value: unassigned,
-                            color: unassigned > 5 ? '#F59E0B' : '#737373',
-                            icon: Users,
-                        },
-                        {
-                            label: 'Critical Open',
-                            value: criticalOpen,
-                            color: criticalOpen > 0 ? '#EF4444' : '#E0B954',
-                            icon: AlertTriangle,
-                        },
-                    ].map(({ label, value, color, icon: Icon }) => (
-                        <div
-                            key={label}
-                            className="bg-[rgba(255,255,255,0.025)] rounded-xl p-4 text-center"
-                        >
-                            <Icon className="w-5 h-5 mx-auto mb-2" style={{ color }} />
-                            <p className="text-xl font-bold text-white">{value}</p>
-                            <p className="text-xs text-[#737373] mt-1">{label}</p>
-                        </div>
-                    ))}
-                </div>
-            </div>
-
             {/* Stakeholder Summary */}
             <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-2xl p-6">
                 <div className="flex items-center gap-3 mb-5">
@@ -427,98 +364,68 @@ const BusinessReviewView: React.FC<BusinessReviewViewProps> = ({
                     </div>
                     <h3 className="text-sm font-semibold text-white">Stakeholder Summary</h3>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    {/* Left column */}
-                    <div className="space-y-3">
+                <div className="space-y-3">
+                    <div className="bg-[rgba(255,255,255,0.025)] rounded-xl p-4">
+                        <p className="text-xs text-[#737373] mb-2">Overall Completion</p>
+                        <div className="flex items-center gap-3">
+                            <div className="flex-1 h-2 bg-[rgba(255,255,255,0.05)] rounded-full overflow-hidden">
+                                <div
+                                    className="h-full bg-gradient-to-r from-[#E0B954] to-[#E0B954] rounded-full transition-all"
+                                    style={{ width: `${completionPct}%` }}
+                                />
+                            </div>
+                            <span className="text-sm font-bold text-white">{completionPct}%</span>
+                        </div>
+                    </div>
+                    {activeSprint && (
                         <div className="bg-[rgba(255,255,255,0.025)] rounded-xl p-4">
-                            <p className="text-xs text-[#737373] mb-1">Project Status</p>
-                            <p className="text-sm font-semibold text-white capitalize">
-                                {project?.status || 'Active'}
+                            <p className="text-xs text-[#737373] mb-1">Active Sprint</p>
+                            <p className="text-sm font-semibold text-white">{activeSprint.name}</p>
+                            <p className="text-xs text-[#E0B954] mt-1">
+                                {activeSprint.completion_pct}% complete
                             </p>
                         </div>
-                        <div className="bg-[rgba(255,255,255,0.025)] rounded-xl p-4">
-                            <p className="text-xs text-[#737373] mb-2">Overall Completion</p>
-                            <div className="flex items-center gap-3">
-                                <div className="flex-1 h-2 bg-[rgba(255,255,255,0.05)] rounded-full overflow-hidden">
-                                    <div
-                                        className="h-full bg-gradient-to-r from-[#E0B954] to-[#E0B954] rounded-full transition-all"
-                                        style={{ width: `${completionPct}%` }}
-                                    />
-                                </div>
-                                <span className="text-sm font-bold text-white">{completionPct}%</span>
-                            </div>
-                        </div>
-                        {activeSprint && (
-                            <div className="bg-[rgba(255,255,255,0.025)] rounded-xl p-4">
-                                <p className="text-xs text-[#737373] mb-1">Active Sprint</p>
-                                <p className="text-sm font-semibold text-white">{activeSprint.name}</p>
-                                <p className="text-xs text-[#E0B954] mt-1">
-                                    {activeSprint.completion_pct}% complete
-                                </p>
-                            </div>
-                        )}
-                    </div>
-                    {/* Right column */}
-                    <div className="space-y-3">
-                        <div className="bg-[rgba(255,255,255,0.025)] rounded-xl p-4">
-                            <p className="text-xs text-[#737373] mb-2">Key Metrics</p>
-                            <ul className="space-y-2">
-                                {[
-                                    { label: 'Total Work Items', value: analytics?.total_items || 0 },
-                                    {
-                                        label: 'Points Completed',
-                                        value: `${analytics?.completed_points || 0} / ${analytics?.total_story_points || 0}`,
-                                    },
-                                    {
-                                        label: 'Active Sprints',
-                                        value: sprints.filter(s => s.status === 'active').length,
-                                    },
-                                    { label: 'Goals Defined', value: goals.length },
-                                ].map(({ label, value }) => (
-                                    <li
-                                        key={label}
-                                        className="flex items-center justify-between text-sm"
-                                    >
-                                        <span className="text-[#a3a3a3]">{label}</span>
-                                        <span className="text-white font-medium">{value}</span>
-                                    </li>
-                                ))}
-                            </ul>
-                        </div>
-                        <div className="bg-[rgba(255,255,255,0.025)] rounded-xl p-4">
-                            <p className="text-xs text-[#737373] mb-1">Next Milestone</p>
-                            {milestones.filter(m => !m.is_completed).length > 0 ? (
-                                <>
-                                    <p className="text-sm font-semibold text-white">
-                                        {milestones.find(m => !m.is_completed)?.title}
-                                    </p>
-                                    <p className="text-xs text-[#737373] mt-1">
-                                        {milestones.find(m => !m.is_completed)?.due_date
-                                            ? `Due ${new Date(
-                                                  milestones.find(m => !m.is_completed)!.due_date!
-                                              ).toLocaleDateString()}`
-                                            : 'No due date set'}
-                                    </p>
-                                </>
-                            ) : (
-                                <p className="text-sm text-[#737373]">All milestones completed</p>
-                            )}
-                        </div>
+                    )}
+                    <div className="bg-[rgba(255,255,255,0.025)] rounded-xl p-4">
+                        <p className="text-xs text-[#737373] mb-2">Key Metrics</p>
+                        <ul className="space-y-2">
+                            {[
+                                { label: 'Total Work Items', value: analytics?.total_items || 0 },
+                                {
+                                    label: 'Points Completed',
+                                    value: `${analytics?.completed_points || 0} / ${analytics?.total_story_points || 0}`,
+                                },
+                                {
+                                    label: 'Active Sprints',
+                                    value: sprints.filter(s => s.status === 'active').length,
+                                },
+                            ].map(({ label, value }) => (
+                                <li
+                                    key={label}
+                                    className="flex items-center justify-between text-sm"
+                                >
+                                    <span className="text-[#a3a3a3]">{label}</span>
+                                    <span className="text-white font-medium">{value}</span>
+                                </li>
+                            ))}
+                        </ul>
                     </div>
                 </div>
             </div>
 
             {/* Business Review Comments */}
-            {businessReviewComments.length > 0 && (
-                <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-2xl p-6">
-                    <div className="flex items-center gap-3 mb-5">
-                        <div className="w-9 h-9 rounded-xl bg-[#A78BFA]/10 flex items-center justify-center">
-                            <MessageSquare className="w-4 h-4 text-[#A78BFA]" />
-                        </div>
-                        <h3 className="text-sm font-semibold text-white">Business Review Comments</h3>
+            <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-2xl p-6">
+                <div className="flex items-center gap-3 mb-5">
+                    <div className="w-9 h-9 rounded-xl bg-[#A78BFA]/10 flex items-center justify-center">
+                        <MessageSquare className="w-4 h-4 text-[#A78BFA]" />
+                    </div>
+                    <h3 className="text-sm font-semibold text-white">Business Review Comments</h3>
+                    {businessReviewComments.length > 0 && (
                         <Badge className="bg-[#A78BFA]/20 text-[#A78BFA] border-0 ml-auto">
                             {businessReviewComments.length}
                         </Badge>
+                    )}
+                    {businessReviewComments.length > 0 && (
                         <button
                             onClick={() => setIsBusinessReviewExpanded(!isBusinessReviewExpanded)}
                             className="p-1 hover:bg-[rgba(167,139,250,0.1)] rounded-lg transition-colors"
@@ -528,8 +435,15 @@ const BusinessReviewView: React.FC<BusinessReviewViewProps> = ({
                                 className={`w-5 h-5 text-[#A78BFA] transition-transform ${isBusinessReviewExpanded ? 'rotate-180' : ''}`}
                             />
                         </button>
+                    )}
+                </div>
+                {businessReviewComments.length === 0 ? (
+                    <div className="text-center py-8">
+                        <MessageSquare className="w-8 h-8 text-[#737373] mx-auto mb-3" />
+                        <p className="text-sm text-[#737373]">No comments yet</p>
                     </div>
-                    {isBusinessReviewExpanded && (
+                ) : (
+                    isBusinessReviewExpanded && (
                         <>
                             <div className="space-y-4">
                                 {businessReviewComments.slice(0, 10).map(comment => {
@@ -608,9 +522,9 @@ const BusinessReviewView: React.FC<BusinessReviewViewProps> = ({
                                 </div>
                             )}
                         </>
-                    )}
-                </div>
-            )}
+                    )
+                )}
+            </div>
         </div>
     );
 };
