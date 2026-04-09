@@ -675,6 +675,23 @@ const ProjectsPage = () => {
         return t.status === 'done';
     });
 
+    const getSortedTasks = (tasks: MyTask[]) => {
+        if (myTaskTab === 'upcoming') {
+            return [...tasks].sort((a, b) => {
+                // Tasks with due dates come first, sorted chronologically
+                if (a.due_date && b.due_date) {
+                    return new Date(a.due_date).getTime() - new Date(b.due_date).getTime();
+                }
+                // Tasks with due dates before tasks without
+                if (a.due_date && !b.due_date) return -1;
+                if (!a.due_date && b.due_date) return 1;
+                // Both without due dates - maintain original order
+                return 0;
+            });
+        }
+        return tasks;
+    };
+
     const handleAddDeveloper = () => {
         if (!selectedDeveloperId || !newRole.trim()) {
             toast.error('Please select a developer and enter a role');
@@ -1022,7 +1039,7 @@ const ProjectsPage = () => {
                                         </p>
                                     </div>
                                 ) : (
-                                    (showAllTasks ? filteredMyTasks : filteredMyTasks.slice(0, 6)).map(task => (
+                                    (showAllTasks ? getSortedTasks(filteredMyTasks) : getSortedTasks(filteredMyTasks).slice(0, 6)).map(task => (
                                         <div
                                             key={task.id}
                                             className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-[rgba(255,255,255,0.03)] transition-colors cursor-pointer group"
