@@ -210,6 +210,14 @@ const BusinessReviewView: React.FC<BusinessReviewViewProps> = ({
     const unassigned = workItems.filter(i => !i.assignee && i.status !== 'done').length;
     const criticalOpen = workItems.filter(i => i.priority === 'critical' && i.status !== 'done').length;
 
+    const renderTextWithNewlines = (text: string) => {
+        if (!text) return null;
+        return text.split('\n').map((line, index) => [
+            <span key={`line-${index}`}>{line}</span>,
+            index < text.split('\n').length - 1 ? <br key={`br-${index}`} /> : null
+        ]).flat().filter(Boolean);
+    };
+
     return (
         <div className="space-y-6">
             {/* Top Row: Health Score + KPI Cards */}
@@ -584,8 +592,8 @@ const BusinessReviewView: React.FC<BusinessReviewViewProps> = ({
                                                 )}
                                             </div>
                                         </div>
-                                        <p className="text-sm text-[#a3a3a3] leading-relaxed">
-                                            {displayContent}
+                                        <p className="text-sm text-[#a3a3a3] leading-relaxed whitespace-pre-wrap">
+                                            {renderTextWithNewlines(displayContent)}
                                             {!isExpanded && isLongContent && <span className="text-[#737373]">...</span>}
                                         </p>
                                     </div>

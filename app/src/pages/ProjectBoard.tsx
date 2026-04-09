@@ -622,13 +622,14 @@ const ProjectBoard = () => {
         
         // Parse the result and highlight the placeholders
         const parts = result.split(/(<<<MENTION_\d+>>>|<<<URL_\d+>>>)/g);
-        return parts.map((part, index) => {
+        let elementIndex = 0;
+        return parts.flatMap((part, index) => {
             const mentionMatch = part.match(/<<<MENTION_(\d+)>>>/);
             if (mentionMatch) {
                 const devId = parseInt(mentionMatch[1]);
                 const devName = devMap.get(devId);
                 return (
-                    <span key={index} className="bg-[rgba(224,185,84,0.2)] text-[#E0B954] px-1.5 py-0.5 rounded-md font-medium">
+                    <span key={`mention-${elementIndex++}`} className="bg-[rgba(224,185,84,0.2)] text-[#E0B954] px-1.5 py-0.5 rounded-md font-medium">
                         @{devName}
                     </span>
                 );
@@ -639,14 +640,31 @@ const ProjectBoard = () => {
                 const urlIndex = parseInt(urlMatch[1]);
                 const url = urls[urlIndex];
                 return (
-                    <a key={index} href={url} target="_blank" rel="noopener noreferrer" className="text-[#E0B954] hover:text-[#C79E3B] underline hover:no-underline transition-colors break-all">
+                    <a key={`url-${elementIndex++}`} href={url} target="_blank" rel="noopener noreferrer" className="text-[#E0B954] hover:text-[#C79E3B] underline hover:no-underline transition-colors break-all">
                         {url}
                     </a>
                 );
             }
             
+            // Handle newlines in text
+            if (part.trim()) {
+                return part.split('\n').flatMap((line, lineIndex) => [
+                    <span key={`text-${elementIndex}-${lineIndex}`}>{line}</span>,
+                    lineIndex < part.split('\n').length - 1 ? <br key={`br-${elementIndex}-${lineIndex}`} /> : null
+                ]).filter(Boolean);
+            }
+            
             return part;
         });
+    };
+
+    // Render text with newlines preserved
+    const renderTextWithNewlines = (text: string) => {
+        if (!text) return null;
+        return text.split('\n').map((line, index) => [
+            <span key={`line-${index}`}>{line}</span>,
+            index < text.split('\n').length - 1 ? <br key={`br-${index}`} /> : null
+        ]).flat().filter(Boolean);
     };
 
     // Save edited item
@@ -1567,7 +1585,7 @@ onClick={() => { navigate(`/project/${id}/board/${item.id}`); setIsEditing(false
                                     <div>
                                         <label className="text-xs font-medium text-[#737373] block mb-1.5">Description</label>
                                         <Textarea defaultValue={selectedItem.description} onChange={e => setEditForm(f => ({ ...f, description: e.target.value }))}
-                                            className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl min-h-[120px] resize-none" />
+                                            className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl min-h-[120px] resize-none whitespace-pre-wrap" />
                                     </div>
                                     <div className="grid grid-cols-2 gap-3">
                                         <div>
@@ -1644,7 +1662,7 @@ onClick={() => { navigate(`/project/${id}/board/${item.id}`); setIsEditing(false
                                 <>
                                     <div>
                                         <h2 className="text-xl font-bold text-white mb-3">{selectedItem.title}</h2>
-                                        <p className="text-sm text-[#a3a3a3] leading-relaxed">{selectedItem.description || 'No description provided.'}</p>
+                                        <p className="text-sm text-[#a3a3a3] leading-relaxed whitespace-pre-wrap">{renderTextWithNewlines(selectedItem.description) || 'No description provided.'}</p>
                                     </div>
 
                                     {/* Detail Stats */}
@@ -1984,7 +2002,7 @@ onClick={() => { navigate(`/project/${id}/board/${item.id}`); setIsEditing(false
                                 <label className="text-xs font-medium text-[#737373] block mb-1.5">Description</label>
                                 <Textarea value={createForm.description} onChange={e => setCreateForm(f => ({ ...f, description: e.target.value }))}
                                     placeholder="Describe the requirements..."
-                                    className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl min-h-[100px] placeholder:text-[#334155] resize-none" />
+                                    className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl min-h-[100px] placeholder:text-[#334155] resize-none whitespace-pre-wrap" />
                             </div>
                             <div className="grid grid-cols-3 gap-3">
                                 <div>

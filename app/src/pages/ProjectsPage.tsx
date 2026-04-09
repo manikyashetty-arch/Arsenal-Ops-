@@ -534,6 +534,15 @@ const ProjectsPage = () => {
         }
     };
 
+    // Render text with newlines preserved
+    const renderTextWithNewlines = (text: string) => {
+        if (!text) return null;
+        return text.split('\n').map((line, index) => [
+            <span key={`line-${index}`}>{line}</span>,
+            index < text.split('\n').length - 1 ? <br key={`br-${index}`} /> : null
+        ]).flat().filter(Boolean);
+    };
+
     // Save edited task
     const saveEditedTask = async () => {
         if (!selectedTask) return;
@@ -1368,7 +1377,7 @@ const ProjectsPage = () => {
                                         <Textarea
                                             value={editingTaskForm.description}
                                             onChange={(e) => setEditingTaskForm({ ...editingTaskForm, description: e.target.value })}
-                                            className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl min-h-[120px] resize-none"
+                                            className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl min-h-[120px] resize-none whitespace-pre-wrap"
                                         />
                                     </div>
                                     <div className="grid grid-cols-2 gap-3">
@@ -1597,8 +1606,8 @@ const ProjectsPage = () => {
                             {selectedTask.description && (
                                 <div>
                                     <p className="text-xs font-medium text-[#737373] mb-2">Description</p>
-                                    <p className="text-sm text-[#a3a3a3] leading-relaxed bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-xl p-4">
-                                        {selectedTask.description}
+                                    <p className="text-sm text-[#a3a3a3] leading-relaxed whitespace-pre-wrap bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-xl p-4">
+                                        {renderTextWithNewlines(selectedTask.description)}
                                     </p>
                                 </div>
                             )}
