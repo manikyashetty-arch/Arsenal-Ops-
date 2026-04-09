@@ -623,7 +623,7 @@ const ProjectBoard = () => {
         // Parse the result and highlight the placeholders
         const parts = result.split(/(<<<MENTION_\d+>>>|<<<URL_\d+>>>)/g);
         let elementIndex = 0;
-        return parts.flatMap((part, index) => {
+        return parts.flatMap((part) => {
             const mentionMatch = part.match(/<<<MENTION_(\d+)>>>/);
             if (mentionMatch) {
                 const devId = parseInt(mentionMatch[1]);
