@@ -148,6 +148,25 @@ def run_migrations():
         except Exception as e:
             print(f"[MIGRATION ERROR] {e}")
         
+        # Migration: Add is_admin column to project_developers
+        try:
+            result = conn.execute(text("""
+                SELECT column_name 
+                FROM information_schema.columns 
+                WHERE table_name = 'project_developers' AND column_name = 'is_admin'
+            """))
+            
+            if not result.fetchone():
+                print("[MIGRATION] Adding is_admin column to project_developers...")
+                conn.execute(text("""
+                    ALTER TABLE project_developers 
+                    ADD COLUMN is_admin BOOLEAN DEFAULT FALSE
+                """))
+                conn.commit()
+                print("[MIGRATION] is_admin column added successfully!")
+        except Exception as e:
+            print(f"[MIGRATION ERROR] {e}")
+        
         # Migration: Create project_milestones table if not exists
         try:
             result = conn.execute(text("""

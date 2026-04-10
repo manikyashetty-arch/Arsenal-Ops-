@@ -35,6 +35,7 @@ import {
     ChevronDown,
     ChevronUp,
     Link2,
+    Crown,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import PMView from '@/components/PMView';
@@ -64,6 +65,7 @@ interface ProjectDeveloper {
     github_username: string;
     role: string;
     responsibilities: string;
+    is_admin: boolean;
 }
 
 interface Architecture {
@@ -650,6 +652,56 @@ const ProjectDetail = () => {
         }
     };
 
+    // Promote developer to project admin
+    const handlePromoteToAdmin = async (developerId: number) => {
+        if (!project) return;
+        try {
+            const res = await fetch(`${API_BASE_URL}/api/projects/${project.id}/developers/${developerId}/admin`, {
+                method: 'PUT',
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (res.ok) {
+                toast.success('Developer promoted to project admin!');
+                fetchProject();
+            } else {
+                const error = await res.json();
+                toast.error(error.detail || 'Failed to promote developer');
+            }
+        } catch {
+            toast.error('Failed to promote developer');
+        }
+    };
+
+    // Demote developer from project admin
+    const handleDemoteFromAdmin = async (developerId: number) => {
+        if (!project) return;
+        try {
+            const res = await fetch(`${API_BASE_URL}/api/projects/${project.id}/developers/${developerId}/member`, {
+                method: 'PUT',
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (res.ok) {
+                toast.success('Developer demoted from project admin!');
+                fetchProject();
+            } else {
+                const error = await res.json();
+                toast.error(error.detail || 'Failed to demote developer');
+            }
+        } catch {
+            toast.error('Failed to demote developer');
+        }
+    };
+
+    // Check if current user is a system admin or project admin
+    const isCurrentUserAdmin = () => {
+        if (!user || !project) return false;
+        const isSystemAdmin = user.role.includes('admin');
+        const isProjectAdmin = project.developers.some(
+            dev => dev.email === user.email && dev.is_admin
+        );
+        return isSystemAdmin || isProjectAdmin;
+    };
+
     // Save architecture changes
     const handleSaveArchitecture = async (id: number, updates: { mermaid_code?: string; name?: string; description?: string }) => {
         try {
@@ -769,6 +821,15 @@ const ProjectDetail = () => {
         );
     }
 
+    // Check if user can see PM tab: system admin, project manager, or project admin
+    const canAccessPMTab = () => {
+        if (isProjectManager(user)) return true;
+        if (!user || !project) return false;
+        return project.developers.some(
+            dev => dev.email === user.email && dev.is_admin
+        );
+    };
+
     const tabs = [
         { id: 'overview' as TabType, label: 'Overview', icon: Info },
         { id: 'hub' as TabType, label: 'Project Hub', icon: List },
@@ -776,8 +837,8 @@ const ProjectDetail = () => {
         { id: 'calendar' as TabType, label: 'Timeline', icon: Calendar },
         { id: 'business' as TabType, label: 'Business Review', icon: TrendingUp },
         { id: 'activity' as TabType, label: 'Activity', icon: Activity },
-        // PM tab only for admins and project managers
-        ...(isProjectManager(user) ? [{ id: 'project_manager' as TabType, label: 'Project Manager', icon: Clock }] : []),
+        // PM tab for system admins, project managers, and project admins
+        ...(canAccessPMTab() ? [{ id: 'project_manager' as TabType, label: 'Project Manager', icon: Clock }] : []),
     ];
 
     // Filter out developers already in project
@@ -1517,12 +1578,19 @@ const ProjectDetail = () => {
                                             key={dev.id}
                                             className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-xl p-4 flex items-start justify-between"
                                         >
-                                            <div className="flex items-start gap-4">
+                                            <div className="flex-1 flex items-start gap-4">
                                                 <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#E0B954] to-[#B8872A] flex items-center justify-center text-white font-semibold">
                                                     {dev.name.charAt(0).toUpperCase()}
                                                 </div>
-                                                <div>
-                                                    <h3 className="font-semibold text-white">{dev.name}</h3>
+                                                <div className="flex-1">
+                                                    <div className="flex items-center gap-2">
+                                                        <h3 className="font-semibold text-white">{dev.name}</h3>
+                                                        {dev.is_admin && (
+                                                            <Badge className="bg-blue-500/20 text-blue-400 border-0">
+                                                                Admin
+                                                            </Badge>
+                                                        )}
+                                                    </div>
                                                     <p className="text-sm text-[#737373]">{dev.email}</p>
                                                     <div className="flex items-center gap-2 mt-1.5">
                                                         <Badge className="bg-[#E0B954]/20 text-[#E0B954] border-0">
@@ -1540,14 +1608,40 @@ const ProjectDetail = () => {
                                                     )}
                                                 </div>
                                             </div>
-                                            <Button
-                                                variant="ghost"
-                                                size="sm"
-                                                onClick={() => handleRemoveDeveloper(dev.id)}
-                                                className="text-red-400 hover:text-red-300 hover:bg-red-400/10"
-                                            >
-                                                <Trash2 className="w-4 h-4" />
-                                            </Button>
+                                            {isCurrentUserAdmin() ? (
+                                                <div className="flex items-center gap-2">
+                                                    {dev.is_admin ? (
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="sm"
+                                                            onClick={() => handleDemoteFromAdmin(dev.id)}
+                                                            className="text-yellow-400 hover:text-yellow-300 hover:bg-yellow-400/10"
+                                                            title="Demote from admin"
+                                                        >
+                                                            <Crown className="w-4 h-4" />
+                                                        </Button>
+                                                    ) : (
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="sm"
+                                                            onClick={() => handlePromoteToAdmin(dev.id)}
+                                                            className="text-gray-500 hover:text-gray-400 hover:bg-gray-500/10"
+                                                            title="Promote to admin"
+                                                        >
+                                                            <Crown className="w-4 h-4" />
+                                                        </Button>
+                                                    )}
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="sm"
+                                                        onClick={() => handleRemoveDeveloper(dev.id)}
+                                                        className="text-red-400 hover:text-red-300 hover:bg-red-400/10"
+                                                        title="Remove developer"
+                                                    >
+                                                        <Trash2 className="w-4 h-4" />
+                                                    </Button>
+                                                </div>
+                                            ) : null}
                                         </div>
                                     ))}
                                 </div>
@@ -2044,7 +2138,7 @@ const ProjectDetail = () => {
 
                 
                 {/* Project Manager Tab */}
-                {activeTab === 'project_manager' && isProjectManager(user) && (
+                {activeTab === 'project_manager' && canAccessPMTab() && (
                     hubLoading ? (
                         <div className="space-y-4 animate-pulse">
                             {/* Sprint Progress skeleton */}

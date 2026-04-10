@@ -80,6 +80,7 @@ interface ProjectDeveloper {
     email: string;
     role: string;
     responsibilities?: string;
+    is_admin: boolean;
 }
 
 interface Project {
@@ -1100,15 +1101,13 @@ const ProjectsPage = () => {
                                         className="pl-8 w-32 bg-[rgba(255,255,255,0.03)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-lg h-7 text-xs focus:border-[#E0B954]/50"
                                     />
                                 </div>
-                                {user?.role.includes('admin') && (
-                                    <button
-                                        onClick={() => setShowCreateModal(true)}
-                                        className="w-7 h-7 flex items-center justify-center rounded-lg bg-gradient-to-r from-[#E0B954] to-[#C79E3B] hover:opacity-90 text-[#080808] transition-opacity"
-                                        title="New Project"
-                                    >
-                                        <Plus className="w-4 h-4" />
-                                    </button>
-                                )}
+                                <button
+                                    onClick={() => setShowCreateModal(true)}
+                                    className="w-7 h-7 flex items-center justify-center rounded-lg bg-gradient-to-r from-[#E0B954] to-[#C79E3B] hover:opacity-90 text-[#080808] transition-opacity"
+                                    title="New Project"
+                                >
+                                    <Plus className="w-4 h-4" />
+                                </button>
                             </div>
                         </div>
                         <div className="flex-1 overflow-y-auto p-3">
