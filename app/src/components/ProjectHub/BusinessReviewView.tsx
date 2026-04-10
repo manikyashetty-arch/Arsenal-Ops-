@@ -12,6 +12,8 @@ import {
     ExternalLink,
     ChevronDown,
     Circle,
+    HelpCircle,
+    X,
 } from 'lucide-react';
 import { API_BASE_URL } from '@/config/api';
 import { useAuth } from '@/contexts/AuthContext';
@@ -19,6 +21,7 @@ import { useAuth } from '@/contexts/AuthContext';
 interface WorkItem {
     id: string;
     key: string;
+    title?: string;
     type: string;
     status: string;
     priority: string;
@@ -92,6 +95,10 @@ const BusinessReviewView: React.FC<BusinessReviewViewProps> = ({
     const [businessReviewComments, setBusinessReviewComments] = useState<BusinessReviewComment[]>([]);
     const [expandedComments, setExpandedComments] = useState<Set<number>>(new Set());
     const [isBusinessReviewExpanded, setIsBusinessReviewExpanded] = useState(true);
+    const [showHealthExplanation, setShowHealthExplanation] = useState(false);
+    const [showOverdueDialog, setShowOverdueDialog] = useState(false);
+    const [showBugsDialog, setShowBugsDialog] = useState(false);
+    const [showCriticalDialog, setShowCriticalDialog] = useState(false);
     
     // Fetch business review comments on mount
     useEffect(() => {
@@ -155,6 +162,17 @@ const BusinessReviewView: React.FC<BusinessReviewViewProps> = ({
 
     const openBugs = workItems.filter(item => item.type === 'bug' && item.status !== 'done').length;
 
+    // Filter lists for dialogs
+    const overdueItemsList = workItems.filter(
+        item => item.due_date && new Date(item.due_date) < today && item.status !== 'done'
+    );
+    const bugsList = workItems.filter(
+        item => item.type === 'bug' && item.status !== 'done'
+    );
+    const criticalItemsList = workItems.filter(
+        item => item.priority === 'critical' && item.status !== 'done'
+    );
+
     const completedMilestones = milestones.filter(m => m.is_completed).length;
     const totalMilestones = milestones.length;
     const milestonePct = totalMilestones > 0 ? Math.round((completedMilestones / totalMilestones) * 100) : 0;
@@ -168,11 +186,37 @@ const BusinessReviewView: React.FC<BusinessReviewViewProps> = ({
 
     // Health score: start at 100, subtract for issues
     let healthScore = 100;
-    healthScore -= Math.min(30, overdueItems * 5);
-    healthScore -= Math.min(20, openBugs * 4);
+    const deductions: Array<{ label: string; amount: number; detail: string }> = [];
+    
+    const overdueDeduction = Math.min(30, overdueItems * 5);
+    if (overdueDeduction > 0) {
+        healthScore -= overdueDeduction;
+        deductions.push({
+            label: 'Overdue Items',
+            amount: overdueDeduction,
+            detail: `${overdueItems} overdue items × 5 points each (max 30)`
+        });
+    }
+    
+    const bugsDeduction = Math.min(20, openBugs * 4);
+    if (bugsDeduction > 0) {
+        healthScore -= bugsDeduction;
+        deductions.push({
+            label: 'Open Bugs',
+            amount: bugsDeduction,
+            detail: `${openBugs} open bugs × 4 points each (max 20)`
+        });
+    }
+    
     if (totalMilestones > 0 && milestonePct < 50 && activeSprint) {
         healthScore -= 10;
+        deductions.push({
+            label: 'Low Milestone Progress',
+            amount: 10,
+            detail: `Only ${milestonePct}% of milestones completed with active sprint`
+        });
     }
+    
     healthScore = Math.max(0, Math.min(100, healthScore));
 
     const getHealthMeta = (score: number) => {
@@ -203,7 +247,8 @@ const BusinessReviewView: React.FC<BusinessReviewViewProps> = ({
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 {/* Health Score */}
                 <div
-                    className={`bg-[rgba(255,255,255,0.02)] border ${health.borderColor} ${health.bgColor} rounded-2xl p-5 flex flex-col items-center justify-center`}
+                    onClick={() => setShowHealthExplanation(true)}
+                    className={`bg-[rgba(255,255,255,0.02)] border ${health.borderColor} ${health.bgColor} rounded-2xl p-5 flex flex-col items-center justify-center cursor-pointer hover:bg-[rgba(255,255,255,0.04)] transition-all`}
                 >
                     <div className="relative w-20 h-20 mb-3">
                         <svg viewBox="0 0 100 100" className="w-full h-full -rotate-90">
@@ -235,10 +280,17 @@ const BusinessReviewView: React.FC<BusinessReviewViewProps> = ({
                     >
                         {health.label}
                     </span>
+                    <div className="mt-2 flex items-center gap-1 text-xs text-[#737373] hover:text-white transition-colors">
+                        <HelpCircle className="w-3 h-3" />
+                        Click to see calculation
+                    </div>
                 </div>
 
                 {/* On-Time Delivery */}
-                <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-2xl p-5">
+                <div
+                    onClick={() => setShowOverdueDialog(true)}
+                    className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-2xl p-5 cursor-pointer hover:bg-[rgba(255,255,255,0.04)] transition-all"
+                >
                     <div className="flex items-center gap-2 mb-3">
                         <div className="w-8 h-8 rounded-xl bg-[#34D399]/10 flex items-center justify-center">
                             <CheckCircle2 className="w-4 h-4 text-[#34D399]" />
@@ -257,7 +309,10 @@ const BusinessReviewView: React.FC<BusinessReviewViewProps> = ({
                 </div>
 
                 {/* Open Bugs */}
-                <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-2xl p-5">
+                <div
+                    onClick={() => setShowBugsDialog(true)}
+                    className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-2xl p-5 cursor-pointer hover:bg-[rgba(255,255,255,0.04)] transition-all"
+                >
                     <div className="flex items-center gap-2 mb-3">
                         <div className="w-8 h-8 rounded-xl bg-[#EF4444]/10 flex items-center justify-center">
                             <AlertCircle className="w-4 h-4 text-[#EF4444]" />
@@ -269,7 +324,10 @@ const BusinessReviewView: React.FC<BusinessReviewViewProps> = ({
                 </div>
 
                 {/* Critical Items */}
-                <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-2xl p-5">
+                <div
+                    onClick={() => setShowCriticalDialog(true)}
+                    className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-2xl p-5 cursor-pointer hover:bg-[rgba(255,255,255,0.04)] transition-all"
+                >
                     <div className="flex items-center gap-2 mb-3">
                         <div className="w-8 h-8 rounded-xl bg-[#F97316]/10 flex items-center justify-center">
                             <AlertTriangle className="w-4 h-4 text-[#F97316]" />
@@ -525,6 +583,310 @@ const BusinessReviewView: React.FC<BusinessReviewViewProps> = ({
                     )
                 )}
             </div>
+
+            {/* Overdue Items Dialog */}
+            {showOverdueDialog && (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                    <div className="bg-[#0d0d0d] border border-[rgba(255,255,255,0.07)] rounded-2xl w-full max-w-md shadow-2xl max-h-[90vh] overflow-y-auto">
+                        {/* Header */}
+                        <div className="flex items-center justify-between p-6 border-b border-[rgba(255,255,255,0.05)] sticky top-0 bg-[#0d0d0d]">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-[#EF4444]/20">
+                                    <Clock className="w-5 h-5 text-[#EF4444]" />
+                                </div>
+                                <div>
+                                    <h2 className="text-lg font-semibold text-white">Overdue Items</h2>
+                                    <p className="text-xs text-[#737373]">{overdueItemsList.length} item{overdueItemsList.length !== 1 ? 's' : ''}</p>
+                                </div>
+                            </div>
+                            <button
+                                onClick={() => setShowOverdueDialog(false)}
+                                className="text-[#737373] hover:text-white transition-colors p-1"
+                            >
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+
+                        {/* Content */}
+                        <div className="p-6 space-y-3">
+                            {overdueItemsList.length === 0 ? (
+                                <p className="text-sm text-[#737373] text-center py-8">No overdue items 🎉</p>
+                            ) : (
+                                overdueItemsList.map(item => (
+                                    <a
+                                        key={item.id}
+                                        onClick={() => {
+                                            window.open(`/project/${project.id}/board/${item.id}`, '_blank');
+                                        }}
+                                        className="flex items-center gap-3 p-3 bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-lg hover:bg-[rgba(255,255,255,0.04)] transition-all cursor-pointer"
+                                    >
+                                        <div className="w-8 h-8 rounded-md flex items-center justify-center bg-[#EF4444]/10 flex-shrink-0">
+                                            <Clock className="w-4 h-4 text-[#EF4444]" />
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                            <span className="text-xs font-mono text-[#E0B954] block mb-1">{item.key}</span>
+                                            <p className="text-sm text-white truncate">{item.title || item.key}</p>
+                                        </div>
+                                        <ExternalLink className="w-4 h-4 text-[#737373] flex-shrink-0" />
+                                    </a>
+                                ))
+                            )}
+                        </div>
+
+                        {/* Footer */}
+                        <div className="p-4 border-t border-[rgba(255,255,255,0.05)]">
+                            <button
+                                onClick={() => setShowOverdueDialog(false)}
+                                className="w-full bg-[#E0B954] hover:bg-[#C79E3B] text-[#080808] font-medium py-2 rounded-lg transition-colors"
+                            >
+                                Close
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Open Bugs Dialog */}
+            {showBugsDialog && (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                    <div className="bg-[#0d0d0d] border border-[rgba(255,255,255,0.07)] rounded-2xl w-full max-w-md shadow-2xl max-h-[90vh] overflow-y-auto">
+                        {/* Header */}
+                        <div className="flex items-center justify-between p-6 border-b border-[rgba(255,255,255,0.05)] sticky top-0 bg-[#0d0d0d]">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-[#EF4444]/20">
+                                    <AlertCircle className="w-5 h-5 text-[#EF4444]" />
+                                </div>
+                                <div>
+                                    <h2 className="text-lg font-semibold text-white">Open Bugs</h2>
+                                    <p className="text-xs text-[#737373]">{bugsList.length} bug{bugsList.length !== 1 ? 's' : ''}</p>
+                                </div>
+                            </div>
+                            <button
+                                onClick={() => setShowBugsDialog(false)}
+                                className="text-[#737373] hover:text-white transition-colors p-1"
+                            >
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+
+                        {/* Content */}
+                        <div className="p-6 space-y-3">
+                            {bugsList.length === 0 ? (
+                                <p className="text-sm text-[#737373] text-center py-8">No open bugs 🎉</p>
+                            ) : (
+                                bugsList.map(item => (
+                                    <a
+                                        key={item.id}
+                                        onClick={() => {
+                                            window.open(`/project/${project.id}/board/${item.id}`, '_blank');
+                                        }}
+                                        className="flex items-center gap-3 p-3 bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-lg hover:bg-[rgba(255,255,255,0.04)] transition-all cursor-pointer"
+                                    >
+                                        <div className="w-8 h-8 rounded-md flex items-center justify-center bg-[#EF4444]/10 flex-shrink-0">
+                                            <AlertCircle className="w-4 h-4 text-[#EF4444]" />
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                            <span className="text-xs font-mono text-[#E0B954] block mb-1">{item.key}</span>
+                                            <p className="text-sm text-white truncate">{item.title || item.key}</p>
+                                        </div>
+                                        <ExternalLink className="w-4 h-4 text-[#737373] flex-shrink-0" />
+                                    </a>
+                                ))
+                            )}
+                        </div>
+
+                        {/* Footer */}
+                        <div className="p-4 border-t border-[rgba(255,255,255,0.05)]">
+                            <button
+                                onClick={() => setShowBugsDialog(false)}
+                                className="w-full bg-[#E0B954] hover:bg-[#C79E3B] text-[#080808] font-medium py-2 rounded-lg transition-colors"
+                            >
+                                Close
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Critical Items Dialog */}
+            {showCriticalDialog && (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                    <div className="bg-[#0d0d0d] border border-[rgba(255,255,255,0.07)] rounded-2xl w-full max-w-md shadow-2xl max-h-[90vh] overflow-y-auto">
+                        {/* Header */}
+                        <div className="flex items-center justify-between p-6 border-b border-[rgba(255,255,255,0.05)] sticky top-0 bg-[#0d0d0d]">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-[#F97316]/20">
+                                    <AlertTriangle className="w-5 h-5 text-[#F97316]" />
+                                </div>
+                                <div>
+                                    <h2 className="text-lg font-semibold text-white">Critical Items</h2>
+                                    <p className="text-xs text-[#737373]">{criticalItemsList.length} item{criticalItemsList.length !== 1 ? 's' : ''}</p>
+                                </div>
+                            </div>
+                            <button
+                                onClick={() => setShowCriticalDialog(false)}
+                                className="text-[#737373] hover:text-white transition-colors p-1"
+                            >
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+
+                        {/* Content */}
+                        <div className="p-6 space-y-3">
+                            {criticalItemsList.length === 0 ? (
+                                <p className="text-sm text-[#737373] text-center py-8">No critical items 🎉</p>
+                            ) : (
+                                criticalItemsList.map(item => (
+                                    <a
+                                        key={item.id}
+                                        onClick={() => {
+                                            window.open(`/project/${project.id}/board/${item.id}`, '_blank');
+                                        }}
+                                        className="flex items-center gap-3 p-3 bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-lg hover:bg-[rgba(255,255,255,0.04)] transition-all cursor-pointer"
+                                    >
+                                        <div className="w-8 h-8 rounded-md flex items-center justify-center bg-[#F97316]/10 flex-shrink-0">
+                                            <AlertTriangle className="w-4 h-4 text-[#F97316]" />
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                            <span className="text-xs font-mono text-[#E0B954] block mb-1">{item.key}</span>
+                                            <p className="text-sm text-white truncate">{item.title || item.key}</p>
+                                        </div>
+                                        <ExternalLink className="w-4 h-4 text-[#737373] flex-shrink-0" />
+                                    </a>
+                                ))
+                            )}
+                        </div>
+
+                        {/* Footer */}
+                        <div className="p-4 border-t border-[rgba(255,255,255,0.05)]">
+                            <button
+                                onClick={() => setShowCriticalDialog(false)}
+                                className="w-full bg-[#E0B954] hover:bg-[#C79E3B] text-[#080808] font-medium py-2 rounded-lg transition-colors"
+                            >
+                                Close
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Health Explanation Modal */}
+            {showHealthExplanation && (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                    <div className="bg-[#0d0d0d] border border-[rgba(255,255,255,0.07)] rounded-2xl w-full max-w-md shadow-2xl max-h-[90vh] overflow-y-auto">
+                        {/* Header */}
+                        <div className="flex items-center justify-between p-6 border-b border-[rgba(255,255,255,0.05)] sticky top-0 bg-[#0d0d0d]">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ backgroundColor: `${health.color}20` }}>
+                                    <HelpCircle className="w-5 h-5" style={{ color: health.color }} />
+                                </div>
+                                <div>
+                                    <h2 className="text-lg font-semibold text-white">How Health is Calculated</h2>
+                                    <p className="text-xs text-[#737373]">Score breakdown</p>
+                                </div>
+                            </div>
+                            <button
+                                onClick={() => setShowHealthExplanation(false)}
+                                className="text-[#737373] hover:text-white transition-colors p-1"
+                            >
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+
+                        {/* Content */}
+                        <div className="p-6 space-y-6">
+                            {/* Current Score */}
+                            <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-xl p-4">
+                                <div className="flex items-center justify-between mb-2">
+                                    <span className="text-sm text-[#737373]">Current Score</span>
+                                    <span className="text-2xl font-bold text-white">{healthScore}</span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <div className="flex-1 h-2 bg-[rgba(255,255,255,0.05)] rounded-full overflow-hidden">
+                                        <div
+                                            className="h-full rounded-full transition-all"
+                                            style={{ width: `${healthScore}%`, backgroundColor: health.color }}
+                                        />
+                                    </div>
+                                    <span className="text-xs font-medium px-2 py-0.5 rounded-full" style={{ backgroundColor: `${health.color}20`, color: health.color }}>
+                                        {health.label}
+                                    </span>
+                                </div>
+                            </div>
+
+                            {/* How It Works */}
+                            <div>
+                                <h3 className="text-sm font-semibold text-white mb-3">How It Works</h3>
+                                <div className="space-y-2 text-sm text-[#a3a3a3]">
+                                    <p>Your project starts with a base score of <strong className="text-white">100 points</strong>.</p>
+                                    <p>Points are deducted based on project health indicators below. The lower the deductions, the healthier your project.</p>
+                                </div>
+                            </div>
+
+                            {/* Deductions */}
+                            <div>
+                                <h3 className="text-sm font-semibold text-white mb-3">Deductions Applied</h3>
+                                <div className="space-y-3">
+                                    {deductions.length > 0 ? (
+                                        deductions.map((d, idx) => (
+                                            <div key={idx} className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-lg p-3">
+                                                <div className="flex items-center justify-between mb-1">
+                                                    <span className="text-sm font-medium text-white">{d.label}</span>
+                                                    <span className="text-sm font-bold text-[#EF4444]">-{d.amount}</span>
+                                                </div>
+                                                <p className="text-xs text-[#737373]">{d.detail}</p>
+                                            </div>
+                                        ))
+                                    ) : (
+                                        <div className="bg-[rgba(52,211,153,0.1)] border border-[rgba(52,211,153,0.2)] rounded-lg p-3">
+                                            <p className="text-sm text-[#34D399] font-medium">✓ No deductions - Project is healthy!</p>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* Score Ranges */}
+                            <div>
+                                <h3 className="text-sm font-semibold text-white mb-3">Score Ranges</h3>
+                                <div className="space-y-2">
+                                    <div className="flex items-center gap-2">
+                                        <div className="w-3 h-3 rounded-full" style={{ backgroundColor: '#34D399' }} />
+                                        <span className="text-sm text-[#a3a3a3]"><strong>80-100:</strong> Healthy</span>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <div className="w-3 h-3 rounded-full" style={{ backgroundColor: '#FBBF24' }} />
+                                        <span className="text-sm text-[#a3a3a3]"><strong>60-79:</strong> At Risk</span>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <div className="w-3 h-3 rounded-full" style={{ backgroundColor: '#EF4444' }} />
+                                        <span className="text-sm text-[#a3a3a3]"><strong>0-59:</strong> Critical</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Tips */}
+                            <div className="bg-[rgba(224,185,84,0.1)] border border-[rgba(224,185,84,0.2)] rounded-lg p-3">
+                                <p className="text-xs text-[#E0B954] font-medium mb-2">✨ Tips to Improve Health</p>
+                                <ul className="text-xs text-[#a3a3a3] space-y-1">
+                                    <li>• Resolve overdue items to reduce penalties</li>
+                                    <li>• Fix bugs to maintain code quality</li>
+                                    <li>• Keep milestone progress above 50%</li>
+                                </ul>
+                            </div>
+                        </div>
+
+                        {/* Footer */}
+                        <div className="p-4 border-t border-[rgba(255,255,255,0.05)]">
+                            <button
+                                onClick={() => setShowHealthExplanation(false)}
+                                className="w-full bg-[#E0B954] hover:bg-[#C79E3B] text-[#080808] font-medium py-2 rounded-lg transition-colors"
+                            >
+                                Got it
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

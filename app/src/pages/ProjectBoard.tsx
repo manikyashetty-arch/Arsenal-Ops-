@@ -1084,7 +1084,7 @@ const ProjectBoard = () => {
         try {
             await fetch(`${API_BASE_URL}/api/workitems/${item.id}`, {
                 method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                 body: JSON.stringify({ status: newStatus }),
             });
             refreshProjectStats();
