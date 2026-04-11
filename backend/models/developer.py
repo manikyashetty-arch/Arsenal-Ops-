@@ -1,5 +1,5 @@
 """Developer model - Team members and their roles"""
-from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, Table
+from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, Table, Boolean
 from sqlalchemy.orm import relationship
 from datetime import datetime
 
@@ -15,6 +15,7 @@ project_developers = Table(
     Column('developer_id', Integer, ForeignKey('developers.id'), primary_key=True),
     Column('role', String(100), nullable=False),  # Role in this specific project
     Column('responsibilities', Text),  # What they'll be working on
+    Column('is_admin', Boolean, default=False),  # Project-specific admin role
     Column('assigned_at', DateTime, default=datetime.utcnow)
 )
 

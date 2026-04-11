@@ -35,6 +35,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Calendar as CalendarIcon } from '@/components/ui/calendar';
 import { toast, Toaster } from 'sonner';
 import ArchitectureCard from '@/components/ArchitectureCard';
 import ArchitectureEditor from '@/components/ArchitectureEditor';
@@ -68,6 +70,8 @@ interface WorkItem {
     epic_key?: string | null;
     created_at?: string;
     updated_at?: string;
+    due_date?: string | null;
+    estimated_hours?: number | null;
 }
 
 interface Developer {
@@ -156,6 +160,13 @@ interface Sprint {
 
 type AIStep = 'upload' | 'analyzing' | 'architectures' | 'preview' | 'committing' | 'done';
 
+// Helper function to parse YYYY-MM-DD string to local Date object (avoids UTC timezone issues)
+const parseLocalDate = (dateString: string | undefined): Date | undefined => {
+    if (!dateString) return undefined;
+    const [year, month, day] = dateString.split('-');
+    return new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+};
+
 const STATUS_CONFIG = {
     backlog: { label: 'Backlog', color: '#737373', icon: Inbox, gradient: 'from-[#737373]/10' },
     todo: { label: 'To Do', color: '#E0B954', icon: Plus, gradient: 'from-[#E0B954]/10' },
@@ -226,6 +237,10 @@ const ProjectBoard = () => {
     const [showCreateSprintModal, setShowCreateSprintModal] = useState(false);
     const [newSprint, setNewSprint] = useState({ name: '', goal: '', start_date: '', end_date: '' });
 
+    // Calendar popover states
+    const [showCalendarCreateForm, setShowCalendarCreateForm] = useState(false);
+    const [showCalendarEditForm, setShowCalendarEditForm] = useState(false);
+
     // Comments state
     const [comments, setComments] = useState<Array<{
         id: number;
@@ -253,6 +268,8 @@ const ProjectBoard = () => {
         sprint: 'Backlog',
         epic_id: null as number | null,
         parent_id: null as number | null,
+        due_date: '' as string,
+        estimated_hours: '' as string | number,
     });
 
     // Client-side comment cache (cache-aside pattern) — avoids re-fetching on re-open
@@ -398,13 +415,15 @@ const ProjectBoard = () => {
                     remaining_hours: createForm.story_points * 4,
                     status: 'todo',
                     tags: [],
+                    estimated_hours: createForm.estimated_hours ? parseInt(createForm.estimated_hours as string) || null : null,
+                    due_date: createForm.due_date || null,
                 }),
             });
             if (response.ok) {
                 const newItem = await response.json();
                 setWorkItems(prev => [...prev, newItem]);
                 setShowCreateForm(false);
-                setCreateForm({ type: 'user_story', title: '', description: '', priority: 'medium', story_points: 3, assignee_id: null, sprint: 'Backlog', epic_id: null, parent_id: null });
+                setCreateForm({ type: 'user_story', title: '', description: '', priority: 'medium', story_points: 3, assignee_id: null, sprint: 'Backlog', epic_id: null, parent_id: null, due_date: '', estimated_hours: '' });
                 toast.success('Work item created!');
                 refreshProjectStats();
             }
@@ -622,13 +641,14 @@ const ProjectBoard = () => {
         
         // Parse the result and highlight the placeholders
         const parts = result.split(/(<<<MENTION_\d+>>>|<<<URL_\d+>>>)/g);
-        return parts.map((part, index) => {
+        let elementIndex = 0;
+        return parts.flatMap((part) => {
             const mentionMatch = part.match(/<<<MENTION_(\d+)>>>/);
             if (mentionMatch) {
                 const devId = parseInt(mentionMatch[1]);
                 const devName = devMap.get(devId);
                 return (
-                    <span key={index} className="bg-[rgba(224,185,84,0.2)] text-[#E0B954] px-1.5 py-0.5 rounded-md font-medium">
+                    <span key={`mention-${elementIndex++}`} className="bg-[rgba(224,185,84,0.2)] text-[#E0B954] px-1.5 py-0.5 rounded-md font-medium">
                         @{devName}
                     </span>
                 );
@@ -639,14 +659,31 @@ const ProjectBoard = () => {
                 const urlIndex = parseInt(urlMatch[1]);
                 const url = urls[urlIndex];
                 return (
-                    <a key={index} href={url} target="_blank" rel="noopener noreferrer" className="text-[#E0B954] hover:text-[#C79E3B] underline hover:no-underline transition-colors break-all">
+                    <a key={`url-${elementIndex++}`} href={url} target="_blank" rel="noopener noreferrer" className="text-[#E0B954] hover:text-[#C79E3B] underline hover:no-underline transition-colors break-all">
                         {url}
                     </a>
                 );
             }
             
+            // Handle newlines in text
+            if (part.trim()) {
+                return part.split('\n').flatMap((line, lineIndex) => [
+                    <span key={`text-${elementIndex}-${lineIndex}`}>{line}</span>,
+                    lineIndex < part.split('\n').length - 1 ? <br key={`br-${elementIndex}-${lineIndex}`} /> : null
+                ]).filter(Boolean);
+            }
+            
             return part;
         });
+    };
+
+    // Render text with newlines preserved
+    const renderTextWithNewlines = (text: string) => {
+        if (!text) return null;
+        return text.split('\n').map((line, index) => [
+            <span key={`line-${index}`}>{line}</span>,
+            index < text.split('\n').length - 1 ? <br key={`br-${index}`} /> : null
+        ]).flat().filter(Boolean);
     };
 
     // Save edited item
@@ -1047,7 +1084,7 @@ const ProjectBoard = () => {
         try {
             await fetch(`${API_BASE_URL}/api/workitems/${item.id}`, {
                 method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                 body: JSON.stringify({ status: newStatus }),
             });
             refreshProjectStats();
@@ -1567,7 +1604,7 @@ onClick={() => { navigate(`/project/${id}/board/${item.id}`); setIsEditing(false
                                     <div>
                                         <label className="text-xs font-medium text-[#737373] block mb-1.5">Description</label>
                                         <Textarea defaultValue={selectedItem.description} onChange={e => setEditForm(f => ({ ...f, description: e.target.value }))}
-                                            className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl min-h-[120px] resize-none" />
+                                            className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl min-h-[120px] resize-none whitespace-pre-wrap" />
                                     </div>
                                     <div className="grid grid-cols-2 gap-3">
                                         <div>
@@ -1635,6 +1672,71 @@ onClick={() => { navigate(`/project/${id}/board/${item.id}`); setIsEditing(false
                                         <Input defaultValue={selectedItem.sprint} onChange={e => setEditForm(f => ({ ...f, sprint: e.target.value }))}
                                             className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl" />
                                     </div>
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <div>
+                                            <label className="text-xs font-medium text-[#737373] block mb-1.5">Due Date</label>
+                                            <Popover open={showCalendarEditForm} onOpenChange={setShowCalendarEditForm}>
+                                                <PopoverTrigger asChild>
+                                                    <Button
+                                                        className="w-full justify-start text-left font-normal bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.07)] text-[#F4F6FF] hover:bg-[rgba(255,255,255,0.04)] hover:text-[#F4F6FF] rounded-xl h-10"
+                                                    >
+                                                        <Calendar className="w-4 h-4 mr-2" />
+                                                        {editForm.due_date ? parseLocalDate(editForm.due_date as string)?.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Pick a date'}
+                                                    </Button>
+                                                </PopoverTrigger>
+                                                <PopoverContent className="w-auto p-0 bg-[#0d0d0d] border-[rgba(255,255,255,0.07)]" align="start">
+                                                    <CalendarIcon
+                                                        mode="single"
+                                                        selected={parseLocalDate(editForm.due_date === '' || !editForm.due_date ? undefined : editForm.due_date as string)}
+                                                        onSelect={(date) => {
+                                                            if (date) {
+                                                                const year = date.getFullYear();
+                                                                const month = String(date.getMonth() + 1).padStart(2, '0');
+                                                                const day = String(date.getDate()).padStart(2, '0');
+                                                                setEditForm({ ...editForm, due_date: `${year}-${month}-${day}` });
+                                                                setShowCalendarEditForm(false);
+                                                            }
+                                                        }}
+                                                        disabled={(date) => date < new Date(new Date().setHours(0, 0, 0, 0))}
+                                                        classNames={{
+                                                            months: "flex flex-col",
+                                                            month: "space-y-4",
+                                                            caption: "flex justify-between items-center px-0 pb-4 relative h-7 mb-2",
+                                                            caption_label: "text-sm font-medium text-white",
+                                                            nav: "space-x-1 flex items-center",
+                                                            nav_button: "text-white hover:bg-[rgba(224,185,84,0.1)] rounded p-1",
+                                                            nav_button_previous: "absolute left-0",
+                                                            nav_button_next: "absolute right-0",
+                                                            table: "w-full border-collapse space-y-1",
+                                                            head_row: "flex",
+                                                            head_cell: "text-xs font-medium text-[#737373] w-8 h-8 flex items-center justify-center rounded",
+                                                            row: "flex w-full gap-1",
+                                                            cell: "relative p-0 text-center text-sm focus-within:relative focus-within:z-20 [&:has([aria-selected])]:bg-transparent",
+                                                            day: "h-8 w-8 p-0 font-normal",
+                                                            day_button: "text-white hover:bg-[rgba(224,185,84,0.1)] rounded-lg h-8 w-8 transition-colors",
+                                                            day_selected: "bg-[#E0B954] text-[#0d0d0d] hover:bg-[#E0B954] font-semibold",
+                                                            day_today: "bg-[rgba(224,185,84,0.2)] text-[#E0B954] font-semibold",
+                                                            day_outside: "text-[#444]",
+                                                            day_disabled: "text-[#333] opacity-50 cursor-not-allowed",
+                                                            day_range_middle: "aria-selected:bg-[rgba(224,185,84,0.1)] aria-selected:text-white",
+                                                            day_hidden: "invisible",
+                                                        }}
+                                                    />
+                                                </PopoverContent>
+                                            </Popover>
+                                        </div>
+                                        <div>
+                                            <label className="text-xs font-medium text-[#737373] block mb-1.5">Est. Hours</label>
+                                            <Input 
+                                                type="number" 
+                                                min="0"
+                                                defaultValue={selectedItem.estimated_hours || ''} 
+                                                onChange={e => setEditForm(f => ({ ...f, estimated_hours: e.target.value ? parseInt(e.target.value) : null }))}
+                                                placeholder="Hours"
+                                                className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl"
+                                            />
+                                        </div>
+                                    </div>
                                     <Button onClick={handleSaveEdit} className="bg-gradient-to-r from-[#E0B954] to-[#B8872A] text-white rounded-xl w-full h-10">
                                         <Save className="w-4 h-4 mr-2" /> Save Changes
                                     </Button>
@@ -1644,7 +1746,7 @@ onClick={() => { navigate(`/project/${id}/board/${item.id}`); setIsEditing(false
                                 <>
                                     <div>
                                         <h2 className="text-xl font-bold text-white mb-3">{selectedItem.title}</h2>
-                                        <p className="text-sm text-[#a3a3a3] leading-relaxed">{selectedItem.description || 'No description provided.'}</p>
+                                        <p className="text-sm text-[#a3a3a3] leading-relaxed whitespace-pre-wrap">{renderTextWithNewlines(selectedItem.description) || 'No description provided.'}</p>
                                     </div>
 
                                     {/* Detail Stats */}
@@ -1654,6 +1756,8 @@ onClick={() => { navigate(`/project/${id}/board/${item.id}`); setIsEditing(false
                                             { label: 'Allocated Hours', value: `${selectedItem.assigned_hours}h`, color: '#E0B954' },
                                             { label: 'Logged Hours', value: `${selectedItem.logged_hours || 0}h`, color: '#E0B954' },
                                             { label: 'Remaining Hours', value: `${selectedItem.remaining_hours}h`, color: '#F59E0B' },
+                                            { label: 'Est. Hours', value: selectedItem.estimated_hours ? `${selectedItem.estimated_hours}h` : 'Not set', color: selectedItem.estimated_hours ? '#E0B954' : '#737373' },
+                                            { label: 'Due Date', value: selectedItem.due_date ? new Date(selectedItem.due_date).toLocaleDateString() : 'Not set', color: selectedItem.due_date ? '#E0B954' : '#737373' },
                                             { label: 'Status', value: (STATUS_CONFIG[selectedItem.status] || STATUS_CONFIG.todo).label, color: (STATUS_CONFIG[selectedItem.status] || STATUS_CONFIG.todo).color },
                                             { label: 'Priority', value: selectedItem.priority.charAt(0).toUpperCase() + selectedItem.priority.slice(1), color: (PRIORITY_COLORS[selectedItem.priority] || PRIORITY_COLORS.medium).text.replace('text-', '').includes('red') ? '#EF4444' : (PRIORITY_COLORS[selectedItem.priority] || PRIORITY_COLORS.medium).text.includes('orange') ? '#F97316' : (PRIORITY_COLORS[selectedItem.priority] || PRIORITY_COLORS.medium).text.includes('yellow') ? '#F59E0B' : '#E0B954' },
                                         ].map(d => (
@@ -1984,7 +2088,7 @@ onClick={() => { navigate(`/project/${id}/board/${item.id}`); setIsEditing(false
                                 <label className="text-xs font-medium text-[#737373] block mb-1.5">Description</label>
                                 <Textarea value={createForm.description} onChange={e => setCreateForm(f => ({ ...f, description: e.target.value }))}
                                     placeholder="Describe the requirements..."
-                                    className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl min-h-[100px] placeholder:text-[#334155] resize-none" />
+                                    className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl min-h-[100px] placeholder:text-[#334155] resize-none whitespace-pre-wrap" />
                             </div>
                             <div className="grid grid-cols-3 gap-3">
                                 <div>
@@ -2045,6 +2149,72 @@ onClick={() => { navigate(`/project/${id}/board/${item.id}`); setIsEditing(false
                                             <option key={wi.id} value={wi.id}>{wi.key} — {wi.title}</option>
                                         ))}
                                     </select>
+                                </div>
+                            </div>
+                            {/* Due Date and Estimated Hours */}
+                            <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label className="text-xs font-medium text-[#737373] block mb-1.5">Due Date (optional)</label>
+                                    <Popover open={showCalendarCreateForm} onOpenChange={setShowCalendarCreateForm}>
+                                        <PopoverTrigger asChild>
+                                            <Button
+                                                className="w-full justify-start text-left font-normal bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.07)] text-[#F4F6FF] hover:bg-[rgba(255,255,255,0.04)] hover:text-[#F4F6FF] rounded-xl h-10"
+                                            >
+                                                <Calendar className="w-4 h-4 mr-2" />
+                                                {createForm.due_date ? parseLocalDate(createForm.due_date as string)?.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Pick a date'}
+                                            </Button>
+                                        </PopoverTrigger>
+                                        <PopoverContent className="w-auto p-0 bg-[#0d0d0d] border-[rgba(255,255,255,0.07)]" align="start">
+                                            <CalendarIcon
+                                                mode="single"
+                                                selected={parseLocalDate(createForm.due_date === '' ? undefined : createForm.due_date as string)}
+                                                onSelect={(date) => {
+                                                    if (date) {
+                                                        const year = date.getFullYear();
+                                                        const month = String(date.getMonth() + 1).padStart(2, '0');
+                                                        const day = String(date.getDate()).padStart(2, '0');
+                                                        setCreateForm({ ...createForm, due_date: `${year}-${month}-${day}` });
+                                                        setShowCalendarCreateForm(false);
+                                                    }
+                                                }}
+                                                disabled={(date) => date < new Date(new Date().setHours(0, 0, 0, 0))}
+                                                classNames={{
+                                                    months: "flex flex-col",
+                                                    month: "space-y-4",
+                                                    caption: "flex justify-between items-center px-0 pb-4 relative h-7 mb-2",
+                                                    caption_label: "text-sm font-medium text-white",
+                                                    nav: "space-x-1 flex items-center",
+                                                    nav_button: "text-white hover:bg-[rgba(224,185,84,0.1)] rounded p-1",
+                                                    nav_button_previous: "absolute left-0",
+                                                    nav_button_next: "absolute right-0",
+                                                    table: "w-full border-collapse space-y-1",
+                                                    head_row: "flex",
+                                                    head_cell: "text-xs font-medium text-[#737373] w-8 h-8 flex items-center justify-center rounded",
+                                                    row: "flex w-full gap-1",
+                                                    cell: "relative p-0 text-center text-sm focus-within:relative focus-within:z-20 [&:has([aria-selected])]:bg-transparent",
+                                                    day: "h-8 w-8 p-0 font-normal",
+                                                    day_button: "text-white hover:bg-[rgba(224,185,84,0.1)] rounded-lg h-8 w-8 transition-colors",
+                                                    day_selected: "bg-[#E0B954] text-[#0d0d0d] hover:bg-[#E0B954] font-semibold",
+                                                    day_today: "bg-[rgba(224,185,84,0.2)] text-[#E0B954] font-semibold",
+                                                    day_outside: "text-[#444]",
+                                                    day_disabled: "text-[#333] opacity-50 cursor-not-allowed",
+                                                    day_range_middle: "aria-selected:bg-[rgba(224,185,84,0.1)] aria-selected:text-white",
+                                                    day_hidden: "invisible",
+                                                }}
+                                            />
+                                        </PopoverContent>
+                                    </Popover>
+                                </div>
+                                <div>
+                                    <label className="text-xs font-medium text-[#737373] block mb-1.5">Est. Hours (optional)</label>
+                                    <Input 
+                                        type="number" 
+                                        min="0"
+                                        value={createForm.estimated_hours} 
+                                        onChange={e => setCreateForm(f => ({ ...f, estimated_hours: e.target.value }))}
+                                        placeholder="Hours"
+                                        className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl h-10"
+                                    />
                                 </div>
                             </div>
                         </div>
@@ -2808,7 +2978,15 @@ onClick={() => { navigate(`/project/${id}/board/${item.id}`); setIsEditing(false
                     </div>
                     <div className="flex-1 overflow-y-auto">
                         <ReviewerView
-                            workItems={workItems.map(item => ({ ...item, assignee_id: item.assignee_id ?? undefined }))}
+                            workItems={workItems.map(item => ({
+                                ...item, 
+                                assignee_id: item.assignee_id ?? undefined,
+                                sprint_id: item.sprint_id ?? undefined,
+                                parent_id: item.parent_id ?? undefined,
+                                epic_id: item.epic_id ?? undefined,
+                                due_date: item.due_date ?? undefined,
+                                estimated_hours: item.estimated_hours ?? undefined
+                            }))}
                             projectId={id!}
                             token={token!}
                             onTaskUpdate={(itemId, updates) => {

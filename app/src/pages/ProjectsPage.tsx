@@ -30,6 +30,7 @@ import {
     Calendar,
     Circle,
     Flag,
+    Clock,
 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -79,6 +80,7 @@ interface ProjectDeveloper {
     email: string;
     role: string;
     responsibilities?: string;
+    is_admin: boolean;
 }
 
 interface Project {
@@ -112,6 +114,7 @@ interface MyTask {
     story_points?: number;
     assigned_hours?: number;
     assignee?: string;
+    assignee_id?: number | null;
     description?: string;
     tags?: string[];
     acceptance_criteria?: string[];
@@ -150,6 +153,21 @@ const ProjectsPage = () => {
     const [showAllTasks, setShowAllTasks] = useState(false);
     const [showAllDueSoon, setShowAllDueSoon] = useState(false);
     const [selectedTask, setSelectedTask] = useState<MyTask | null>(null);
+    const [isEditingTask, setIsEditingTask] = useState(false);
+    const [editingTaskForm, setEditingTaskForm] = useState<Partial<MyTask>>({
+        title: '',
+        description: '',
+        priority: 'medium',
+        status: 'todo',
+        due_date: '',
+        type: 'task',
+        story_points: 0,
+        assigned_hours: 0,
+        logged_hours: 0,
+        remaining_hours: 0,
+    });
+    const [editTaskProjectDevelopers, setEditTaskProjectDevelopers] = useState<ProjectDeveloper[]>([]);
+    const [showCalendarMyTask, setShowCalendarMyTask] = useState(false);
 
     // Personal Tasks
     interface PersonalTask {
@@ -172,6 +190,7 @@ const ProjectsPage = () => {
     const [convertingTask, setConvertingTask] = useState<PersonalTask | null>(null);
     const [convertProjectId, setConvertProjectId] = useState('');
     const [convertAssigneeId, setConvertAssigneeId] = useState('');
+    const [convertEstimatedHours, setConvertEstimatedHours] = useState('');
     const [projectMembers, setProjectMembers] = useState<{id: number; name: string; email: string}[]>([]);
     const [addingTask, setAddingTask] = useState(false);
     const [convertingTicket, setConvertingTicket] = useState(false);
@@ -182,6 +201,7 @@ const ProjectsPage = () => {
         due_date: '',
         project_id: '',
         assignee_developer_id: '',
+        estimated_hours: '',
     });
     const [isEditingPersonalTask, setIsEditingPersonalTask] = useState(false);
     const [editingPersonalTask, setEditingPersonalTask] = useState<PersonalTask | null>(null);
@@ -263,7 +283,8 @@ const ProjectsPage = () => {
                     title: newPersonalTask.title,
                     description: newPersonalTask.description,
                     priority: newPersonalTask.priority,
-                    due_date: newPersonalTask.due_date || undefined
+                    due_date: newPersonalTask.due_date || undefined,
+                    estimated_hours: newPersonalTask.estimated_hours ? parseInt(newPersonalTask.estimated_hours) : 0
                 })
             });
             if (res.ok) {
@@ -281,7 +302,7 @@ const ProjectsPage = () => {
                 }
                 toast.success('Task created!');
                 setShowAddTaskDialog(false);
-                setNewPersonalTask({ title: '', description: '', priority: 'medium', due_date: '', project_id: '', assignee_developer_id: '' });
+                setNewPersonalTask({ title: '', description: '', priority: 'medium', due_date: '', project_id: '', assignee_developer_id: '', estimated_hours: '' });
                 setProjectMembers([]);
                 fetchPersonalTasks();
             } else { toast.error('Failed to create task'); }
@@ -311,6 +332,7 @@ const ProjectsPage = () => {
                 body: JSON.stringify({
                     project_id: parseInt(convertProjectId),
                     type: 'task',
+                    estimated_hours: convertEstimatedHours ? parseInt(convertEstimatedHours) : convertingTask.estimated_hours,
                     assignee_developer_id: convertAssigneeId ? parseInt(convertAssigneeId) : undefined
                 })
             });
@@ -322,6 +344,7 @@ const ProjectsPage = () => {
                 setConvertingTask(null);
                 setConvertProjectId('');
                 setConvertAssigneeId('');
+                setConvertEstimatedHours('');
                 setProjectMembers([]);
                 fetchPersonalTasks();
             } else { toast.error('Failed to convert'); }
@@ -440,6 +463,146 @@ const ProjectsPage = () => {
         }
     };
 
+    // Start editing selected task
+    const startEditTask = async () => {
+        if (!selectedTask) return;
+        let developers: ProjectDeveloper[] = [];
+        try {
+            // Fetch project details to get developers for assignee dropdown
+            const projectRes = await fetch(`${API_BASE_URL}/api/projects/${selectedTask.project_id}`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (projectRes.ok) {
+                const projectData = await projectRes.json();
+                developers = projectData.developers || [];
+                setEditTaskProjectDevelopers(developers);
+            }
+        } catch (err) {
+            console.error('Failed to fetch project developers:', err);
+        }
+        
+        // Find assignee ID by matching name
+        let assigneeId: number | null = selectedTask.assignee_id || null;
+        if (!assigneeId && selectedTask.assignee) {
+            const matchedDev = developers.find(d => d.name === selectedTask.assignee);
+            if (matchedDev) {
+                assigneeId = matchedDev.id;
+            }
+        }
+        
+        // Initialize edit form with all task fields
+        setEditingTaskForm({
+            title: selectedTask.title,
+            description: selectedTask.description || '',
+            priority: selectedTask.priority,
+            status: selectedTask.status,
+            due_date: selectedTask.due_date || '',
+            type: selectedTask.type || 'task',
+            story_points: selectedTask.story_points || 0,
+            assigned_hours: selectedTask.assigned_hours || 0,
+            logged_hours: selectedTask.logged_hours || 0,
+            remaining_hours: selectedTask.remaining_hours || 0,
+            assignee_id: assigneeId,
+        });
+        setIsEditingTask(true);
+    };
+
+    // Log hours for a task
+    const handleLogHours = async (task: MyTask, hoursToLog: number) => {
+        try {
+            const res = await fetch(`${API_BASE_URL}/api/workitems/${task.id}/log-hours`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({
+                    hours: hoursToLog,
+                })
+            });
+            if (res.ok) {
+                const data = await res.json();
+                // Update the task with new values
+                const updated = { ...selectedTask, logged_hours: data.logged_hours, remaining_hours: data.remaining_hours } as MyTask;
+                setSelectedTask(updated);
+                setMyTasks(myTasks.map(t => t.id === task.id ? updated : t));
+                toast.success(`Logged ${hoursToLog}h! Remaining: ${data.remaining_hours}h`);
+            } else {
+                toast.error('Failed to log hours');
+            }
+        } catch (err) {
+            toast.error('Failed to log hours');
+        }
+    };
+
+    // Render text with newlines preserved
+    const renderTextWithNewlines = (text: string) => {
+        if (!text) return null;
+        return text.split('\n').map((line, index) => [
+            <span key={`line-${index}`}>{line}</span>,
+            index < text.split('\n').length - 1 ? <br key={`br-${index}`} /> : null
+        ]).flat().filter(Boolean);
+    };
+
+    // Save edited task
+    const saveEditedTask = async () => {
+        if (!selectedTask) return;
+        try {
+            const res = await fetch(`${API_BASE_URL}/api/workitems/${selectedTask.id}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({
+                    title: editingTaskForm.title,
+                    description: editingTaskForm.description,
+                    priority: editingTaskForm.priority,
+                    status: editingTaskForm.status,
+                    due_date: editingTaskForm.due_date || null,
+                    type: editingTaskForm.type,
+                    story_points: editingTaskForm.story_points,
+                    assigned_hours: editingTaskForm.assigned_hours,
+                    logged_hours: editingTaskForm.logged_hours,
+                    remaining_hours: editingTaskForm.remaining_hours,
+                    assignee_id: editingTaskForm.assignee_id || null,
+                })
+            });
+
+            if (res.ok) {
+                const updatedTask = await res.json();
+                // Merge with form data and original task to preserve all fields
+                const mergedTask = { ...selectedTask, ...editingTaskForm, ...updatedTask } as MyTask;
+                setSelectedTask(mergedTask);
+                setIsEditingTask(false);
+                setMyTasks(myTasks.map(t => t.id === updatedTask.id ? mergedTask : t));
+                toast.success('Task updated successfully');
+            } else {
+                toast.error('Failed to update task');
+            }
+        } catch (err) {
+            toast.error('Failed to update task');
+        }
+    };
+
+    // Cancel editing
+    const cancelEditTask = () => {
+        setIsEditingTask(false);
+        setEditingTaskForm({
+            title: '',
+            description: '',
+            priority: 'medium',
+            status: 'todo',
+            due_date: '',
+            type: 'task',
+            story_points: 0,
+            assigned_hours: 0,
+            logged_hours: 0,
+            remaining_hours: 0,
+        });
+        setEditTaskProjectDevelopers([]);
+    };
+
     // Load my tasks on mount
     useEffect(() => {
         if (token) { fetchMyTasks(); fetchPersonalTasks(); }
@@ -512,6 +675,23 @@ const ProjectsPage = () => {
         if (myTaskTab === 'overdue') return t.is_overdue;
         return t.status === 'done';
     });
+
+    const getSortedTasks = (tasks: MyTask[]) => {
+        if (myTaskTab === 'upcoming') {
+            return [...tasks].sort((a, b) => {
+                // Tasks with due dates come first, sorted chronologically
+                if (a.due_date && b.due_date) {
+                    return new Date(a.due_date).getTime() - new Date(b.due_date).getTime();
+                }
+                // Tasks with due dates before tasks without
+                if (a.due_date && !b.due_date) return -1;
+                if (!a.due_date && b.due_date) return 1;
+                // Both without due dates - maintain original order
+                return 0;
+            });
+        }
+        return tasks;
+    };
 
     const handleAddDeveloper = () => {
         if (!selectedDeveloperId || !newRole.trim()) {
@@ -860,7 +1040,7 @@ const ProjectsPage = () => {
                                         </p>
                                     </div>
                                 ) : (
-                                    (showAllTasks ? filteredMyTasks : filteredMyTasks.slice(0, 6)).map(task => (
+                                    (showAllTasks ? getSortedTasks(filteredMyTasks) : getSortedTasks(filteredMyTasks).slice(0, 6)).map(task => (
                                         <div
                                             key={task.id}
                                             className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-[rgba(255,255,255,0.03)] transition-colors cursor-pointer group"
@@ -921,15 +1101,13 @@ const ProjectsPage = () => {
                                         className="pl-8 w-32 bg-[rgba(255,255,255,0.03)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-lg h-7 text-xs focus:border-[#E0B954]/50"
                                     />
                                 </div>
-                                {user?.role.includes('admin') && (
-                                    <button
-                                        onClick={() => setShowCreateModal(true)}
-                                        className="w-7 h-7 flex items-center justify-center rounded-lg bg-gradient-to-r from-[#E0B954] to-[#C79E3B] hover:opacity-90 text-[#080808] transition-opacity"
-                                        title="New Project"
-                                    >
-                                        <Plus className="w-4 h-4" />
-                                    </button>
-                                )}
+                                <button
+                                    onClick={() => setShowCreateModal(true)}
+                                    className="w-7 h-7 flex items-center justify-center rounded-lg bg-gradient-to-r from-[#E0B954] to-[#C79E3B] hover:opacity-90 text-[#080808] transition-opacity"
+                                    title="New Project"
+                                >
+                                    <Plus className="w-4 h-4" />
+                                </button>
                             </div>
                         </div>
                         <div className="flex-1 overflow-y-auto p-3">
@@ -1169,7 +1347,7 @@ const ProjectsPage = () => {
             {/* Jira-style Ticket Slide-in Panel */}
             {selectedTask && (
                 <>
-                    <div className="fixed inset-0 bg-black/40 z-40" onClick={() => setSelectedTask(null)} />
+                    <div className="fixed inset-0 bg-black/40 z-40" onClick={() => { setSelectedTask(null); setIsEditingTask(false); }} />
                     <div className="fixed right-0 top-0 bottom-0 w-full max-w-lg bg-[#080808] border-l border-[rgba(255,255,255,0.07)] z-50 flex flex-col shadow-2xl shadow-black/50">
                         {/* Panel Header */}
                         <div className="flex items-start justify-between p-5 border-b border-[rgba(255,255,255,0.05)] sticky top-0 bg-[#080808] flex-shrink-0">
@@ -1184,23 +1362,209 @@ const ProjectsPage = () => {
                                     );
                                 })()}
                                 <span className="text-xs font-mono text-[#E0B954] flex-shrink-0">{selectedTask.key}</span>
-                                <button
+                                {/* <button
                                     onClick={() => { navigate(`/project/${selectedTask.project_id}`); setSelectedTask(null); }}
                                     className="flex items-center gap-1 text-xs text-[#737373] hover:text-white ml-auto flex-shrink-0"
                                 >
                                     <ExternalLink className="w-3.5 h-3.5" />
                                     Open in project
-                                </button>
+                                </button> */}
                             </div>
-                            <button onClick={() => setSelectedTask(null)} className="p-1.5 rounded-lg hover:bg-[rgba(244,246,255,0.05)] text-[#737373] hover:text-white ml-3 flex-shrink-0">
+                            <button onClick={() => { setSelectedTask(null); setIsEditingTask(false); }} className="p-1.5 rounded-lg hover:bg-[rgba(244,246,255,0.05)] text-[#737373] hover:text-white ml-3 flex-shrink-0">
                                 <X className="w-4 h-4" />
                             </button>
                         </div>
 
                         {/* Panel Content (scrollable) */}
                         <div className="flex-1 overflow-y-auto p-5 space-y-5">
-                            {/* Title */}
-                            <h2 className="text-lg font-semibold text-white leading-tight">{selectedTask.title}</h2>
+                            {isEditingTask ? (
+                                // Edit Mode - Comprehensive form matching ProjectBoard
+                                <div className="space-y-4">
+                                    <div>
+                                        <label className="text-xs font-medium text-[#737373] block mb-1.5">Title</label>
+                                        <Input
+                                            value={editingTaskForm.title}
+                                            onChange={(e) => setEditingTaskForm({ ...editingTaskForm, title: e.target.value })}
+                                            className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="text-xs font-medium text-[#737373] block mb-1.5">Description</label>
+                                        <Textarea
+                                            value={editingTaskForm.description}
+                                            onChange={(e) => setEditingTaskForm({ ...editingTaskForm, description: e.target.value })}
+                                            className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl min-h-[120px] resize-none whitespace-pre-wrap"
+                                        />
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <div>
+                                            <label className="text-xs font-medium text-[#737373] block mb-1.5">Type</label>
+                                            <select
+                                                value={editingTaskForm.type}
+                                                onChange={(e) => setEditingTaskForm({ ...editingTaskForm, type: e.target.value })}
+                                                className="w-full h-10 bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.07)] text-[#f5f5f5] rounded-xl px-3 text-sm"
+                                            >
+                                                <option value="user_story">Story</option>
+                                                <option value="task">Task</option>
+                                                <option value="bug">Bug</option>
+                                                <option value="epic">Epic</option>
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label className="text-xs font-medium text-[#737373] block mb-1.5">Priority</label>
+                                            <select
+                                                value={editingTaskForm.priority}
+                                                onChange={(e) => setEditingTaskForm({ ...editingTaskForm, priority: e.target.value })}
+                                                className="w-full h-10 bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.07)] text-[#f5f5f5] rounded-xl px-3 text-sm"
+                                            >
+                                                <option value="critical">Critical</option>
+                                                <option value="high">High</option>
+                                                <option value="medium">Medium</option>
+                                                <option value="low">Low</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <div>
+                                            <label className="text-xs font-medium text-[#737373] block mb-1.5">Story Points</label>
+                                            <Input
+                                                type="number"
+                                                value={editingTaskForm.story_points || 0}
+                                                onChange={(e) => setEditingTaskForm({ ...editingTaskForm, story_points: parseInt(e.target.value) || 0 })}
+                                                className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="text-xs font-medium text-[#737373] block mb-1.5">Allocated Hours</label>
+                                            <Input
+                                                type="number"
+                                                value={editingTaskForm.assigned_hours || 0}
+                                                onChange={(e) => setEditingTaskForm({ ...editingTaskForm, assigned_hours: parseInt(e.target.value) || 0 })}
+                                                className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl"
+                                            />
+                                        </div>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <div>
+                                            <label className="text-xs font-medium text-[#737373] block mb-1.5">Logged Hours</label>
+                                            <Input
+                                                type="number"
+                                                value={editingTaskForm.logged_hours || 0}
+                                                onChange={(e) => setEditingTaskForm({ ...editingTaskForm, logged_hours: parseInt(e.target.value) || 0 })}
+                                                className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="text-xs font-medium text-[#737373] block mb-1.5">Remaining Hours</label>
+                                            <Input
+                                                type="number"
+                                                value={editingTaskForm.remaining_hours || 0}
+                                                onChange={(e) => setEditingTaskForm({ ...editingTaskForm, remaining_hours: parseInt(e.target.value) || 0 })}
+                                                className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl"
+                                            />
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label className="text-xs font-medium text-[#737373] block mb-1.5">Due Date</label>
+                                        <Popover open={showCalendarMyTask} onOpenChange={setShowCalendarMyTask}>
+                                            <PopoverTrigger asChild>
+                                                <Button
+                                                    className="w-full justify-start text-left font-normal bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.07)] text-[#F4F6FF] hover:bg-[rgba(255,255,255,0.04)] hover:text-[#F4F6FF] rounded-xl h-10"
+                                                >
+                                                    <Calendar className="w-4 h-4 mr-2" />
+                                                    {editingTaskForm.due_date ? parseLocalDate(editingTaskForm.due_date)?.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Pick a date'}
+                                                </Button>
+                                            </PopoverTrigger>
+                                            <PopoverContent className="w-auto p-0 bg-[#0d0d0d] border-[rgba(255,255,255,0.07)]" align="start">
+                                                <CalendarIcon
+                                                    mode="single"
+                                                    selected={parseLocalDate(editingTaskForm.due_date === null ? undefined : editingTaskForm.due_date)}
+                                                    onSelect={(date) => {
+                                                        if (date) {
+                                                            const year = date.getFullYear();
+                                                            const month = String(date.getMonth() + 1).padStart(2, '0');
+                                                            const day = String(date.getDate()).padStart(2, '0');
+                                                            setEditingTaskForm({ ...editingTaskForm, due_date: `${year}-${month}-${day}` });
+                                                            setShowCalendarMyTask(false);
+                                                        }
+                                                    }}
+                                                    disabled={(date) => date < new Date(new Date().setHours(0, 0, 0, 0))}
+                                                    classNames={{
+                                                        months: "flex flex-col",
+                                                        month: "space-y-4",
+                                                        caption: "flex justify-between items-center px-0 pb-4 relative h-7 mb-2",
+                                                        caption_label: "text-sm font-medium text-white",
+                                                        nav: "space-x-1 flex items-center",
+                                                        nav_button: "text-white hover:bg-[rgba(224,185,84,0.1)] rounded p-1",
+                                                        nav_button_previous: "absolute left-0",
+                                                        nav_button_next: "absolute right-0",
+                                                        table: "w-full border-collapse space-y-1",
+                                                        head_row: "flex",
+                                                        head_cell: "text-xs font-medium text-[#737373] w-8 h-8 flex items-center justify-center rounded",
+                                                        row: "flex w-full gap-1",
+                                                        cell: "relative p-0 text-center text-sm focus-within:relative focus-within:z-20 [&:has([aria-selected])]:bg-transparent",
+                                                        day: "h-8 w-8 p-0 font-normal",
+                                                        day_button: "text-white hover:bg-[rgba(224,185,84,0.1)] rounded-lg h-8 w-8 transition-colors",
+                                                        day_selected: "bg-[#E0B954] text-[#0d0d0d] hover:bg-[#E0B954] font-semibold",
+                                                        day_today: "bg-[rgba(224,185,84,0.2)] text-[#E0B954] font-semibold",
+                                                        day_outside: "text-[#444]",
+                                                        day_disabled: "text-[#333] opacity-50 cursor-not-allowed",
+                                                        day_range_middle: "aria-selected:bg-[rgba(224,185,84,0.1)] aria-selected:text-white",
+                                                        day_hidden: "invisible",
+                                                    }}
+                                                />
+                                            </PopoverContent>
+                                        </Popover>
+                                    </div>
+                                    <div>
+                                        <label className="text-xs font-medium text-[#737373] block mb-1.5">Status</label>
+                                        <select
+                                            value={editingTaskForm.status}
+                                            onChange={(e) => setEditingTaskForm({ ...editingTaskForm, status: e.target.value })}
+                                            className="w-full h-10 bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.07)] text-[#f5f5f5] rounded-xl px-3 text-sm"
+                                        >
+                                            <option value="todo">To Do</option>
+                                            <option value="in_progress">In Progress</option>
+                                            <option value="in_review">In Review</option>
+                                            <option value="done">Done</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="text-xs font-medium text-[#737373] block mb-1.5">Assignee</label>
+                                        <select
+                                            value={editingTaskForm.assignee_id || ''}
+                                            onChange={(e) => setEditingTaskForm({ ...editingTaskForm, assignee_id: e.target.value ? parseInt(e.target.value) : null })}
+                                            className="w-full h-10 bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl px-3 text-sm"
+                                        >
+                                            <option value="">Unassigned</option>
+                                            {editTaskProjectDevelopers.map(dev => (
+                                                <option key={dev.id} value={dev.id}>
+                                                    {dev.name} ({dev.role})
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                    <div className="flex gap-3 pt-2">
+                                        <Button
+                                            onClick={saveEditedTask}
+                                            className="flex-1 bg-gradient-to-r from-[#E0B954] to-[#B8872A] text-white rounded-xl h-10 font-medium"
+                                        >
+                                            Save Changes
+                                        </Button>
+                                        <Button
+                                            onClick={cancelEditTask}
+                                            variant="outline"
+                                            className="flex-1 bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#a3a3a3] hover:text-white rounded-xl h-10"
+                                        >
+                                            Cancel
+                                        </Button>
+                                    </div>
+                                </div>
+                            ) : (
+                                // View Mode
+                                <>
+                                    {/* Title */}
+                                    <h2 className="text-lg font-semibold text-white leading-tight">{selectedTask.title}</h2>
 
                             {/* Breadcrumb (parent/epic) */}
                             {(selectedTask.epic_key || selectedTask.parent_key) && (
@@ -1258,8 +1622,8 @@ const ProjectsPage = () => {
                             {selectedTask.description && (
                                 <div>
                                     <p className="text-xs font-medium text-[#737373] mb-2">Description</p>
-                                    <p className="text-sm text-[#a3a3a3] leading-relaxed bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-xl p-4">
-                                        {selectedTask.description}
+                                    <p className="text-sm text-[#a3a3a3] leading-relaxed whitespace-pre-wrap bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-xl p-4">
+                                        {renderTextWithNewlines(selectedTask.description)}
                                     </p>
                                 </div>
                             )}
@@ -1293,16 +1657,57 @@ const ProjectsPage = () => {
                                     </div>
                                 </div>
                             )}
+
+                            {/* Log Hours Section */}
+                            <div className="pt-4 border-t border-[rgba(255,255,255,0.05)]">
+                                <div className="text-xs text-[#737373] mb-3 font-medium">Log Work Hours</div>
+                                <div className="flex items-center gap-3">
+                                    <Input
+                                        type="number"
+                                        placeholder="Hours"
+                                        min="0"
+                                        className="w-24 h-9 bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl"
+                                        id="log-hours-input"
+                                    />
+                                    <Button
+                                        size="sm"
+                                        onClick={() => {
+                                            const input = document.getElementById('log-hours-input') as HTMLInputElement;
+                                            const hours = parseInt(input?.value || '0');
+                                            if (hours > 0 && selectedTask) {
+                                                handleLogHours(selectedTask, hours);
+                                                input.value = '';
+                                            }
+                                        }}
+                                        className="bg-[#E0B954] hover:bg-[#C79E3B] text-white rounded-xl h-9"
+                                    >
+                                        <Clock className="w-3.5 h-3.5 mr-1.5" />
+                                        Log Hours
+                                    </Button>
+                                </div>
+                                <p className="text-[10px] text-[#737373] mt-2">
+                                    Current: {selectedTask.logged_hours || 0}h logged · {selectedTask.remaining_hours || 0}h remaining
+                                </p>
+                            </div>
+                                </>
+                            )}
                         </div>
 
                         {/* Footer */}
-                        <div className="flex-shrink-0 p-4 border-t border-[rgba(255,255,255,0.05)]">
+                        <div className="flex-shrink-0 p-4 border-t border-[rgba(255,255,255,0.05)] flex gap-3">
                             <button
-                                onClick={() => { navigate(`/project/${selectedTask.project_id}`); setSelectedTask(null); }}
-                                className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-gradient-to-r from-[#E0B954] to-[#C79E3B] text-[#080808] font-semibold text-sm hover:opacity-90 transition-opacity"
+                                onClick={() => startEditTask()}
+                                className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] text-white font-semibold text-sm hover:bg-[rgba(255,255,255,0.08)] transition-colors"
+                            >
+                                <Edit2 className="w-4 h-4" />
+                                Edit
+                            </button>
+                            <button
+                                onClick={() => { navigate(`/project/${selectedTask.project_id}/board/${selectedTask.id}`); setSelectedTask(null); }}
+                                className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-gradient-to-r from-[#E0B954] to-[#C79E3B] text-[#080808] font-semibold text-sm hover:opacity-90 transition-opacity"
                             >
                                 <ExternalLink className="w-4 h-4" />
-                                Open full ticket
+                                Open ticket
                             </button>
                         </div>
                     </div>
@@ -1315,7 +1720,7 @@ const ProjectsPage = () => {
                 onOpenChange={(open) => {
                     setShowAddTaskDialog(open);
                     if (!open) {
-                        setNewPersonalTask({ title: '', description: '', priority: 'medium', due_date: '', project_id: '', assignee_developer_id: '' });
+                        setNewPersonalTask({ title: '', description: '', priority: 'medium', due_date: '', project_id: '', assignee_developer_id: '', estimated_hours: '' });
                         setProjectMembers([]);
                     }
                 }}
@@ -1437,7 +1842,7 @@ const ProjectsPage = () => {
                                     </SelectContent>
                                 </Select>
                             </div>
-                            {projectMembers.length > 0 && (
+                            {newPersonalTask.project_id && (
                                 <div>
                                     <label className="text-xs text-[#737373] mb-1 block">Assign To <span className="text-[#555]">(optional — defaults to you)</span></label>
                                     <Select
@@ -1448,7 +1853,10 @@ const ProjectsPage = () => {
                                             <SelectValue placeholder="Select team member..." />
                                         </SelectTrigger>
                                         <SelectContent className="bg-[#0d0d0d] border-[rgba(255,255,255,0.08)]">
-                                            {projectMembers.map((member) => (
+                                            {projectMembers.length === 0 ? (
+                                                <div className="p-2 text-xs text-[#737373]">No team members in this project</div>
+                                            ) : (
+                                                projectMembers.map((member) => (
                                                 <SelectItem key={member.id} value={member.id.toString()}>
                                                     <div className="flex items-center gap-2">
                                                         <div className="w-5 h-5 rounded-full bg-gradient-to-br from-[#E0B954] to-[#C79E3B] flex items-center justify-center text-[#080808] text-xs font-bold">
@@ -1457,12 +1865,23 @@ const ProjectsPage = () => {
                                                         {member.name}
                                                     </div>
                                                 </SelectItem>
-                                            ))}
+                                            ))
+                                            )}
                                         </SelectContent>
                                     </Select>
                                 </div>
                             )}
                         </div>
+                        {newPersonalTask.project_id && (
+                            <div>
+                                <label className="text-xs text-[#737373] mb-1 block">Estimated Hours <span className="text-[#555]">(optional)</span></label>
+                                <Input
+                                    value={newPersonalTask.estimated_hours}
+                                    onChange={(e) => setNewPersonalTask({ ...newPersonalTask, estimated_hours: e.target.value })}
+                                    className="bg-[#0A0A14] border-[rgba(255,255,255,0.08)] text-white placeholder-[#444]"
+                                />
+                            </div>
+                        )}
                         <Button
                             onClick={createPersonalTask}
                             disabled={addingTask || !newPersonalTask.title.trim()}
@@ -1477,7 +1896,7 @@ const ProjectsPage = () => {
             {/* Convert to Project Ticket Dialog */}
             <Dialog open={showConvertDialog} onOpenChange={(open) => {
                 setShowConvertDialog(open);
-                if (!open) { setConvertProjectId(''); setConvertAssigneeId(''); setProjectMembers([]); }
+                if (!open) { setConvertProjectId(''); setConvertAssigneeId(''); setConvertEstimatedHours(''); setProjectMembers([]); }
             }}>
                 <DialogContent className="bg-[#0d0d0d] border-[rgba(255,255,255,0.08)] text-white">
                     <DialogHeader>
@@ -1509,7 +1928,15 @@ const ProjectsPage = () => {
                                 </SelectContent>
                             </Select>
                         </div>
-                        {projectMembers.length > 0 && (
+                        <div>
+                            <label className="text-xs text-[#737373] mb-1 block">Estimated Hours</label>
+                            <Input
+                                value={convertEstimatedHours}
+                                onChange={(e) => setConvertEstimatedHours(e.target.value)}
+                                className="bg-[#0A0A14] border-[rgba(255,255,255,0.08)] text-white"
+                            />
+                        </div>
+                        {convertProjectId && (
                             <div>
                                 <label className="text-xs text-[#737373] mb-1 block">Assign To <span className="text-[#555]">(optional — defaults to you)</span></label>
                                 <Select value={convertAssigneeId} onValueChange={setConvertAssigneeId}>
@@ -1517,21 +1944,22 @@ const ProjectsPage = () => {
                                         <SelectValue placeholder="Select team member..." />
                                     </SelectTrigger>
                                     <SelectContent className="bg-[#0d0d0d] border-[rgba(255,255,255,0.08)]">
-                                        {projectMembers.map((member) => (
-                                            <SelectItem key={member.id} value={member.id.toString()}>
-                                                <div className="flex items-center gap-2">
-                                                    <div className="w-5 h-5 rounded-full bg-gradient-to-br from-[#E0B954] to-[#C79E3B] flex items-center justify-center text-[#080808] text-xs font-bold">
-                                                        {member.name.charAt(0).toUpperCase()}
+                                        {projectMembers.length === 0 ? (
+                                            <div className="p-2 text-xs text-[#737373]">No team members in this project</div>
+                                        ) : (
+                                            projectMembers.map((member) => (
+                                                <SelectItem key={member.id} value={member.id.toString()}>
+                                                    <div className="flex items-center gap-2">
+                                                        <div className="w-5 h-5 rounded-full bg-gradient-to-br from-[#E0B954] to-[#C79E3B] flex items-center justify-center text-[#080808] text-xs font-bold">
+                                                            {member.name.charAt(0).toUpperCase()}
+                                                        </div>
+                                                        {member.name}
                                                     </div>
-                                                    {member.name}
-                                                </div>
-                                            </SelectItem>
-                                        ))}
+                                                </SelectItem>
+                                            ))
+                                        )}
                                     </SelectContent>
                                 </Select>
-                                {convertAssigneeId && (
-                                    <p className="text-xs text-[#E0B954] mt-1">An email notification will be sent to the assignee</p>
-                                )}
                             </div>
                         )}
                         <Button

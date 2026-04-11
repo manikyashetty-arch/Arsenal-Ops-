@@ -35,10 +35,11 @@ import {
     ChevronDown,
     ChevronUp,
     Link2,
+    Crown,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import PMView from '@/components/PMView';
-import { TimelineView, CalendarView, ListView, GoalsView, ActivityFeed, BusinessReviewView, WorkloadView } from '@/components/ProjectHub';
+import { TimelineView, CalendarView, ListView, ActivityFeed, BusinessReviewView } from '@/components/ProjectHub';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
@@ -64,6 +65,7 @@ interface ProjectDeveloper {
     github_username: string;
     role: string;
     responsibilities: string;
+    is_admin: boolean;
 }
 
 interface Architecture {
@@ -257,24 +259,6 @@ const ProjectDetail = () => {
     const [goals, setGoals] = useState<Goal[]>([]);
     const [milestones, setMilestones] = useState<Milestone[]>([]);
     const [activities, setActivities] = useState<ActivityItem[]>([]);
-    const [workload, setWorkload] = useState<{
-        developer_id: number | string;
-        developer_name: string;
-        total_items: number;
-        completed_items: number;
-        in_progress_items: number;
-        todo_items: number;
-        overdue_items: number;
-        estimated_hours: number;
-        logged_hours: number;
-        remaining_hours: number;
-        this_week_remaining_hours?: number;
-        in_progress_remaining?: number;
-        this_week_in_progress_hours?: number;
-        this_week_done_hours?: number;
-        this_week_capacity_used?: number;
-        this_week_remaining_capacity?: number;
-    }[]>([]);
     const [hubLoading, setHubLoading] = useState(true);
         const [sprintsExpanded, setSprintsExpanded] = useState(false);
         const [progressExpanded, setProgressExpanded] = useState(false);
@@ -501,7 +485,6 @@ const ProjectDetail = () => {
             fetchGoals(),
             fetchMilestones(),
             fetchActivities(),
-            fetchWorkload(),
             fetchAnalytics(),
             fetchPrdAnalysis(),
         ]);
@@ -576,88 +559,6 @@ const ProjectDetail = () => {
         }
     };
 
-    const fetchWorkload = async () => {
-        if (!id) return;
-        try {
-            const res = await fetch(`${API_BASE_URL}/api/projects/${id}/workload`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            if (res.ok) setWorkload(await res.json());
-        } catch (err) {
-            console.error('Failed to fetch workload:', err);
-        }
-    };
-
-    // Goal handlers
-    const handleAddGoal = async (goal: { title: string; description?: string; due_date?: string }) => {
-        if (!id) return;
-        try {
-            const res = await fetch(`${API_BASE_URL}/api/projects/${id}/goals`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                body: JSON.stringify(goal),
-            });
-            if (res.ok) { toast.success('Goal added!'); fetchGoals(); }
-        } catch { toast.error('Failed to add goal'); }
-    };
-
-    const handleUpdateGoalProgress = async (goalId: number, progress: number) => {
-        if (!id) return;
-        try {
-            const res = await fetch(`${API_BASE_URL}/api/projects/${id}/goals/${goalId}`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                body: JSON.stringify({ progress }),
-            });
-            if (res.ok) fetchGoals();
-        } catch { toast.error('Failed to update goal'); }
-    };
-
-    const handleDeleteGoal = async (goalId: number) => {
-        if (!id) return;
-        try {
-            const res = await fetch(`${API_BASE_URL}/api/projects/${id}/goals/${goalId}`, {
-                method: 'DELETE',
-                headers: { 'Authorization': `Bearer ${token}` },
-            });
-            if (res.ok) { toast.success('Goal deleted'); fetchGoals(); }
-        } catch { toast.error('Failed to delete goal'); }
-    };
-
-    // Milestone handlers
-    const handleAddMilestone = async (milestone: { title: string; description?: string; due_date?: string }) => {
-        if (!id) return;
-        try {
-            const res = await fetch(`${API_BASE_URL}/api/projects/${id}/milestones`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                body: JSON.stringify(milestone),
-            });
-            if (res.ok) { toast.success('Milestone added!'); fetchMilestones(); }
-        } catch { toast.error('Failed to add milestone'); }
-    };
-
-    const handleCompleteMilestone = async (milestoneId: number) => {
-        if (!id) return;
-        try {
-            const res = await fetch(`${API_BASE_URL}/api/projects/${id}/milestones/${milestoneId}/complete`, {
-                method: 'POST',
-                headers: { 'Authorization': `Bearer ${token}` },
-            });
-            if (res.ok) { toast.success('Milestone completed!'); fetchMilestones(); }
-        } catch { toast.error('Failed to complete milestone'); }
-    };
-
-    const handleDeleteMilestone = async (milestoneId: number) => {
-        if (!id) return;
-        try {
-            const res = await fetch(`${API_BASE_URL}/api/projects/${id}/milestones/${milestoneId}`, {
-                method: 'DELETE',
-                headers: { 'Authorization': `Bearer ${token}` },
-            });
-            if (res.ok) { toast.success('Milestone deleted'); fetchMilestones(); }
-        } catch { toast.error('Failed to delete milestone'); }
-    };
 
     // Task update/create handlers for TimelineView
     const handleTaskUpdate = async (itemId: string, updates: any) => {
@@ -749,6 +650,56 @@ const ProjectDetail = () => {
         } catch {
             toast.error('Failed to remove developer');
         }
+    };
+
+    // Promote developer to project admin
+    const handlePromoteToAdmin = async (developerId: number) => {
+        if (!project) return;
+        try {
+            const res = await fetch(`${API_BASE_URL}/api/projects/${project.id}/developers/${developerId}/admin`, {
+                method: 'PUT',
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (res.ok) {
+                toast.success('Developer promoted to project admin!');
+                fetchProject();
+            } else {
+                const error = await res.json();
+                toast.error(error.detail || 'Failed to promote developer');
+            }
+        } catch {
+            toast.error('Failed to promote developer');
+        }
+    };
+
+    // Demote developer from project admin
+    const handleDemoteFromAdmin = async (developerId: number) => {
+        if (!project) return;
+        try {
+            const res = await fetch(`${API_BASE_URL}/api/projects/${project.id}/developers/${developerId}/member`, {
+                method: 'PUT',
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (res.ok) {
+                toast.success('Developer demoted from project admin!');
+                fetchProject();
+            } else {
+                const error = await res.json();
+                toast.error(error.detail || 'Failed to demote developer');
+            }
+        } catch {
+            toast.error('Failed to demote developer');
+        }
+    };
+
+    // Check if current user is a system admin or project admin
+    const isCurrentUserAdmin = () => {
+        if (!user || !project) return false;
+        const isSystemAdmin = user.role.includes('admin');
+        const isProjectAdmin = project.developers.some(
+            dev => dev.email === user.email && dev.is_admin
+        );
+        return isSystemAdmin || isProjectAdmin;
     };
 
     // Save architecture changes
@@ -870,16 +821,24 @@ const ProjectDetail = () => {
         );
     }
 
+    // Check if user can see PM tab: system admin, project manager, or project admin
+    const canAccessPMTab = () => {
+        if (isProjectManager(user)) return true;
+        if (!user || !project) return false;
+        return project.developers.some(
+            dev => dev.email === user.email && dev.is_admin
+        );
+    };
+
     const tabs = [
         { id: 'overview' as TabType, label: 'Overview', icon: Info },
         { id: 'hub' as TabType, label: 'Project Hub', icon: List },
         { id: 'tracker' as TabType, label: 'Project Tracker', icon: BarChart3 },
-        { id: 'calendar' as TabType, label: 'Calendar', icon: Calendar },
+        { id: 'calendar' as TabType, label: 'Timeline', icon: Calendar },
         { id: 'business' as TabType, label: 'Business Review', icon: TrendingUp },
-        { id: 'goals' as TabType, label: 'Goals', icon: Target },
         { id: 'activity' as TabType, label: 'Activity', icon: Activity },
-        // PM tab only for admins and project managers
-        ...(isProjectManager(user) ? [{ id: 'project_manager' as TabType, label: 'Project Manager', icon: Clock }] : []),
+        // PM tab for system admins, project managers, and project admins
+        ...(canAccessPMTab() ? [{ id: 'project_manager' as TabType, label: 'Project Manager', icon: Clock }] : []),
     ];
 
     // Filter out developers already in project
@@ -1619,12 +1578,19 @@ const ProjectDetail = () => {
                                             key={dev.id}
                                             className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-xl p-4 flex items-start justify-between"
                                         >
-                                            <div className="flex items-start gap-4">
+                                            <div className="flex-1 flex items-start gap-4">
                                                 <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#E0B954] to-[#B8872A] flex items-center justify-center text-white font-semibold">
                                                     {dev.name.charAt(0).toUpperCase()}
                                                 </div>
-                                                <div>
-                                                    <h3 className="font-semibold text-white">{dev.name}</h3>
+                                                <div className="flex-1">
+                                                    <div className="flex items-center gap-2">
+                                                        <h3 className="font-semibold text-white">{dev.name}</h3>
+                                                        {dev.is_admin && (
+                                                            <Badge className="bg-blue-500/20 text-blue-400 border-0">
+                                                                Admin
+                                                            </Badge>
+                                                        )}
+                                                    </div>
                                                     <p className="text-sm text-[#737373]">{dev.email}</p>
                                                     <div className="flex items-center gap-2 mt-1.5">
                                                         <Badge className="bg-[#E0B954]/20 text-[#E0B954] border-0">
@@ -1642,14 +1608,40 @@ const ProjectDetail = () => {
                                                     )}
                                                 </div>
                                             </div>
-                                            <Button
-                                                variant="ghost"
-                                                size="sm"
-                                                onClick={() => handleRemoveDeveloper(dev.id)}
-                                                className="text-red-400 hover:text-red-300 hover:bg-red-400/10"
-                                            >
-                                                <Trash2 className="w-4 h-4" />
-                                            </Button>
+                                            {isCurrentUserAdmin() ? (
+                                                <div className="flex items-center gap-2">
+                                                    {dev.is_admin ? (
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="sm"
+                                                            onClick={() => handleDemoteFromAdmin(dev.id)}
+                                                            className="text-yellow-400 hover:text-yellow-300 hover:bg-yellow-400/10"
+                                                            title="Demote from admin"
+                                                        >
+                                                            <Crown className="w-4 h-4" />
+                                                        </Button>
+                                                    ) : (
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="sm"
+                                                            onClick={() => handlePromoteToAdmin(dev.id)}
+                                                            className="text-gray-500 hover:text-gray-400 hover:bg-gray-500/10"
+                                                            title="Promote to admin"
+                                                        >
+                                                            <Crown className="w-4 h-4" />
+                                                        </Button>
+                                                    )}
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="sm"
+                                                        onClick={() => handleRemoveDeveloper(dev.id)}
+                                                        className="text-red-400 hover:text-red-300 hover:bg-red-400/10"
+                                                        title="Remove developer"
+                                                    >
+                                                        <Trash2 className="w-4 h-4" />
+                                                    </Button>
+                                                </div>
+                                            ) : null}
                                         </div>
                                     ))}
                                 </div>
@@ -2060,8 +2052,29 @@ const ProjectDetail = () => {
                             </div>
                         )}
 
-                        {!isSubsectionRestricted('tracker', 'timeline') && (
-                        <TimelineView
+                        </div>
+                    )
+                )}
+
+                {/* Timeline Tab (Calendar + Timeline) */}
+                {activeTab === 'calendar' && (
+                    hubLoading ? (
+                        <div className="space-y-4 animate-pulse">
+                            {/* Calendar skeleton */}
+                            <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-2xl p-5">
+                                <div className="grid grid-cols-7 gap-2 mb-3">{[...Array(7)].map((_,i) => <div key={i} className="h-8 bg-[rgba(255,255,255,0.05)] rounded" />)}</div>
+                                {[...Array(5)].map((_,r) => (
+                                    <div key={r} className="grid grid-cols-7 gap-2 mb-2">{[...Array(7)].map((_,c) => <div key={c} className="h-16 bg-[rgba(255,255,255,0.03)] rounded" />)}</div>
+                                ))}
+                            </div>
+                            {/* Timeline skeleton */}
+                            <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-2xl p-5">
+                                <div className="h-96 bg-[rgba(255,255,255,0.025)] rounded-xl" />
+                            </div>
+                        </div>
+                    ) : !isSubsectionRestricted('calendar', 'calendar') ? (
+                        <div className="space-y-4">
+                            <TimelineView
                                 workItems={hubWorkItems}
                                 milestones={milestones}
                                 goals={goals}
@@ -2071,22 +2084,8 @@ const ProjectDetail = () => {
                                 onTaskUpdate={handleTaskUpdate}
                                 onTaskCreate={handleTaskCreate}
                             />
-                        )}
+                            <CalendarView workItems={hubWorkItems} milestones={milestones} goals={goals} />
                         </div>
-                    )
-                )}
-
-                {/* Calendar Tab */}
-                {activeTab === 'calendar' && (
-                    hubLoading ? (
-                        <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-2xl p-5 animate-pulse">
-                            <div className="grid grid-cols-7 gap-2 mb-3">{[...Array(7)].map((_,i) => <div key={i} className="h-8 bg-[rgba(255,255,255,0.05)] rounded" />)}</div>
-                            {[...Array(5)].map((_,r) => (
-                                <div key={r} className="grid grid-cols-7 gap-2 mb-2">{[...Array(7)].map((_,c) => <div key={c} className="h-16 bg-[rgba(255,255,255,0.03)] rounded" />)}</div>
-                            ))}
-                        </div>
-                    ) : !isSubsectionRestricted('calendar', 'calendar') ? (
-                        <CalendarView workItems={hubWorkItems} milestones={milestones} goals={goals} />
                     ) : (
                         <div className="text-center py-12 text-[#737373]">This section is restricted from your view.</div>
                     )
@@ -2110,38 +2109,6 @@ const ProjectDetail = () => {
                             sprints={sprints}
                             milestones={milestones}
                             workItems={hubWorkItems}
-                            goals={goals}
-                        />
-                    ) : (
-                        <div className="text-center py-12 text-[#737373]">This section is restricted from your view.</div>
-                    )
-                )}
-
-                {/* Goals Tab */}
-                {activeTab === 'goals' && (
-                    hubLoading ? (
-                        <div className="space-y-3 animate-pulse">
-                            {[...Array(4)].map((_, i) => (
-                                <div key={i} className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-2xl p-4 flex items-center gap-4">
-                                    <div className="w-10 h-10 rounded-xl bg-[rgba(255,255,255,0.06)] flex-shrink-0" />
-                                    <div className="flex-1 space-y-2">
-                                        <div className="h-4 w-48 bg-[rgba(255,255,255,0.07)] rounded" />
-                                        <div className="h-2.5 w-full bg-[rgba(255,255,255,0.04)] rounded-full" />
-                                    </div>
-                                    <div className="h-6 w-12 bg-[rgba(255,255,255,0.04)] rounded" />
-                                </div>
-                            ))}
-                        </div>
-                    ) : !isSubsectionRestricted('goals', 'goals') ? (
-                        <GoalsView
-                            goals={goals}
-                            milestones={milestones}
-                            onAddGoal={handleAddGoal}
-                            onAddMilestone={handleAddMilestone}
-                            onUpdateGoalProgress={handleUpdateGoalProgress}
-                            onCompleteMilestone={handleCompleteMilestone}
-                            onDeleteGoal={handleDeleteGoal}
-                            onDeleteMilestone={handleDeleteMilestone}
                         />
                     ) : (
                         <div className="text-center py-12 text-[#737373]">This section is restricted from your view.</div>
@@ -2171,7 +2138,7 @@ const ProjectDetail = () => {
 
                 
                 {/* Project Manager Tab */}
-                {activeTab === 'project_manager' && isProjectManager(user) && (
+                {activeTab === 'project_manager' && canAccessPMTab() && (
                     hubLoading ? (
                         <div className="space-y-4 animate-pulse">
                             {/* Sprint Progress skeleton */}
@@ -2200,34 +2167,13 @@ const ProjectDetail = () => {
                                 ))}
                             </div>
                             {/* PMView skeleton */}
-                            <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-2xl p-5 space-y-3">
-                                <div className="h-4 w-44 bg-[rgba(255,255,255,0.07)] rounded mb-4" />
-                                {[...Array(4)].map((_, i) => (
-                                    <div key={i} className="flex items-center gap-3 py-2.5 border-b border-[rgba(255,255,255,0.04)]">
-                                        <div className="h-7 w-7 rounded-full bg-[rgba(255,255,255,0.06)]" />
-                                        <div className="h-3 flex-1 bg-[rgba(255,255,255,0.05)] rounded" />
-                                        <div className="h-3 w-12 bg-[rgba(255,255,255,0.04)] rounded" />
-                                        <div className="h-3 w-12 bg-[rgba(255,255,255,0.04)] rounded" />
-                                    </div>
-                                ))}
-                            </div>
-                            {/* Workload skeleton */}
-                            <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-2xl p-5 space-y-3">
-                                <div className="h-4 w-36 bg-[rgba(255,255,255,0.07)] rounded mb-4" />
-                                {[...Array(3)].map((_, i) => (
-                                    <div key={i} className="flex items-center gap-3 py-2.5">
-                                        <div className="h-8 w-8 rounded-full bg-[rgba(255,255,255,0.06)]" />
-                                        <div className="flex-1 space-y-1.5">
-                                            <div className="h-3 w-28 bg-[rgba(255,255,255,0.07)] rounded" />
-                                            <div className="h-2 w-full bg-[rgba(255,255,255,0.04)] rounded-full" />
-                                        </div>
-                                        <div className="h-3 w-16 bg-[rgba(255,255,255,0.04)] rounded" />
-                                    </div>
-                                ))}
-                            </div>
                         </div>
                     ) : (
                     <div className="space-y-4">
+                        {!isSubsectionRestricted('project_manager', 'pmview') && (
+                        <PMView projectId={id!} token={token!} userRestrictions={userRestrictions} />
+                        )}
+
                         {/* Sprint Expected vs Actual Progress */}
                         {sprints.length > 0 && (
                             <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(224,185,84,0.12)] rounded-2xl p-5 shadow-[0_0_30px_rgba(224,185,84,0.05)]">
@@ -2341,29 +2287,6 @@ const ProjectDetail = () => {
                                     })}
                                 </div>
                             </div>
-                        )}
-
-                        {!isSubsectionRestricted('project_manager', 'pmview') && (
-                        <PMView projectId={id!} token={token!} userRestrictions={userRestrictions} />
-                        )}
-
-                        {/* Workload Section */}
-                        {!isSubsectionRestricted('project_manager', 'team workload') && (
-                        <div>
-                            <div className="flex items-center gap-3 mb-4">
-                                <div className="w-9 h-9 rounded-xl bg-[#E0B954]/10 flex items-center justify-center">
-                                    <Users className="w-4 h-4 text-[#E0B954]" />
-                                </div>
-                                <div>
-                                    <h3 className="font-semibold text-white">Team Workload</h3>
-                                    <p className="text-xs text-[#737373]">Developer capacity and task distribution</p>
-                                </div>
-                            </div>
-                            <WorkloadView
-                                workloadData={workload}
-                                onDeveloperClick={(devId) => console.log('Developer clicked:', devId)}
-                            />
-                        </div>
                         )}
                     </div>
                     )

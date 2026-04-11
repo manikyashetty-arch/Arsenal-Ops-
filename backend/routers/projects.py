@@ -37,6 +37,39 @@ def has_project_access(project: Project, user: User) -> bool:
     return False
 
 
+def is_project_admin(project_id: int, user: User, db: Session) -> bool:
+    """Check if user is a project-specific admin"""
+    # System admins are project admins
+    if 'admin' in user.role:
+        return True
+    
+    # Check if user is a project admin
+    result = db.execute(
+        select(project_developers.c.is_admin).where(
+            (project_developers.c.project_id == project_id) &
+            (Developer.id == project_developers.c.developer_id) &
+            (Developer.email == user.email)
+        ).join(Developer, Developer.id == project_developers.c.developer_id)
+    ).first()
+    
+    return result[0] if result else False
+
+
+def require_project_admin(project_id: int, user: User, db: Session):
+    """Require project admin access, raise 403 if denied"""
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    if not is_project_admin(project_id, user, db):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You must be a project admin to perform this action"
+        )
+    
+    return project
+
+
 def require_project_access(project_id: int, user: User, db: Session):
     """Require project access, raise 403 if denied"""
     project = db.query(Project).filter(Project.id == project_id).first()
@@ -80,6 +113,7 @@ class ProjectDeveloperResponse(BaseModel):
     email: str
     role: str
     responsibilities: Optional[str]
+    is_admin: bool
 
 
 class ProjectResponse(BaseModel):
@@ -126,7 +160,8 @@ def format_project(project: Project, db: Session) -> dict:
             Developer.email,
             Developer.github_username,
             project_developers.c.role,
-            project_developers.c.responsibilities
+            project_developers.c.responsibilities,
+            project_developers.c.is_admin
         )
         .join(project_developers, Developer.id == project_developers.c.developer_id)
         .where(project_developers.c.project_id == project.id)
@@ -139,7 +174,8 @@ def format_project(project: Project, db: Session) -> dict:
             "email": row.email,
             "github_username": row.github_username,
             "role": row.role,
-            "responsibilities": row.responsibilities
+            "responsibilities": row.responsibilities,
+            "is_admin": row.is_admin
         })
     
     # Parse GitHub repo name if URL exists
@@ -180,7 +216,7 @@ async def create_project(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Create a new project (requires auth)"""
+    """Create a new project (all authenticated users can create)"""
     # Check for duplicate project name
     existing = db.query(Project).filter(Project.name == project.name).first()
     if existing:
@@ -203,7 +239,31 @@ async def create_project(
     db.commit()
     db.refresh(new_project)
     
-    # Assign developers if provided
+    # Add creator as a project member with project admin role
+    creator_dev = db.query(Developer).filter(Developer.email == current_user.email).first()
+    if not creator_dev:
+        # Create developer record if doesn't exist
+        creator_dev = Developer(
+            name=current_user.email.split('@')[0],
+            email=current_user.email
+        )
+        db.add(creator_dev)
+        db.commit()
+        db.refresh(creator_dev)
+    
+    # Add creator as a project member (not admin by default)
+    db.execute(
+        insert(project_developers).values(
+            project_id=new_project.id,
+            developer_id=creator_dev.id,
+            role="Project Creator",
+            responsibilities=None,
+            is_admin=False
+        )
+    )
+    db.commit()
+    
+    # Assign additional developers if provided
     if project.developers:
         for dev_assignment in project.developers:
             # Verify developer exists
@@ -211,13 +271,14 @@ async def create_project(
             if not developer:
                 raise HTTPException(status_code=400, detail=f"Developer with ID {dev_assignment.developer_id} not found")
             
-            # Insert into association table
+            # Insert into association table (not admin by default)
             db.execute(
                 insert(project_developers).values(
                     project_id=new_project.id,
                     developer_id=dev_assignment.developer_id,
                     role=dev_assignment.role,
-                    responsibilities=dev_assignment.responsibilities
+                    responsibilities=dev_assignment.responsibilities,
+                    is_admin=False
                 )
             )
         db.commit()
@@ -293,16 +354,12 @@ async def delete_project(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Delete a project and its work items (requires admin access)"""
-    # Only admins can delete projects
-    # Check if user has admin role (handles multi-role users like 'admin,developer')
-    user_roles = [role.strip() for role in current_user.role.split(',')]
-    is_admin = UserRole.ADMIN.value in user_roles
-    
-    if not is_admin:
+    """Delete a project and its work items (requires project admin or system admin access)"""
+    # Check if user is system admin or project admin
+    if not is_project_admin(project_id, current_user, db):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only admins can delete projects"
+            detail="Only project admins or system admins can delete projects"
         )
     
     project = db.query(Project).filter(Project.id == project_id).first()
@@ -497,6 +554,91 @@ async def remove_developer_from_project(
     
     db.commit()
     return {"status": "success", "message": "Developer removed from project"}
+
+
+# ============== PROJECT ADMIN MANAGEMENT ==============
+
+@router.put("/{project_id}/developers/{developer_id}/admin")
+async def set_developer_as_admin(
+    project_id: int,
+    developer_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Promote a developer to project admin (requires project admin access)"""
+    project = require_project_admin(project_id, current_user, db)
+    
+    # Verify developer exists in project
+    result = db.execute(
+        select(project_developers).where(
+            (project_developers.c.project_id == project_id) &
+            (project_developers.c.developer_id == developer_id)
+        )
+    ).first()
+    
+    if not result:
+        raise HTTPException(status_code=404, detail="Developer not found in this project")
+    
+    # Update is_admin to True
+    db.execute(
+        project_developers.update().where(
+            (project_developers.c.project_id == project_id) &
+            (project_developers.c.developer_id == developer_id)
+        ).values(is_admin=True)
+    )
+    db.commit()
+    
+    return {"status": "success", "message": "Developer promoted to project admin"}
+
+
+@router.put("/{project_id}/developers/{developer_id}/member")
+async def remove_admin_from_developer(
+    project_id: int,
+    developer_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Demote a developer from project admin (requires project admin access)"""
+    project = require_project_admin(project_id, current_user, db)
+    
+    # Get current user's developer record
+    current_dev = db.query(Developer).filter(Developer.email == current_user.email).first()
+    
+    # Prevent demoting yourself if you're the last admin
+    if current_dev and current_dev.id == developer_id:
+        # Check if there are other admins
+        other_admins = db.execute(
+            select(project_developers).where(
+                (project_developers.c.project_id == project_id) &
+                (project_developers.c.developer_id != developer_id) &
+                (project_developers.c.is_admin == True)
+            )
+        ).first()
+        
+        if not other_admins:
+            raise HTTPException(status_code=400, detail="Cannot demote yourself if you are the last project admin")
+    
+    # Verify developer exists in project
+    result = db.execute(
+        select(project_developers).where(
+            (project_developers.c.project_id == project_id) &
+            (project_developers.c.developer_id == developer_id)
+        )
+    ).first()
+    
+    if not result:
+        raise HTTPException(status_code=404, detail="Developer not found in this project")
+    
+    # Update is_admin to False
+    db.execute(
+        project_developers.update().where(
+            (project_developers.c.project_id == project_id) &
+            (project_developers.c.developer_id == developer_id)
+        ).values(is_admin=False)
+    )
+    db.commit()
+    
+    return {"status": "success", "message": "Developer removed from project admin role"}
 
 
 # ============== PROJECT HUB ENDPOINTS ==============
