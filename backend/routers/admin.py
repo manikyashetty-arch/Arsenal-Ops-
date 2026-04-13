@@ -255,11 +255,11 @@ async def get_employee_in_progress_tickets(employee_id: int, db: Session = Depen
         else_=5
     )
     
-    # Get all active (non-done) work items assigned to this employee
+    # Get only in-progress work items assigned to this employee
     work_items = db.query(WorkItem).filter(
         WorkItem.assignee_id == employee_id,
-        WorkItem.status.in_(["in_progress", "in_review", "todo", "backlog"])
-    ).order_by(status_order, priority_order).all()
+        WorkItem.status == "in_progress"
+    ).order_by(priority_order).all()
     
     result = []
     for item in work_items:

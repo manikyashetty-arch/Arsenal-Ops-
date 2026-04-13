@@ -1525,7 +1525,7 @@ const AdminDashboard = () => {
                     <div className="bg-[#0d0d0d] border border-[rgba(255,255,255,0.07)] rounded-2xl w-full max-w-2xl shadow-2xl" onClick={e => e.stopPropagation()}>
                         <div className="flex items-center justify-between p-5 border-b border-[rgba(255,255,255,0.05)]">
                             <div>
-                                <h2 className="text-lg font-bold text-white">Active Tickets</h2>
+                                <h2 className="text-lg font-bold text-white">In-Progress Tickets</h2>
                                 <p className="text-xs text-[#737373] mt-0.5">{selectedEmployee.name} • {employeeTickets.length} ticket{employeeTickets.length !== 1 ? 's' : ''}</p>
                             </div>
                             <button onClick={() => setShowEmployeeTicketsModal(false)} className="p-2 rounded-lg hover:bg-[rgba(244,246,255,0.05)] text-[#737373] hover:text-white">
@@ -1540,7 +1540,7 @@ const AdminDashboard = () => {
                             ) : employeeTickets.length === 0 ? (
                                 <div className="text-center py-8 text-[#737373]">
                                     <Ticket className="w-8 h-8 mx-auto mb-2 opacity-50" />
-                                    <p>No active tickets</p>
+                                    <p>No in-progress tickets</p>
                                 </div>
                             ) : (
                                 <div className="space-y-3">
@@ -1549,17 +1549,6 @@ const AdminDashboard = () => {
                                             : ticket.priority.toLowerCase() === 'high' ? '#F97316'
                                             : ticket.priority.toLowerCase() === 'medium' ? '#F59E0B'
                                             : '#E0B954';
-                                        
-                                        const statusLabel = ticket.status === 'in_progress' ? 'In Progress'
-                                            : ticket.status === 'in_review' ? 'In Review'
-                                            : ticket.status === 'todo' ? 'To Do'
-                                            : ticket.status === 'backlog' ? 'Backlog'
-                                            : ticket.status;
-                                        
-                                        const statusColor = ticket.status === 'in_progress' ? '#3B82F6'
-                                            : ticket.status === 'in_review' ? '#8B5CF6'
-                                            : ticket.status === 'todo' ? '#6B7280'
-                                            : '#4B5563';
                                         
                                         // Truncate description to 80 characters
                                         const truncatedDescription = ticket.description
@@ -1586,12 +1575,6 @@ const AdminDashboard = () => {
                                                                 style={{ backgroundColor: `${priorityColor}30`, color: priorityColor }}
                                                             >
                                                                 {ticket.priority.charAt(0).toUpperCase() + ticket.priority.slice(1)}
-                                                            </span>
-                                                            <span
-                                                                className="px-2 py-0.5 rounded text-xs font-medium whitespace-nowrap"
-                                                                style={{ backgroundColor: `${statusColor}20`, color: statusColor }}
-                                                            >
-                                                                {statusLabel}
                                                             </span>
                                                         </div>
                                                         {truncatedDescription && (
