@@ -229,7 +229,7 @@ class EmployeeTicketResponse(BaseModel):
 
 @router.get("/employees/{employee_id}/in-progress-tickets", response_model=List[EmployeeTicketResponse])
 async def get_employee_in_progress_tickets(employee_id: int, db: Session = Depends(get_db)):
-    """Get all in-progress tickets assigned to an employee across all projects, sorted by priority"""
+    """Get all active tickets assigned to an employee across all projects, sorted by priority"""
     from sqlalchemy import case
     
     # Verify employee exists
@@ -246,11 +246,20 @@ async def get_employee_in_progress_tickets(employee_id: int, db: Session = Depen
         else_=5
     )
     
-    # Get all in-progress work items assigned to this employee, sorted by priority
+    # Status order: in_progress first, then in_review, then todo, then backlog
+    status_order = case(
+        (WorkItem.status == "in_progress", 1),
+        (WorkItem.status == "in_review", 2),
+        (WorkItem.status == "todo", 3),
+        (WorkItem.status == "backlog", 4),
+        else_=5
+    )
+    
+    # Get all active (non-done) work items assigned to this employee
     work_items = db.query(WorkItem).filter(
         WorkItem.assignee_id == employee_id,
-        WorkItem.status == "in_progress"
-    ).order_by(priority_order).all()
+        WorkItem.status.in_(["in_progress", "in_review", "todo", "backlog"])
+    ).order_by(status_order, priority_order).all()
     
     result = []
     for item in work_items:
