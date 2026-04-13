@@ -167,26 +167,28 @@ async def get_developers_capacity(db: Session = Depends(get_db)):
         dev_items = db.query(WorkItem).filter(WorkItem.assignee_id == dev.id).all()
         
         # Calculate weekly capacity
-        # For in_progress: if modified THIS WEEK use estimated hours, else use remaining hours
+        # in_progress: use remaining work (estimated - logged) — matches what the UI shows as "Xh left"
         in_progress_hours = sum(
-            item.estimated_hours or 0
-            if (item.updated_at and week_start <= item.updated_at <= week_end)
-            else (item.remaining_hours or 0)
+            max(0, (item.estimated_hours or 0) - (item.logged_hours or 0))
             for item in dev_items if item.status == "in_progress"
         )
         
+        # in_review: developer is waiting, not actively working — count minimal remaining
         in_review_hours = sum(
-            item.logged_hours or 0
+            max(0, (item.estimated_hours or 0) - (item.logged_hours or 0))
             for item in dev_items if item.status == "in_review"
         )
         
+        # done this week: count actual logged hours for tickets completed this week
         done_hours = sum(
             item.logged_hours or 0
             for item in dev_items if item.status == "done" and item.completed_at
             and week_start <= item.completed_at <= week_end
         )
         
-        capacity_used = in_progress_hours + in_review_hours + done_hours
+        # Capacity = only active work (in_progress remaining hours)
+        # in_review and done are tracked separately but don't count toward weekly load
+        capacity_used = in_progress_hours
         remaining_capacity = max(0, 40 - capacity_used)
         
         result.append({

@@ -772,7 +772,7 @@ const AdminDashboard = () => {
                                                                 capacityStatus === 'Busy' ? 'text-[#F59E0B]' : 
                                                                 'text-[#a3a3a3]'
                                                             }`}>
-                                                                {capacityStatus} ({devCapacity?.this_week_capacity_used || 0}h/{devCapacity?.this_week_remaining_capacity || 40}h)
+                                                                {capacityStatus} ({devCapacity?.this_week_capacity_used ?? 0}h/40h)
                                                             </span>
                                                         </div>
                                                     </td>
