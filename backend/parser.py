@@ -53,9 +53,99 @@ def date_key(dt):
     return str(dt)
 
 
+def calculate_sprints(week_dates: list, sprint_weeks: int, tickets: list) -> dict:
+    """
+    Calculate sprint boundaries and assign tasks to sprints.
+    
+    Args:
+        week_dates: list of 'YYYY-MM-DD' strings (all weeks)
+        sprint_weeks: number of weeks per sprint (e.g., 2, 3, 4)
+        tickets: list of task dicts with 'active_weeks' field
+    
+    Returns:
+        {
+            'sprints': [{sprint_num, start_week, end_week, duration_weeks, task_count, total_hours}, ...],
+            'unscheduled_tasks': [{name, reason}, ...],
+            'total_sprints': int
+        }
+    """
+    if not week_dates or sprint_weeks < 1:
+        return {
+            'sprints': [],
+            'unscheduled_tasks': [],
+            'total_sprints': 0
+        }
+    
+    # Build sprints based on week boundaries
+    sprints = []
+    for sprint_idx in range(0, len(week_dates), sprint_weeks):
+        sprint_week_range = week_dates[sprint_idx:sprint_idx + sprint_weeks]
+        sprint_num = (sprint_idx // sprint_weeks) + 1
+        
+        # Convert Monday (start_week) to Friday (end_week: Monday + 4 days)
+        # Since week_dates contains Mondays, the last Monday needs to be converted to Friday
+        last_monday = sprint_week_range[-1]
+        last_friday = (datetime.date.fromisoformat(last_monday) + datetime.timedelta(days=4)).isoformat()
+        
+        sprints.append({
+            'number': sprint_num,
+            'start_week': sprint_week_range[0],
+            'end_week': last_friday,
+            'duration_weeks': len(sprint_week_range),
+            'week_dates': sprint_week_range,
+            'tasks': [],
+            'total_hours': 0.0
+        })
+    
+    # Assign tasks to sprints
+    unscheduled = []
+    for task in tickets:
+        if not task.get('active_weeks') or len(task['active_weeks']) == 0:
+            unscheduled.append({
+                'name': task['name'],
+                'reason': 'no weeks scheduled'
+            })
+            continue
+        
+        # Find which sprints this task touches
+        task_assigned = False
+        for sprint in sprints:
+            sprint_weeks_set = set(sprint['week_dates'])
+            task_weeks_set = set(task['active_weeks'])
+            
+            # If task has hours in any week of this sprint, add it to sprint
+            if sprint_weeks_set & task_weeks_set:
+                hours_in_sprint = sum(
+                    task.get('week_hours', {}).get(w, 0)
+                    for w in sprint['week_dates']
+                )
+                if hours_in_sprint > 0:
+                    sprint['tasks'].append(task['name'])
+                    sprint['total_hours'] += hours_in_sprint
+                    task_assigned = True
+        
+        if not task_assigned and task.get('week_hours'):
+            # Task has week_hours but they didn't match any sprint (shouldn't happen with correct logic)
+            unscheduled.append({
+                'name': task['name'],
+                'reason': 'hours outside sprint boundaries'
+            })
+    
+    # Remove duplicate task names in each sprint
+    for sprint in sprints:
+        sprint['tasks'] = list(set(sprint['tasks']))
+        sprint['task_count'] = len(sprint['tasks'])
+    
+    return {
+        'sprints': sprints,
+        'unscheduled_tasks': unscheduled,
+        'total_sprints': len(sprints)
+    }
+
+
 # ── Core parser ───────────────────────────────────────────────────────────────
 
-def parse(filepath: str) -> dict:
+def parse(filepath: str, sprint_weeks: int = 2) -> dict:
     wb = openpyxl.load_workbook(filepath, data_only=True)
     
     # ── Find the sheet with roadmap data (support multiple sheets) ─────────────
@@ -434,7 +524,10 @@ def parse(filepath: str) -> dict:
             ),
         }
 
-    # ── Step 7: assemble output ───────────────────────────────────────────────
+    # ── Step 7: calculate sprints ────────────────────────────────────────────
+    sprint_data = calculate_sprints(week_dates, sprint_weeks, tickets)
+    
+    # ── Step 8: assemble output ───────────────────────────────────────────────
     return {
         "meta": {
             "file":          filepath,
@@ -443,6 +536,8 @@ def parse(filepath: str) -> dict:
             "total_weeks":   len(week_dates),
             "total_tasks":   len(tickets),
             "total_assignees": len(schedule),
+            "sprint_weeks":  sprint_weeks,
+            "total_sprints": sprint_data["total_sprints"],
         },
         "tickets":        tickets,
         "schedule":       schedule,
@@ -450,6 +545,8 @@ def parse(filepath: str) -> dict:
         "parallel_tasks": parallel_tasks,
         "availability":   availability,
         "warnings":       warnings,
+        "sprints":        sprint_data["sprints"],
+        "unscheduled_tasks": sprint_data["unscheduled_tasks"],
     }
 
 
@@ -463,14 +560,20 @@ def main():
         help="Path to the roadmap .xlsx file"
     )
     parser.add_argument(
+        "--sprint-weeks", "-sw",
+        type=int,
+        default=2,
+        help="Number of weeks per sprint (default: 2)"
+    )
+    parser.add_argument(
         "--section", "-s",
-        choices=["meta","tickets","schedule","conflicts","parallel_tasks","availability","warnings"],
+        choices=["meta","tickets","schedule","conflicts","parallel_tasks","availability","warnings","sprints","unscheduled_tasks"],
         default=None,
         help="Print only one section of the output"
     )
     args = parser.parse_args()
 
-    result = parse(args.file)
+    result = parse(args.file, sprint_weeks=args.sprint_weeks)
 
     if args.section:
         print(json.dumps(result[args.section], indent=2, default=str))

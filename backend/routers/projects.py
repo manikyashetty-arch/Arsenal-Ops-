@@ -8,6 +8,7 @@ from typing import List, Optional
 from datetime import datetime
 from sqlalchemy.orm import Session
 from sqlalchemy import select, insert, delete
+from sqlalchemy.orm.attributes import flag_modified
 import os
 
 import sys
@@ -96,6 +97,7 @@ class ProjectCreate(BaseModel):
     description: str
     key_prefix: str = "PROJ"
     github_repo_url: Optional[str] = None
+    github_repo_urls: Optional[List[str]] = None
     developers: Optional[List[DeveloperAssignment]] = []
 
 
@@ -104,6 +106,8 @@ class ProjectUpdate(BaseModel):
     description: Optional[str] = None
     status: Optional[str] = None
     github_repo_url: Optional[str] = None
+    github_repo_urls: Optional[List[str]] = None
+    created_at: Optional[str] = None
     end_date: Optional[str] = None
 
 
@@ -201,8 +205,10 @@ def format_project(project: Project, db: Session) -> dict:
         "key_prefix": project.status or "PROJ",
         "status": project.status or "active",
         "github_repo_url": project.github_repo_url,
+        "github_repo_urls": project.github_repo_urls if isinstance(project.github_repo_urls, list) else (project.github_repo_urls or []),
         "github_repo_name": github_repo_name,
         "created_at": project.created_at.isoformat() if project.created_at else datetime.utcnow().isoformat(),
+        "end_date": project.end_date.isoformat() if project.end_date else None,
         "work_item_stats": stats,
         "developers": developers,
         "selected_architecture": selected_architecture.to_dict() if selected_architecture else None,
@@ -224,14 +230,21 @@ async def create_project(
     
     # Parse GitHub repo name from URL
     github_repo_name = None
-    if project.github_repo_url:
-        github_repo_name = github_service.parse_repo_name(project.github_repo_url)
+    github_repo_url = project.github_repo_url
+    github_repo_urls = project.github_repo_urls or []
+    
+    # If single github_repo_url is provided, add it to the urls array
+    if github_repo_url:
+        github_repo_name = github_service.parse_repo_name(github_repo_url)
+        if github_repo_url not in github_repo_urls:
+            github_repo_urls.insert(0, github_repo_url)
     
     new_project = Project(
         name=project.name,
         description=project.description,
         status=project.key_prefix.upper().replace(" ", "") if project.key_prefix else "PROJ",
-        github_repo_url=project.github_repo_url,
+        github_repo_url=github_repo_url,
+        github_repo_urls=github_repo_urls,
         github_repo_name=github_repo_name
     )
     
@@ -339,8 +352,25 @@ async def update_project(
         project.github_repo_url = update.github_repo_url
         # Update github_repo_name
         project.github_repo_name = github_service.parse_repo_name(update.github_repo_url)
+    if update.github_repo_urls is not None:
+        project.github_repo_urls = update.github_repo_urls
+        flag_modified(project, "github_repo_urls")  # Tell SQLAlchemy the JSON field was modified
+        # Also set primary github_repo_url to the first one in the list if available
+        if update.github_repo_urls and len(update.github_repo_urls) > 0:
+            project.github_repo_url = update.github_repo_urls[0]
+            project.github_repo_name = github_service.parse_repo_name(update.github_repo_urls[0])
+    if update.created_at is not None:
+        try:
+            # Parse YYYY-MM-DD format from frontend
+            project.created_at = datetime.strptime(update.created_at, '%Y-%m-%d')
+        except ValueError:
+            pass
     if update.end_date is not None:
-        project.end_date = datetime.fromisoformat(update.end_date.replace('Z', '+00:00')) if update.end_date else None
+        try:
+            # Parse YYYY-MM-DD format from frontend
+            project.end_date = datetime.strptime(update.end_date, '%Y-%m-%d')
+        except ValueError:
+            pass
 
     project.updated_at = datetime.utcnow()
     db.commit()

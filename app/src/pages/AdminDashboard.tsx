@@ -77,6 +77,7 @@ interface Project {
     completion_pct: number;
     developer_count: number;
     github_repo_url: string | null;
+    github_repo_urls?: string[];
     github_repo_name: string | null;
     has_github_token: boolean;
 }

@@ -30,7 +30,6 @@ import {
     Calendar,
     FileText,
     BarChart3,
-    List,
     Activity,
     ChevronDown,
     ChevronUp,
@@ -39,16 +38,25 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import PMView from '@/components/PMView';
-import { TimelineView, CalendarView, ListView, ActivityFeed, BusinessReviewView } from '@/components/ProjectHub';
+import { TimelineView, CalendarView, ActivityFeed, BusinessReviewView } from '@/components/ProjectHub';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Calendar as CalendarIcon } from '@/components/ui/calendar';
 import { toast, Toaster } from 'sonner';
 import MermaidRenderer from '@/components/MermaidRenderer';
 import ArchitectureEditor from '@/components/ArchitectureEditor';
 import { useAuth, isProjectManager } from '@/contexts/AuthContext';
 
 import { API_BASE_URL } from '@/config/api';
+
+// Helper function to parse YYYY-MM-DD string to local Date object (avoids UTC timezone issues)
+const parseLocalDate = (dateString: string | undefined): Date | undefined => {
+    if (!dateString) return undefined;
+    const [year, month, day] = dateString.split('-');
+    return new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+};
 
 interface Developer {
     id: number;
@@ -122,10 +130,10 @@ interface Sprint {
     name: string;
     goal: string;
     status: 'planned' | 'active' | 'completed';
-    start_date: string | null;
-    end_date: string | null;
-    capacity_hours: number | null;
-    velocity: number | null;
+    start_date?: string;
+    end_date?: string;
+    capacity_hours: number;
+    velocity: number;
     total_items: number;
     todo_count: number;
     in_progress_count: number;
@@ -154,6 +162,7 @@ interface Project {
     key_prefix: string;
     status: string;
     github_repo_url: string;
+    github_repo_urls?: string[];
     github_repo_name?: string;
     created_at: string;
     end_date?: string;
@@ -260,8 +269,15 @@ const ProjectDetail = () => {
     const [milestones, setMilestones] = useState<Milestone[]>([]);
     const [activities, setActivities] = useState<ActivityItem[]>([]);
     const [hubLoading, setHubLoading] = useState(true);
-        const [sprintsExpanded, setSprintsExpanded] = useState(false);
-        const [progressExpanded, setProgressExpanded] = useState(false);
+    const [sprintsExpanded, setSprintsExpanded] = useState(false);
+    
+    // Calendar pickers for start & end dates
+    const [showCalendarStartDate, setShowCalendarStartDate] = useState(false);
+    const [showCalendarEndDate, setShowCalendarEndDate] = useState(false);
+    
+    // GitHub repo URLs management
+    const [repoUrls, setRepoUrls] = useState<string[]>([]);
+    const [newRepoUrl, setNewRepoUrl] = useState('');
     
     // Files/Links state
     const [links, setLinks] = useState<ProjectLink[]>([]);
@@ -324,6 +340,15 @@ const ProjectDetail = () => {
                 const data = await res.json();
                 setProject(data);
                 setEditForm(data);
+                // Initialize repo URLs from the API response
+                // Support both new github_repo_urls array and legacy github_repo_url
+                let urls: string[] = [];
+                if (Array.isArray(data.github_repo_urls) && data.github_repo_urls.length > 0) {
+                    urls = data.github_repo_urls;
+                } else if (data.github_repo_url) {
+                    urls = [data.github_repo_url];
+                }
+                setRepoUrls(urls);
                 setAccessDenied(false);
             } else if (res.status === 403) {
                 setAccessDenied(true);
@@ -594,14 +619,27 @@ const ProjectDetail = () => {
     const handleSaveEdit = async () => {
         if (!project) return;
         try {
+            // Create update object, excluding github_repo_url when we have multiple URLs
+            const updateData: any = { ...editForm };
+            delete updateData.github_repo_url;  // Remove single URL to avoid conflicts
+            delete updateData.github_repo_urls; // Remove old array value
+            
+            // Ensure repoUrls is always a proper array
+            const urlsToSave = Array.isArray(repoUrls) ? repoUrls.filter(url => url && url.trim() !== '') : [];
+            updateData.github_repo_urls = urlsToSave;
+            
+            const requestBody = JSON.stringify(updateData);
+            
             const res = await fetch(`${API_BASE_URL}/api/projects/${project.id}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                body: JSON.stringify(editForm),
+                body: requestBody,
             });
             if (res.ok) {
                 const updated = await res.json();
                 setProject(updated);
+                setRepoUrls(updated.github_repo_urls || []);
+                setNewRepoUrl(''); // Clear the input field
                 setIsEditing(false);
                 toast.success('Project updated!');
             }
@@ -832,7 +870,6 @@ const ProjectDetail = () => {
 
     const tabs = [
         { id: 'overview' as TabType, label: 'Overview', icon: Info },
-        { id: 'hub' as TabType, label: 'Project Hub', icon: List },
         { id: 'tracker' as TabType, label: 'Project Tracker', icon: BarChart3 },
         { id: 'calendar' as TabType, label: 'Timeline', icon: Calendar },
         { id: 'business' as TabType, label: 'Business Review', icon: TrendingUp },
@@ -988,7 +1025,19 @@ const ProjectDetail = () => {
                                     <Button
                                         variant="ghost"
                                         size="sm"
-                                        onClick={() => { setEditForm(project); setIsEditing(true); }}
+                                        onClick={() => {
+                                            setEditForm(project);
+                                            // Properly initialize repo URLs when entering edit mode
+                                            const urls: string[] = [];
+                                            if (Array.isArray(project.github_repo_urls) && project.github_repo_urls.length > 0) {
+                                                urls.push(...project.github_repo_urls);
+                                            } else if (project.github_repo_url) {
+                                                urls.push(project.github_repo_url);
+                                            }
+                                            setRepoUrls(urls);
+                                            setNewRepoUrl('');
+                                            setIsEditing(true);
+                                        }}
                                         className="text-[#737373] hover:text-white"
                                     >
                                         <Pencil className="w-4 h-4 mr-2" />
@@ -1036,32 +1085,157 @@ const ProjectDetail = () => {
                                         />
                                     </div>
                                     <div>
-                                        <label className="text-xs font-medium text-[#737373] block mb-1.5">GitHub Repository URL</label>
-                                        <Input
-                                            value={editForm.github_repo_url || ''}
-                                            onChange={(e) => setEditForm(f => ({ ...f, github_repo_url: e.target.value }))}
-                                            placeholder="https://github.com/username/repo"
-                                            className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl"
-                                        />
+                                        <label className="text-xs font-medium text-[#737373] block mb-1.5">GitHub Repository URLs</label>
+                                        <div className="space-y-2 mb-2">
+                                            {repoUrls.map((url, idx) => (
+                                                <div key={idx} className="flex items-center gap-2">
+                                                    <Input
+                                                        value={url}
+                                                        onChange={(e) => {
+                                                            const updated = [...repoUrls];
+                                                            updated[idx] = e.target.value;
+                                                            setRepoUrls(updated);
+                                                        }}
+                                                        placeholder="https://github.com/username/repo"
+                                                        className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl flex-1"
+                                                    />
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="sm"
+                                                        onClick={() => setRepoUrls(repoUrls.filter((_, i) => i !== idx))}
+                                                        className="text-red-400 hover:text-red-300 hover:bg-red-400/10"
+                                                    >
+                                                        <Trash2 className="w-4 h-4" />
+                                                    </Button>
+                                                </div>
+                                            ))}
+                                        </div>
+                                        <div className="flex gap-2">
+                                            <Input
+                                                value={newRepoUrl}
+                                                onChange={(e) => setNewRepoUrl(e.target.value)}
+                                                onKeyPress={(e) => {
+                                                    if (e.key === 'Enter' && newRepoUrl.trim()) {
+                                                        const updatedUrls = [...repoUrls, newRepoUrl];
+                                                        setRepoUrls(updatedUrls);
+                                                        setNewRepoUrl('');
+                                                    }
+                                                }}
+                                                placeholder="https://github.com/username/repo"
+                                                className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl flex-1"
+                                            />
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                onClick={() => {
+                                                    if (newRepoUrl.trim()) {
+                                                        const updatedUrls = [...repoUrls, newRepoUrl];
+                                                        setRepoUrls(updatedUrls);
+                                                        setNewRepoUrl('');
+                                                    }
+                                                }}
+                                                className="text-[#E0B954] hover:bg-[#E0B954]/10"
+                                            >
+                                                <Plus className="w-4 h-4" />
+                                            </Button>
+                                        </div>
                                     </div>
                                     <div className="grid grid-cols-2 gap-4">
                                         <div>
                                             <label className="text-xs font-medium text-[#737373] block mb-1.5">Start Date</label>
-                                            <Input
-                                                type="date"
-                                                value={editForm.created_at ? new Date(editForm.created_at).toISOString().split('T')[0] : ''}
-                                                onChange={(e) => setEditForm(f => ({ ...f, created_at: e.target.value }))}
-                                                className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl"
-                                            />
+                                            <Popover open={showCalendarStartDate} onOpenChange={setShowCalendarStartDate}>
+                                                <PopoverTrigger asChild>
+                                                    <Button
+                                                        className="w-full justify-start text-left font-normal bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.07)] text-[#F4F6FF] hover:bg-[rgba(255,255,255,0.04)] hover:text-[#F4F6FF] rounded-xl h-10"
+                                                    >
+                                                        <Calendar className="w-4 h-4 mr-2" />
+                                                        {editForm.created_at ? parseLocalDate(editForm.created_at)?.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Pick a date'}
+                                                    </Button>
+                                                </PopoverTrigger>
+                                                <PopoverContent className="w-auto p-0 bg-[#0d0d0d] border-[rgba(255,255,255,0.07)]" align="start">
+                                                    <CalendarIcon
+                                                        mode="single"
+                                                        selected={parseLocalDate(editForm.created_at === null ? undefined : editForm.created_at)}
+                                                        onSelect={(date) => {
+                                                            if (date) {
+                                                                const year = date.getFullYear();
+                                                                const month = String(date.getMonth() + 1).padStart(2, '0');
+                                                                const day = String(date.getDate()).padStart(2, '0');
+                                                                setEditForm(f => ({ ...f, created_at: `${year}-${month}-${day}` }));
+                                                                setShowCalendarStartDate(false);
+                                                            }
+                                                        }}
+                                                        classNames={{
+                                                            months: "flex flex-col",
+                                                            month: "space-y-4",
+                                                            caption: "flex justify-between items-center px-0 pb-4 relative h-7 mb-2",
+                                                            caption_label: "text-sm font-medium text-white",
+                                                            nav: "space-x-1 flex items-center",
+                                                            nav_button: "text-white hover:bg-[rgba(224,185,84,0.1)] rounded p-1",
+                                                            nav_button_previous: "absolute left-0",
+                                                            nav_button_next: "absolute right-0",
+                                                            table: "w-full border-collapse space-y-1",
+                                                            head_row: "flex gap-1 mb-1",
+                                                            head_cell: "w-8 h-8 rounded text-[#737373] font-normal text-sm",
+                                                            row: "flex gap-1 mb-1",
+                                                            cell: "relative p-0 text-center text-sm focus-within:relative focus-within:z-20",
+                                                            day: "p-0 h-8 w-8 rounded bg-transparent text-white text-sm cursor-pointer hover:bg-[rgba(224,185,84,0.1)]",
+                                                            day_selected: "bg-[#E0B954] text-[#0d0d0d] font-medium hover:bg-[#E0B954]",
+                                                            day_today: "bg-[rgba(224,185,84,0.2)] text-[#E0B954]",
+                                                            day_outside: "text-[#555]",
+                                                            day_disabled: "text-[#333] cursor-not-allowed",
+                                                        }}
+                                                    />
+                                                </PopoverContent>
+                                            </Popover>
                                         </div>
                                         <div>
                                             <label className="text-xs font-medium text-[#737373] block mb-1.5">End Date</label>
-                                            <Input
-                                                type="date"
-                                                value={editForm.end_date ? new Date(editForm.end_date).toISOString().split('T')[0] : ''}
-                                                onChange={(e) => setEditForm(f => ({ ...f, end_date: e.target.value }))}
-                                                className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl"
-                                            />
+                                            <Popover open={showCalendarEndDate} onOpenChange={setShowCalendarEndDate}>
+                                                <PopoverTrigger asChild>
+                                                    <Button
+                                                        className="w-full justify-start text-left font-normal bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.07)] text-[#F4F6FF] hover:bg-[rgba(255,255,255,0.04)] hover:text-[#F4F6FF] rounded-xl h-10"
+                                                    >
+                                                        <Calendar className="w-4 h-4 mr-2" />
+                                                        {editForm.end_date ? parseLocalDate(editForm.end_date)?.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Pick a date'}
+                                                    </Button>
+                                                </PopoverTrigger>
+                                                <PopoverContent className="w-auto p-0 bg-[#0d0d0d] border-[rgba(255,255,255,0.07)]" align="start">
+                                                    <CalendarIcon
+                                                        mode="single"
+                                                        selected={parseLocalDate(editForm.end_date === null ? undefined : editForm.end_date)}
+                                                        onSelect={(date) => {
+                                                            if (date) {
+                                                                const year = date.getFullYear();
+                                                                const month = String(date.getMonth() + 1).padStart(2, '0');
+                                                                const day = String(date.getDate()).padStart(2, '0');
+                                                                setEditForm(f => ({ ...f, end_date: `${year}-${month}-${day}` }));
+                                                                setShowCalendarEndDate(false);
+                                                            }
+                                                        }}
+                                                        classNames={{
+                                                            months: "flex flex-col",
+                                                            month: "space-y-4",
+                                                            caption: "flex justify-between items-center px-0 pb-4 relative h-7 mb-2",
+                                                            caption_label: "text-sm font-medium text-white",
+                                                            nav: "space-x-1 flex items-center",
+                                                            nav_button: "text-white hover:bg-[rgba(224,185,84,0.1)] rounded p-1",
+                                                            nav_button_previous: "absolute left-0",
+                                                            nav_button_next: "absolute right-0",
+                                                            table: "w-full border-collapse space-y-1",
+                                                            head_row: "flex gap-1 mb-1",
+                                                            head_cell: "w-8 h-8 rounded text-[#737373] font-normal text-sm",
+                                                            row: "flex gap-1 mb-1",
+                                                            cell: "relative p-0 text-center text-sm focus-within:relative focus-within:z-20",
+                                                            day: "p-0 h-8 w-8 rounded bg-transparent text-white text-sm cursor-pointer hover:bg-[rgba(224,185,84,0.1)]",
+                                                            day_selected: "bg-[#E0B954] text-[#0d0d0d] font-medium hover:bg-[#E0B954]",
+                                                            day_today: "bg-[rgba(224,185,84,0.2)] text-[#E0B954]",
+                                                            day_outside: "text-[#555]",
+                                                            day_disabled: "text-[#333] cursor-not-allowed",
+                                                        }}
+                                                    />
+                                                </PopoverContent>
+                                            </Popover>
                                         </div>
                                     </div>
                                 </div>
@@ -1074,20 +1248,37 @@ const ProjectDetail = () => {
                                         </p>
                                     </div>
                                     <div>
-                                        <label className="text-xs font-medium text-[#737373] block mb-1">GitHub Repository</label>
-                                        {project.github_repo_url ? (
-                                            <a
-                                                href={project.github_repo_url}
-                                                target="_blank"
-                                                rel="noopener noreferrer"
-                                                className="flex items-center gap-2 text-sm text-[#E0B954] hover:underline"
-                                            >
-                                                <Github className="w-4 h-4" />
-                                                {project.github_repo_url}
-                                                <ExternalLink className="w-3 h-3" />
-                                            </a>
+                                        <label className="text-xs font-medium text-[#737373] block mb-1">GitHub Repositories</label>
+                                        {((Array.isArray(project.github_repo_urls) && project.github_repo_urls.length > 0) || project.github_repo_url) ? (
+                                            <div className="space-y-2">
+                                                {(Array.isArray(project.github_repo_urls) ? project.github_repo_urls : []).map((url, idx) => (
+                                                    <a
+                                                        key={idx}
+                                                        href={url}
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                        className="flex items-center gap-2 text-sm text-[#E0B954] hover:underline"
+                                                    >
+                                                        <Github className="w-4 h-4" />
+                                                        {url}
+                                                        <ExternalLink className="w-3 h-3" />
+                                                    </a>
+                                                ))}
+                                                {project.github_repo_url && (!Array.isArray(project.github_repo_urls) || !project.github_repo_urls.includes(project.github_repo_url)) && (
+                                                    <a
+                                                        href={project.github_repo_url}
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                        className="flex items-center gap-2 text-sm text-[#E0B954] hover:underline"
+                                                    >
+                                                        <Github className="w-4 h-4" />
+                                                        {project.github_repo_url}
+                                                        <ExternalLink className="w-3 h-3" />
+                                                    </a>
+                                                )}
+                                            </div>
                                         ) : (
-                                            <p className="text-sm text-[#737373]">No repository configured</p>
+                                            <p className="text-sm text-[#737373]">No repositories configured</p>
                                         )}
                                     </div>
                                     <div className="flex items-center gap-4 pt-3 border-t border-[rgba(255,255,255,0.05)] flex-wrap">
@@ -1100,16 +1291,6 @@ const ProjectDetail = () => {
                                             <p className="text-sm text-[#f5f5f5]">
                                                 {project.end_date ? new Date(project.end_date).toLocaleDateString() : 'Not set'}
                                             </p>
-                                        </div>
-                                        <div>
-                                            <span className="text-xs text-[#737373]">Status</span>
-                                            <Badge className="bg-[#E0B954]/20 text-[#E0B954] border-0 ml-2">
-                                                {project.status}
-                                            </Badge>
-                                        </div>
-                                        <div>
-                                            <span className="text-xs text-[#737373]">Team Size</span>
-                                            <p className="text-sm text-[#f5f5f5]">{project.developers.length} developers</p>
                                         </div>
                                     </div>
                                 </div>
@@ -1136,9 +1317,9 @@ const ProjectDetail = () => {
                                     </div>
                                     <div>
                                         <p className="text-2xl font-bold text-white">
-                                            {project.github_repo_url ? 'Yes' : 'No'}
+                                            {(Array.isArray(project.github_repo_urls) && project.github_repo_urls.length > 0) || project.github_repo_url ? 'Yes' : 'No'}
                                         </p>
-                                        <p className="text-xs text-[#737373]">GitHub Repo</p>
+                                        <p className="text-xs text-[#737373]">GitHub Repos</p>
                                     </div>
                                 </div>
                             </div>
@@ -1153,19 +1334,6 @@ const ProjectDetail = () => {
                                     </div>
                                 </div>
                             </div>
-                            {analytics && (
-                                <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-xl p-4">
-                                    <div className="flex items-center gap-3">
-                                        <div className="w-10 h-10 rounded-lg bg-[#C79E3B]/10 flex items-center justify-center">
-                                            <BarChart3 className="w-5 h-5 text-[#C79E3B]" />
-                                        </div>
-                                        <div>
-                                            <p className="text-2xl font-bold text-white">{Math.round((analytics.completed_points / (analytics.total_story_points || 1)) * 100)}%</p>
-                                            <p className="text-xs text-[#737373]">Completion</p>
-                                        </div>
-                                    </div>
-                                </div>
-                            )}
                         </div>
 
                         {/* PRD Analysis Section */}
@@ -1827,8 +1995,8 @@ const ProjectDetail = () => {
                         </div>
                     </div>
                 )}
-                {/* Project Hub Tab */}
-                {activeTab === 'hub' && (
+                {/* Project Tracker Tab - Combined Hub + Tracker */}
+                {activeTab === 'tracker' && (
                     hubLoading ? (
                         <div className="space-y-4 animate-pulse">
                             {/* Active Sprints skeleton */}
@@ -1839,107 +2007,15 @@ const ProjectDetail = () => {
                                 </div>
                                 <div className="grid grid-cols-2 gap-3">
                                     {[...Array(2)].map((_, i) => (
-                                        <div key={i} className="border border-[rgba(255,255,255,0.05)] rounded-xl p-4 space-y-2">
-                                            <div className="h-3.5 w-32 bg-[rgba(255,255,255,0.07)] rounded" />
-                                            <div className="h-2 w-full bg-[rgba(255,255,255,0.04)] rounded-full mt-2" />
-                                            <div className="h-3 w-24 bg-[rgba(255,255,255,0.04)] rounded mt-1" />
+                                        <div key={i} className="bg-[rgba(255,255,255,0.025)] rounded-lg p-3 space-y-2">
+                                            <div className="h-3 w-24 bg-[rgba(255,255,255,0.05)] rounded" />
+                                            <div className="h-1.5 w-full bg-[rgba(255,255,255,0.04)] rounded-full" />
                                         </div>
                                     ))}
                                 </div>
                             </div>
-                            {/* ListView skeleton */}
+                            {/* Work Items skeleton */}
                             <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-2xl p-5 space-y-3">
-                                <div className="h-4 w-32 bg-[rgba(255,255,255,0.07)] rounded" />
-                                {[...Array(5)].map((_, i) => (
-                                    <div key={i} className="flex items-center gap-3 py-2.5 border-b border-[rgba(255,255,255,0.04)]">
-                                        <div className="h-4 w-4 rounded bg-[rgba(255,255,255,0.06)] flex-shrink-0" />
-                                        <div className="h-3 w-14 bg-[rgba(255,255,255,0.05)] rounded" />
-                                        <div className="h-3 flex-1 bg-[rgba(255,255,255,0.05)] rounded" />
-                                        <div className="h-5 w-16 bg-[rgba(255,255,255,0.04)] rounded-full" />
-                                        <div className="h-5 w-16 bg-[rgba(255,255,255,0.04)] rounded-full" />
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-                    ) : (
-                    <div className="space-y-4">
-                        {/* Active Sprints in Hub */}
-                        {sprints.length > 0 && !isSubsectionRestricted('hub', 'active sprints') && (
-                            <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(224,185,84,0.12)] rounded-2xl p-5">
-                                <div className="flex items-center justify-between mb-4">
-                                    <div className="flex items-center gap-3">
-                                        <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-[#E0B954] to-[#C79E3B] flex items-center justify-center shadow-lg shadow-[#E0B954]/20">
-                                            <TrendingUp className="w-4 h-4 text-white" />
-                                        </div>
-                                        <div>
-                                            <h3 className="font-semibold text-white">Active Sprints</h3>
-                                            <p className="text-xs text-[#737373]">{sprints.filter(s => s.status === 'active').length} active · {sprints.length} total</p>
-                                        </div>
-                                    </div>
-                                    {sprints.length > 2 && (
-                                        <button
-                                            onClick={() => setSprintsExpanded(p => !p)}
-                                            className="flex items-center gap-1.5 text-xs text-[#E0B954] hover:text-[#F3D57E] px-3 py-1.5 rounded-lg bg-[#E0B954]/10 hover:bg-[#E0B954]/15 transition-colors font-medium flex-shrink-0"
-                                        >
-                                            {sprintsExpanded
-                                                ? <><ChevronUp className="w-3.5 h-3.5" /> Collapse</>
-                                                : <><ChevronDown className="w-3.5 h-3.5" /> Show all {sprints.length}</>}
-                                        </button>
-                                    )}
-                                </div>
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                    {(sprintsExpanded ? sprints : sprints.slice(0, 2)).map((sprint) => (
-                                        <div key={sprint.id} className={`border rounded-xl p-4 ${
-                                            sprint.status === 'active' ? 'border-[#E0B954]/30 bg-[#E0B954]/5' :
-                                            sprint.status === 'completed' ? 'border-[#E0B954]/20 bg-[rgba(224,185,84,0.03)]' :
-                                            'border-[rgba(255,255,255,0.05)] bg-[rgba(255,255,255,0.02)]'
-                                        }`}>
-                                            <div className="flex items-center justify-between mb-2">
-                                                <div className="flex items-center gap-2">
-                                                    <span className={`w-2 h-2 rounded-full flex-shrink-0 ${
-                                                        sprint.status === 'active' ? 'bg-[#E0B954] animate-pulse' :
-                                                        sprint.status === 'completed' ? 'bg-[#E0B954]' : 'bg-[#737373]'
-                                                    }`} />
-                                                    <p className="text-sm font-semibold text-white truncate">{sprint.name}</p>
-                                                </div>
-                                                <Badge className={`text-[10px] border-0 flex-shrink-0 ${
-                                                    sprint.status === 'active' ? 'bg-[#E0B954]/20 text-[#E0B954]' :
-                                                    sprint.status === 'completed' ? 'bg-[#E0B954]/20 text-[#E0B954]' :
-                                                    'bg-[#737373]/20 text-[#737373]'
-                                                }`}>{sprint.status}</Badge>
-                                            </div>
-                                            {sprint.goal && (
-                                                <p className="text-xs text-[#a3a3a3] mb-2 line-clamp-1">{sprint.goal}</p>
-                                            )}
-                                            <div className="flex items-center gap-2 mb-2">
-                                                <div className="flex-1 h-1.5 bg-[rgba(255,255,255,0.05)] rounded-full overflow-hidden">
-                                                    <div
-                                                        className="h-full bg-gradient-to-r from-[#E0B954] to-[#E0B954] rounded-full transition-all"
-                                                        style={{ width: `${sprint.completion_pct}%` }}
-                                                    />
-                                                </div>
-                                                <span className="text-xs font-bold text-[#E0B954] w-10 text-right">{sprint.completion_pct}%</span>
-                                            </div>
-                                            <div className="flex items-center gap-3 text-[10px] text-[#737373]">
-                                                <span>{sprint.done_count}/{sprint.total_items} done</span>
-                                                <span>·</span>
-                                                <span>{sprint.total_points} pts</span>
-                                                {sprint.start_date && sprint.end_date && (
-                                                    <>
-                                                        <span>·</span>
-                                                        <span>{new Date(sprint.end_date).toLocaleDateString()}</span>
-                                                    </>
-                                                )}
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        )}
-
-                        {/* Work Items List */}
-                        {!isSubsectionRestricted('hub', 'work items') && (hubLoading ? (
-                            <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-2xl p-5 space-y-3 animate-pulse">
                                 <div className="h-4 w-32 bg-[rgba(255,255,255,0.07)] rounded" />
                                 {[...Array(5)].map((_, i) => (
                                     <div key={i} className="flex items-center gap-3 py-2.5 border-b border-[rgba(255,255,255,0.04)]">
@@ -1952,106 +2028,207 @@ const ProjectDetail = () => {
                                     </div>
                                 ))}
                             </div>
-                        ) : (
-                            <ListView workItems={hubWorkItems} />
-                        ))}
-                    </div>
-                    )
-                )}
-
-                {/* Project Tracker Tab */}
-                {activeTab === 'tracker' && (
-                    hubLoading ? (
-                        <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-2xl p-5 animate-pulse space-y-4">
-                            <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 rounded-xl bg-[rgba(255,255,255,0.06)]" />
+                            {/* Analytics skeleton */}
+                            <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-2xl p-5 space-y-4">
                                 <div className="space-y-1.5">
                                     <div className="h-4 w-36 bg-[rgba(255,255,255,0.07)] rounded" />
                                     <div className="h-3 w-52 bg-[rgba(255,255,255,0.04)] rounded" />
                                 </div>
+                                <div className="grid grid-cols-2 gap-4">
+                                    {[...Array(2)].map((_, i) => (
+                                        <div key={i} className="bg-[rgba(255,255,255,0.025)] rounded-xl p-4 h-52" />
+                                    ))}
+                                    <div className="bg-[rgba(255,255,255,0.025)] rounded-xl p-4 col-span-2 h-64" />
+                                </div>
                             </div>
-                            <div className="grid grid-cols-2 gap-4">
-                                {[...Array(2)].map((_, i) => (
-                                    <div key={i} className="bg-[rgba(255,255,255,0.025)] rounded-xl p-4 h-52" />
-                                ))}
-                                <div className="bg-[rgba(255,255,255,0.025)] rounded-xl p-4 col-span-2 h-64" />
-                            </div>
-                            <div className="h-80 bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-2xl" />
                         </div>
                     ) : (
                         <div className="space-y-4">
-                        {/* Analytics Charts */}
-                        {analytics && analytics.total_items > 0 && !isSubsectionRestricted('tracker', 'analytics') && (
-                            <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-2xl p-5">
-                                <div className="flex items-center gap-3 mb-4">
-                                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#E0B954] to-[#C79E3B] flex items-center justify-center">
-                                        <BarChart3 className="w-5 h-5 text-white" />
+                            {/* Active Sprints */}
+                            {sprints.length > 0 && !isSubsectionRestricted('tracker', 'active sprints') && (
+                                <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(224,185,84,0.12)] rounded-2xl p-5">
+                                    <div className="flex items-center justify-between mb-4">
+                                        <div className="flex items-center gap-3">
+                                            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-[#E0B954] to-[#C79E3B] flex items-center justify-center shadow-lg shadow-[#E0B954]/20">
+                                                <TrendingUp className="w-4 h-4 text-white" />
+                                            </div>
+                                            <div>
+                                                <h3 className="font-semibold text-white">Active Sprints</h3>
+                                                <p className="text-xs text-[#737373]">{sprints.filter(s => s.status === 'active').length} active · {sprints.length} total</p>
+                                            </div>
+                                        </div>
+                                        {sprints.length > 2 && (
+                                            <button
+                                                onClick={() => setSprintsExpanded(p => !p)}
+                                                className="flex items-center gap-1.5 text-xs text-[#E0B954] hover:text-[#F3D57E] px-3 py-1.5 rounded-lg bg-[#E0B954]/10 hover:bg-[#E0B954]/15 transition-colors font-medium flex-shrink-0"
+                                            >
+                                                {sprintsExpanded
+                                                    ? <><ChevronUp className="w-3.5 h-3.5" /> Collapse</>
+                                                    : <><ChevronDown className="w-3.5 h-3.5" /> Show all {sprints.length}</>
+                                                }
+                                            </button>
+                                        )}
                                     </div>
-                                    <div>
-                                        <h3 className="font-semibold text-white">Project Analytics</h3>
-                                        <p className="text-xs text-[#737373]">{analytics.total_items} items &bull; {analytics.completed_points}/{analytics.total_story_points} points completed</p>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                        {(sprintsExpanded ? sprints : sprints.slice(0, 2)).map((sprint) => (
+                                            <div key={sprint.id} className={`border rounded-xl p-4 ${
+                                                sprint.status === 'active' ? 'border-[#E0B954]/30 bg-[#E0B954]/5' :
+                                                sprint.status === 'completed' ? 'border-[#E0B954]/20 bg-[rgba(224,185,84,0.03)]' :
+                                                'border-[rgba(255,255,255,0.05)] bg-[rgba(255,255,255,0.02)]'
+                                            }`}>
+                                                <div className="flex items-center justify-between mb-2">
+                                                    <div className="flex items-center gap-2">
+                                                        <span className={`w-2 h-2 rounded-full flex-shrink-0 ${
+                                                            sprint.status === 'active' ? 'bg-[#E0B954] animate-pulse' :
+                                                            sprint.status === 'completed' ? 'bg-[#E0B954]' : 'bg-[#737373]'
+                                                        }`} />
+                                                        <p className="text-sm font-semibold text-white truncate">{sprint.name}</p>
+                                                    </div>
+                                                    <Badge className={`text-[10px] border-0 flex-shrink-0 ${
+                                                        sprint.status === 'active' ? 'bg-[#E0B954]/20 text-[#E0B954]' :
+                                                        sprint.status === 'completed' ? 'bg-[#E0B954]/20 text-[#E0B954]' :
+                                                        'bg-[#737373]/20 text-[#737373]'
+                                                    }`}>{sprint.status}</Badge>
+                                                </div>
+                                                {sprint.goal && (
+                                                    <p className="text-xs text-[#a3a3a3] mb-2 line-clamp-1">{sprint.goal}</p>
+                                                )}
+                                                <div className="flex items-center gap-2 mb-2">
+                                                    <div className="flex-1 h-1.5 bg-[rgba(255,255,255,0.05)] rounded-full overflow-hidden">
+                                                        <div
+                                                            className="h-full bg-gradient-to-r from-[#E0B954] to-[#E0B954] rounded-full transition-all"
+                                                            style={{ width: `${sprint.completion_pct}%` }}
+                                                        />
+                                                    </div>
+                                                    <span className="text-xs font-bold text-[#E0B954] w-10 text-right">{sprint.completion_pct}%</span>
+                                                </div>
+                                                <div className="flex items-center gap-3 text-[10px] text-[#737373]">
+                                                    <span>{sprint.done_count}/{sprint.total_items} done</span>
+                                                    <span>·</span>
+                                                    <span>{sprint.total_points} pts</span>
+                                                    {sprint.start_date && sprint.end_date && (
+                                                        <>
+                                                            <span>·</span>
+                                                            <span>{new Date(sprint.end_date).toLocaleDateString()}</span>
+                                                        </>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        ))}
                                     </div>
                                 </div>
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                    <div className="bg-[rgba(255,255,255,0.025)] rounded-xl p-4">
-                                        <h4 className="text-sm font-medium text-[#a3a3a3] mb-4">Status Distribution</h4>
-                                        <ResponsiveContainer width="100%" height={200}>
-                                            <PieChart>
-                                                <Pie
-                                                    data={Object.entries(analytics.status_distribution).map(([name, value]) => ({ name, value }))}
-                                                    cx="50%" cy="50%" innerRadius={40} outerRadius={80} paddingAngle={5} dataKey="value"
-                                                >
-                                                    {Object.entries(analytics.status_distribution).map(([name], index) => {
-                                                        const statusColors: Record<string, string> = {
-                                                            todo: '#60A5FA',
-                                                            in_progress: '#E0B954',
-                                                            in_review: '#A78BFA',
-                                                            done: '#34D399',
-                                                            blocked: '#EF4444',
-                                                        };
-                                                        const fallback = ['#60A5FA', '#E0B954', '#A78BFA', '#34D399', '#EF4444'];
-                                                        return <Cell key={`cell-${index}`} fill={statusColors[name] ?? fallback[index % fallback.length]} />;
-                                                    })}
-                                                </Pie>
-                                                <Tooltip contentStyle={{ backgroundColor: '#121212', border: 'none', borderRadius: '8px' }} />
-                                                <Legend />
-                                            </PieChart>
-                                        </ResponsiveContainer>
+                            )}
+
+                            {/* Analytics Charts */}
+                            {analytics && !isSubsectionRestricted('tracker', 'analytics') && (
+                                <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-2xl p-5">
+                                    <div className="flex items-center gap-3 mb-4">
+                                        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#E0B954] to-[#C79E3B] flex items-center justify-center">
+                                            <BarChart3 className="w-5 h-5 text-white" />
+                                        </div>
+                                        <div>
+                                            <h3 className="font-semibold text-white">Project Analytics</h3>
+                                            {analytics.total_items > 0 ? (
+                                                <p className="text-xs text-[#737373]">{analytics.total_items} items &bull; {analytics.completed_points}/{analytics.total_story_points} points completed</p>
+                                            ) : (
+                                                <p className="text-xs text-[#737373]">No work items yet</p>
+                                            )}
+                                        </div>
                                     </div>
-                                    {analytics.velocity_data.length > 0 && (
+                                    {analytics.total_items === 0 ? (
+                                        <div className="flex flex-col items-center justify-center py-16 text-center">
+                                            <BarChart3 className="w-12 h-12 text-[#334155] mb-3" />
+                                            <p className="text-sm text-[#737373] font-medium">No Analytics Data</p>
+                                            <p className="text-xs text-[#334155] mt-1">Create work items to see analytics and charts</p>
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-4">
                                         <div className="bg-[rgba(255,255,255,0.025)] rounded-xl p-4">
-                                            <h4 className="text-sm font-medium text-[#a3a3a3] mb-4">Sprint Velocity</h4>
+                                            <h4 className="text-sm font-medium text-[#a3a3a3] mb-4">Status Distribution</h4>
                                             <ResponsiveContainer width="100%" height={200}>
-                                                <BarChart data={analytics.velocity_data}>
+                                                <PieChart>
+                                                    <Pie
+                                                        data={Object.entries(analytics.status_distribution).map(([name, value]) => ({ name, value }))}
+                                                        cx="50%" cy="50%" innerRadius={40} outerRadius={80} paddingAngle={5} dataKey="value"
+                                                        label={({ value, cx, cy, midAngle }) => {
+                                                            const RADIAN = Math.PI / 180;
+                                                            const radius = 65;
+                                                            const x = cx + radius * Math.cos(-midAngle * RADIAN);
+                                                            const y = cy + radius * Math.sin(-midAngle * RADIAN);
+                                                            return (
+                                                                <text 
+                                                                    x={x} 
+                                                                    y={y} 
+                                                                    fill="#ffffff" 
+                                                                    fontSize="14" 
+                                                                    fontWeight="bold"
+                                                                    textAnchor="middle" 
+                                                                    dominantBaseline="central"
+                                                                >
+                                                                    {value}
+                                                                </text>
+                                                            );
+                                                        }}
+                                                        labelLine={false}
+                                                    >
+                                                        {Object.entries(analytics.status_distribution).map(([name], index) => {
+                                                            const statusColors: Record<string, string> = {
+                                                                backlog: '#6B7280',
+                                                                todo: '#60A5FA',
+                                                                in_progress: '#E0B954',
+                                                                in_review: '#A78BFA',
+                                                                done: '#34D399',
+                                                                blocked: '#EF4444',
+                                                            };
+                                                            const fallback = ['#6B7280', '#60A5FA', '#E0B954', '#A78BFA', '#34D399', '#EF4444'];
+                                                            return <Cell key={`cell-${index}`} fill={statusColors[name] ?? fallback[index % fallback.length]} />;
+                                                        })}
+                                                    </Pie>
+                                                    <Legend
+                                                        formatter={(value: string) => value.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase())}
+                                                        wrapperStyle={{ paddingTop: '12px' }}
+                                                        iconType="circle"
+                                                    />
+                                                </PieChart>
+                                            </ResponsiveContainer>
+                                        </div>
+                                        <div className="bg-[rgba(255,255,255,0.025)] rounded-xl p-4">
+                                            <h4 className="text-sm font-medium text-[#a3a3a3] mb-4">Sprint Velocity (Story Points vs Sprints)</h4>
+                                            {analytics.velocity_data.length > 0 ? (
+                                                <ResponsiveContainer width="100%" height={300}>
+                                                    <BarChart data={analytics.velocity_data} margin={{ left: 40 }}>
+                                                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" />
+                                                        <XAxis dataKey="sprint_name" tick={{ fill: '#737373', fontSize: 10 }} angle={-45} textAnchor="end" height={60} />
+                                                        <YAxis tick={{ fill: '#737373' }} />
+                                                        <Legend wrapperStyle={{ paddingTop: '12px' }} />
+                                                        <Bar dataKey="committed" fill="#60A5FA" name="Estimated" radius={[4, 4, 0, 0]} />
+                                                        <Bar dataKey="completed" fill="#34D399" name="Completed" radius={[4, 4, 0, 0]} />
+                                                    </BarChart>
+                                                </ResponsiveContainer>
+                                            ) : (
+                                                <div className="flex items-center justify-center h-[300px] text-[#737373]">
+                                                    <p>No Sprints Created for the project</p>
+                                                </div>
+                                            )}
+                                        </div>
+                                        <div className="bg-[rgba(255,255,255,0.025)] rounded-xl p-4">
+                                            <h4 className="text-sm font-medium text-[#a3a3a3] mb-4">Burndown Chart (Last 14 Days)</h4>
+                                            <ResponsiveContainer width="100%" height={250}>
+                                                <LineChart data={analytics.burndown_data}>
                                                     <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" />
-                                                    <XAxis dataKey="sprint_name" tick={{ fill: '#737373', fontSize: 10 }} angle={-45} textAnchor="end" height={60} />
+                                                    <XAxis dataKey="date" tick={{ fill: '#737373', fontSize: 10 }} />
                                                     <YAxis tick={{ fill: '#737373' }} />
                                                     <Tooltip contentStyle={{ backgroundColor: '#121212', border: 'none', borderRadius: '8px' }} />
                                                     <Legend />
-                                                    <Bar dataKey="committed" fill="#60A5FA" name="Committed" radius={[4, 4, 0, 0]} />
-                                                    <Bar dataKey="completed" fill="#34D399" name="Completed" radius={[4, 4, 0, 0]} />
-                                                </BarChart>
+                                                    <Line type="monotone" dataKey="remaining" stroke="#EF4444" name="Remaining Items" strokeWidth={2} dot={{ fill: '#EF4444', r: 3 }} />
+                                                    <Line type="monotone" dataKey="completed" stroke="#34D399" name="Completed Items" strokeWidth={2} dot={{ fill: '#34D399', r: 3 }} />
+                                                </LineChart>
                                             </ResponsiveContainer>
                                         </div>
-                                    )}
-                                    <div className="bg-[rgba(255,255,255,0.025)] rounded-xl p-4 md:col-span-2">
-                                        <h4 className="text-sm font-medium text-[#a3a3a3] mb-4">Burndown Chart (Last 14 Days)</h4>
-                                        <ResponsiveContainer width="100%" height={250}>
-                                            <LineChart data={analytics.burndown_data}>
-                                                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" />
-                                                <XAxis dataKey="date" tick={{ fill: '#737373', fontSize: 10 }} />
-                                                <YAxis tick={{ fill: '#737373' }} />
-                                                <Tooltip contentStyle={{ backgroundColor: '#121212', border: 'none', borderRadius: '8px' }} />
-                                                <Legend />
-                                                <Line type="monotone" dataKey="remaining" stroke="#EF4444" name="Remaining Items" strokeWidth={2} dot={{ fill: '#EF4444', r: 3 }} />
-                                                <Line type="monotone" dataKey="completed" stroke="#34D399" name="Completed Items" strokeWidth={2} dot={{ fill: '#34D399', r: 3 }} />
-                                            </LineChart>
-                                        </ResponsiveContainer>
                                     </div>
+                                    )}
                                 </div>
-                            </div>
-                        )}
-
+                            )}
                         </div>
                     )
                 )}
@@ -2141,6 +2318,19 @@ const ProjectDetail = () => {
                 {activeTab === 'project_manager' && canAccessPMTab() && (
                     hubLoading ? (
                         <div className="space-y-4 animate-pulse">
+                            {/* PMView (with 4 cards) skeleton */}
+                            <div className="space-y-4">
+                                {/* Four stat cards skeleton */}
+                                <div className="grid grid-cols-4 gap-3">
+                                    {[...Array(4)].map((_, i) => (
+                                        <div key={i} className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-xl p-4">
+                                            <div className="h-2.5 w-20 bg-[rgba(255,255,255,0.05)] rounded mb-3" />
+                                            <div className="h-7 w-16 bg-[rgba(255,255,255,0.06)] rounded mb-2" />
+                                            <div className="h-2.5 w-28 bg-[rgba(255,255,255,0.04)] rounded" />
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
                             {/* Sprint Progress skeleton */}
                             <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(224,185,84,0.12)] rounded-2xl p-5">
                                 <div className="flex items-center gap-3 mb-5">
@@ -2166,127 +2356,11 @@ const ProjectDetail = () => {
                                     </div>
                                 ))}
                             </div>
-                            {/* PMView skeleton */}
                         </div>
                     ) : (
                     <div className="space-y-4">
                         {!isSubsectionRestricted('project_manager', 'pmview') && (
-                        <PMView projectId={id!} token={token!} userRestrictions={userRestrictions} />
-                        )}
-
-                        {/* Sprint Expected vs Actual Progress */}
-                        {sprints.length > 0 && (
-                            <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(224,185,84,0.12)] rounded-2xl p-5 shadow-[0_0_30px_rgba(224,185,84,0.05)]">
-                                <div className="flex items-center justify-between mb-5">
-                                    <div className="flex items-center gap-3">
-                                        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#E0B954] to-[#C79E3B] flex items-center justify-center shadow-lg shadow-[#E0B954]/25">
-                                            <BarChart3 className="w-5 h-5 text-white" />
-                                        </div>
-                                        <div>
-                                            <h3 className="font-semibold text-white">Sprint Progress vs Expected</h3>
-                                            <p className="text-xs text-[#737373]">Actual completion compared to time-based expected progress</p>
-                                        </div>
-                                    </div>
-                                    {sprints.length > 1 && (
-                                        <button
-                                            onClick={() => setProgressExpanded(p => !p)}
-                                            className="flex items-center gap-1.5 text-xs text-[#E0B954] hover:text-[#F3D57E] px-3 py-1.5 rounded-lg bg-[#E0B954]/10 hover:bg-[#E0B954]/15 transition-colors font-medium flex-shrink-0"
-                                        >
-                                            {progressExpanded
-                                                ? <><ChevronUp className="w-3.5 h-3.5" /> Collapse</>
-                                                : <><ChevronDown className="w-3.5 h-3.5" /> Show all {sprints.length}</>}
-                                        </button>
-                                    )}
-                                </div>
-                                <div className="space-y-4">
-                                    {(progressExpanded ? sprints : sprints.slice(0, 1)).map((sprint) => {
-                                        // Calculate expected progress based on time elapsed
-                                        const now = new Date();
-                                        let expectedPct = 0;
-                                        if (sprint.start_date && sprint.end_date) {
-                                            const start = new Date(sprint.start_date);
-                                            const end = new Date(sprint.end_date);
-                                            const totalMs = end.getTime() - start.getTime();
-                                            const elapsedMs = Math.min(now.getTime() - start.getTime(), totalMs);
-                                            expectedPct = totalMs > 0 ? Math.max(0, Math.round((elapsedMs / totalMs) * 100)) : 0;
-                                            if (sprint.status === 'completed') expectedPct = 100;
-                                            if (now < start) expectedPct = 0;
-                                        }
-                                        const actual = sprint.completion_pct;
-                                        const delta = actual - expectedPct;
-                                        const isAhead = delta >= 0;
-                                        const isFar = Math.abs(delta) > 15;
-                                        return (
-                                            <div key={sprint.id} className={`border rounded-xl p-4 ${
-                                                sprint.status === 'completed' ? 'border-[#E0B954]/20 bg-[rgba(224,185,84,0.03)]' :
-                                                isFar && !isAhead ? 'border-[#EF4444]/20 bg-[rgba(239,68,68,0.03)]' :
-                                                'border-[rgba(255,255,255,0.05)] bg-[rgba(255,255,255,0.02)]'
-                                            }`}>
-                                                <div className="flex items-center justify-between mb-3">
-                                                    <div className="flex items-center gap-2">
-                                                        <span className={`w-2 h-2 rounded-full ${
-                                                            sprint.status === 'active' ? 'bg-[#E0B954] animate-pulse' :
-                                                            sprint.status === 'completed' ? 'bg-[#E0B954]' : 'bg-[#737373]'
-                                                        }`} />
-                                                        <p className="text-sm font-semibold text-white">{sprint.name}</p>
-                                                        <Badge className={`text-[10px] border-0 ${
-                                                            sprint.status === 'active' ? 'bg-[#E0B954]/20 text-[#E0B954]' :
-                                                            sprint.status === 'completed' ? 'bg-[#E0B954]/20 text-[#E0B954]' :
-                                                            'bg-[#737373]/20 text-[#737373]'
-                                                        }`}>{sprint.status}</Badge>
-                                                    </div>
-                                                    <div className="flex items-center gap-2">
-                                                        <span className={`text-xs font-bold px-2 py-0.5 rounded-lg ${
-                                                            isAhead ? 'bg-[#E0B954]/15 text-[#E0B954]' :
-                                                            isFar ? 'bg-[#EF4444]/15 text-[#EF4444]' :
-                                                            'bg-[#F59E0B]/15 text-[#F59E0B]'
-                                                        }`}>
-                                                            {isAhead ? '+' : ''}{delta}% {isAhead ? 'ahead' : 'behind'}
-                                                        </span>
-                                                    </div>
-                                                </div>
-                                                {sprint.goal && (
-                                                    <p className="text-xs text-[#737373] mb-3 line-clamp-1">{sprint.goal}</p>
-                                                )}
-                                                {/* Dual progress bars */}
-                                                <div className="space-y-2">
-                                                    <div className="flex items-center gap-3">
-                                                        <span className="text-[10px] text-[#737373] w-16 flex-shrink-0">Actual</span>
-                                                        <div className="flex-1 h-2 bg-[rgba(255,255,255,0.05)] rounded-full overflow-hidden">
-                                                            <div
-                                                                className="h-full bg-gradient-to-r from-[#E0B954] to-[#E0B954] rounded-full transition-all"
-                                                                style={{ width: `${actual}%` }}
-                                                            />
-                                                        </div>
-                                                        <span className="text-xs font-bold text-[#E0B954] w-10 text-right">{actual}%</span>
-                                                    </div>
-                                                    <div className="flex items-center gap-3">
-                                                        <span className="text-[10px] text-[#737373] w-16 flex-shrink-0">Expected</span>
-                                                        <div className="flex-1 h-2 bg-[rgba(255,255,255,0.05)] rounded-full overflow-hidden">
-                                                            <div
-                                                                className="h-full bg-[#737373] rounded-full transition-all"
-                                                                style={{ width: `${expectedPct}%` }}
-                                                            />
-                                                        </div>
-                                                        <span className="text-xs font-medium text-[#737373] w-10 text-right">{expectedPct}%</span>
-                                                    </div>
-                                                </div>
-                                                <div className="flex items-center gap-4 mt-3 text-[10px] text-[#737373]">
-                                                    <span>{sprint.done_count}/{sprint.total_items} items done</span>
-                                                    <span>·</span>
-                                                    <span>{sprint.total_points} story pts</span>
-                                                    {sprint.start_date && sprint.end_date && (
-                                                        <>
-                                                            <span>·</span>
-                                                            <span>{new Date(sprint.start_date).toLocaleDateString()} – {new Date(sprint.end_date).toLocaleDateString()}</span>
-                                                        </>
-                                                    )}
-                                                </div>
-                                            </div>
-                                        );
-                                    })}
-                                </div>
-                            </div>
+                        <PMView projectId={id!} token={token!} userRestrictions={userRestrictions} sprints={sprints} />
                         )}
                     </div>
                     )

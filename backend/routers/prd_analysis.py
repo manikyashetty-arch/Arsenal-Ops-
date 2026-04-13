@@ -18,6 +18,7 @@ from models.work_item import WorkItem
 from models.sprint import Sprint, SprintStatus
 from models.user import User
 from services.prd_processor import prd_processor
+from sqlalchemy import func
 from services.architecture_generator import architecture_generator
 from routers.auth import get_current_user
 
@@ -569,6 +570,23 @@ async def commit_architecture(
             "sprint_name": sprint_name,
             "sprint_number": sprint_number
         })
+    
+    # Update epic hours for all epics in this project
+    # This calculates total hours from all child stories
+    epics = db.query(WorkItem).filter(
+        WorkItem.project_id == project_id,
+        WorkItem.type == 'epic'
+    ).all()
+    
+    for epic in epics:
+        # Sum all work items' estimated_hours that belong to this epic (stories, tasks, bugs)
+        total_hours = db.query(func.coalesce(func.sum(WorkItem.estimated_hours), 0)).filter(
+            WorkItem.epic_id == epic.id,
+            WorkItem.type.in_(['user_story', 'task', 'bug'])
+        ).scalar()
+        
+        epic.estimated_hours = total_hours
+        epic.updated_at = datetime.utcnow()
     
     # Mark architecture as selected
     architecture.is_selected = True

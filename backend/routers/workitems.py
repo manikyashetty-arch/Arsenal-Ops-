@@ -42,6 +42,68 @@ def get_next_item_number(db: Session, key_prefix: str) -> int:
     return row or 1
 
 
+def update_epic_hours(epic_id: int, db: Session):
+    """
+    Calculate the total estimated_hours for an epic by summing all its work items.
+    Includes stories, tasks, and bugs. Updates the epic's estimated_hours field.
+    
+    Args:
+        epic_id: ID of the epic to update
+        db: Database session
+    """
+    epic = db.query(WorkItem).filter(WorkItem.id == epic_id).first()
+    if not epic or epic.type != WorkItemType.EPIC.value:
+        return
+    
+    # Sum all work items' estimated_hours that belong to this epic (stories, tasks, bugs)
+    total_hours = db.query(func.coalesce(func.sum(WorkItem.estimated_hours), 0)).filter(
+        WorkItem.epic_id == epic_id,
+        WorkItem.type.in_([WorkItemType.USER_STORY.value, WorkItemType.TASK.value, WorkItemType.BUG.value])
+    ).scalar()
+    
+    epic.estimated_hours = total_hours
+    epic.updated_at = datetime.utcnow()
+
+
+def update_epic_status_from_stories(epic_id: int, db: Session):
+    """
+    Auto-update epic status based on all linked work items (stories/tasks/bugs).
+    - If ALL work items are done, mark epic as done
+    - If ANY work item is not done, reopen epic if it was done
+    
+    Args:
+        epic_id: ID of the epic to check
+        db: Database session
+    """
+    epic = db.query(WorkItem).filter(WorkItem.id == epic_id).first()
+    if not epic or epic.type != WorkItemType.EPIC.value:
+        return
+    
+    # Get all work items linked to this epic
+    items = db.query(WorkItem).filter(
+        WorkItem.epic_id == epic_id,
+        WorkItem.type.in_([WorkItemType.USER_STORY.value, WorkItemType.TASK.value, WorkItemType.BUG.value])
+    ).all()
+    
+    if not items:
+        # No work items under this epic, don't auto-update status
+        return
+    
+    # Check if ALL items are done
+    all_done = all(item.status == 'done' for item in items)
+    
+    if all_done and epic.status != 'done':
+        epic.status = 'done'
+        epic.completed_at = datetime.utcnow()
+        epic.updated_at = datetime.utcnow()
+    elif not all_done and epic.status == 'done':
+        # Reopen epic if one of its items is reopened
+        epic.status = 'todo'
+        epic.completed_at = None
+        epic.started_at = None
+        epic.updated_at = datetime.utcnow()
+
+
 # Request/Response models
 class WorkItemCreate(BaseModel):
     type: str = "task"  # user_story, task, bug, epic
@@ -318,6 +380,11 @@ async def create_work_item(
     db.commit()
     db.refresh(work_item)
     
+    # Update epic hours if this work item is linked to an epic
+    if work_item.epic_id:
+        update_epic_hours(work_item.epic_id, db)
+        db.commit()
+    
     # Send assignment notification if assignee is set
     if work_item.assignee_id and work_item.assignee:
         assignee = work_item.assignee
@@ -409,6 +476,17 @@ async def update_work_item(
         elif value is not None:
             setattr(item, key, value)
     
+    # If sprint_id was changed, set due_date to sprint end_date (Friday)
+    if 'sprint_id' in update_data:
+        new_sprint_id = update_data['sprint_id']
+        if new_sprint_id:
+            sprint = db.query(Sprint).filter(Sprint.id == new_sprint_id).first()
+            if sprint and sprint.end_date:
+                item.due_date = sprint.end_date
+        # If sprint_id is being cleared (moved back to backlog), clear due_date
+        elif new_sprint_id is None:
+            item.due_date = None
+    
     # Recalculate remaining_hours if estimated_hours or logged_hours changed
     if 'estimated_hours' in update_data or 'logged_hours' in update_data:
         item.remaining_hours = max(0, (item.estimated_hours or 0) - (item.logged_hours or 0))
@@ -486,6 +564,29 @@ async def update_work_item(
     db.commit()
     db.refresh(item)
     
+    # Update epic status if this item's status changed and it's linked to an epic
+    if 'status' in update_data and item.epic_id:
+        update_epic_status_from_stories(item.epic_id, db)
+    
+    # Update epic hours if estimated_hours changed and item is linked to an epic
+    if 'estimated_hours' in update_data and item.epic_id:
+        update_epic_hours(item.epic_id, db)
+    
+    # Update epic if epic_id changed (moving item to a different epic)
+    if 'epic_id' in update_data:
+        # The item already has the new epic_id set from the setattr above
+        old_epic_id = None
+        # Try to find old epic_id from the update request - this is a bit tricky
+        # We can't easily get the old value, so we'll just update the new epic
+        if item.epic_id:
+            update_epic_hours(item.epic_id, db)
+            update_epic_status_from_stories(item.epic_id, db)
+    
+    # Final commit for any epic updates
+    if 'status' in update_data or 'estimated_hours' in update_data or 'epic_id' in update_data:
+        if item.epic_id:
+            db.commit()
+    
     # Return with assignee name
     assignee_name = "Unassigned"
     if item.assignee_id and item.assignee:
@@ -523,6 +624,9 @@ async def batch_update_status(
     """Batch update status for multiple work items (requires auth)"""
     items = db.query(WorkItem).filter(WorkItem.id.in_(update.item_ids)).all()
     
+    # Collect epics that need updating
+    epics_to_update = set()
+    
     for item in items:
         item.status = update.status
         if update.status == WorkItemStatus.IN_PROGRESS.value and not item.started_at:
@@ -530,8 +634,20 @@ async def batch_update_status(
         elif update.status == WorkItemStatus.DONE.value and not item.completed_at:
             item.completed_at = datetime.utcnow()
         item.updated_at = datetime.utcnow()
+        
+        # Track epics that need status updates
+        if item.epic_id:
+            epics_to_update.add(item.epic_id)
     
     db.commit()
+    
+    # Update epic statuses for all affected epics
+    for epic_id in epics_to_update:
+        update_epic_status_from_stories(epic_id, db)
+    
+    if epics_to_update:
+        db.commit()
+    
     return {"updated": [item.id for item in items], "count": len(items)}
 
 
@@ -546,6 +662,9 @@ async def delete_work_item(
     if not item:
         raise HTTPException(status_code=404, detail="Work item not found")
     
+    # Store epic_id before deleting so we can update it
+    epic_id = item.epic_id
+    
     # Log activity before deletion
     from models.activity_log import ActivityLog
     activity = ActivityLog(
@@ -559,6 +678,13 @@ async def delete_work_item(
     
     db.delete(item)
     db.commit()
+    
+    # Update epic hours and status if item was linked to an epic
+    if epic_id:
+        update_epic_hours(epic_id, db)
+        update_epic_status_from_stories(epic_id, db)
+        db.commit()
+    
     return {"status": "deleted", "id": item_id}
 
 
@@ -1218,10 +1344,10 @@ async def get_hours_analytics(
     # Get all developers assigned to this project
     developers = list(project.developers) if hasattr(project, 'developers') else []
     
-    # Hours per sprint
+    # Hours per sprint (exclude epics to avoid duplication - epic hours are derived from children)
     sprint_hours = []
     for sprint in sprints:
-        sprint_items = [item for item in items if item.sprint_id == sprint.id]
+        sprint_items = [item for item in items if item.sprint_id == sprint.id and item.type != WorkItemType.EPIC.value]
         allocated = sum(item.estimated_hours or 0 for item in sprint_items)
         logged = sum(item.logged_hours or 0 for item in sprint_items)
         # Calculate remaining properly: estimated - logged for incomplete items
@@ -1271,8 +1397,8 @@ async def get_hours_analytics(
         print(f"DEBUG: TimeEntry id={te.id}, developer_id={te.developer_id}, effective={effective_dev_id}, hours={te.hours}")
     
     for dev in developers:
-        # Tickets currently assigned to this developer
-        dev_items = [item for item in items if item.assignee_id == dev.id]
+        # Tickets currently assigned to this developer (exclude epics to avoid duplication)
+        dev_items = [item for item in items if item.assignee_id == dev.id and item.type != WorkItemType.EPIC.value]
         
         # Hours logged BY this developer (their own time entries where developer_id = dev.id)
         # OR if developer_id is NULL, fall back to ticket assignee attribution
@@ -1379,7 +1505,7 @@ async def get_hours_analytics(
             "attribution_note": "Hours attributed to the person who logged them, not the ticket assignee"
         })
     
-    # Weekly breakdown - based on calendar weeks (Sunday to Saturday)
+    # Weekly breakdown - based on calendar weeks (Monday to Sunday)
     from datetime import timedelta
     from models.time_entry import TimeEntry
     weekly_hours = []
@@ -1401,20 +1527,40 @@ async def get_hours_analytics(
         # Start from the week containing the first sprint start
         period_start = earliest_sprint.start_date
     else:
-        # No sprints yet - don't show any weeks until sprint is created
-        period_start = today  # This will result in empty weekly_hours
+        # No sprints yet - use project creation date
+        period_start = project.created_at if project.created_at else today
     
-    # Find the Sunday of the week containing period_start
-    # weekday() returns 0=Monday, 6=Sunday. We want Sunday as start (6 or -1)
-    days_to_sunday = (period_start.weekday() + 1) % 7  # Days to previous Sunday
-    first_sunday = period_start - timedelta(days=days_to_sunday)
+    # Also check if there are any work items created before the period_start
+    # If so, include weeks for those items too
+    if items:
+        earliest_item = min((item.created_at for item in items if item.created_at), default=None)
+        if earliest_item and earliest_item < period_start:
+            period_start = earliest_item
     
-    # Generate weeks from first Sunday to now (max 10 weeks for display)
+    # Find the Monday of the week containing period_start
+    # weekday() returns 0=Monday, 1=Tuesday, ..., 6=Sunday
+    # To get the Monday of the week, subtract weekday() days
+    days_since_monday = period_start.weekday()
+    first_monday = period_start - timedelta(days=days_since_monday)
+    
+    # Find the furthest sprint end date to include future sprints
+    furthest_sprint_end = today
+    if sprints:
+        sprint_end_dates = [s.end_date for s in sprints if s.end_date]
+        if sprint_end_dates:
+            furthest_sprint_end = max(furthest_sprint_end, max(sprint_end_dates))
+    
+    # Get the earliest sprint start date for checking pre-sprint weeks
+    earliest_sprint_start = None
+    if earliest_sprint and earliest_sprint.start_date:
+        earliest_sprint_start = earliest_sprint.start_date
+    
+    # Generate weeks from first Monday to furthest sprint end (max 10 weeks for display)
     week_num = 1
-    current_week_start = first_sunday
+    current_week_start = first_monday
     
-    while current_week_start <= today:
-        week_end = current_week_start + timedelta(days=6)  # Saturday
+    while current_week_start <= furthest_sprint_end:
+        week_end = current_week_start + timedelta(days=6)  # Sunday
         
         # Time entries logged this week
         week_entries = [te for te in time_entries 
@@ -1465,6 +1611,34 @@ async def get_hours_analytics(
                     if item.due_date and current_week_start <= item.due_date <= week_end:
                         week_allocated += item.estimated_hours or 0
         
+        # Also include items created in this week that are NOT in a scheduled sprint
+        # This shows allocated work for unscheduled items created this week
+        # Items assigned to sprints are handled by sprint overlap logic to avoid duplication
+        items_created_this_week = [item for item in items 
+                                  if item.created_at 
+                                  and current_week_start <= item.created_at <= week_end]
+        
+        # Check if we're in a week before the earliest sprint
+        is_before_earliest_sprint = earliest_sprint_start and current_week_start < earliest_sprint_start
+        
+        for item in items_created_this_week:
+            # Only count if NOT assigned to a sprint with actual dates
+            has_scheduled_sprint = False
+            if item.sprint_id:
+                for sprint in sprints:
+                    if sprint.id == item.sprint_id and sprint.start_date and sprint.end_date:
+                        has_scheduled_sprint = True
+                        break
+            
+            # Skip items with scheduled sprints if we're BEFORE that sprint
+            # (they'll be counted during sprint weeks instead)
+            if is_before_earliest_sprint and has_scheduled_sprint:
+                continue
+            
+            # If no scheduled sprint (or not before earliest sprint), count it as allocated for the creation week
+            if not has_scheduled_sprint:
+                week_allocated += item.estimated_hours or 0
+        
         weekly_hours.append({
             "week": current_week_start.strftime("%Y-%m-%d"),
             "week_end": week_end.strftime("%Y-%m-%d"),
@@ -1483,16 +1657,17 @@ async def get_hours_analytics(
         if week_num > 10:
             break
     
-    # Reverse to show most recent weeks first
-    weekly_hours.reverse()
+    # Show weeks in chronological order (earliest first)
+    # weekly_hours already built in ascending order, no reverse needed
     
-    # Totals - calculate remaining as estimated - logged if not set
-    total_allocated = sum(item.estimated_hours or 0 for item in items)
-    total_logged = sum(item.logged_hours or 0 for item in items)
+    # Totals - calculate remaining as estimated - logged if not set (exclude epics to avoid duplication)
+    non_epic_items = [item for item in items if item.type != WorkItemType.EPIC.value]
+    total_allocated = sum(item.estimated_hours or 0 for item in non_epic_items)
+    total_logged = sum(item.logged_hours or 0 for item in non_epic_items)
     # Calculate remaining properly: estimated - logged for each item
     total_remaining = sum(
         max(0, (item.estimated_hours or 0) - (item.logged_hours or 0)) 
-        for item in items if item.status != WorkItemStatus.DONE.value
+        for item in non_epic_items if item.status != WorkItemStatus.DONE.value
     )
     
     # Add per-ticket time breakdown to each developer

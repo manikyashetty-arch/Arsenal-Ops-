@@ -451,6 +451,59 @@ def run_migrations():
                 print("[MIGRATION] user_custom_restrictions table created!")
         except Exception as e:
             print(f"[MIGRATION ERROR] {e}")
+        
+        # Migration: Add end_date column to projects
+        try:
+            result = conn.execute(text("""
+                SELECT column_name 
+                FROM information_schema.columns 
+                WHERE table_name = 'projects' AND column_name = 'end_date'
+            """))
+            
+            if not result.fetchone():
+                print("[MIGRATION] Adding end_date column to projects...")
+                conn.execute(text("""
+                    ALTER TABLE projects 
+                    ADD COLUMN end_date TIMESTAMP NULL
+                """))
+                conn.commit()
+                print("[MIGRATION] end_date column added successfully!")
+        except Exception as e:
+            print(f"[MIGRATION ERROR] {e}")
+
+        # Migration: Add github_repo_urls column to projects
+        try:
+            result = conn.execute(text("""
+                SELECT column_name 
+                FROM information_schema.columns 
+                WHERE table_name = 'projects' AND column_name = 'github_repo_urls'
+            """))
+            
+            if not result.fetchone():
+                print("[MIGRATION] Adding github_repo_urls column to projects...")
+                conn.execute(text("""
+                    ALTER TABLE projects 
+                    ADD COLUMN github_repo_urls JSON DEFAULT '[]'
+                """))
+                conn.commit()
+                print("[MIGRATION] github_repo_urls column added successfully!")
+                
+                # Migrate existing github_repo_url values to github_repo_urls
+                print("[MIGRATION] Migrating existing github_repo_url values to github_repo_urls...")
+                try:
+                    conn.execute(text("""
+                        UPDATE projects 
+                        SET github_repo_urls = jsonb_build_array(github_repo_url)
+                        WHERE github_repo_url IS NOT NULL 
+                        AND (github_repo_urls IS NULL OR github_repo_urls = '[]'::jsonb)
+                    """))
+                    conn.commit()
+                    print("[MIGRATION] Migration of github_repo_url to github_repo_urls completed!")
+                except Exception as migrate_err:
+                    print(f"[MIGRATION WARNING] Could not auto-migrate existing URLs: {migrate_err}")
+                    conn.rollback()
+        except Exception as e:
+            print(f"[MIGRATION ERROR] {e}")
 
 def init_db():
     """Initialize database tables"""
