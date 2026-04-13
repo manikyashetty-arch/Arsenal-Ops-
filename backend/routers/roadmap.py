@@ -17,7 +17,9 @@ from models.project import Project
 from models.user import User
 from models.developer import Developer
 from models.work_item import WorkItem, WorkItemType
+from models.sprint import Sprint
 from routers.auth import get_current_user
+from sqlalchemy import func
 from parser import parse as parse_roadmap
 from services.roadmap_ai_parser import get_roadmap_ai_parser, excel_to_readable_text
 from logging_config import setup_logger
@@ -35,6 +37,7 @@ class RoadmapSummary(BaseModel):
     total_epics: int
     total_tasks: int
     total_assignees: int
+    total_sprints: int = 0
     assignees: List[str]
     timeline: Dict[str, Any]
     conflicts: List[Dict[str, Any]]
@@ -113,17 +116,22 @@ def create_work_item(
 async def parse_roadmap_file(
     project_id: int = Form(...),
     file: UploadFile = File(...),
+    sprint_weeks: int = Form(default=2),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """
     Upload and parse a roadmap Excel file
-    Returns: Summary of epics, tasks, assignees, timeline, conflicts, warnings
+    Returns: Summary of epics, tasks, assignees, timeline, conflicts, warnings, and sprints
     """
     # Verify project exists
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
+    
+    # Validate sprint_weeks
+    if sprint_weeks < 1 or sprint_weeks > 6:
+        raise HTTPException(status_code=400, detail="Sprint weeks must be between 1 and 6")
     
     # Validate file type
     if not file.filename.lower().endswith(('.xlsx', '.xls')):
@@ -145,7 +153,7 @@ async def parse_roadmap_file(
         parse_error = None
         
         try:
-            parsed_result = parse_roadmap(tmp_path)
+            parsed_result = parse_roadmap(tmp_path, sprint_weeks=sprint_weeks)
         except Exception as e:
             parse_error = str(e)
             logger.debug(f"Standard parser failed: {parse_error}")
@@ -204,6 +212,7 @@ async def parse_roadmap_file(
         total_epics=len(epics),
         total_tasks=len(tickets),
         total_assignees=len(assignees),
+        total_sprints=meta.get("total_sprints", 0),
         assignees=sorted(list(assignees)),
         timeline={
             "start": week_range.get("start"),
@@ -349,15 +358,104 @@ async def commit_roadmap_tickets(
         
         logger.info(f"Created {created_tasks} tasks. Assignees not found: {assignee_not_found_count}")
         
+        # Step 3: Create sprints from parsed sprint data
+        sprints_created = 0
+        sprint_map = {}  # sprint_number -> Sprint object
+        
+        parsed_sprints = parsed_data.get("sprints", [])
+        for sprint_data in parsed_sprints:
+            sprint_num = sprint_data.get("number")
+            start_week = sprint_data.get("start_week")
+            end_week = sprint_data.get("end_week")
+            
+            # Convert week dates to datetime
+            if start_week and end_week:
+                try:
+                    start_date = datetime.fromisoformat(start_week)
+                    end_date = datetime.fromisoformat(end_week)
+                    
+                    # Create sprint
+                    sprint = Sprint(
+                        project_id=request.project_id,
+                        name=f"Sprint {sprint_num}",
+                        goal=f"Sprint {sprint_num} ({start_week} to {end_week})",
+                        start_date=start_date,
+                        end_date=end_date,
+                        status="planned"
+                    )
+                    db.add(sprint)
+                    db.flush()  # Get the sprint ID
+                    sprint_map[sprint_num] = sprint
+                    sprints_created += 1
+                    logger.info(f"Created Sprint {sprint_num}: {start_week} to {end_week}")
+                except Exception as e:
+                    logger.warning(f"Failed to create sprint {sprint_num}: {str(e)}")
+                    continue
+        
+        # Step 4: Assign tasks to sprints
+        # Build a map of task names to their work items for quick lookup
+        task_map = {}  # task_name -> WorkItem
+        for ticket in tickets:
+            task_name = ticket.get("name")
+            task = db.query(WorkItem).filter(
+                WorkItem.project_id == request.project_id,
+                WorkItem.title == task_name,
+                WorkItem.type == "user_story"
+            ).first()
+            if task:
+                task_map[task_name] = task
+        
+        # Assign tasks to sprints based on which sprints they span
+        tasks_assigned_to_sprint = 0
+        for sprint_data in parsed_sprints:
+            sprint_num = sprint_data.get("number")
+            sprint_tasks = sprint_data.get("tasks", [])
+            
+            if sprint_num not in sprint_map:
+                continue
+                
+            sprint = sprint_map[sprint_num]
+            for task_name in sprint_tasks:
+                if task_name in task_map:
+                    task = task_map[task_name]
+                    task.sprint_id = sprint.id
+                    # Set due date to sprint end date (Friday)
+                    task.due_date = sprint.end_date
+                    tasks_assigned_to_sprint += 1
+        
+        logger.info(f"Assigned {tasks_assigned_to_sprint} tasks to sprints")
+        
         # Commit all changes
+        db.commit()
+        
+        # Update epic hours for all epics in this project
+        # This calculates total hours from all child stories
+        epics = db.query(WorkItem).filter(
+            WorkItem.project_id == request.project_id,
+            WorkItem.type == WorkItemType.EPIC.value
+        ).all()
+        
+        for epic in epics:
+            # Sum all work items' estimated_hours that belong to this epic (stories, tasks, bugs)
+            total_hours = db.query(func.coalesce(func.sum(WorkItem.estimated_hours), 0)).filter(
+                WorkItem.epic_id == epic.id,
+                WorkItem.type.in_([WorkItemType.USER_STORY.value, WorkItemType.TASK.value, WorkItemType.BUG.value])
+            ).scalar()
+            
+            epic.estimated_hours = total_hours
+            epic.updated_at = datetime.utcnow()
+        
+        # Final commit for epic hours
         db.commit()
         
         response_data = {
             "status": "success",
             "tickets_created": created_tasks,
             "epics_created": len(epic_map),
+            "sprints_created": sprints_created,
+            "tasks_assigned_to_sprints": tasks_assigned_to_sprint,
             "assignees_not_found": assignee_not_found_count,
-            "message": f"Created {len(epic_map)} epics and {created_tasks} tasks from roadmap"
+            "message": f"Created {len(epic_map)} epics, {created_tasks} tasks, and {sprints_created} sprints from roadmap"
         }
         
         logger.debug(f"Returning response: {response_data}")

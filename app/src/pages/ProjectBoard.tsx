@@ -45,6 +45,13 @@ import { useAuth } from '@/contexts/AuthContext';
 
 import { API_BASE_URL } from '@/config/api';
 
+// Helper function to parse YYYY-MM-DD string to local Date object (avoids UTC timezone issues)
+const parseLocalDate = (dateString: string | undefined): Date | undefined => {
+    if (!dateString) return undefined;
+    const [year, month, day] = dateString.split('-');
+    return new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+};
+
 interface WorkItem {
     id: string;
     key: string;  // Ticket key like PROJ-123
@@ -160,13 +167,6 @@ interface Sprint {
 
 type AIStep = 'upload' | 'analyzing' | 'architectures' | 'preview' | 'committing' | 'done';
 
-// Helper function to parse YYYY-MM-DD string to local Date object (avoids UTC timezone issues)
-const parseLocalDate = (dateString: string | undefined): Date | undefined => {
-    if (!dateString) return undefined;
-    const [year, month, day] = dateString.split('-');
-    return new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
-};
-
 const STATUS_CONFIG = {
     backlog: { label: 'Backlog', color: '#737373', icon: Inbox, gradient: 'from-[#737373]/10' },
     todo: { label: 'To Do', color: '#E0B954', icon: Plus, gradient: 'from-[#E0B954]/10' },
@@ -204,9 +204,12 @@ const ProjectBoard = () => {
     const [showCreateForm, setShowCreateForm] = useState(false);
     const [viewMode, setViewMode] = useState<'board' | 'list'>('board');
     const [searchQuery, setSearchQuery] = useState('');
-        const [filterType, setFilterType] = useState<string>('all');
-        const [filterPriority, setFilterPriority] = useState<string>('all');
-        const [filterAssignee, setFilterAssignee] = useState<string>('all');
+    const [filterType, setFilterType] = useState<string>('all');
+    const [filterPriority, setFilterPriority] = useState<string>('all');
+    const [filterAssignee, setFilterAssignee] = useState<string>('all');
+    const [showFilterMenu, setShowFilterMenu] = useState(false);
+    const [assigneeSearchFilter, setAssigneeSearchFilter] = useState('');
+    const filterMenuRef = useRef<HTMLDivElement>(null);
     const [draggedItem, setDraggedItem] = useState<string | null>(null);
     const [dragOverColumn, setDragOverColumn] = useState<string | null>(null);
     
@@ -224,6 +227,7 @@ const ProjectBoard = () => {
     const [generatedTickets, setGeneratedTickets] = useState<GeneratedTicket[]>([]);
     const [ticketsSummary, setTicketsSummary] = useState<{ total_story_points: number; total_estimated_hours: number; sprint_recommendation: string } | null>(null);
     const [roadmapFile, setRoadmapFile] = useState<File | null>(null);
+    const [sprintWeeks, setSprintWeeks] = useState<number>(2);
     const [roadmapSummary, setRoadmapSummary] = useState<any>(null);
     const [roadmapParsedData, setRoadmapParsedData] = useState<any>(null);
     const [createdTicketCount, setCreatedTicketCount] = useState<number>(0);
@@ -240,6 +244,8 @@ const ProjectBoard = () => {
     // Calendar popover states
     const [showCalendarCreateForm, setShowCalendarCreateForm] = useState(false);
     const [showCalendarEditForm, setShowCalendarEditForm] = useState(false);
+    const [showCalendarSprintStart, setShowCalendarSprintStart] = useState(false);
+    const [showCalendarSprintEnd, setShowCalendarSprintEnd] = useState(false);
 
     // Comments state
     const [comments, setComments] = useState<Array<{
@@ -326,6 +332,20 @@ const ProjectBoard = () => {
             if (found) setSelectedItem(found);
         }
     }, [ticketId, workItems]);
+
+    // Close filter menu when clicking outside
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (filterMenuRef.current && !filterMenuRef.current.contains(event.target as Node)) {
+                setShowFilterMenu(false);
+                setAssigneeSearchFilter('');
+            }
+        };
+        if (showFilterMenu) {
+            document.addEventListener('mousedown', handleClickOutside);
+            return () => document.removeEventListener('mousedown', handleClickOutside);
+        }
+    }, [showFilterMenu]);
 
     // Refresh project stats
     const refreshProjectStats = useCallback(async () => {
@@ -415,7 +435,7 @@ const ProjectBoard = () => {
                     remaining_hours: createForm.story_points * 4,
                     status: 'todo',
                     tags: [],
-                    estimated_hours: createForm.estimated_hours ? parseInt(createForm.estimated_hours as string) || null : null,
+                    estimated_hours: createForm.estimated_hours ? parseInt(createForm.estimated_hours as string) : 0,
                     due_date: createForm.due_date || null,
                 }),
             });
@@ -475,6 +495,44 @@ const ProjectBoard = () => {
         if (!newSprint.name.trim()) {
             toast.error('Sprint name is required');
             return;
+        }
+        
+        // Check for duplicate sprint names
+        const duplicateName = sprints.some(s => s.name.trim().toLowerCase() === newSprint.name.trim().toLowerCase());
+        if (duplicateName) {
+            toast.error('A sprint with this name already exists');
+            return;
+        }
+        
+        if (!newSprint.start_date) {
+            toast.error('Start date is required');
+            return;
+        }
+        if (!newSprint.end_date) {
+            toast.error('End date is required');
+            return;
+        }
+
+        const startDate = parseLocalDate(newSprint.start_date);
+        const endDate = parseLocalDate(newSprint.end_date);
+        if (startDate && endDate && endDate < startDate) {
+            toast.error('End date must be equal to or after start date');
+            return;
+        }
+
+        // Check for overlaps with existing sprints
+        if (startDate && endDate && sprints.length > 0) {
+            const hasOverlap = sprints.some(existingSprint => {
+                if (!existingSprint.start_date || !existingSprint.end_date) return false;
+                const existingStart = new Date(existingSprint.start_date);
+                const existingEnd = new Date(existingSprint.end_date);
+                // Check if new sprint overlaps with existing sprint
+                return startDate <= existingEnd && endDate >= existingStart;
+            });
+            if (hasOverlap) {
+                toast.error('Sprint dates overlap with an existing sprint. Sprints cannot overlap.');
+                return;
+            }
         }
         try {
             const response = await fetch(`${API_BASE_URL}/api/workitems/sprints/`, {
@@ -868,6 +926,7 @@ const ProjectBoard = () => {
             const formData = new FormData();
             formData.append('file', roadmapFile);
             formData.append('project_id', String(project.id));
+            formData.append('sprint_weeks', String(sprintWeeks));
             
             const response = await fetch(`${API_BASE_URL}/api/roadmap/parse-file`, {
                 method: 'POST',
@@ -1047,7 +1106,8 @@ const ProjectBoard = () => {
                 const data = await response.json();
                 
                 setAiStep('done');
-                toast.success(`Created ${data.tickets_created} tasks in ${data.epics_created} epics!${data.assignees_not_found > 0 ? ` (${data.assignees_not_found} auto-assigned)` : ''}`);
+                const sprintMsg = data.sprints_created > 0 ? ` and ${data.sprints_created} sprints` : '';
+                toast.success(`Created ${data.tickets_created} tasks in ${data.epics_created} epics${sprintMsg}!${data.assignees_not_found > 0 ? ` (${data.assignees_not_found} auto-assigned)` : ''}`);
                 setCreatedTicketCount(data.tickets_created);
                 
                 // Refresh work items
@@ -1057,6 +1117,15 @@ const ProjectBoard = () => {
                 if (itemsRes.ok) {
                     setWorkItems(await itemsRes.json());
                 }
+                
+                // Refresh sprints
+                const sprintsRes = await fetch(`${API_BASE_URL}/api/workitems/projects/${project.id}/sprints`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (sprintsRes.ok) {
+                    setSprints(await sprintsRes.json());
+                }
+                
                 refreshProjectStats();
                 
                 // Close modal after delay
@@ -1253,62 +1322,219 @@ const ProjectBoard = () => {
                             </div>
                         ))}
                     </div>
-                    <div className="flex items-center gap-3">
-                        {/* Search */}
-                        <div className="relative">
-                            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#737373]" />
-                            <Input
-                                placeholder="Search items..."
-                                value={searchQuery}
-                                onChange={(e) => setSearchQuery(e.target.value)}
-                                className="pl-8 h-8 w-48 text-xs bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.05)] text-[#F4F6FF] rounded-lg focus:border-[#E0B954]/50 placeholder:text-[#334155]"
-                            />
+                    {/* Advanced Filter Bar */}
+                    <div className="flex flex-col gap-3">
+                        {/* Search & Active Filters & Add Filter & View Toggle */}
+                        <div className="flex items-center gap-2">
+                            <div className="relative flex-1 max-w-xs">
+                                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#737373]" />
+                                <Input
+                                    placeholder="Search items..."
+                                    value={searchQuery}
+                                    onChange={(e) => setSearchQuery(e.target.value)}
+                                    className="pl-8 h-8 text-xs bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.05)] text-[#F4F6FF] rounded-lg focus:border-[#E0B954]/50 placeholder:text-[#334155]"
+                                />
+                            </div>
+
+                            {/* Active Filter Pills */}
+                            <div className="flex items-center gap-2 flex-wrap">
+                                {filterType !== 'all' && (
+                                    <div className="flex items-center gap-1.5 px-2.5 py-1 bg-[#E0B954]/15 border border-[#E0B954]/30 rounded-full text-xs text-[#E0B954] font-medium">
+                                        {TYPE_CONFIG[filterType as keyof typeof TYPE_CONFIG]?.label || filterType}
+                                        <button
+                                            onClick={() => setFilterType('all')}
+                                            className="hover:bg-[#E0B954]/20 rounded-full p-0.5 ml-1"
+                                        >
+                                            <X className="w-3 h-3" />
+                                        </button>
+                                    </div>
+                                )}
+                                {filterPriority !== 'all' && (
+                                    <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${PRIORITY_COLORS[filterPriority as keyof typeof PRIORITY_COLORS]?.bg} ${PRIORITY_COLORS[filterPriority as keyof typeof PRIORITY_COLORS]?.text}`}>
+                                        {filterPriority.charAt(0).toUpperCase() + filterPriority.slice(1)}
+                                        <button
+                                            onClick={() => setFilterPriority('all')}
+                                            className="hover:opacity-75 ml-1"
+                                        >
+                                            <X className="w-3 h-3" />
+                                        </button>
+                                    </div>
+                                )}
+                                {filterAssignee !== 'all' && (
+                                    <div className="flex items-center gap-1.5 px-2.5 py-1 bg-[#60A5FA]/15 border border-[#60A5FA]/30 rounded-full text-xs text-[#60A5FA] font-medium">
+                                        {filterAssignee === 'unassigned' ? 'Unassigned' : project?.developers?.find(d => String(d.id) === filterAssignee)?.name || filterAssignee}
+                                        <button
+                                            onClick={() => setFilterAssignee('all')}
+                                            className="hover:bg-[#60A5FA]/20 rounded-full p-0.5 ml-1"
+                                        >
+                                            <X className="w-3 h-3" />
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Clear All Filters */}
+                            {(filterType !== 'all' || filterPriority !== 'all' || filterAssignee !== 'all') && (
+                                <button
+                                    onClick={() => {
+                                        setFilterType('all');
+                                        setFilterPriority('all');
+                                        setFilterAssignee('all');
+                                    }}
+                                    className="text-xs text-[#737373] hover:text-red-400 underline hover:no-underline transition-colors"
+                                >
+                                    Clear all
+                                </button>
+                            )}
+
+                            {/* Add Filter Button */}
+                            <div className="relative" ref={filterMenuRef}>
+                                <button
+                                    onClick={() => setShowFilterMenu(!showFilterMenu)}
+                                    className="flex items-center gap-1.5 px-2.5 py-1 h-8 text-xs bg-gradient-to-r from-[#E0B954] to-[#B8872A] hover:from-[#C79E3B] hover:to-[#B8872A] text-white rounded-lg font-medium shadow-lg shadow-[#B8872A]/20 transition-colors"
+                                >
+                                    <Plus className="w-3.5 h-3.5" />
+                                    Add filter
+                                </button>
+
+                                {/* Filter Menu Popover */}
+                                {showFilterMenu && (
+                                    <div className="absolute top-full mt-2 left-0 bg-[#0d0d0d] border border-[rgba(255,255,255,0.07)] rounded-xl shadow-2xl shadow-black/50 z-50 min-w-max">
+                                        <div className="p-2">
+                                            {/* Type Filter */}
+                                            {filterType === 'all' && (
+                                                <div className="px-3 py-2">
+                                                    <p className="text-xs font-semibold text-[#737373] mb-2">Type</p>
+                                                    <div className="space-y-1">
+                                                        {Object.entries(TYPE_CONFIG).map(([key, config]) => (
+                                                            <button
+                                                                key={key}
+                                                                onClick={() => {
+                                                                    setFilterType(key);
+                                                                    setShowFilterMenu(false);
+                                                                }}
+                                                                className="w-full flex items-center gap-2 px-2.5 py-1.5 text-xs text-[#a3a3a3] hover:text-white hover:bg-[rgba(255,255,255,0.05)] rounded-lg transition-colors"
+                                                            >
+                                                                <config.icon className="w-3.5 h-3.5" style={{ color: config.color }} />
+                                                                {config.label}
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {/* Priority Filter */}
+                                            {filterPriority === 'all' && (
+                                                <>
+                                                    {filterType !== 'all' && <div className="h-px bg-[rgba(255,255,255,0.05)] my-1" />}
+                                                    <div className="px-3 py-2">
+                                                        <p className="text-xs font-semibold text-[#737373] mb-2">Priority</p>
+                                                        <div className="space-y-1">
+                                                            {Object.entries(PRIORITY_COLORS).map(([key, colors]) => (
+                                                                <button
+                                                                    key={key}
+                                                                    onClick={() => {
+                                                                        setFilterPriority(key);
+                                                                        setShowFilterMenu(false);
+                                                                    }}
+                                                                    className={`w-full flex items-center gap-2 px-2.5 py-1.5 text-xs rounded-lg hover:bg-[rgba(255,255,255,0.05)] transition-colors ${colors.text}`}
+                                                                >
+                                                                    <div className={`w-2.5 h-2.5 rounded-full ${colors.bg}`} />
+                                                                    {key.charAt(0).toUpperCase() + key.slice(1)}
+                                                                </button>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                </>
+                                            )}
+
+                                            {/* Assignee Filter */}
+                                            {filterAssignee === 'all' && (project?.developers && project.developers.length > 0) && (
+                                                <>
+                                                    {(filterType !== 'all' || filterPriority !== 'all') && <div className="h-px bg-[rgba(255,255,255,0.05)] my-1" />}
+                                                    <div className="px-3 py-2">
+                                                        <p className="text-xs font-semibold text-[#737373] mb-2">Assignee</p>
+                                                        {/* Search Input for Assignees */}
+                                                        <div className="relative mb-2">
+                                                            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#737373]" />
+                                                            <input
+                                                                type="text"
+                                                                placeholder="Search assignees..."
+                                                                value={assigneeSearchFilter}
+                                                                onChange={(e) => setAssigneeSearchFilter(e.target.value)}
+                                                                className="w-full pl-8 pr-2.5 py-1.5 text-xs bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.05)] text-[#F4F6FF] rounded-lg focus:border-[#E0B954]/50 placeholder:text-[#334155]"
+                                                            />
+                                                        </div>
+                                                        <div className="space-y-1 max-h-56 overflow-y-auto">
+                                                            <button
+                                                                onClick={() => {
+                                                                    setFilterAssignee('unassigned');
+                                                                    setShowFilterMenu(false);
+                                                                    setAssigneeSearchFilter('');
+                                                                }}
+                                                                className="w-full flex items-center gap-2 px-2.5 py-1.5 text-xs text-[#a3a3a3] hover:text-white hover:bg-[rgba(255,255,255,0.05)] rounded-lg transition-colors"
+                                                            >
+                                                                <div className="w-5 h-5 rounded-full bg-[rgba(255,255,255,0.1)] flex items-center justify-center text-[10px]" />
+                                                                Unassigned
+                                                            </button>
+                                                            {project.developers
+                                                                .filter(dev => dev.name.toLowerCase().includes(assigneeSearchFilter.toLowerCase()) || dev.email.toLowerCase().includes(assigneeSearchFilter.toLowerCase()))
+                                                                .map(dev => (
+                                                                    <button
+                                                                        key={dev.id}
+                                                                        onClick={() => {
+                                                                            setFilterAssignee(String(dev.id));
+                                                                            setShowFilterMenu(false);
+                                                                            setAssigneeSearchFilter('');
+                                                                        }}
+                                                                        className="w-full flex items-center gap-2 px-2.5 py-1.5 text-xs text-[#a3a3a3] hover:text-white hover:bg-[rgba(255,255,255,0.05)] rounded-lg transition-colors"
+                                                                    >
+                                                                        <div className="w-5 h-5 rounded-full bg-gradient-to-br from-[#E0B954] to-[#B8872A] flex items-center justify-center text-white text-[10px] font-semibold">
+                                                                            {dev.name.charAt(0).toUpperCase()}
+                                                                        </div>
+                                                                        <div className="flex-1 text-left">
+                                                                            <div className="text-xs font-medium">{dev.name}</div>
+                                                                            <div className="text-[10px] text-[#737373]">{dev.email}</div>
+                                                                        </div>
+                                                                    </button>
+                                                                ))}
+                                                            {project.developers.filter(dev => dev.name.toLowerCase().includes(assigneeSearchFilter.toLowerCase()) || dev.email.toLowerCase().includes(assigneeSearchFilter.toLowerCase())).length === 0 && assigneeSearchFilter && (
+                                                                <div className="px-2.5 py-2 text-xs text-[#737373] text-center">No assignees found</div>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                </>
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* View Toggle */}
+                            <div className="flex bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.05)] rounded-lg p-0.5">
+                                <button
+                                    onClick={() => setViewMode('board')}
+                                    className={`p-1.5 rounded-md transition-colors ${viewMode === 'board' ? 'bg-[#E0B954] text-white' : 'text-[#737373] hover:text-white'}`}
+                                >
+                                    <LayoutGrid className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                    onClick={() => setViewMode('list')}
+                                className={`p-1.5 rounded-md transition-colors ${viewMode === 'list' ? 'bg-[#E0B954] text-white' : 'text-[#737373] hover:text-white'}`}
+                            >
+                                <List className="w-3.5 h-3.5" />
+                            </button>
                         </div>
-                        {/* Type Filter */}
-                        <select
-                            value={filterType}
-                            onChange={(e) => setFilterType(e.target.value)}
-                            className="h-8 text-xs bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.05)] text-[#a3a3a3] rounded-lg px-2 appearance-none cursor-pointer hover:border-[rgba(244,246,255,0.12)] transition-colors"
-                        >
-                            <option value="all">All Types</option>
-                            <option value="user_story">Stories</option>
-                            <option value="task">Tasks</option>
-                            <option value="bug">Bugs</option>
-                            <option value="epic">Epics</option>
-                        </select>
-                        {/* Priority Filter */}
-                        <select
-                            value={filterPriority}
-                            onChange={(e) => setFilterPriority(e.target.value)}
-                            className="h-8 text-xs bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.05)] text-[#a3a3a3] rounded-lg px-2 appearance-none cursor-pointer hover:border-[rgba(244,246,255,0.12)] transition-colors"
-                        >
-                            <option value="all">All Priorities</option>
-                            <option value="critical">Critical</option>
-                            <option value="high">High</option>
-                            <option value="medium">Medium</option>
-                            <option value="low">Low</option>
-                        </select>
-                        {/* Assignee Filter */}
-                        <select
-                            value={filterAssignee}
-                            onChange={(e) => setFilterAssignee(e.target.value)}
-                            className="h-8 text-xs bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.05)] text-[#a3a3a3] rounded-lg px-2 appearance-none cursor-pointer hover:border-[rgba(244,246,255,0.12)] transition-colors"
-                        >
-                            <option value="all">All Assignees</option>
-                            <option value="unassigned">Unassigned</option>
-                            {(project?.developers ?? []).map(dev => (
-                                <option key={dev.id} value={String(dev.id)}>{dev.name}</option>
-                            ))}
-                        </select>
-                        {/* Sprint Filter */}
+
+                        {/* Sprint Selector */}
                         <div className="flex items-center gap-2">
                             <select
                                 value={selectedSprintId}
                                 onChange={(e) => setSelectedSprintId(e.target.value === 'all' ? 'all' : e.target.value === 'backlog' ? 'backlog' : parseInt(e.target.value))}
-                                className="h-8 text-xs bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.05)] text-[#a3a3a3] rounded-lg px-2 appearance-none cursor-pointer hover:border-[rgba(244,246,255,0.12)] transition-colors"
+                                className={`h-8 text-xs rounded-lg px-2.5 appearance-none cursor-pointer font-medium transition-colors ${selectedSprintId === 'all' ? 'bg-gradient-to-r from-[#E0B954] to-[#B8872A] hover:from-[#C79E3B] hover:to-[#B8872A] text-white shadow-lg shadow-[#B8872A]/20' : 'bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.05)] text-[#a3a3a3] hover:border-[rgba(244,246,255,0.12)]'}`}
                             >
                                 <option value="all">All Items</option>
-                                <option value="backlog">📋 Backlog (No Sprint)</option>
+                                <option value="backlog">📋 Backlog</option>
                                 {sprints.map(sprint => (
                                     <option key={sprint.id} value={sprint.id}>
                                         🏃 {sprint.name}
@@ -1324,21 +1550,7 @@ const ProjectBoard = () => {
                                 New Sprint
                             </Button>
                         </div>
-                        {/* View Toggle */}
-                        <div className="flex bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.05)] rounded-lg p-0.5">
-                            <button
-                                onClick={() => setViewMode('board')}
-                                className={`p-1.5 rounded-md transition-colors ${viewMode === 'board' ? 'bg-[#E0B954] text-white' : 'text-[#737373] hover:text-white'}`}
-                            >
-                                <LayoutGrid className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                                onClick={() => setViewMode('list')}
-                                className={`p-1.5 rounded-md transition-colors ${viewMode === 'list' ? 'bg-[#E0B954] text-white' : 'text-[#737373] hover:text-white'}`}
-                            >
-                                <List className="w-3.5 h-3.5" />
-                            </button>
-                        </div>
+                    </div>
                     </div>
                 </div>
             </header>
@@ -1725,17 +1937,6 @@ onClick={() => { navigate(`/project/${id}/board/${item.id}`); setIsEditing(false
                                                 </PopoverContent>
                                             </Popover>
                                         </div>
-                                        <div>
-                                            <label className="text-xs font-medium text-[#737373] block mb-1.5">Est. Hours</label>
-                                            <Input 
-                                                type="number" 
-                                                min="0"
-                                                defaultValue={selectedItem.estimated_hours || ''} 
-                                                onChange={e => setEditForm(f => ({ ...f, estimated_hours: e.target.value ? parseInt(e.target.value) : null }))}
-                                                placeholder="Hours"
-                                                className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl"
-                                            />
-                                        </div>
                                     </div>
                                     <Button onClick={handleSaveEdit} className="bg-gradient-to-r from-[#E0B954] to-[#B8872A] text-white rounded-xl w-full h-10">
                                         <Save className="w-4 h-4 mr-2" /> Save Changes
@@ -1756,7 +1957,6 @@ onClick={() => { navigate(`/project/${id}/board/${item.id}`); setIsEditing(false
                                             { label: 'Allocated Hours', value: `${selectedItem.assigned_hours}h`, color: '#E0B954' },
                                             { label: 'Logged Hours', value: `${selectedItem.logged_hours || 0}h`, color: '#E0B954' },
                                             { label: 'Remaining Hours', value: `${selectedItem.remaining_hours}h`, color: '#F59E0B' },
-                                            { label: 'Est. Hours', value: selectedItem.estimated_hours ? `${selectedItem.estimated_hours}h` : 'Not set', color: selectedItem.estimated_hours ? '#E0B954' : '#737373' },
                                             { label: 'Due Date', value: selectedItem.due_date ? new Date(selectedItem.due_date).toLocaleDateString() : 'Not set', color: selectedItem.due_date ? '#E0B954' : '#737373' },
                                             { label: 'Status', value: (STATUS_CONFIG[selectedItem.status] || STATUS_CONFIG.todo).label, color: (STATUS_CONFIG[selectedItem.status] || STATUS_CONFIG.todo).color },
                                             { label: 'Priority', value: selectedItem.priority.charAt(0).toUpperCase() + selectedItem.priority.slice(1), color: (PRIORITY_COLORS[selectedItem.priority] || PRIORITY_COLORS.medium).text.replace('text-', '').includes('red') ? '#EF4444' : (PRIORITY_COLORS[selectedItem.priority] || PRIORITY_COLORS.medium).text.includes('orange') ? '#F97316' : (PRIORITY_COLORS[selectedItem.priority] || PRIORITY_COLORS.medium).text.includes('yellow') ? '#F59E0B' : '#E0B954' },
@@ -1783,24 +1983,28 @@ onClick={() => { navigate(`/project/${id}/board/${item.id}`); setIsEditing(false
                                     </div>
 
                                     {/* Hierarchy breadcrumb */}
-                                    {(selectedItem.epic_key || selectedItem.parent_key) && (
-                                        <div>
-                                            <div className="text-xs text-[#737373] mb-2 font-medium">Hierarchy</div>
-                                            <div className="flex items-center gap-1.5 flex-wrap">
-                                                {selectedItem.epic_key && (
-                                                    <span className="flex items-center gap-1 px-2 py-1 rounded-md bg-[rgba(167,139,250,0.12)] text-[#A78BFA] text-xs">
-                                                        Epic: {selectedItem.epic_key}
-                                                    </span>
-                                                )}
-                                                {selectedItem.epic_key && selectedItem.parent_key && <span className="text-[#555] text-xs">›</span>}
-                                                {selectedItem.parent_key && (
-                                                    <span className="flex items-center gap-1 px-2 py-1 rounded-md bg-[rgba(224,185,84,0.10)] text-[#E0B954] text-xs">
-                                                        Parent: {selectedItem.parent_key}
-                                                    </span>
-                                                )}
+                                    {(selectedItem.epic_key || selectedItem.parent_key) && (() => {
+                                        const parentItem = selectedItem.parent_id ? workItems.find(wi => wi.id === selectedItem.parent_id?.toString()) : null;
+                                        const epicItem = selectedItem.epic_id ? workItems.find(wi => wi.id === selectedItem.epic_id?.toString()) : null;
+                                        return (
+                                            <div>
+                                                <div className="text-xs text-[#737373] mb-2 font-medium">Hierarchy</div>
+                                                <div className="flex items-center gap-1.5 flex-wrap">
+                                                    {selectedItem.epic_key && epicItem && (
+                                                        <a href={`/project/${id}/board/${epicItem.id}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 px-2 py-1 rounded-md bg-[rgba(167,139,250,0.12)] text-[#A78BFA] text-xs hover:bg-[rgba(167,139,250,0.2)] transition-colors cursor-pointer">
+                                                            Epic: {selectedItem.epic_key} ({epicItem.title})
+                                                        </a>
+                                                    )}
+                                                    {selectedItem.epic_key && selectedItem.parent_key && <span className="text-[#555] text-xs">›</span>}
+                                                    {selectedItem.parent_key && parentItem && (
+                                                        <a href={`/project/${id}/board/${parentItem.id}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 px-2 py-1 rounded-md bg-[rgba(224,185,84,0.10)] text-[#E0B954] text-xs hover:bg-[rgba(224,185,84,0.2)] transition-colors cursor-pointer">
+                                                            Parent: {selectedItem.parent_key} ({parentItem.title})
+                                                        </a>
+                                                    )}
+                                                </div>
                                             </div>
-                                        </div>
-                                    )}
+                                        );
+                                    })()}
 
                                     {/* Child items */}
                                     {(() => {
@@ -1939,6 +2143,57 @@ onClick={() => { navigate(`/project/${id}/board/${item.id}`); setIsEditing(false
                                         </div>
                                     )}
 
+                                    {/* Child Items (if this is an Epic) */}
+                                    {selectedItem.type === 'epic' && (() => {
+                                        const childItems = workItems.filter(wi => wi.epic_id === parseInt(selectedItem.id));
+                                        return childItems.length > 0 ? (
+                                            <div className="pt-4 border-t border-[rgba(255,255,255,0.05)]">
+                                                <div className="text-xs text-[#737373] mb-3 font-medium">Child Items ({childItems.length})</div>
+                                                <div className="space-y-2 max-h-96 overflow-y-auto">
+                                                    {childItems.map(child => {
+                                                        const childTypeInfo = TYPE_CONFIG[child.type] || TYPE_CONFIG.task;
+                                                        const childPriorityStyle = PRIORITY_COLORS[child.priority] || PRIORITY_COLORS.medium;
+                                                        return (
+                                                            <a
+                                                                key={child.id}
+                                                                href={`/project/${id}/board/${child.id}`}
+                                                                target="_blank"
+                                                                rel="noopener noreferrer"
+                                                                className="block p-3 rounded-lg border border-[rgba(255,255,255,0.05)] bg-[rgba(255,255,255,0.01)] hover:bg-[rgba(255,255,255,0.03)] hover:border-[rgba(244,246,255,0.15)] cursor-pointer transition-all"
+                                                            >
+                                                                <div className="flex items-start justify-between gap-2 mb-1.5">
+                                                                    <div className="flex items-center gap-2 flex-1">
+                                                                        <div
+                                                                            className="flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium flex-shrink-0"
+                                                                            style={{ backgroundColor: childTypeInfo.bg, color: childTypeInfo.color }}
+                                                                        >
+                                                                            <childTypeInfo.icon className="w-2.5 h-2.5" />
+                                                                            {childTypeInfo.label}
+                                                                        </div>
+                                                                        <span className="text-[9px] text-[#E0B954] font-mono">{child.key}</span>
+                                                                    </div>
+                                                                    <Badge
+                                                                        variant="outline"
+                                                                        className={`text-[9px] px-1 py-0 h-5 flex-shrink-0 ${childPriorityStyle.border} ${childPriorityStyle.text}`}
+                                                                    >
+                                                                        {child.priority}
+                                                                    </Badge>
+                                                                </div>
+                                                                <p className="text-xs text-[#a3a3a3] line-clamp-1 mb-1.5">{child.title}</p>
+                                                                <div className="flex items-center justify-between text-[9px] text-[#737373]">
+                                                                    <span>{child.remaining_hours}h left</span>
+                                                                    <span className="px-1.5 py-0.5 rounded text-[9px]" style={{ backgroundColor: `${(STATUS_CONFIG[child.status] || STATUS_CONFIG.todo).color}22`, color: (STATUS_CONFIG[child.status] || STATUS_CONFIG.todo).color }}>
+                                                                        {(STATUS_CONFIG[child.status] || STATUS_CONFIG.todo).label}
+                                                                    </span>
+                                                                </div>
+                                                            </a>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div>
+                                        ) : null;
+                                    })()}
+
                                     {/* Comments Section */}
                                     <div className="pt-4 border-t border-[rgba(255,255,255,0.05)]">
                                         <div className="text-xs text-[#737373] mb-3 font-medium">Activity & Comments</div>
@@ -2050,6 +2305,8 @@ onClick={() => { navigate(`/project/${id}/board/${item.id}`); setIsEditing(false
                                             )}
                                         </div>
                                     </div>
+
+
                                 </>
                             )}
                         </div>
@@ -2206,10 +2463,10 @@ onClick={() => { navigate(`/project/${id}/board/${item.id}`); setIsEditing(false
                                     </Popover>
                                 </div>
                                 <div>
-                                    <label className="text-xs font-medium text-[#737373] block mb-1.5">Est. Hours (optional)</label>
+                                    <label className="text-xs font-medium text-[#737373] block mb-1.5">Est. Hours</label>
                                     <Input 
                                         type="number" 
-                                        min="0"
+                                        min="1"
                                         value={createForm.estimated_hours} 
                                         onChange={e => setCreateForm(f => ({ ...f, estimated_hours: e.target.value }))}
                                         placeholder="Hours"
@@ -2221,7 +2478,8 @@ onClick={() => { navigate(`/project/${id}/board/${item.id}`); setIsEditing(false
                         <div className="flex justify-end gap-3 p-5 border-t border-[rgba(255,255,255,0.05)]">
                             <Button variant="ghost" onClick={() => setShowCreateForm(false)} className="text-[#737373] rounded-xl px-5">Cancel</Button>
                             <Button onClick={handleCreateItem} disabled={!createForm.title.trim()}
-                                className="bg-gradient-to-r from-[#E0B954] to-[#B8872A] text-white rounded-xl px-6 font-medium shadow-lg shadow-[#B8872A]/20 disabled:opacity-50">
+                                className="bg-gradient-to-r from-[#E0B954] to-[#B8872A] text-white rounded-xl px-6 font-medium shadow-lg shadow-[#B8872A]/20 disabled:opacity-50"
+                                title="Title is required">
                                 <Plus className="w-4 h-4 mr-2" /> Create Item
                             </Button>
                         </div>
@@ -2398,6 +2656,27 @@ onClick={() => { navigate(`/project/${id}/board/${item.id}`); setIsEditing(false
                                 )}
                                     {uploadMode === 'roadmap' && (
                                         <div className="space-y-6">
+                                            <div>
+                                                <label className="text-sm font-medium text-[#a3a3a3] block mb-3">Weeks per Sprint</label>
+                                                <div className="flex items-center gap-4">
+                                                    <input 
+                                                        type="range" 
+                                                        min="1" 
+                                                        max="6" 
+                                                        value={sprintWeeks}
+                                                        onChange={(e) => setSprintWeeks(parseInt(e.target.value))}
+                                                        className="flex-1 h-2 bg-[rgba(255,255,255,0.1)] rounded-lg appearance-none cursor-pointer"
+                                                        style={{
+                                                            background: `linear-gradient(to right, #E0B954 0%, #E0B954 ${(sprintWeeks / 6) * 100}%, rgba(255,255,255,0.1) ${(sprintWeeks / 6) * 100}%, rgba(255,255,255,0.1) 100%)`
+                                                        }}
+                                                    />
+                                                    <div className="w-16 h-10 bg-[rgba(224,185,84,0.15)] border border-[#E0B954]/30 rounded-lg flex items-center justify-center">
+                                                        <span className="text-sm font-semibold text-[#E0B954]">{sprintWeeks} weeks</span>
+                                                    </div>
+                                                </div>
+                                                <p className="text-xs text-[#737373] mt-2">This will help determine how sprints are created from your roadmap</p>
+                                            </div>
+
                                             <div>
                                                 <label className="text-sm font-medium text-[#a3a3a3] block mb-3">Upload Roadmap File</label>
                                                 <div 
@@ -2633,24 +2912,43 @@ onClick={() => { navigate(`/project/${id}/board/${item.id}`); setIsEditing(false
 
                                     {/* Roadmap Mode - Summary Stats */}
                                     {uploadMode === 'roadmap' && roadmapSummary && (
-                                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                                            <div className="bg-[rgba(102,184,255,0.1)] rounded-lg p-3">
-                                                <p className="text-xs text-[#737373] mb-1">Epics</p>
-                                                <p className="text-lg font-bold text-[#66b8ff]">{roadmapSummary.total_epics}</p>
+                                        <>
+                                            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                                                <div className="bg-[rgba(102,184,255,0.1)] rounded-lg p-3">
+                                                    <p className="text-xs text-[#737373] mb-1">Epics</p>
+                                                    <p className="text-lg font-bold text-[#66b8ff]">{roadmapSummary.total_epics}</p>
+                                                </div>
+                                                <div className="bg-[rgba(224,185,84,0.1)] rounded-lg p-3">
+                                                    <p className="text-xs text-[#737373] mb-1">Tasks</p>
+                                                    <p className="text-lg font-bold text-[#E0B954]">{roadmapSummary.total_tasks}</p>
+                                                </div>
+                                                <div className="bg-[rgba(16,185,129,0.1)] rounded-lg p-3">
+                                                    <p className="text-xs text-[#737373] mb-1">Team Size</p>
+                                                    <p className="text-lg font-bold text-[#10b981]">{roadmapSummary.total_assignees}</p>
+                                                </div>
+                                                <div className="bg-[rgba(245,158,11,0.1)] rounded-lg p-3">
+                                                    <p className="text-xs text-[#737373] mb-1">Duration</p>
+                                                    <p className="text-lg font-bold text-[#F59E0B]">{roadmapSummary.timeline?.duration_weeks || '?'}w</p>
+                                                </div>
                                             </div>
-                                            <div className="bg-[rgba(224,185,84,0.1)] rounded-lg p-3">
-                                                <p className="text-xs text-[#737373] mb-1">Tasks</p>
-                                                <p className="text-lg font-bold text-[#E0B954]">{roadmapSummary.total_tasks}</p>
-                                            </div>
-                                            <div className="bg-[rgba(16,185,129,0.1)] rounded-lg p-3">
-                                                <p className="text-xs text-[#737373] mb-1">Team Size</p>
-                                                <p className="text-lg font-bold text-[#10b981]">{roadmapSummary.total_assignees}</p>
-                                            </div>
-                                            <div className="bg-[rgba(245,158,11,0.1)] rounded-lg p-3">
-                                                <p className="text-xs text-[#737373] mb-1">Duration</p>
-                                                <p className="text-lg font-bold text-[#F59E0B]">{roadmapSummary.timeline?.duration_weeks || '?'}w</p>
-                                            </div>
-                                        </div>
+
+                                            {/* Sprint Info */}
+                                            {roadmapSummary.total_sprints !== undefined && (
+                                                <div className="bg-[rgba(224,185,84,0.1)] border border-[#E0B954]/20 rounded-xl p-4">
+                                                    <div className="flex items-center gap-3 mb-3">
+                                                        <div className="w-10 h-10 rounded-lg bg-[#E0B954]/20 flex items-center justify-center">
+                                                            <BarChart3 className="w-5 h-5 text-[#E0B954]" />
+                                                        </div>
+                                                        <div>
+                                                            <p className="text-sm font-semibold text-white">Sprint Plan</p>
+                                                            <p className="text-xs text-[#737373]">{sprintWeeks} weeks per sprint</p>
+                                                        </div>
+                                                    </div>
+                                                    <p className="text-2xl font-bold text-[#E0B954] mb-1">{roadmapSummary.total_sprints} Sprints</p>
+                                                    <p className="text-xs text-[#a3a3a3]">Will be created with {sprintWeeks}-week cycles</p>
+                                                </div>
+                                            )}
+                                        </>
                                     )}
 
                                     {/* Sprint Recommendation (PRD only) */}
@@ -2893,11 +3191,11 @@ onClick={() => { navigate(`/project/${id}/board/${item.id}`); setIsEditing(false
 
             {/* Create Sprint Modal */}
             {showCreateSprintModal && (
-                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setShowCreateSprintModal(false)}>
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => { setShowCreateSprintModal(false); setNewSprint({ name: '', goal: '', start_date: '', end_date: '' }); }}>
                     <div className="bg-[#0d0d0d] border border-[rgba(255,255,255,0.07)] rounded-2xl w-full max-w-md shadow-2xl" onClick={e => e.stopPropagation()}>
                         <div className="flex items-center justify-between p-5 border-b border-[rgba(255,255,255,0.05)]">
                             <h2 className="text-lg font-bold text-white">Create New Sprint</h2>
-                            <button onClick={() => setShowCreateSprintModal(false)} className="p-2 rounded-lg hover:bg-[rgba(244,246,255,0.05)] text-[#737373] hover:text-white">
+                            <button onClick={() => { setShowCreateSprintModal(false); setNewSprint({ name: '', goal: '', start_date: '', end_date: '' }); }} className="p-2 rounded-lg hover:bg-[rgba(244,246,255,0.05)] text-[#737373] hover:text-white">
                                 <X className="w-5 h-5" />
                             </button>
                         </div>
@@ -2922,31 +3220,135 @@ onClick={() => { navigate(`/project/${id}/board/${item.id}`); setIsEditing(false
                             </div>
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
-                                    <label className="text-xs font-medium text-[#737373] block mb-1.5">Start Date</label>
-                                    <Input
-                                        type="date"
-                                        value={newSprint.start_date}
-                                        onChange={(e) => setNewSprint(f => ({ ...f, start_date: e.target.value }))}
-                                        className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl h-10"
-                                    />
+                                    <label className="text-xs font-medium text-[#737373] block mb-1.5">Start Date *</label>
+                                    <Popover open={showCalendarSprintStart} onOpenChange={setShowCalendarSprintStart}>
+                                        <PopoverTrigger asChild>
+                                            <Button
+                                                variant="outline"
+                                                className={`w-full bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl h-10 justify-start font-normal ${
+                                                    !newSprint.start_date ? 'text-[#737373]' : ''
+                                                }`}
+                                            >
+                                                <Calendar className="mr-2 h-4 w-4" />
+                                                {newSprint.start_date ? parseLocalDate(newSprint.start_date)?.toLocaleDateString() : 'Pick a date'}
+                                            </Button>
+                                        </PopoverTrigger>
+                                        <PopoverContent side="bottom" align="start" className="w-auto p-3 bg-[#0d0d0d] border border-[rgba(224,185,84,0.2)]">
+                                            <CalendarIcon
+                                                mode="single"
+                                                selected={parseLocalDate(newSprint.start_date)}
+                                                onSelect={(date) => {
+                                                    if (date) {
+                                                        const year = date.getFullYear();
+                                                        const month = String(date.getMonth() + 1).padStart(2, '0');
+                                                        const day = String(date.getDate()).padStart(2, '0');
+                                                        const localDate = `${year}-${month}-${day}`;
+                                                        setNewSprint(f => ({ ...f, start_date: localDate }));
+                                                        setShowCalendarSprintStart(false);
+                                                    }
+                                                }}
+                                                classNames={{
+                                                    months: "flex flex-col",
+                                                    month: "space-y-4",
+                                                    caption: "flex justify-between items-center px-0 pb-4 relative h-7 mb-2",
+                                                    caption_label: "text-sm font-medium text-white",
+                                                    nav: "space-x-1 flex items-center",
+                                                    nav_button: "text-white hover:bg-[rgba(224,185,84,0.1)] rounded p-1",
+                                                    nav_button_previous: "absolute left-0",
+                                                    nav_button_next: "absolute right-0",
+                                                    table: "w-full border-collapse space-y-1",
+                                                    head_row: "flex",
+                                                    head_cell: "text-xs font-medium text-[#737373] w-8 h-8 flex items-center justify-center rounded",
+                                                    row: "flex w-full gap-1",
+                                                    cell: "relative p-0 text-center text-sm focus-within:relative focus-within:z-20 [&:has([aria-selected])]:bg-transparent",
+                                                    day: "h-8 w-8 p-0 font-normal",
+                                                    day_button: "text-white hover:bg-[rgba(224,185,84,0.1)] rounded-lg h-8 w-8 transition-colors",
+                                                    day_selected: "bg-[#E0B954] text-[#0d0d0d] hover:bg-[#E0B954] font-semibold",
+                                                    day_today: "bg-[rgba(224,185,84,0.2)] text-[#E0B954] font-semibold",
+                                                    day_outside: "text-[#444]",
+                                                    day_disabled: "text-[#333] opacity-50 cursor-not-allowed",
+                                                    day_range_middle: "aria-selected:bg-[rgba(224,185,84,0.1)] aria-selected:text-white",
+                                                    day_hidden: "invisible",
+                                                }}
+                                            />
+                                        </PopoverContent>
+                                    </Popover>
                                 </div>
                                 <div>
-                                    <label className="text-xs font-medium text-[#737373] block mb-1.5">End Date</label>
-                                    <Input
-                                        type="date"
-                                        value={newSprint.end_date}
-                                        onChange={(e) => setNewSprint(f => ({ ...f, end_date: e.target.value }))}
-                                        className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl h-10"
-                                    />
+                                    <label className="text-xs font-medium text-[#737373] block mb-1.5">End Date *</label>
+                                    <Popover open={showCalendarSprintEnd && !!newSprint.start_date} onOpenChange={(open) => newSprint.start_date && setShowCalendarSprintEnd(open)}>
+                                        <PopoverTrigger asChild>
+                                            <Button
+                                                variant="outline"
+                                                disabled={!newSprint.start_date}
+                                                className={`w-full bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl h-10 justify-start font-normal ${
+                                                    !newSprint.end_date ? 'text-[#737373]' : ''
+                                                } ${!newSprint.start_date ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                                title={!newSprint.start_date ? 'Set start date first' : ''}
+                                            >
+                                                <Calendar className="mr-2 h-4 w-4" />
+                                                {newSprint.end_date ? parseLocalDate(newSprint.end_date)?.toLocaleDateString() : 'Pick a date'}
+                                            </Button>
+                                        </PopoverTrigger>
+                                        <PopoverContent side="bottom" align="start" className="w-auto p-3 bg-[#0d0d0d] border border-[rgba(224,185,84,0.2)]">
+                                            <div className="mb-3 pb-3 border-b border-[rgba(255,255,255,0.05)]">
+                                                <p className="text-[10px] text-[#737373] font-medium uppercase mb-1.5">Sprint Duration</p>
+                                                <div className="space-y-1">
+                                                    <p className="text-xs text-[#737373]">Start: <span className="text-[#E0B954] font-medium">{parseLocalDate(newSprint.start_date)?.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</span></p>
+                                                    <p className="text-xs text-[#737373]">End: <span className="text-white font-medium">Pick a date</span></p>
+                                                </div>
+                                            </div>
+                                            <CalendarIcon
+                                                mode="single"
+                                                month={parseLocalDate(newSprint.start_date) || new Date()}
+                                                selected={parseLocalDate(newSprint.end_date)}
+                                                onSelect={(date) => {
+                                                    if (date) {
+                                                        const year = date.getFullYear();
+                                                        const month = String(date.getMonth() + 1).padStart(2, '0');
+                                                        const day = String(date.getDate()).padStart(2, '0');
+                                                        const localDate = `${year}-${month}-${day}`;
+                                                        setNewSprint(f => ({ ...f, end_date: localDate }));
+                                                        setShowCalendarSprintEnd(false);
+                                                    }
+                                                }}
+                                                disabled={(date) => newSprint.start_date ? date < parseLocalDate(newSprint.start_date)! : false}
+                                                classNames={{
+                                                    months: "flex flex-col",
+                                                    month: "space-y-4",
+                                                    caption: "flex justify-between items-center px-0 pb-4 relative h-7 mb-2",
+                                                    caption_label: "text-sm font-medium text-white",
+                                                    nav: "space-x-1 flex items-center",
+                                                    nav_button: "text-white hover:bg-[rgba(224,185,84,0.1)] rounded p-1",
+                                                    nav_button_previous: "absolute left-0",
+                                                    nav_button_next: "absolute right-0",
+                                                    table: "w-full border-collapse space-y-1",
+                                                    head_row: "flex",
+                                                    head_cell: "text-xs font-medium text-[#737373] w-8 h-8 flex items-center justify-center rounded",
+                                                    row: "flex w-full gap-1",
+                                                    cell: "relative p-0 text-center text-sm focus-within:relative focus-within:z-20 [&:has([aria-selected])]:bg-transparent",
+                                                    day: "h-8 w-8 p-0 font-normal",
+                                                    day_button: "text-white hover:bg-[rgba(224,185,84,0.1)] rounded-lg h-8 w-8 transition-colors",
+                                                    day_selected: "bg-[#E0B954] text-[#0d0d0d] hover:bg-[#E0B954] font-semibold",
+                                                    day_today: "bg-[rgba(224,185,84,0.2)] text-[#E0B954] font-semibold",
+                                                    day_outside: "text-[#444]",
+                                                    day_disabled: "text-[#333] opacity-50 cursor-not-allowed",
+                                                    day_range_middle: "aria-selected:bg-[rgba(224,185,84,0.1)] aria-selected:text-white",
+                                                    day_hidden: "invisible",
+                                                }}
+                                            />
+                                        </PopoverContent>
+                                    </Popover>
                                 </div>
                             </div>
                         </div>
                         <div className="flex justify-end gap-3 p-5 border-t border-[rgba(255,255,255,0.05)]">
-                            <Button variant="ghost" onClick={() => setShowCreateSprintModal(false)} className="text-[#737373] rounded-xl px-5">Cancel</Button>
+                            <Button variant="ghost" onClick={() => { setShowCreateSprintModal(false); setNewSprint({ name: '', goal: '', start_date: '', end_date: '' }); }} className="text-[#737373] rounded-xl px-5">Cancel</Button>
                             <Button
                                 onClick={handleCreateSprint}
-                                disabled={!newSprint.name.trim()}
+                                disabled={!newSprint.name.trim() || !newSprint.start_date || !newSprint.end_date}
                                 className="bg-gradient-to-r from-[#E0B954] to-[#B8872A] text-white rounded-xl px-6 font-medium shadow-lg shadow-[#B8872A]/20 disabled:opacity-50"
+                                title={!newSprint.start_date || !newSprint.end_date ? 'Start and End dates are required' : ''}
                             >
                                 <Plus className="w-4 h-4 mr-2" />
                                 Create Sprint

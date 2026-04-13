@@ -1,10 +1,26 @@
 import React, { useState, useEffect } from 'react';
-import { Clock, Users, Calendar, TrendingUp, AlertTriangle, Filter } from 'lucide-react';
+import { Clock, Users, Calendar, TrendingUp, AlertTriangle, Filter, BarChart3, ChevronUp, ChevronDown } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { API_BASE_URL } from '@/config/api';
 import HoursDebugPanel from './HoursDebugPanel';
+
+interface Sprint {
+    id: number;
+    name: string;
+    status: string;
+    start_date?: string;
+    end_date?: string;
+    goal?: string;
+    completion_pct: number;
+    capacity_hours: number;
+    velocity: number;
+    done_count: number;
+    total_items: number;
+    completed_points: number;
+    total_points: number;
+}
 
 interface PMViewProps {
     projectId: string;
@@ -16,6 +32,7 @@ interface PMViewProps {
         tab_name: string;
         subsection: string;
     }>;
+    sprints?: Sprint[];
 }
 
 interface HoursAnalytics {
@@ -90,12 +107,13 @@ interface WeeklyHours {
     items_completed: number;
 }
 
-export default function PMView({ projectId, token, isAdmin = false, userRestrictions = [] }: PMViewProps) {
+export default function PMView({ projectId, token, isAdmin = false, userRestrictions = [], sprints = [] }: PMViewProps) {
     const [analytics, setAnalytics] = useState<HoursAnalytics | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [weekFilter, setWeekFilter] = useState<'all' | 'with-activity'>('all');
     const [expandedDeveloper, setExpandedDeveloper] = useState<number | null>(null);
     const [showDebugPanel, setShowDebugPanel] = useState(false);
+    const [progressExpanded, setProgressExpanded] = useState(false);
 
     // Helper function to check if a subsection is restricted
     const isSubsectionRestricted = (subsectionName: string): boolean => {
@@ -160,7 +178,7 @@ export default function PMView({ projectId, token, isAdmin = false, userRestrict
                                 <Clock className="w-5 h-5 text-[#E0B954]" />
                             </div>
                             <div>
-                                <p className="text-xs text-[#737373]">Allocated Hours</p>
+                                <p className="text-xs text-[#737373]">Total Project Hours</p>
                                 <p className="text-xl font-bold text-white">{analytics.total_allocated_hours}h</p>
                             </div>
                         </div>
@@ -211,6 +229,178 @@ export default function PMView({ projectId, token, isAdmin = false, userRestrict
             </div>
             )}
 
+            {/* Unified Sprint Overview - Hours Breakdown & Progression */}
+            <Card className="bg-[rgba(255,255,255,0.02)] border border-[rgba(224,185,84,0.12)] rounded-2xl p-5 shadow-[0_0_30px_rgba(224,185,84,0.05)]">
+                <CardHeader className="flex flex-row items-center justify-between pb-4">
+                    <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#E0B954] to-[#C79E3B] flex items-center justify-center shadow-lg shadow-[#E0B954]/25">
+                            <BarChart3 className="w-5 h-5 text-white" />
+                        </div>
+                        <div>
+                            <CardTitle className="text-white">Sprint Overview</CardTitle>
+                            <p className="text-xs text-[#737373]">Progress, hours breakdown, and delivery status</p>
+                        </div>
+                    </div>
+                    {sprints.length > 1 && (
+                            <button
+                                onClick={() => setProgressExpanded(p => !p)}
+                                className="flex items-center gap-1.5 text-xs text-[#E0B954] hover:text-[#F3D57E] px-3 py-1.5 rounded-lg bg-[#E0B954]/10 hover:bg-[#E0B954]/15 transition-colors font-medium flex-shrink-0"
+                            >
+                                {progressExpanded
+                                    ? <><ChevronUp className="w-3.5 h-3.5" /> Show Active Only</>
+                                    : <><ChevronDown className="w-3.5 h-3.5" /> Show all {sprints.length}</>
+                                }
+                            </button>
+                        )}
+                    </CardHeader>
+                    <CardContent>
+                        {sprints.length === 0 ? (
+                            <div className="text-center py-8 text-[#737373]">
+                                <p>No sprints created yet. Create a sprint to start tracking progress and hours.</p>
+                            </div>
+                        ) : (
+                            <div className="space-y-5">
+                                {(progressExpanded ? sprints : sprints.filter(s => s.status === 'active')).map((sprint) => {
+                                // Get the corresponding sprint data from analytics
+                                const sprintAnalytics = analytics.sprint_hours.find(sh => sh.sprint_id === sprint.id);
+                                
+                                // Calculate expected progress based on time elapsed
+                                const now = new Date();
+                                let expectedPct = 0;
+                                if (sprint.start_date && sprint.end_date) {
+                                    const start = new Date(sprint.start_date);
+                                    const end = new Date(sprint.end_date);
+                                    const totalMs = end.getTime() - start.getTime();
+                                    const elapsedMs = Math.min(now.getTime() - start.getTime(), totalMs);
+                                    expectedPct = totalMs > 0 ? Math.max(0, Math.round((elapsedMs / totalMs) * 100)) : 0;
+                                    if (sprint.status === 'completed') expectedPct = 100;
+                                    if (now < start) expectedPct = 0;
+                                }
+                                const actual = sprint.completion_pct;
+                                const delta = actual - expectedPct;
+                                const isAhead = delta >= 0;
+                                const isFar = Math.abs(delta) > 15;
+                                
+                                // Use analytics data for hours, fallback to sprint data
+                                const allocatedHours = sprintAnalytics?.allocated_hours ?? sprint.capacity_hours ?? 0;
+                                const loggedHours = sprintAnalytics?.logged_hours ?? sprint.velocity ?? 0;
+                                const remainingHours = sprintAnalytics?.remaining_hours ?? Math.max(0, allocatedHours - loggedHours);
+                                
+                                return (
+                                    <div key={sprint.id} className={`border rounded-xl p-5 transition-colors ${
+                                        sprint.status === 'completed' ? 'border-[#E0B954]/20 bg-[rgba(224,185,84,0.03)]' :
+                                        isFar && !isAhead ? 'border-[#EF4444]/20 bg-[rgba(239,68,68,0.03)]' :
+                                        'border-[rgba(255,255,255,0.05)] bg-[rgba(255,255,255,0.02)]'
+                                    }`}>
+                                        {/* Header: Sprint Name, Status, Delta */}
+                                        <div className="flex items-start justify-between mb-4">
+                                            <div className="flex-1">
+                                                <div className="flex items-center gap-2 mb-2">
+                                                    <span className={`w-2.5 h-2.5 rounded-full ${
+                                                        sprint.status === 'active' ? 'bg-[#E0B954] animate-pulse' :
+                                                        sprint.status === 'completed' ? 'bg-[#E0B954]' : 'bg-[#737373]'
+                                                    }`} />
+                                                    <p className="text-base font-bold text-white">{sprint.name}</p>
+                                                    <Badge className={`text-[10px] border-0 ml-1 ${
+                                                        sprint.status === 'active' ? 'bg-[#E0B954]/20 text-[#E0B954]' :
+                                                        sprint.status === 'completed' ? 'bg-[#E0B954]/20 text-[#E0B954]' :
+                                                        'bg-[#737373]/20 text-[#737373]'
+                                                    }`}>{sprint.status}</Badge>
+                                                </div>
+                                                {/* Date Range */}
+                                                {sprint.start_date && sprint.end_date && (
+                                                    <p className="text-xs text-[#737373]">
+                                                        📅 {new Date(sprint.start_date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} – {new Date(sprint.end_date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+                                                    </p>
+                                                )}
+                                            </div>
+                                            <span className={`text-xs font-bold px-3 py-1 rounded-lg whitespace-nowrap ml-4 flex-shrink-0 ${
+                                                isAhead ? 'bg-[#E0B954]/15 text-[#E0B954]' :
+                                                isFar ? 'bg-[#EF4444]/15 text-[#EF4444]' :
+                                                'bg-[#F59E0B]/15 text-[#F59E0B]'
+                                            }`}>
+                                                {isAhead ? '↗' : '↙'} {Math.abs(delta)}%
+                                            </span>
+                                        </div>
+
+                                        {sprint.goal && (
+                                            <p className="text-xs text-[#a3a3a3] mb-4 italic line-clamp-2">\"{ sprint.goal }\"</p>
+                                        )}
+
+                                        {/* Sprint Progress Section */}
+                                        <div className="mb-5 pb-5 border-b border-[rgba(255,255,255,0.05)]">
+                                            <h4 className="text-xs font-semibold text-[#737373] uppercase tracking-wider mb-3">Progress Tracking</h4>
+                                            <div className="space-y-3">
+                                                {/* Actual Progress */}
+                                                <div>
+                                                    <div className="flex items-center justify-between mb-1.5">
+                                                        <span className="text-sm font-medium text-white">Completion</span>
+                                                        <span className="text-sm font-bold text-[#E0B954]">{actual}%</span>
+                                                    </div>
+                                                    <div className="h-2.5 bg-[rgba(255,255,255,0.05)] rounded-full overflow-hidden">
+                                                        <div
+                                                            className="h-full bg-gradient-to-r from-[#E0B954] to-[#F3D57E] rounded-full transition-all duration-500"
+                                                            style={{ width: `${actual}%` }}
+                                                        />
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* Hours Breakdown Section */}
+                                        <div className="mb-5 pb-5 border-b border-[rgba(255,255,255,0.05)]">
+                                            <h4 className="text-xs font-semibold text-[#737373] uppercase tracking-wider mb-3">Hours Breakdown</h4>
+                                            <div className="grid grid-cols-3 gap-3">
+                                                {/* Total Allocated Hours */}
+                                                <div className="bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.04)] rounded-lg p-3">
+                                                    <div className="text-[10px] text-[#737373] font-medium mb-1.5">Total Allocated</div>
+                                                    <div className="text-lg font-bold text-white">
+                                                        {allocatedHours}h
+                                                    </div>
+                                                    <p className="text-[9px] text-[#737373] mt-1">Based on {sprint.total_items} tickets</p>
+                                                </div>
+                                                {/* Logged Hours */}
+                                                <div className="bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.04)] rounded-lg p-3 border-l-2 border-l-[#E0B954]">
+                                                    <div className="text-[10px] text-[#737373] font-medium mb-1.5">Logged Hours</div>
+                                                    <div className="text-lg font-bold text-[#E0B954]">
+                                                        {loggedHours}h
+                                                    </div>
+                                                    <p className="text-[9px] text-[#737373] mt-1">Hours tracked</p>
+                                                </div>
+                                                {/* Remaining Hours */}
+                                                <div className="bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.04)] rounded-lg p-3">
+                                                    <div className="text-[10px] text-[#737373] font-medium mb-1.5">Remaining Hours</div>
+                                                    <div className="text-lg font-bold text-[#F59E0B]">
+                                                        {remainingHours}h
+                                                    </div>
+                                                    <p className="text-[9px] text-[#737373] mt-1">Not yet logged</p>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* Summary Stats */}
+                                        <div className="grid grid-cols-3 gap-3 text-center">
+                                            <div className="py-2">
+                                                <div className="text-sm font-bold text-white">{sprint.done_count}/{sprint.total_items}</div>
+                                                <div className="text-[10px] text-[#737373]">Items Completed</div>
+                                            </div>
+                                            <div className="py-2 border-l border-r border-[rgba(255,255,255,0.05)]">
+                                                <div className="text-sm font-bold text-[#E0B954]">{sprint.completed_points}/{sprint.total_points}</div>
+                                                <div className="text-[10px] text-[#737373]">Story Points</div>
+                                            </div>
+                                            <div className="py-2">
+                                                <div className="text-sm font-bold text-white">{actual}%</div>
+                                                <div className="text-[10px] text-[#737373]">Overall Progress</div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                            </div>
+                        )}
+                    </CardContent>
+                </Card>
+
             {/* Weekly Hours Table */}
             {!isSubsectionRestricted('weekly hours breakdown') && (
             <Card className="bg-[rgba(255,255,255,0.02)] border-[rgba(255,255,255,0.05)]">
@@ -238,10 +428,9 @@ export default function PMView({ projectId, token, isAdmin = false, userRestrict
                             <thead>
                                 <tr className="border-b border-[rgba(255,255,255,0.05)]">
                                     <th className="text-left py-3 px-4 text-xs font-medium text-[#737373] uppercase">Week</th>
-                                    <th className="text-left py-3 px-4 text-xs font-medium text-[#737373] uppercase">Date Range</th>
                                     <th className="text-right py-3 px-4 text-xs font-medium text-[#737373] uppercase">Allocated</th>
                                     <th className="text-right py-3 px-4 text-xs font-medium text-[#737373] uppercase">Logged</th>
-                                    <th className="text-right py-3 px-4 text-xs font-medium text-[#737373] uppercase">Completed</th>
+                                    <th className="text-right py-3 px-4 text-xs font-medium text-[#737373] uppercase">Completed Items</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -250,8 +439,13 @@ export default function PMView({ projectId, token, isAdmin = false, userRestrict
                                     .slice(0, 10)
                                     .map((week, idx) => (
                                     <tr key={idx} className={`border-b border-[rgba(255,255,255,0.03)] hover:bg-[rgba(255,255,255,0.02)] ${week.logged_hours > 0 ? 'bg-[#E0B954]/5' : ''}`}>
-                                        <td className="py-3 px-4 text-sm text-white font-medium">{week.week_label}</td>
-                                        <td className="py-3 px-4 text-sm text-[#a3a3a3]">{week.week} - {week.week_end}</td>
+                                        <td className="py-3 px-4 text-sm text-white font-medium">
+                                            {(() => {
+                                                const [year, month, day] = week.week.split('-');
+                                                const date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+                                                return date.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+                                            })()}
+                                        </td>
                                         <td className="py-3 px-4 text-sm text-right text-white">{week.allocated_hours}h</td>
                                         <td className="py-3 px-4 text-sm text-right">
                                             <span className={week.logged_hours > 0 ? 'text-[#E0B954] font-semibold' : 'text-[#737373]'}>
@@ -442,70 +636,6 @@ export default function PMView({ projectId, token, isAdmin = false, userRestrict
                                             </React.Fragment>
                                         );
                                     })
-                                )}
-                            </tbody>
-                        </table>
-                    </div>
-                </CardContent>
-            </Card>
-            )}
-
-            {/* Sprint Hours Table */}
-            {!isSubsectionRestricted('sprint hours breakdown') && (
-            <Card className="bg-[rgba(255,255,255,0.02)] border-[rgba(255,255,255,0.05)]">
-                <CardHeader>
-                    <CardTitle className="text-white flex items-center gap-2">
-                        <Clock className="w-5 h-5" />
-                        Sprint Hours Breakdown
-                    </CardTitle>
-                </CardHeader>
-                <CardContent>
-                    <div className="overflow-x-auto">
-                        <table className="w-full">
-                            <thead>
-                                <tr className="border-b border-[rgba(255,255,255,0.05)]">
-                                    <th className="text-left py-3 px-4 text-xs font-medium text-[#737373] uppercase">Sprint</th>
-                                    <th className="text-left py-3 px-4 text-xs font-medium text-[#737373] uppercase">Status</th>
-                                    <th className="text-right py-3 px-4 text-xs font-medium text-[#737373] uppercase">Allocated</th>
-                                    <th className="text-right py-3 px-4 text-xs font-medium text-[#737373] uppercase">Logged</th>
-                                    <th className="text-right py-3 px-4 text-xs font-medium text-[#737373] uppercase">Remaining</th>
-                                    <th className="text-right py-3 px-4 text-xs font-medium text-[#737373] uppercase">Items</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {analytics.sprint_hours.length === 0 ? (
-                                    <tr>
-                                        <td colSpan={6} className="py-8 text-center text-[#737373]">
-                                            No sprints created for this project
-                                        </td>
-                                    </tr>
-                                ) : (
-                                    analytics.sprint_hours.map((sprint) => (
-                                        <tr key={sprint.sprint_id} className="border-b border-[rgba(255,255,255,0.03)] hover:bg-[rgba(255,255,255,0.02)]">
-                                            <td className="py-3 px-4 text-sm text-white">{sprint.sprint_name}</td>
-                                            <td className="py-3 px-4">
-                                                <Badge className={
-                                                    sprint.status === 'completed' ? 'bg-[#E0B954]/20 text-[#E0B954] border-0' :
-                                                    sprint.status === 'active' ? 'bg-[#E0B954]/20 text-[#E0B954] border-0' :
-                                                    'bg-[#737373]/20 text-[#a3a3a3] border-0'
-                                                }>
-                                                    {sprint.status}
-                                                </Badge>
-                                            </td>
-                                            <td className="py-3 px-4 text-sm text-right text-white">{sprint.allocated_hours}h</td>
-                                            <td className="py-3 px-4 text-sm text-right">
-                                                <span className={sprint.logged_hours > 0 ? 'text-[#E0B954]' : 'text-[#737373]'}>
-                                                    {sprint.logged_hours}h
-                                                </span>
-                                            </td>
-                                            <td className="py-3 px-4 text-sm text-right">
-                                                <span className={sprint.remaining_hours > 0 ? 'text-[#F59E0B]' : 'text-[#737373]'}>
-                                                    {sprint.remaining_hours}h
-                                                </span>
-                                            </td>
-                                            <td className="py-3 px-4 text-sm text-right text-white">{sprint.total_items}</td>
-                                        </tr>
-                                    ))
                                 )}
                             </tbody>
                         </table>

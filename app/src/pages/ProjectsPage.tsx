@@ -90,6 +90,7 @@ interface Project {
     key_prefix: string;
     status: string;
     github_repo_url?: string;
+    github_repo_urls?: string[];
     github_repo_name?: string;
     created_at: string;
     work_item_stats: ProjectStats;
@@ -535,6 +536,22 @@ const ProjectsPage = () => {
         }
     };
 
+    // Quick status change
+    const handleStatusChange = async (task: MyTask, newStatus: string) => {
+        const updated = { ...task, status: newStatus } as MyTask;
+        setMyTasks(prev => prev.map(t => t.id === task.id ? updated : t));
+        if (selectedTask?.id === task.id) setSelectedTask(updated);
+        try {
+            await fetch(`${API_BASE_URL}/api/workitems/${task.id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({ status: newStatus }),
+            });
+        } catch {
+            toast.error('Failed to update status');
+        }
+    };
+
     // Render text with newlines preserved
     const renderTextWithNewlines = (text: string) => {
         if (!text) return null;
@@ -669,6 +686,13 @@ const ProjectsPage = () => {
         blocked:     '#EF4444',
         backlog:     '#555',
     };
+
+    const STATUS_CONFIG = {
+        todo: { label: 'To Do', color: '#60A5FA', icon: Plus },
+        in_progress: { label: 'In Progress', color: '#E0B954', icon: Clock },
+        in_review: { label: 'In Review', color: '#A78BFA', icon: AlertCircle },
+        done: { label: 'Done', color: '#34D399', icon: CheckCircle2 },
+    } as const;
 
     const filteredMyTasks = myTasks.filter(t => {
         if (myTaskTab === 'upcoming') return t.status !== 'done' && !t.is_overdue;
@@ -1688,6 +1712,27 @@ const ProjectsPage = () => {
                                 <p className="text-[10px] text-[#737373] mt-2">
                                     Current: {selectedTask.logged_hours || 0}h logged · {selectedTask.remaining_hours || 0}h remaining
                                 </p>
+                            </div>
+
+                            {/* Status Buttons - Move to */}
+                            <div className="pt-4 border-t border-[rgba(255,255,255,0.05)]">
+                                <div className="text-xs text-[#737373] mb-3 font-medium">Move to</div>
+                                <div className="grid grid-cols-4 gap-2">
+                                    {(Object.keys(STATUS_CONFIG) as Array<keyof typeof STATUS_CONFIG>).map(status => (
+                                        <Button
+                                            key={status}
+                                            size="sm"
+                                            onClick={() => handleStatusChange(selectedTask, status)}
+                                            className={`rounded-lg text-xs h-9 transition-all ${selectedTask.status === status
+                                                ? 'text-white shadow-lg'
+                                                : 'bg-transparent border border-[rgba(255,255,255,0.07)] text-[#737373] hover:text-white hover:border-[rgba(244,246,255,0.15)]'
+                                            }`}
+                                            style={selectedTask.status === status ? { backgroundColor: STATUS_CONFIG[status].color, boxShadow: `0 4px 12px ${STATUS_CONFIG[status].color}33` } : {}}
+                                        >
+                                            {STATUS_CONFIG[status].label}
+                                        </Button>
+                                    ))}
+                                </div>
                             </div>
                                 </>
                             )}

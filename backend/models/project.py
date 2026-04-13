@@ -1,5 +1,5 @@
 """Project model - Core entity for PM lifecycle"""
-from sqlalchemy import Column, Integer, String, Text, DateTime, Enum, Index
+from sqlalchemy import Column, Integer, String, Text, DateTime, Enum, Index, JSON
 from sqlalchemy.orm import relationship
 from datetime import datetime
 import enum
@@ -34,12 +34,14 @@ class Project(Base):
     risk_assessment = Column(Text)
     
     # GitHub integration
-    github_repo_url = Column(String(500))  # e.g., https://github.com/org/repo
+    github_repo_url = Column(String(500))  # e.g., https://github.com/org/repo (primary/legacy)
+    github_repo_urls = Column(JSON, default=lambda: [])  # Multiple GitHub repo URLs
     github_repo_name = Column(String(100))  # e.g., "org/repo"
     github_token = Column(String(100))  # Project-specific GitHub token for invitations
     
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow)
+    end_date = Column(DateTime, nullable=True)  # Project end date
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
     # Relationships
