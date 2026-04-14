@@ -149,13 +149,26 @@ async def list_employees(db: Session = Depends(get_db)):
 
 @router.get("/developers/capacity")
 async def get_developers_capacity(db: Session = Depends(get_db)):
-    """Get weekly capacity for all developers across all projects"""
-    from datetime import timedelta, datetime as dt
+    """Get weekly capacity for all developers across all projects.
     
-    # Calculate this week's boundaries (Sunday to Saturday)
+    Rules:
+    1. In-progress tickets:
+       - Moved to in_progress BEFORE this week → remaining_hours
+       - Moved to in_progress THIS week → estimated_hours (allocated)
+    2. Done tickets (completed this week) → developer's own logged hours
+    3. Transferred tickets:
+       - Transferred to me this week → my logged hours + remaining hours
+       - Overrides rule 1 when a transfer happened this week
+    """
+    from datetime import timedelta, datetime as dt
+    from models.time_entry import TimeEntry
+    from models.activity_log import ActivityLog
+    from sqlalchemy import func
+    
+    # Calculate this week's boundaries (Monday to Sunday)
     today = dt.utcnow()
-    days_since_sunday = (today.weekday() + 1) % 7
-    week_start = today - timedelta(days=days_since_sunday)
+    days_since_monday = today.weekday()  # Monday=0
+    week_start = today - timedelta(days=days_since_monday)
     week_start = week_start.replace(hour=0, minute=0, second=0, microsecond=0)
     week_end = week_start + timedelta(days=6, hours=23, minutes=59, seconds=59)
     
@@ -163,32 +176,76 @@ async def get_developers_capacity(db: Session = Depends(get_db)):
     result = []
     
     for dev in developers:
-        # Get all work items assigned to this developer across all projects
+        # Get all work items assigned to this developer
         dev_items = db.query(WorkItem).filter(WorkItem.assignee_id == dev.id).all()
         
-        # Calculate weekly capacity
-        # in_progress: use remaining work (estimated - logged) — matches what the UI shows as "Xh left"
-        in_progress_hours = sum(
-            max(0, (item.estimated_hours or 0) - (item.logged_hours or 0))
-            for item in dev_items if item.status == "in_progress"
-        )
+        # Pre-fetch: tickets transferred TO this dev this week (from activity_logs)
+        transferred_to_me_this_week = set()
+        transfer_logs = db.query(ActivityLog).filter(
+            ActivityLog.action == "reassigned",
+            ActivityLog.entity_type == "work_item",
+            ActivityLog.created_at >= week_start,
+            ActivityLog.created_at <= week_end,
+            ActivityLog.title.contains(f"to {dev.name}")
+        ).all()
+        for log in transfer_logs:
+            transferred_to_me_this_week.add(log.entity_id)
         
-        # in_review: developer is waiting, not actively working — count minimal remaining
+        # Pre-fetch: this developer's time entries this week (grouped by work_item)
+        my_hours_this_week = {}
+        time_entries = db.query(
+            TimeEntry.work_item_id,
+            func.sum(TimeEntry.hours).label("total_hours")
+        ).filter(
+            TimeEntry.developer_id == dev.id,
+            TimeEntry.logged_at >= week_start,
+            TimeEntry.logged_at <= week_end
+        ).group_by(TimeEntry.work_item_id).all()
+        for te in time_entries:
+            my_hours_this_week[te.work_item_id] = te.total_hours or 0
+        
+        # --- Rule 1 + 3: In-progress tickets ---
+        in_progress_hours = 0
+        for item in dev_items:
+            if item.status != "in_progress":
+                continue
+            
+            remaining = max(0, (item.estimated_hours or 0) - (item.logged_hours or 0))
+            
+            # Rule 3: Was this ticket transferred to me this week?
+            if item.id in transferred_to_me_this_week:
+                my_hours = my_hours_this_week.get(item.id, 0)
+                in_progress_hours += my_hours + remaining
+            # Rule 1: Started this week → allocated (estimated) hours
+            elif item.started_at and item.started_at >= week_start:
+                in_progress_hours += item.estimated_hours or 0
+            # Rule 1: Started before this week → remaining hours
+            else:
+                in_progress_hours += remaining
+        
+        # --- Rule 2: Done tickets completed this week ---
+        done_hours = 0
+        for item in dev_items:
+            if item.status != "done":
+                continue
+            if not item.completed_at or item.completed_at < week_start or item.completed_at > week_end:
+                continue
+            # Use this developer's own logged hours on this ticket
+            my_hours = my_hours_this_week.get(item.id, 0)
+            if my_hours > 0:
+                done_hours += my_hours
+            else:
+                # Fallback: use work item's total logged_hours if no time entries
+                done_hours += item.logged_hours or 0
+        
+        # --- In-review: count remaining work ---
         in_review_hours = sum(
             max(0, (item.estimated_hours or 0) - (item.logged_hours or 0))
             for item in dev_items if item.status == "in_review"
         )
         
-        # done this week: count actual logged hours for tickets completed this week
-        done_hours = sum(
-            item.logged_hours or 0
-            for item in dev_items if item.status == "done" and item.completed_at
-            and week_start <= item.completed_at <= week_end
-        )
-        
-        # Capacity = only active work (in_progress remaining hours)
-        # in_review and done are tracked separately but don't count toward weekly load
-        capacity_used = in_progress_hours
+        # Capacity = in_progress + done this week
+        capacity_used = in_progress_hours + done_hours
         remaining_capacity = max(0, 40 - capacity_used)
         
         result.append({
