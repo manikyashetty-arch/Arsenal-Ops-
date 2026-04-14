@@ -361,7 +361,9 @@ async def create_work_item(
         tags=item.tags,
         acceptance_criteria=item.acceptance_criteria,
         start_date=datetime.fromisoformat(item.start_date) if item.start_date else None,
-        due_date=datetime.fromisoformat(item.due_date) if item.due_date else None
+        due_date=datetime.fromisoformat(item.due_date) if item.due_date else None,
+        started_at=datetime.utcnow() if item.status == "in_progress" else None,
+        completed_at=datetime.utcnow() if item.status == "done" else None
     )
     db.add(work_item)
     db.flush()  # assigns work_item.id without committing
