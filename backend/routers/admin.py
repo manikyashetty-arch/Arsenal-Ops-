@@ -230,7 +230,7 @@ async def get_developers_capacity(db: Session = Depends(get_db)):
                 continue
             if not item.completed_at or item.completed_at < week_start or item.completed_at > week_end:
                 continue
-            # Use this developer's own logged hours on this ticket
+            # Use this developer's own logged hours on this ticket this week
             my_hours = my_hours_this_week.get(item.id, 0)
             if my_hours > 0:
                 done_hours += my_hours
@@ -238,14 +238,21 @@ async def get_developers_capacity(db: Session = Depends(get_db)):
                 # Fallback: use work item's total logged_hours if no time entries
                 done_hours += item.logged_hours or 0
         
-        # --- In-review: count remaining work ---
-        in_review_hours = sum(
-            max(0, (item.estimated_hours or 0) - (item.logged_hours or 0))
-            for item in dev_items if item.status == "in_review"
-        )
+        # --- In-review tickets: developer finished work, count their logged hours this week ---
+        in_review_hours = 0
+        for item in dev_items:
+            if item.status != "in_review":
+                continue
+            my_hours = my_hours_this_week.get(item.id, 0)
+            if my_hours > 0:
+                # Developer logged hours this week on this ticket
+                in_review_hours += my_hours
+            elif item.updated_at and item.updated_at >= week_start:
+                # Moved to in_review this week but no time entries — use logged_hours
+                in_review_hours += item.logged_hours or 0
         
-        # Capacity = in_progress + done this week
-        capacity_used = in_progress_hours + done_hours
+        # Capacity = in_progress + in_review (logged) + done (logged) this week
+        capacity_used = in_progress_hours + in_review_hours + done_hours
         remaining_capacity = max(0, 40 - capacity_used)
         
         result.append({
