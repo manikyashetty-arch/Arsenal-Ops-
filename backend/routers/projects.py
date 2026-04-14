@@ -279,6 +279,10 @@ async def create_project(
     # Assign additional developers if provided
     if project.developers:
         for dev_assignment in project.developers:
+            # Skip if this developer is already added as creator
+            if dev_assignment.developer_id == creator_dev.id:
+                continue
+            
             # Verify developer exists
             developer = db.query(Developer).filter(Developer.id == dev_assignment.developer_id).first()
             if not developer:
