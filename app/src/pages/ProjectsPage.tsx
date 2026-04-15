@@ -730,11 +730,15 @@ const ProjectsPage = () => {
             return;
         }
         
+        const developer = availableDevelopers.find(d => d.id === devId);
+        
         setSelectedDevelopers(prev => [...prev, {
             developer_id: devId,
             role: newRole,
             responsibilities: newResponsibilities
         }]);
+        
+        toast.success(`${developer?.name} added as ${newRole}`);
         
         setSelectedDeveloperId('');
         setNewRole('');
@@ -751,6 +755,7 @@ const ProjectsPage = () => {
             return;
         }
         setIsCreating(true);
+        const startTime = Date.now();
         try {
             const response = await fetch(`${API_BASE_URL}/api/projects/`, {
                 method: 'POST',
@@ -776,7 +781,11 @@ const ProjectsPage = () => {
         } catch (err) {
             toast.error('Failed to create project');
         } finally {
-            setIsCreating(false);
+            const elapsedTime = Date.now() - startTime;
+            const remainingTime = Math.max(0, 300 - elapsedTime);
+            setTimeout(() => {
+                setIsCreating(false);
+            }, remainingTime);
         }
     };
 
@@ -2301,6 +2310,7 @@ const ProjectsPage = () => {
                             <Button
                                 variant="ghost"
                                 onClick={() => setShowCreateModal(false)}
+                                disabled={isCreating}
                                 className="text-[#737373] hover:text-white rounded-xl px-6"
                             >
                                 Cancel

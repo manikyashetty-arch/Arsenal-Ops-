@@ -201,6 +201,7 @@ const ProjectBoard = () => {
     const [editForm, setEditForm] = useState<Partial<WorkItem>>({});
     const [isLoading, setIsLoading] = useState(true);
     const [isGenerating, setIsGenerating] = useState(false);
+    const [isCreatingItem, setIsCreatingItem] = useState(false);
     const [showCreateForm, setShowCreateForm] = useState(false);
     const [viewMode, setViewMode] = useState<'board' | 'list'>('board');
     const [searchQuery, setSearchQuery] = useState('');
@@ -424,6 +425,8 @@ const ProjectBoard = () => {
             toast.error('Title is required');
             return;
         }
+        setIsCreatingItem(true);
+        const startTime = Date.now();
         try {
             const response = await fetch(`${API_BASE_URL}/api/workitems/`, {
                 method: 'POST',
@@ -449,6 +452,12 @@ const ProjectBoard = () => {
             }
         } catch {
             toast.error('Failed to create item');
+        } finally {
+            const elapsedTime = Date.now() - startTime;
+            const remainingTime = Math.max(0, 300 - elapsedTime);
+            setTimeout(() => {
+                setIsCreatingItem(false);
+            }, remainingTime);
         }
     };
 
@@ -1400,6 +1409,15 @@ const ProjectBoard = () => {
                                 {/* Filter Menu Popover */}
                                 {showFilterMenu && (
                                     <div className="absolute top-full mt-2 left-0 bg-[#0d0d0d] border border-[rgba(255,255,255,0.07)] rounded-xl shadow-2xl shadow-black/50 z-50 min-w-max">
+                                        <div className="flex items-center justify-between px-3 py-2 border-b border-[rgba(255,255,255,0.05)]">
+                                            <p className="text-xs font-semibold text-[#737373]">Add Filters</p>
+                                            <button
+                                                onClick={() => setShowFilterMenu(false)}
+                                                className="p-1 rounded hover:bg-[rgba(255,255,255,0.05)] text-[#737373] hover:text-white"
+                                            >
+                                                <X className="w-3 h-3" />
+                                            </button>
+                                        </div>
                                         <div className="p-2">
                                             {/* Type Filter */}
                                             {filterType === 'all' && (
@@ -1411,7 +1429,6 @@ const ProjectBoard = () => {
                                                                 key={key}
                                                                 onClick={() => {
                                                                     setFilterType(key);
-                                                                    setShowFilterMenu(false);
                                                                 }}
                                                                 className="w-full flex items-center gap-2 px-2.5 py-1.5 text-xs text-[#a3a3a3] hover:text-white hover:bg-[rgba(255,255,255,0.05)] rounded-lg transition-colors"
                                                             >
@@ -1435,7 +1452,6 @@ const ProjectBoard = () => {
                                                                     key={key}
                                                                     onClick={() => {
                                                                         setFilterPriority(key);
-                                                                        setShowFilterMenu(false);
                                                                     }}
                                                                     className={`w-full flex items-center gap-2 px-2.5 py-1.5 text-xs rounded-lg hover:bg-[rgba(255,255,255,0.05)] transition-colors ${colors.text}`}
                                                                 >
@@ -1469,7 +1485,6 @@ const ProjectBoard = () => {
                                                             <button
                                                                 onClick={() => {
                                                                     setFilterAssignee('unassigned');
-                                                                    setShowFilterMenu(false);
                                                                     setAssigneeSearchFilter('');
                                                                 }}
                                                                 className="w-full flex items-center gap-2 px-2.5 py-1.5 text-xs text-[#a3a3a3] hover:text-white hover:bg-[rgba(255,255,255,0.05)] rounded-lg transition-colors"
@@ -1484,7 +1499,6 @@ const ProjectBoard = () => {
                                                                         key={dev.id}
                                                                         onClick={() => {
                                                                             setFilterAssignee(String(dev.id));
-                                                                            setShowFilterMenu(false);
                                                                             setAssigneeSearchFilter('');
                                                                         }}
                                                                         className="w-full flex items-center gap-2 px-2.5 py-1.5 text-xs text-[#a3a3a3] hover:text-white hover:bg-[rgba(255,255,255,0.05)] rounded-lg transition-colors"
@@ -2476,11 +2490,20 @@ onClick={() => { navigate(`/project/${id}/board/${item.id}`); setIsEditing(false
                             </div>
                         </div>
                         <div className="flex justify-end gap-3 p-5 border-t border-[rgba(255,255,255,0.05)]">
-                            <Button variant="ghost" onClick={() => setShowCreateForm(false)} className="text-[#737373] rounded-xl px-5">Cancel</Button>
-                            <Button onClick={handleCreateItem} disabled={!createForm.title.trim()}
+                            <Button variant="ghost" onClick={() => setShowCreateForm(false)} className="text-[#737373] rounded-xl px-5" disabled={isCreatingItem}>Cancel</Button>
+                            <Button onClick={handleCreateItem} disabled={!createForm.title.trim() || isCreatingItem}
                                 className="bg-gradient-to-r from-[#E0B954] to-[#B8872A] text-white rounded-xl px-6 font-medium shadow-lg shadow-[#B8872A]/20 disabled:opacity-50"
-                                title="Title is required">
-                                <Plus className="w-4 h-4 mr-2" /> Create Item
+                                title={!createForm.title.trim() ? "Title is required" : ""}>
+                                {isCreatingItem ? (
+                                    <>
+                                        <div className="w-4 h-4 mr-2 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                        Creating...
+                                    </>
+                                ) : (
+                                    <>
+                                        <Plus className="w-4 h-4 mr-2" /> Create Item
+                                    </>
+                                )}
                             </Button>
                         </div>
                     </div>
