@@ -43,9 +43,9 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// 30 minutes in milliseconds
-const IDLE_TIMEOUT = 30 * 60 * 1000;
-const WARNING_TIME = 25 * 60 * 1000;
+// 24 hours in milliseconds
+const IDLE_TIMEOUT = 24 * 60 * 60 * 1000;
+const WARNING_TIME = 23 * 60 * 60 * 1000;
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(() => {

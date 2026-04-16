@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
     Plus,
@@ -23,14 +23,13 @@ import {
     Bug,
     Target,
     ExternalLink,
-    Tag,
-    ChevronRight,
     Loader2,
     Edit2,
     Calendar,
     Circle,
     Flag,
     Clock,
+    MessageSquare,
 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -122,6 +121,7 @@ interface MyTask {
     parent_id?: number | null;
     epic_id?: number | null;
     sprint_id?: number | null;
+    sprint?: string;
     parent_key?: string | null;
     epic_key?: string | null;
 }
@@ -210,6 +210,23 @@ const ProjectsPage = () => {
     const [editPersonalTaskForm, setEditPersonalTaskForm] = useState({
         title: '', description: '', priority: 'medium', due_date: ''
     });
+
+    // Comments system for tasks/tickets
+    const [comments, setComments] = useState<Array<{
+        id: number;
+        work_item_id: number;
+        author_id: number;
+        author_name: string;
+        content: string;
+        comment_type: 'comment' | 'blocker' | 'business_review';
+        mentions: number[];
+        created_at: string;
+    }>>([]);
+    const [newComment, setNewComment] = useState('');
+    const [showMentions, setShowMentions] = useState(false);
+    const [mentionFilter, setMentionFilter] = useState('');
+    const [allDevelopers, setAllDevelopers] = useState<Array<{ id: number; name: string; email: string }>>([]);
+    const commentCache = useRef<Map<string, Array<any>>>(new Map());
 
     // Private Notepad
     const [notepadContent, setNotepadContent] = useState('');
@@ -561,6 +578,132 @@ const ProjectsPage = () => {
         ]).flat().filter(Boolean);
     };
 
+    // Handle comment input with @mention detection
+    const handleCommentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+        const value = e.target.value;
+        setNewComment(value);
+
+        // Check for @mentions
+        const lastAtIndex = value.lastIndexOf('@');
+        if (lastAtIndex !== -1) {
+            const textAfterAt = value.substring(lastAtIndex + 1);
+            // Check if there's a space after @ (meaning mention is complete)
+            if (!textAfterAt.includes(' ')) {
+                setMentionFilter(textAfterAt);
+                setShowMentions(true);
+            } else {
+                setShowMentions(false);
+            }
+        } else {
+            setShowMentions(false);
+        }
+    };
+
+    // Insert mention
+    const insertMention = (developer: { id: number; name: string }) => {
+        const lastAtIndex = newComment.lastIndexOf('@');
+        const beforeMention = newComment.substring(0, lastAtIndex);
+        setNewComment(`${beforeMention}@${developer.name} `);
+        setShowMentions(false);
+        setMentionFilter('');
+    };
+
+    // Submit comment
+    const handleSubmitComment = async (commentType: 'comment' | 'blocker' | 'business_review' = 'comment') => {
+        if (!selectedTask || !newComment.trim()) return;
+
+        try {
+            const response = await fetch(`${API_BASE_URL}/api/comments/`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({
+                    work_item_id: parseInt(selectedTask.id),
+                    content: newComment,
+                    author_id: user?.id || 1,
+                    comment_type: commentType,
+                }),
+            });
+            if (response.ok) {
+                const newCommentData = await response.json();
+                const updated = [newCommentData, ...comments];
+                setComments(updated);
+                // Invalidate cache so next open fetches fresh
+                if (selectedTask) commentCache.current.delete(selectedTask.id);
+                setNewComment('');
+                const messages = {
+                    'blocker': 'Blocker reported!',
+                    'business_review': 'Business Review comment added!',
+                    'comment': 'Comment added!'
+                };
+                toast.success(messages[commentType]);
+            }
+        } catch {
+            toast.error('Failed to add comment');
+        }
+    };
+
+    // Render comment with mentions highlighted and links as clickable
+    const renderCommentContent = (content: string, mentions: number[] = []) => {
+        // Build a map of developer IDs to names for quick lookup
+        const devMap = new Map(allDevelopers.map(d => [d.id, d.name]));
+        
+        // Replace @name with highlighted version for each mentioned developer
+        let result = content;
+        mentions.forEach(devId => {
+            const devName = devMap.get(devId);
+            if (devName) {
+                // Replace @devName with highlighted version
+                const regex = new RegExp(`@${devName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'g');
+                result = result.replace(regex, `<<<MENTION_${devId}>>>`);
+            }
+        });
+        
+        // Also replace URLs with placeholders
+        const urlRegex = /(https?:\/\/[^\s]+)/g;
+        const urls: string[] = [];
+        result = result.replace(urlRegex, (match) => {
+            urls.push(match);
+            return `<<<URL_${urls.length - 1}>>>`;
+        });
+        
+        // Parse the result and highlight the placeholders
+        const parts = result.split(/(<<<MENTION_\d+>>>|<<<URL_\d+>>>)/g);
+        let elementIndex = 0;
+        return parts.flatMap((part) => {
+            const mentionMatch = part.match(/<<<MENTION_(\d+)>>>/);
+            if (mentionMatch) {
+                const devId = parseInt(mentionMatch[1]);
+                const devName = devMap.get(devId);
+                return (
+                    <span key={`mention-${elementIndex++}`} className="bg-[rgba(224,185,84,0.2)] text-[#E0B954] px-1.5 py-0.5 rounded-md font-medium">
+                        @{devName}
+                    </span>
+                );
+            }
+            
+            const urlMatch = part.match(/<<<URL_(\d+)>>>/);
+            if (urlMatch) {
+                const urlIndex = parseInt(urlMatch[1]);
+                const url = urls[urlIndex];
+                return (
+                    <a key={`url-${elementIndex++}`} href={url} target="_blank" rel="noopener noreferrer" className="text-[#E0B954] hover:text-[#C79E3B] underline hover:no-underline transition-colors break-all">
+                        {url}
+                    </a>
+                );
+            }
+            
+            // Handle newlines in text
+            if (part.trim()) {
+                return part.split('\n').flatMap((line, lineIndex) => [
+                    <span key={`text-${elementIndex}-${lineIndex}`}>{line}</span>,
+                    lineIndex < part.split('\n').length - 1 ? <br key={`br-${elementIndex}-${lineIndex}`} /> : null
+                ]).filter(Boolean);
+            }
+            
+            return part;
+        });
+    };
+
     // Save edited task
     const saveEditedTask = async () => {
         if (!selectedTask) return;
@@ -644,6 +787,56 @@ const ProjectsPage = () => {
         return () => clearTimeout(timer);
     }, [notepadContent]);
 
+    // Fetch comments when task is selected
+    useEffect(() => {
+        const fetchComments = async () => {
+            if (!selectedTask || !token) return;
+            
+            // Check cache first
+            const cached = commentCache.current.get(selectedTask.id);
+            if (cached !== undefined) {
+                setComments(cached);
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/comments/workitem/${selectedTask.id}`, {
+                    headers: { 'Authorization': `Bearer ${token}` },
+                });
+                if (response.ok) {
+                    const data = await response.json();
+                    setComments(data || []);
+                    commentCache.current.set(selectedTask.id, data || []);
+                }
+            } catch (error) {
+                console.error('Failed to fetch comments:', error);
+            }
+        };
+
+        fetchComments();
+    }, [selectedTask, token]);
+
+    // Fetch all developers formentions
+    useEffect(() => {
+        const fetchDevelopersForMentions = async () => {
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/developers/`, {
+                    headers: { 'Authorization': `Bearer ${token}` },
+                });
+                if (response.ok) {
+                    const data = await response.json();
+                    setAllDevelopers(data || []);
+                }
+            } catch (error) {
+                console.error('Failed to fetch developers:', error);
+            }
+        };
+
+        if (token) {
+            fetchDevelopersForMentions();
+        }
+    }, [token]);
+
     // Computed chart data (used by My Overview stacked bar)
     const overviewStats = {
         total: myTasks.length,
@@ -669,13 +862,6 @@ const ProjectsPage = () => {
         task:       { icon: ClipboardList, color: '#F59E0B', label: 'Task',  bg: 'rgba(245,158,11,0.15)' },
         bug:        { icon: Bug,           color: '#EF4444', label: 'Bug',   bg: 'rgba(239,68,68,0.15)'  },
         epic:       { icon: Target,        color: '#A78BFA', label: 'Epic',  bg: 'rgba(167,139,250,0.15)' },
-    };
-
-    const PRIORITY_COLORS: Record<string, string> = {
-        critical: '#EF4444',
-        high:     '#F97316',
-        medium:   '#F59E0B',
-        low:      '#737373',
     };
 
     const STATUS_COLOR: Record<string, string> = {
@@ -730,11 +916,15 @@ const ProjectsPage = () => {
             return;
         }
         
+        const developer = availableDevelopers.find(d => d.id === devId);
+        
         setSelectedDevelopers(prev => [...prev, {
             developer_id: devId,
             role: newRole,
             responsibilities: newResponsibilities
         }]);
+        
+        toast.success(`${developer?.name} added as ${newRole}`);
         
         setSelectedDeveloperId('');
         setNewRole('');
@@ -751,6 +941,7 @@ const ProjectsPage = () => {
             return;
         }
         setIsCreating(true);
+        const startTime = Date.now();
         try {
             const response = await fetch(`${API_BASE_URL}/api/projects/`, {
                 method: 'POST',
@@ -776,7 +967,11 @@ const ProjectsPage = () => {
         } catch (err) {
             toast.error('Failed to create project');
         } finally {
-            setIsCreating(false);
+            const elapsedTime = Date.now() - startTime;
+            const remainingTime = Math.max(0, 300 - elapsedTime);
+            setTimeout(() => {
+                setIsCreating(false);
+            }, remainingTime);
         }
     };
 
@@ -1587,100 +1782,73 @@ const ProjectsPage = () => {
                             ) : (
                                 // View Mode
                                 <>
-                                    {/* Title */}
-                                    <h2 className="text-lg font-semibold text-white leading-tight">{selectedTask.title}</h2>
-
-                            {/* Breadcrumb (parent/epic) */}
-                            {(selectedTask.epic_key || selectedTask.parent_key) && (
-                                <div className="flex items-center gap-1.5 text-xs">
-                                    {selectedTask.epic_key && (
-                                        <span className="flex items-center gap-1 px-2 py-1 rounded-md bg-[rgba(167,139,250,0.12)] text-[#A78BFA]">
-                                            <Target className="w-3 h-3" />
-                                            {selectedTask.epic_key}
-                                        </span>
-                                    )}
-                                    {selectedTask.parent_key && (
-                                        <>
-                                            {selectedTask.epic_key && <ChevronRight className="w-3 h-3 text-[#555]" />}
-                                            <span className="flex items-center gap-1 px-2 py-1 rounded-md bg-[rgba(224,185,84,0.10)] text-[#E0B954]">
-                                                <BookOpen className="w-3 h-3" />
-                                                {selectedTask.parent_key}
-                                            </span>
-                                        </>
-                                    )}
-                                </div>
-                            )}
-
-                            {/* Stats grid 2×3 */}
-                            <div className="grid grid-cols-3 gap-2">
-                                {[
-                                    { label: 'Status', value: selectedTask.status.replace(/_/g, ' '), color: STATUS_COLOR[selectedTask.status] || '#f5f5f5' },
-                                    { label: 'Priority', value: selectedTask.priority, color: PRIORITY_COLORS[selectedTask.priority] || '#f5f5f5' },
-                                    { label: 'Story Points', value: String(selectedTask.story_points ?? '-'), color: '#f5f5f5' },
-                                    { label: 'Est. Hours', value: selectedTask.assigned_hours ? `${selectedTask.assigned_hours}h` : '-', color: '#a3a3a3' },
-                                    { label: 'Logged Hrs', value: selectedTask.logged_hours ? `${selectedTask.logged_hours}h` : '0h', color: '#a3a3a3' },
-                                    { label: 'Remaining', value: selectedTask.remaining_hours ? `${selectedTask.remaining_hours}h` : '-', color: '#a3a3a3' },
-                                ].map(({ label, value, color }) => (
-                                    <div key={label} className="bg-[rgba(255,255,255,0.025)] rounded-xl p-3">
-                                        <p className="text-xs text-[#737373] mb-1">{label}</p>
-                                        <p className="text-sm font-semibold capitalize" style={{ color }}>{value}</p>
+                                    <div>
+                                        <h2 className="text-xl font-bold text-white mb-3">{selectedTask.title}</h2>
+                                        <p className="text-sm text-[#a3a3a3] leading-relaxed whitespace-pre-wrap">{renderTextWithNewlines(selectedTask.description || '') || 'No description provided.'}</p>
                                     </div>
-                                ))}
-                            </div>
 
-                            {/* Assignee / Due Date / Project */}
-                            <div className="space-y-0">
-                                {[
-                                    { label: 'Assignee', value: selectedTask.assignee || 'Unassigned' },
-                                    { label: 'Due Date', value: selectedTask.due_date ? parseLocalDate(selectedTask.due_date)?.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Not set' },
-                                    { label: 'Project', value: selectedTask.project_name },
-                                ].map(({ label, value }) => (
-                                    <div key={label} className="flex items-center justify-between py-2.5 border-b border-[rgba(255,255,255,0.04)]">
-                                        <span className="text-xs text-[#737373]">{label}</span>
-                                        <span className="text-sm text-[#f5f5f5]">{value}</span>
-                                    </div>
-                                ))}
-                            </div>
-
-                            {/* Description */}
-                            {selectedTask.description && (
-                                <div>
-                                    <p className="text-xs font-medium text-[#737373] mb-2">Description</p>
-                                    <p className="text-sm text-[#a3a3a3] leading-relaxed whitespace-pre-wrap bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-xl p-4">
-                                        {renderTextWithNewlines(selectedTask.description)}
-                                    </p>
-                                </div>
-                            )}
-
-                            {/* Tags */}
-                            {selectedTask.tags && selectedTask.tags.length > 0 && (
-                                <div>
-                                    <div className="flex items-center gap-1.5 mb-2">
-                                        <Tag className="w-3.5 h-3.5 text-[#737373]" />
-                                        <p className="text-xs font-medium text-[#737373]">Tags</p>
-                                    </div>
-                                    <div className="flex flex-wrap gap-2">
-                                        {selectedTask.tags.map(tag => (
-                                            <span key={tag} className="px-2.5 py-1 rounded-lg bg-[rgba(255,255,255,0.05)] text-[#a3a3a3] text-xs">{tag}</span>
-                                        ))}
-                                    </div>
-                                </div>
-                            )}
-
-                            {/* Acceptance Criteria */}
-                            {selectedTask.acceptance_criteria && selectedTask.acceptance_criteria.length > 0 && (
-                                <div>
-                                    <p className="text-xs font-medium text-[#737373] mb-2">Acceptance Criteria</p>
-                                    <div className="space-y-1.5">
-                                        {selectedTask.acceptance_criteria.map((ac, i) => (
-                                            <div key={i} className="flex items-start gap-2 text-sm text-[#a3a3a3]">
-                                                <CheckCircle2 className="w-4 h-4 text-[#555] flex-shrink-0 mt-0.5" />
-                                                <span className="leading-relaxed">{ac}</span>
+                                    {/* Detail Stats */}
+                                    <div className="grid grid-cols-2 gap-3">
+                                        {[
+                                            { label: 'Story Points', value: String(selectedTask.story_points || 0), color: '#E0B954' },
+                                            { label: 'Allocated Hours', value: `${selectedTask.assigned_hours || 0}h`, color: '#E0B954' },
+                                            { label: 'Logged Hours', value: `${selectedTask.logged_hours || 0}h`, color: '#E0B954' },
+                                            { label: 'Remaining Hours', value: `${selectedTask.remaining_hours || 0}h`, color: '#F59E0B' },
+                                            { label: 'Due Date', value: selectedTask.due_date ? new Date(selectedTask.due_date as string).toLocaleDateString() : 'Not set', color: selectedTask.due_date ? '#E0B954' : '#737373' },
+                                            { label: 'Status', value: (STATUS_CONFIG[selectedTask.status as keyof typeof STATUS_CONFIG] || STATUS_CONFIG.todo).label, color: (STATUS_CONFIG[selectedTask.status as keyof typeof STATUS_CONFIG] || STATUS_CONFIG.todo).color },
+                                            { label: 'Priority', value: selectedTask.priority?.charAt(0).toUpperCase() + (selectedTask.priority?.slice(1) || ''), color: selectedTask.priority === 'critical' ? '#EF4444' : selectedTask.priority === 'high' ? '#F97316' : selectedTask.priority === 'medium' ? '#F59E0B' : '#737373' },
+                                        ].map(d => (
+                                            <div key={d.label} className="bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.05)] rounded-xl p-3.5">
+                                                <div className="text-[10px] text-[#737373] font-medium uppercase tracking-wider mb-1">{d.label}</div>
+                                                <div className="text-lg font-bold" style={{ color: d.color }}>{d.value}</div>
                                             </div>
                                         ))}
                                     </div>
-                                </div>
-                            )}
+
+                                    {/* Metadata */}
+                                    <div className="space-y-3">
+                                        {[
+                                            { label: 'Assignee', value: selectedTask.assignee || 'Unassigned' },
+                                            { label: 'Sprint', value: selectedTask.sprint || 'Not assigned' },
+                                        ].map(m => (
+                                            <div key={m.label} className="flex items-center justify-between py-2 border-b border-[rgba(255,255,255,0.03)]">
+                                                <span className="text-xs text-[#737373]">{m.label}</span>
+                                                <span className="text-sm text-[#f5f5f5]">{m.value}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+
+                                    {/* Hierarchy breadcrumb */}
+                                    {(selectedTask.epic_key || selectedTask.parent_key) && (
+                                        <div>
+                                            <div className="text-xs text-[#737373] mb-2 font-medium">Hierarchy</div>
+                                            <div className="flex items-center gap-1.5 flex-wrap">
+                                                {selectedTask.epic_key && (
+                                                    <span className="flex items-center gap-1 px-2 py-1 rounded-md bg-[rgba(167,139,250,0.12)] text-[#A78BFA] text-xs">
+                                                        Epic: {selectedTask.epic_key}
+                                                    </span>
+                                                )}
+                                                {selectedTask.epic_key && selectedTask.parent_key && <span className="text-[#555] text-xs">›</span>}
+                                                {selectedTask.parent_key && (
+                                                    <span className="flex items-center gap-1 px-2 py-1 rounded-md bg-[rgba(224,185,84,0.10)] text-[#E0B954] text-xs">
+                                                        Parent: {selectedTask.parent_key}
+                                                    </span>
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Tags */}
+                                    {selectedTask.tags && selectedTask.tags.length > 0 && (
+                                        <div>
+                                            <div className="text-xs text-[#737373] mb-2 font-medium">Tags</div>
+                                            <div className="flex flex-wrap gap-2">
+                                                {selectedTask.tags.map(tag => (
+                                                    <span key={tag} className="px-2.5 py-1 rounded-lg bg-[rgba(255,255,255,0.05)] text-[#a3a3a3] text-xs">{tag}</span>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
 
                             {/* Log Hours Section */}
                             <div className="pt-4 border-t border-[rgba(255,255,255,0.05)]">
@@ -1732,6 +1900,118 @@ const ProjectsPage = () => {
                                             {STATUS_CONFIG[status].label}
                                         </Button>
                                     ))}
+                                </div>
+                            </div>
+
+                            {/* Comments Section */}
+                            <div className="pt-4 border-t border-[rgba(255,255,255,0.05)]">
+                                <div className="text-xs text-[#737373] mb-3 font-medium">Activity & Comments</div>
+                                
+                                {/* Comment Input */}
+                                <div className="relative mb-4">
+                                    <Textarea
+                                        value={newComment}
+                                        onChange={handleCommentChange}
+                                        placeholder="Add a comment... Use @ to mention someone"
+                                        className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl min-h-[80px] placeholder:text-[#334155] resize-none pr-20"
+                                    />
+                                    {/* @Mentions Dropdown */}
+                                    {showMentions && (
+                                        <div className="absolute left-0 right-0 top-full mt-1 bg-[#1A1D26] border border-[rgba(255,255,255,0.08)] rounded-xl shadow-xl z-10 max-h-48 overflow-y-auto">
+                                            {allDevelopers
+                                                .filter(d => d.name.toLowerCase().includes(mentionFilter.toLowerCase()))
+                                                .slice(0, 5)
+                                                .map(dev => (
+                                                    <button
+                                                        key={dev.id}
+                                                        onClick={() => insertMention(dev)}
+                                                        className="w-full px-3 py-2 text-left text-sm text-[#f5f5f5] hover:bg-[rgba(224,185,84,0.1)] flex items-center gap-2"
+                                                    >
+                                                        <div className="w-6 h-6 rounded-full bg-[rgba(224,185,84,0.2)] flex items-center justify-center text-xs text-[#E0B954]">
+                                                            {dev.name.charAt(0).toUpperCase()}
+                                                        </div>
+                                                        <span>{dev.name}</span>
+                                                        <span className="text-[#737373] text-xs ml-auto">{dev.email}</span>
+                                                    </button>
+                                                ))}
+                                            {allDevelopers.filter(d => d.name.toLowerCase().includes(mentionFilter.toLowerCase())).length === 0 && (
+                                                <div className="px-3 py-2 text-sm text-[#737373]">No matching developers</div>
+                                            )}
+                                        </div>
+                                    )}
+                                    <div className="flex gap-2 mt-2 flex-wrap">
+                                        <Button
+                                            size="sm"
+                                            onClick={() => handleSubmitComment('comment')}
+                                            disabled={!newComment.trim()}
+                                            className="bg-[rgba(224,185,84,0.1)] border border-[rgba(224,185,84,0.3)] text-[#E0B954] hover:bg-[rgba(224,185,84,0.2)] rounded-lg text-xs h-8"
+                                        >
+                                            <MessageSquare className="w-3 h-3 mr-1" />
+                                            Comment
+                                        </Button>
+                                        <Button
+                                            size="sm"
+                                            onClick={() => handleSubmitComment('blocker')}
+                                            disabled={!newComment.trim()}
+                                            className="bg-[rgba(239,68,68,0.1)] border border-[rgba(239,68,68,0.3)] text-[#EF4444] hover:bg-[rgba(239,68,68,0.2)] rounded-lg text-xs h-8"
+                                        >
+                                            <AlertCircle className="w-3 h-3 mr-1" />
+                                            Report Blocker
+                                        </Button>
+                                        <Button
+                                            size="sm"
+                                            onClick={() => handleSubmitComment('business_review')}
+                                            disabled={!newComment.trim()}
+                                            className="bg-[rgba(167,139,250,0.1)] border border-[rgba(167,139,250,0.3)] text-[#A78BFA] hover:bg-[rgba(167,139,250,0.2)] rounded-lg text-xs h-8"
+                                        >
+                                            <Target className="w-3 h-3 mr-1" />
+                                            Business Review
+                                        </Button>
+                                    </div>
+                                </div>
+
+                                {/* Comments List */}
+                                <div className="space-y-3 max-h-64 overflow-y-auto">
+                                    {comments.length === 0 ? (
+                                        <div className="text-center py-6 text-[#737373] text-sm">
+                                            No comments yet. Be the first to comment!
+                                        </div>
+                                    ) : (
+                                        comments.map(comment => (
+                                            <div key={comment.id} className={`p-3 rounded-xl ${
+                                                comment.comment_type === 'blocker' 
+                                                    ? 'bg-[rgba(239,68,68,0.05)] border border-[rgba(239,68,68,0.2)]'
+                                                    : comment.comment_type === 'business_review'
+                                                    ? 'bg-[rgba(167,139,250,0.05)] border border-[rgba(167,139,250,0.2)]'
+                                                    : 'bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)]'
+                                            }`}>
+                                                <div className="flex items-center gap-2 mb-2">
+                                                    <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs ${
+                                                        comment.comment_type === 'blocker' 
+                                                            ? 'bg-[rgba(239,68,68,0.2)] text-[#EF4444]'
+                                                            : comment.comment_type === 'business_review'
+                                                            ? 'bg-[rgba(167,139,250,0.2)] text-[#A78BFA]'
+                                                            : 'bg-[rgba(224,185,84,0.2)] text-[#E0B954]'
+                                                    }`}>
+                                                        {comment.author_name?.charAt?.(0)?.toUpperCase() || '?'}
+                                                    </div>
+                                                    <span className="text-sm font-medium text-[#f5f5f5]">{comment.author_name}</span>
+                                                    {comment.comment_type === 'blocker' && (
+                                                        <span className="px-1.5 py-0.5 rounded-md bg-[rgba(239,68,68,0.2)] text-[#EF4444] text-[10px] font-medium">BLOCKER</span>
+                                                    )}
+                                                    {comment.comment_type === 'business_review' && (
+                                                        <span className="px-1.5 py-0.5 rounded-md bg-[rgba(167,139,250,0.2)] text-[#A78BFA] text-[10px] font-medium">BUSINESS REVIEW</span>
+                                                    )}
+                                                    <span className="text-xs text-[#737373] ml-auto">
+                                                        {new Date(comment.created_at).toLocaleDateString()}
+                                                    </span>
+                                                </div>
+                                                <p className="text-sm text-[#a3a3a3] leading-relaxed">
+                                                    {renderCommentContent(comment.content, comment.mentions)}
+                                                </p>
+                                            </div>
+                                        ))
+                                    )}
                                 </div>
                             </div>
                                 </>
@@ -2301,6 +2581,7 @@ const ProjectsPage = () => {
                             <Button
                                 variant="ghost"
                                 onClick={() => setShowCreateModal(false)}
+                                disabled={isCreating}
                                 className="text-[#737373] hover:text-white rounded-xl px-6"
                             >
                                 Cancel

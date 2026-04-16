@@ -275,10 +275,6 @@ const ProjectDetail = () => {
     const [showCalendarStartDate, setShowCalendarStartDate] = useState(false);
     const [showCalendarEndDate, setShowCalendarEndDate] = useState(false);
     
-    // GitHub repo URLs management
-    const [repoUrls, setRepoUrls] = useState<string[]>([]);
-    const [newRepoUrl, setNewRepoUrl] = useState('');
-    
     // Files/Links state
     const [links, setLinks] = useState<ProjectLink[]>([]);
     const [showAddLink, setShowAddLink] = useState(false);
@@ -340,15 +336,6 @@ const ProjectDetail = () => {
                 const data = await res.json();
                 setProject(data);
                 setEditForm(data);
-                // Initialize repo URLs from the API response
-                // Support both new github_repo_urls array and legacy github_repo_url
-                let urls: string[] = [];
-                if (Array.isArray(data.github_repo_urls) && data.github_repo_urls.length > 0) {
-                    urls = data.github_repo_urls;
-                } else if (data.github_repo_url) {
-                    urls = [data.github_repo_url];
-                }
-                setRepoUrls(urls);
                 setAccessDenied(false);
             } else if (res.status === 403) {
                 setAccessDenied(true);
@@ -619,31 +606,43 @@ const ProjectDetail = () => {
     const handleSaveEdit = async () => {
         if (!project) return;
         try {
-            // Create update object, excluding github_repo_url when we have multiple URLs
-            const updateData: any = { ...editForm };
-            delete updateData.github_repo_url;  // Remove single URL to avoid conflicts
-            delete updateData.github_repo_urls; // Remove old array value
+            // Only send the fields that can be updated - don't send nested objects
+            const updateData: any = {
+                name: editForm.name || undefined,
+                description: editForm.description || undefined,
+                status: editForm.status || undefined,
+                github_repo_url: editForm.github_repo_url || undefined,
+                created_at: editForm.created_at || undefined,
+                end_date: editForm.end_date || undefined,
+            };
             
-            // Ensure repoUrls is always a proper array
-            const urlsToSave = Array.isArray(repoUrls) ? repoUrls.filter(url => url && url.trim() !== '') : [];
-            updateData.github_repo_urls = urlsToSave;
+            // Remove undefined values to only send what changed
+            Object.keys(updateData).forEach((key) => {
+                if (updateData[key] === undefined) {
+                    delete updateData[key];
+                }
+            });
             
-            const requestBody = JSON.stringify(updateData);
+            console.log('Sending update data:', updateData);
             
             const res = await fetch(`${API_BASE_URL}/api/projects/${project.id}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                body: requestBody,
+                body: JSON.stringify(updateData),
             });
             if (res.ok) {
-                const updated = await res.json();
-                setProject(updated);
-                setRepoUrls(updated.github_repo_urls || []);
-                setNewRepoUrl(''); // Clear the input field
-                setIsEditing(false);
+                const responseData = await res.json();
+                console.log('Update response:', responseData);
                 toast.success('Project updated!');
+                setIsEditing(false);
+                await fetchProject();
+            } else {
+                const errorData = await res.json();
+                console.error('Update error:', errorData);
+                toast.error(errorData.detail || 'Failed to update project');
             }
-        } catch {
+        } catch (err) {
+            console.error('Error updating project:', err);
             toast.error('Failed to update project');
         }
     };
@@ -1027,15 +1026,6 @@ const ProjectDetail = () => {
                                         size="sm"
                                         onClick={() => {
                                             setEditForm(project);
-                                            // Properly initialize repo URLs when entering edit mode
-                                            const urls: string[] = [];
-                                            if (Array.isArray(project.github_repo_urls) && project.github_repo_urls.length > 0) {
-                                                urls.push(...project.github_repo_urls);
-                                            } else if (project.github_repo_url) {
-                                                urls.push(project.github_repo_url);
-                                            }
-                                            setRepoUrls(urls);
-                                            setNewRepoUrl('');
                                             setIsEditing(true);
                                         }}
                                         className="text-[#737373] hover:text-white"
@@ -1085,60 +1075,13 @@ const ProjectDetail = () => {
                                         />
                                     </div>
                                     <div>
-                                        <label className="text-xs font-medium text-[#737373] block mb-1.5">GitHub Repository URLs</label>
-                                        <div className="space-y-2 mb-2">
-                                            {repoUrls.map((url, idx) => (
-                                                <div key={idx} className="flex items-center gap-2">
-                                                    <Input
-                                                        value={url}
-                                                        onChange={(e) => {
-                                                            const updated = [...repoUrls];
-                                                            updated[idx] = e.target.value;
-                                                            setRepoUrls(updated);
-                                                        }}
-                                                        placeholder="https://github.com/username/repo"
-                                                        className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl flex-1"
-                                                    />
-                                                    <Button
-                                                        variant="ghost"
-                                                        size="sm"
-                                                        onClick={() => setRepoUrls(repoUrls.filter((_, i) => i !== idx))}
-                                                        className="text-red-400 hover:text-red-300 hover:bg-red-400/10"
-                                                    >
-                                                        <Trash2 className="w-4 h-4" />
-                                                    </Button>
-                                                </div>
-                                            ))}
-                                        </div>
-                                        <div className="flex gap-2">
-                                            <Input
-                                                value={newRepoUrl}
-                                                onChange={(e) => setNewRepoUrl(e.target.value)}
-                                                onKeyPress={(e) => {
-                                                    if (e.key === 'Enter' && newRepoUrl.trim()) {
-                                                        const updatedUrls = [...repoUrls, newRepoUrl];
-                                                        setRepoUrls(updatedUrls);
-                                                        setNewRepoUrl('');
-                                                    }
-                                                }}
-                                                placeholder="https://github.com/username/repo"
-                                                className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl flex-1"
-                                            />
-                                            <Button
-                                                variant="ghost"
-                                                size="sm"
-                                                onClick={() => {
-                                                    if (newRepoUrl.trim()) {
-                                                        const updatedUrls = [...repoUrls, newRepoUrl];
-                                                        setRepoUrls(updatedUrls);
-                                                        setNewRepoUrl('');
-                                                    }
-                                                }}
-                                                className="text-[#E0B954] hover:bg-[#E0B954]/10"
-                                            >
-                                                <Plus className="w-4 h-4" />
-                                            </Button>
-                                        </div>
+                                        <label className="text-xs font-medium text-[#737373] block mb-1.5">GitHub Repository URL</label>
+                                        <Input
+                                            value={editForm.github_repo_url || ''}
+                                            onChange={(e) => setEditForm(f => ({ ...f, github_repo_url: e.target.value }))}
+                                            placeholder="https://github.com/username/repo"
+                                            className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl"
+                                        />
                                     </div>
                                     <div className="grid grid-cols-2 gap-4">
                                         <div>
@@ -1248,37 +1191,20 @@ const ProjectDetail = () => {
                                         </p>
                                     </div>
                                     <div>
-                                        <label className="text-xs font-medium text-[#737373] block mb-1">GitHub Repositories</label>
-                                        {((Array.isArray(project.github_repo_urls) && project.github_repo_urls.length > 0) || project.github_repo_url) ? (
-                                            <div className="space-y-2">
-                                                {(Array.isArray(project.github_repo_urls) ? project.github_repo_urls : []).map((url, idx) => (
-                                                    <a
-                                                        key={idx}
-                                                        href={url}
-                                                        target="_blank"
-                                                        rel="noopener noreferrer"
-                                                        className="flex items-center gap-2 text-sm text-[#E0B954] hover:underline"
-                                                    >
-                                                        <Github className="w-4 h-4" />
-                                                        {url}
-                                                        <ExternalLink className="w-3 h-3" />
-                                                    </a>
-                                                ))}
-                                                {project.github_repo_url && (!Array.isArray(project.github_repo_urls) || !project.github_repo_urls.includes(project.github_repo_url)) && (
-                                                    <a
-                                                        href={project.github_repo_url}
-                                                        target="_blank"
-                                                        rel="noopener noreferrer"
-                                                        className="flex items-center gap-2 text-sm text-[#E0B954] hover:underline"
-                                                    >
-                                                        <Github className="w-4 h-4" />
-                                                        {project.github_repo_url}
-                                                        <ExternalLink className="w-3 h-3" />
-                                                    </a>
-                                                )}
-                                            </div>
+                                        <label className="text-xs font-medium text-[#737373] block mb-1">GitHub Repository</label>
+                                        {project.github_repo_url ? (
+                                            <a
+                                                href={project.github_repo_url}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="flex items-center gap-2 text-sm text-[#E0B954] hover:underline"
+                                            >
+                                                <Github className="w-4 h-4" />
+                                                {project.github_repo_url}
+                                                <ExternalLink className="w-3 h-3" />
+                                            </a>
                                         ) : (
-                                            <p className="text-sm text-[#737373]">No repositories configured</p>
+                                            <p className="text-sm text-[#737373]">No repository configured</p>
                                         )}
                                     </div>
                                     <div className="flex items-center gap-4 pt-3 border-t border-[rgba(255,255,255,0.05)] flex-wrap">

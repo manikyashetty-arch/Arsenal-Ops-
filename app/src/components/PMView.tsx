@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Clock, Users, Calendar, TrendingUp, AlertTriangle, Filter, BarChart3, ChevronUp, ChevronDown } from 'lucide-react';
+import { Clock, Users, Calendar, TrendingUp, AlertTriangle, BarChart3, ChevronUp, ChevronDown } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -110,7 +110,6 @@ interface WeeklyHours {
 export default function PMView({ projectId, token, isAdmin = false, userRestrictions = [], sprints = [] }: PMViewProps) {
     const [analytics, setAnalytics] = useState<HoursAnalytics | null>(null);
     const [isLoading, setIsLoading] = useState(true);
-    const [weekFilter, setWeekFilter] = useState<'all' | 'with-activity'>('all');
     const [expandedDeveloper, setExpandedDeveloper] = useState<number | null>(null);
     const [showDebugPanel, setShowDebugPanel] = useState(false);
     const [progressExpanded, setProgressExpanded] = useState(false);
@@ -402,6 +401,7 @@ export default function PMView({ projectId, token, isAdmin = false, userRestrict
                 </Card>
 
             {/* Weekly Hours Table */}
+            {/* TEMPORARILY HIDDEN - Uncomment to show
             {!isSubsectionRestricted('weekly hours breakdown') && (
             <Card className="bg-[rgba(255,255,255,0.02)] border-[rgba(255,255,255,0.05)]">
                 <CardHeader className="flex flex-row items-center justify-between">
@@ -470,6 +470,7 @@ export default function PMView({ projectId, token, isAdmin = false, userRestrict
                 </CardContent>
             </Card>
             )}
+            */}
 
             {/* Developer Hours Table */}
             {!isSubsectionRestricted('developer hours summary') && (

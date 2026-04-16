@@ -346,40 +346,54 @@ async def update_project(
     """Update a project (requires access)"""
     project = require_project_access(project_id, current_user, db)
 
+    # Update each field if provided
     if update.name is not None:
         project.name = update.name
     if update.description is not None:
         project.description = update.description
     if update.status is not None:
         project.status = update.status
+    
+    # Handle github_repo_url update
     if update.github_repo_url is not None:
         project.github_repo_url = update.github_repo_url
         # Update github_repo_name
-        project.github_repo_name = github_service.parse_repo_name(update.github_repo_url)
+        if update.github_repo_url:  # Parse only if not empty
+            project.github_repo_name = github_service.parse_repo_name(update.github_repo_url)
+        else:
+            project.github_repo_name = None
+        print(f"[DEBUG] Updated github_repo_url to: {project.github_repo_url}")
+    
+    # Handle github_repo_urls update
     if update.github_repo_urls is not None:
         project.github_repo_urls = update.github_repo_urls
-        flag_modified(project, "github_repo_urls")  # Tell SQLAlchemy the JSON field was modified
+        flag_modified(project, "github_repo_urls")
         # Also set primary github_repo_url to the first one in the list if available
         if update.github_repo_urls and len(update.github_repo_urls) > 0:
             project.github_repo_url = update.github_repo_urls[0]
             project.github_repo_name = github_service.parse_repo_name(update.github_repo_urls[0])
+    
+    # Handle dates
     if update.created_at is not None:
         try:
             # Parse YYYY-MM-DD format from frontend
             project.created_at = datetime.strptime(update.created_at, '%Y-%m-%d')
-        except ValueError:
+        except (ValueError, TypeError):
             pass
     if update.end_date is not None:
         try:
             # Parse YYYY-MM-DD format from frontend
             project.end_date = datetime.strptime(update.end_date, '%Y-%m-%d')
-        except ValueError:
+        except (ValueError, TypeError):
             pass
 
     project.updated_at = datetime.utcnow()
     db.commit()
     db.refresh(project)
-    return format_project(project, db)
+    
+    result = format_project(project, db)
+    print(f"[DEBUG] Response with github_repo_url: {result.get('github_repo_url')}")
+    return result
 
 
 @router.delete("/{project_id}")
