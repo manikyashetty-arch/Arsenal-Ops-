@@ -333,6 +333,11 @@ async def create_work_item(
     # Generate key using project's key_prefix
     key_prefix = getattr(project, 'key_prefix', None) or "PROJ"
 
+    # Get the developer associated with the current user (for reporter_id)
+    from models.developer import Developer
+    reporter = db.query(Developer).filter(Developer.email == current_user.email).first()
+    reporter_id = reporter.id if reporter else None
+
     # Acquire a PostgreSQL transaction-level advisory lock scoped to this key_prefix.
     # This serializes concurrent inserts for the same prefix across all Gunicorn workers,
     # making key collisions impossible without any retry logic.
@@ -355,6 +360,7 @@ async def create_work_item(
         story_points=item.story_points,
         priority=item.priority,
         assignee_id=item.assignee_id,
+        reporter_id=reporter_id,
         sprint_id=item.sprint_id,
         epic_id=item.epic_id,
         parent_id=item.parent_id,
@@ -451,6 +457,10 @@ async def update_work_item(
     if old_assignee_id and item.assignee:
         old_assignee_name = item.assignee.name
     
+    # Track old status before update for status change notification
+    old_status = item.status
+    status_changed = False
+    
     update_data = update.dict(exclude_unset=True)
     
     # Handle frontend compatibility: assigned_hours -> estimated_hours
@@ -466,6 +476,7 @@ async def update_work_item(
     # Handle status transitions
     if "status" in update_data:
         new_status = update_data["status"]
+        status_changed = old_status != new_status
         if new_status == WorkItemStatus.IN_PROGRESS.value and not item.started_at:
             item.started_at = datetime.utcnow()
         elif new_status == WorkItemStatus.DONE.value and not item.completed_at:
@@ -565,6 +576,63 @@ async def update_work_item(
     
     db.commit()
     db.refresh(item)
+    
+    # Send status change notification emails to creator and assignee if status changed
+    if status_changed:
+        from models.developer import Developer
+        
+        # Get reporter (creator) email
+        reporter_email = None
+        reporter_name = "Team"
+        if item.reporter_id:
+            reporter = db.query(Developer).filter(Developer.id == item.reporter_id).first()
+            if reporter:
+                reporter_email = reporter.email
+                reporter_name = reporter.name
+        
+        # Get assignee email
+        assignee_email = None
+        assignee_name = "Unassigned"
+        if item.assignee_id:
+            assignee = db.query(Developer).filter(Developer.id == item.assignee_id).first()
+            if assignee:
+                assignee_email = assignee.email
+                assignee_name = assignee.name
+        
+        # Determine who changed the status
+        changed_by = current_user.email
+        
+        # Collect unique recipients (skip the person who made the change)
+        recipients = set()
+        
+        # Add reporter if valid and didn't make the change
+        if reporter_email and reporter_email != changed_by:
+            recipients.add(reporter_email)
+        
+        # Add assignee if valid, didn't make the change, and different from reporter
+        if assignee_email and assignee_email != changed_by and assignee_email != reporter_email:
+            recipients.add(assignee_email)
+        
+        # Send one email per unique recipient
+        for recipient_email in recipients:
+            # Determine recipient name
+            if recipient_email == reporter_email:
+                recipient_name = reporter_name
+            else:
+                recipient_name = assignee_name
+            
+            email_service.send_status_change_notification(
+                to_email=recipient_email,
+                to_name=recipient_name,
+                work_item_key=item.key,
+                work_item_title=item.title,
+                old_status=old_status,
+                new_status=item.status,
+                changed_by=changed_by,
+                project_id=item.project_id,
+                work_item_id=item.id,
+                priority=item.priority
+            )
     
     # Update epic status if this item's status changed and it's linked to an epic
     if 'status' in update_data and item.epic_id:

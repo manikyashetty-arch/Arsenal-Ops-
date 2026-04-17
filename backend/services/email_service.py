@@ -277,6 +277,135 @@ Log in to Arsenal Ops to respond or view more details.
             html_body=html_body,
             text_body=text_body
         )
+    
+    def send_status_change_notification(
+        self,
+        to_email: str,
+        to_name: str,
+        work_item_key: str,
+        work_item_title: str,
+        old_status: str,
+        new_status: str,
+        changed_by: str,
+        project_id: int,
+        work_item_id: int,
+        priority: str = "medium"
+    ) -> bool:
+        """Send notification when work item status changes"""
+        frontend_url = os.getenv("FRONTEND_URL", "https://arsenal-ops.vercel.app")
+        ticket_link = f"{frontend_url}/project/{project_id}/board/{work_item_id}"
+        
+        # Status colors for visual distinction
+        status_colors = {
+            "todo": "#E0B954",
+            "in_progress": "#F59E0B",
+            "in_review": "#C79E3B",
+            "done": "#10B981",
+            "backlog": "#737373"
+        }
+        
+        status_emojis = {
+            "todo": "📋",
+            "in_progress": "📋",
+            "in_review": "📋",
+            "done": "✅",
+            "backlog": "📋"
+        }
+        
+        old_status_emoji = status_emojis.get(old_status, "📋")
+        new_status_emoji = status_emojis.get(new_status, "📋")
+        color = status_colors.get(new_status, "#6366F1")
+        
+        # Format status for display
+        new_status_display = new_status.replace("_", " ").title()
+        old_status_display = old_status.replace("_", " ").title()
+        
+        priority_color = {
+            "critical": "#DC2626",
+            "high": "#F97316",
+            "medium": "#6366F1",
+            "low": "#10B981"
+        }.get(priority, "#6366F1")
+        
+        html_body = f"""
+        <html>
+        <body style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 0; margin: 0; background-color: #f5f5f5;">
+            <div style="max-width: 600px; margin: 0 auto; background: white; padding: 40px; border-radius: 12px; box-shadow: 0 2px 12px rgba(0,0,0,0.1); margin-top: 20px;">
+                <div style="border-left: 4px solid {color}; padding-left: 20px; margin-bottom: 30px;">
+                    <h2 style="color: #1f2937; margin: 0 0 10px 0; font-size: 24px;">
+                        {new_status_emoji} Status Update
+                    </h2>
+                    <p style="color: #6b7280; margin: 0; font-size: 14px;">
+                        Work item status has changed
+                    </p>
+                </div>
+                
+                <p style="color: #374151; font-size: 16px; line-height: 1.6; margin: 20px 0;">
+                    Hi <strong>{to_name}</strong>,
+                </p>
+                
+                <p style="color: #374151; font-size: 16px; margin: 20px 0;">
+                    <strong>{changed_by}</strong> changed the status of <strong>{work_item_key}</strong>
+                </p>
+                
+                <div style="background: #f9fafb; padding: 20px; border-radius: 8px; margin: 25px 0; border: 1px solid #e5e7eb;">
+                    <p style="margin: 0 0 10px 0; color: #6b7280; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px;">
+                        <strong>{work_item_key}</strong> • Priority: <span style="color: {priority_color}; font-weight: bold;">{priority.upper()}</span>
+                    </p>
+                    <h3 style="margin: 10px 0; color: #1f2937; font-size: 18px;">
+                        {work_item_title}
+                    </h3>
+                </div>
+                
+                <div style="background: #f0f9ff; padding: 15px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #3b82f6;">
+                    <p style="margin: 0; color: #1e40af; font-size: 14px; line-height: 1.8;">
+                        <strong>Status Changed:</strong><br/>
+                        <span style="color: #6b7280;">{old_status_emoji} {old_status_display}</span> 
+                        <span style="color: #9ca3af; margin: 0 8px;">→</span> 
+                        <span style="color: {color}; font-weight: bold;">{new_status_emoji} {new_status_display}</span>
+                    </p>
+                </div>
+                
+                <div style="margin-top: 30px; text-align: center;">
+                    <a href="{ticket_link}" style="display: inline-block; background-color: {color}; color: white; padding: 12px 30px; border-radius: 6px; text-decoration: none; font-weight: bold; margin-bottom: 20px;">View Ticket</a>
+                </div>
+                
+                <div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #e5e7eb;">
+                    <p style="color: #6b7280; font-size: 12px; margin: 0;">
+                        This is an automated notification from <strong>Arsenal Ops</strong>. 
+                        Log in to view and manage your tasks.
+                    </p>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+        
+        text_body = f"""
+Status Update
+
+Hi {to_name},
+
+{changed_by} changed the status of {work_item_key}:
+
+{work_item_title}
+
+Status Changed:
+{old_status_emoji} {old_status_display} → {new_status_emoji} {new_status_display}
+
+Priority: {priority.upper()}
+
+View Ticket: {ticket_link}
+
+Log in to Arsenal Ops to view and manage your tasks.
+        """
+        
+        return self.send_email(
+            to_email=to_email,
+            subject=f"{new_status_emoji} Status Update: {work_item_key} - {new_status_display}",
+            html_body=html_body,
+            text_body=text_body
+        )
 
 
 # Create a singleton instance
