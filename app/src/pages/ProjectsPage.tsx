@@ -1292,7 +1292,7 @@ const ProjectsPage = () => {
                                         </div>
                                     ))
                                 )}
-                                {filteredMyTasks.length > 6 && (
+                                {filteredMyTasks.length > 6 && myTaskTab !== 'personal' && (
                                     <button
                                         onClick={() => setShowAllTasks(p => !p)}
                                         className="w-full text-center text-xs text-[#737373] hover:text-[#E0B954] py-2.5 transition-colors"
