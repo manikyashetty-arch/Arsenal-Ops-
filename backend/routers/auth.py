@@ -405,13 +405,13 @@ async def google_login(
         )
     
     # Restrict SSO to approved email domain(s)
-    allowed_domains = os.getenv("ALLOWED_EMAIL_DOMAINS", "arsenalai.com").split(",")
-    email_domain = user_info['email'].split('@')[-1].lower()
-    if email_domain not in [d.strip().lower() for d in allowed_domains]:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access restricted to authorized organization accounts only"
-        )
+    # allowed_domains = os.getenv("ALLOWED_EMAIL_DOMAINS", "arsenalai.com").split(",")
+    # email_domain = user_info['email'].split('@')[-1].lower()
+    # if email_domain not in [d.strip().lower() for d in allowed_domains]:
+    #     raise HTTPException(
+    #         status_code=status.HTTP_403_FORBIDDEN,
+    #         detail="Access restricted to authorized organization accounts only"
+    #     )
     
     # Check if user already exists by email
     user = db.query(User).filter(User.email == user_info['email']).first()

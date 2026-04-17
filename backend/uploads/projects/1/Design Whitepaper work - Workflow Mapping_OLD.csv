@@ -1,0 +1,44 @@
+,,,,,,,,,,
+,Whitepaper segmentation,"Design, Discovery, & Prototyping",,,,,Prototype to MVP (How to avoid vibe coding mistakes),,MVP to full product with AI,
+,,,,,,,,,,
+,Phase Owners,Product Mgmt,Design,Engineering,33/33/33 split across all 3,Design,Engineering,Product Mgmt,,
+,Best of breed,Google Meet Gemini Note Taker,Figma,,,,,,,
+,Others,Notion AI,Figma,,Grok,"Lovable
+v0
+Figma Make","Windsurf
+Cursor
+VS Code w/ Copilot",,"Windsurf
+Cursor
+VS Code w/ Copilot","Windsurf
+Cursor"
+,Anthropic Stack,Claude,Figma,,Claude,Claude Code,Claude Code,,Claude Code,Claude Code
+,Open AI Stack,ChatGPT,Figma,,ChatGPT,Codex,Codex,,Codex,Codex
+,Google Stack,Google Meet Gemini Note Taker,GoogleAI Studio,,Gemini,Google AI Studio,Google Antigravity,,Google Antigravity,Google Antigravity
+,Product Development Phases ---->,Initial Requirements Gathering,"User Experience Design
+(User Flows + Wireframes)",Initial solution architecture and complexity analysis,Establish initial set of features & design principles to generate prototype prompt and define MVP scope,Prototype Build,Prototype Validation & Code Reusibility Analysis,Finalize MVP Feature set and establish jira setup ,MVP Front End Dev,MVP Backend Dev
+,Designer,x,x,X,x,x,x,,x,
+,Product Manager / BA,x,x,X,x,x,x,,x,x
+,Engineer,,,X,x,x,x,,x,x
+,,,,,,,,,,
+,Key Outcomes below,,,,,,,,,
+,,Product Mgr: Work with SME to determine what to build and why,Designer: Wireframing ,,Designer: Generate prompt for inital AI prototype generation in coordiation with product mgrs and engineers.,Designer: Use prompt to create backbone of UI and site logic,Designer: Use an IDE to make UI adjustments,,Designer: Hand over code for dev to merge,Engineer:
+,,Product Mgr: Defined Highest Level feature outline,Designer: Low fidelity screen designs,,Designer: Ensure prompt alignment with design frames,,,,Designer: Maintain and push UIUX iterations updates on front end branch ,Product Mgr:
+,,"Designer: Define user personas, jobs, user journeys",Product Mgr: Product brief iteration and review prior to v0,,Product Mgr: Begin initial feature breakdown and heirarchy ,,Engineer: Assess if codebase is ready for dev team,,Engineer: create dev tickets for designer and review PR,
+,,Designer: Define user research goals,,,Engineer: Initial architecture assessement to inform tech stack and design principles included in prompt ,Engineer: Provide feedback on generated code structure and quality,Engineer: Tech stack and workflow support when needed,,Designer/Product Mgr/Engineer: review user feedback and create iteration plan,
+,,,,,Designer/Product Mgr: Plan and conduct user research,,,,,
+,,,,,Designer/Product Mgr: Synthesize user research feedback,,,,,
+,,,,,,,,,,
+,Leading Methedologies & Best Practices,,,,,,,,,
+,,,,,,,,,,
+,,,,,,,,,,
+,BS Phase Owner,Jake,Jake,Jake,Jake,Jake,Jake,Jake,Jake,Jake
+,Business Strategy Phases ---->,,,,,,,,,
+,,,,,,,,,,
+,Parallell Activities,,,,,,,,,
+,,Inital User Discovery ,,,,,,,,
+,,,,,,,,,,
+,,,,,,,,,,
+,,,,,,,,,,
+,,,,,,,,,,
+,,,,,,,,,,
+,Best of Breed vs Best of Suite,,,,,,,,,
