@@ -451,6 +451,9 @@ async def update_work_item(
     if old_assignee_id and item.assignee:
         old_assignee_name = item.assignee.name
     
+    # Track old status before update for status change notification
+    old_status = item.status
+    
     update_data = update.dict(exclude_unset=True)
     
     # Handle frontend compatibility: assigned_hours -> estimated_hours
@@ -565,6 +568,48 @@ async def update_work_item(
     
     db.commit()
     db.refresh(item)
+    
+    # Send status change email notifications to assignee and creator/reporter
+    if 'status' in update_data and update_data['status'] != old_status:
+        from models.developer import Developer
+        new_status = update_data['status']
+        changer_name = current_user.name if hasattr(current_user, 'name') and current_user.name else current_user.email
+        notified_emails = set()  # Avoid sending duplicate emails
+        
+        # Notify the assignee (if not the person making the change)
+        if item.assignee_id and item.assignee and item.assignee.email:
+            assignee_dev = item.assignee
+            if assignee_dev.email != current_user.email:
+                email_service.send_status_change_notification(
+                    to_email=assignee_dev.email,
+                    to_name=assignee_dev.name,
+                    changed_by=changer_name,
+                    work_item_key=item.key,
+                    work_item_title=item.title,
+                    old_status=old_status,
+                    new_status=new_status,
+                    project_id=item.project_id,
+                    work_item_id=item.id,
+                    role="assignee"
+                )
+                notified_emails.add(assignee_dev.email)
+        
+        # Notify the creator/reporter (if different from assignee and not the person making the change)
+        if item.reporter_id and item.reporter and item.reporter.email:
+            reporter_dev = item.reporter
+            if reporter_dev.email != current_user.email and reporter_dev.email not in notified_emails:
+                email_service.send_status_change_notification(
+                    to_email=reporter_dev.email,
+                    to_name=reporter_dev.name,
+                    changed_by=changer_name,
+                    work_item_key=item.key,
+                    work_item_title=item.title,
+                    old_status=old_status,
+                    new_status=new_status,
+                    project_id=item.project_id,
+                    work_item_id=item.id,
+                    role="creator"
+                )
     
     # Update epic status if this item's status changed and it's linked to an epic
     if 'status' in update_data and item.epic_id:
