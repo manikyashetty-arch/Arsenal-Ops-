@@ -1265,12 +1265,23 @@ const ProjectsPage = () => {
                                             className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-[rgba(255,255,255,0.03)] transition-colors cursor-pointer group"
                                             onClick={() => setSelectedTask(task)}
                                         >
-                                            <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
-                                                task.status === 'done' ? 'border-[#E0B954] bg-[#E0B954]' :
-                                                task.is_overdue ? 'border-red-400' : 'border-[#444] group-hover:border-[#E0B954]/50'
-                                            }`}>
+                                            <button
+                                                type="button"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    if (task.status !== 'done') {
+                                                        handleStatusChange(task, 'done');
+                                                        toast.success(`"${task.title}" marked as done`);
+                                                    }
+                                                }}
+                                                title={task.status === 'done' ? 'Completed' : 'Mark as closed'}
+                                                className={`w-4 h-4 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
+                                                    task.status === 'done' ? 'border-[#E0B954] bg-[#E0B954]' :
+                                                    task.is_overdue ? 'border-red-400 hover:bg-red-400/20' : 'border-[#444] group-hover:border-[#E0B954]/50 hover:bg-[#E0B954]/10'
+                                                }`}
+                                            >
                                                 {task.status === 'done' && <CheckCircle2 className="w-3 h-3 text-[#080808]" />}
-                                            </div>
+                                            </button>
                                             <span className={`flex-1 text-sm truncate ${
                                                 task.status === 'done' ? 'line-through text-[#555]' : 'text-[#f5f5f5]'
                                             }`}>
