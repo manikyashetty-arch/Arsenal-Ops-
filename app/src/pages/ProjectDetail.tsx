@@ -892,7 +892,9 @@ const ProjectDetail = () => {
     );
 
     // Helper function to check if a subsection is restricted
-    const isSubsectionRestricted = (tabName: TabType, subsectionName: string): boolean => {
+    // Accepts string (not just TabType) so legacy restriction rows that still
+    // reference renamed tabs (e.g. 'business' before it became 'pulse') keep working.
+    const isSubsectionRestricted = (tabName: string, subsectionName: string): boolean => {
         return userRestrictions.some(r => 
             r.tab_name.toLowerCase() === tabName.toLowerCase() && 
             r.subsection.toLowerCase() === subsectionName.toLowerCase()
