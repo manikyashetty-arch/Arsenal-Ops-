@@ -344,9 +344,12 @@ const ProjectPulseView: React.FC<ProjectPulseViewProps> = ({ pulse }) => {
     const summary = pulse.summary;
     const project = pulse.project;
 
+    // Match design: "Apr MTD" — short month derived from monthLabel ("April 2026" → "Apr").
+    const shortMonth = (summary.monthLabel || '').split(' ')[0].slice(0, 3);
+
     return (
         <div className="space-y-6">
-            {/* Page header */}
+            {/* Page header — matches IJKPageHeader from design */}
             <div className="flex items-end justify-between flex-wrap gap-3">
                 <div>
                     <div className="flex items-center gap-2 text-xs text-[#737373]">
@@ -359,7 +362,7 @@ const ProjectPulseView: React.FC<ProjectPulseViewProps> = ({ pulse }) => {
                 </div>
             </div>
 
-            {/* Executive hero */}
+            {/* Executive hero — exact 1:1 with Variant I */}
             <div className="rounded-2xl p-8 border border-[rgba(255,255,255,0.06)] bg-gradient-to-br from-[rgba(224,185,84,0.05)] to-transparent">
                 <div className="flex items-start gap-8 flex-wrap">
                     <HealthRing score={summary.healthScore} size={96} stroke={8} />
@@ -371,16 +374,16 @@ const ProjectPulseView: React.FC<ProjectPulseViewProps> = ({ pulse }) => {
                         <h3 className="text-2xl font-bold text-white mt-3 tracking-tight leading-tight max-w-2xl">
                             Tracking {underBudget ? 'under' : 'over'} contract by{' '}
                             <span className={underBudget ? 'text-[#34D399]' : 'text-[#FBBF24]'}>{fmt$(Math.abs(variance))}</span>,{' '}
-                            {summary.deliveryPct}% of planned work shipped, and {summary.openBugs} open bug{summary.openBugs === 1 ? '' : 's'}.
+                            {summary.deliveryPct}% of planned work shipped, and {summary.openBugs === 0 ? 'zero' : summary.openBugs} open bug{summary.openBugs === 1 ? '' : 's'}.
                         </h3>
-                        <p className="text-[#a3a3a3] mt-3 max-w-2xl text-sm leading-relaxed">
-                            {summary.monthLabel} · {summary.deliveryCompleted} of {summary.deliveryTotal} items shipped, {summary.pointsCompleted} of {summary.pointsTotal} points completed. {summary.activeSprints} active sprint{summary.activeSprints === 1 ? '' : 's'}. {pulse.risks.filter(r => r.severity === 'high').length} high-severity risk{pulse.risks.filter(r => r.severity === 'high').length === 1 ? '' : 's'} open.
+                        <p className="text-[#a3a3a3] mt-3 max-w-2xl text-[14px] leading-relaxed">
+                            {summary.narrative}
                         </p>
                     </div>
                 </div>
             </div>
 
-            {/* 4 status tiles */}
+            {/* 4 status tiles — exact 1:1 copy from Variant I */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 <StatusTile
                     kicker="Money"
@@ -395,24 +398,24 @@ const ProjectPulseView: React.FC<ProjectPulseViewProps> = ({ pulse }) => {
                     label="On-time delivery"
                     value={`${summary.deliveryPct}%`}
                     sub={`${summary.deliveryCompleted} / ${summary.deliveryTotal} items shipped`}
-                    trendColor={summary.overdueCount === 0 ? '#34D399' : '#FBBF24'}
+                    trendColor="#34D399"
                     trendText={`${summary.overdueCount} overdue`}
                 />
                 <StatusTile
                     kicker="Risks"
-                    label="Open bugs / critical"
+                    label="Open bugs & critical"
                     value={`${summary.openBugs} / ${summary.criticalOpen}`}
                     sub="bugs · critical items"
-                    trendColor={summary.openBugs + summary.criticalOpen === 0 ? '#34D399' : '#FBBF24'}
-                    trendText={summary.openBugs + summary.criticalOpen === 0 ? 'All clear' : 'Attention needed'}
+                    trendColor="#34D399"
+                    trendText={summary.risksTrendNote}
                 />
                 <StatusTile
                     kicker="People"
-                    label={`Hours burned (${summary.monthLabel.split(' ')[0]} MTD)`}
+                    label={`Hours burned (${shortMonth} MTD)`}
                     value={`${lastMonth?.devAct || 0}h`}
                     sub={`of ${lastMonth?.devFC || 0}h forecast`}
                     trendColor="#a3a3a3"
-                    trendText={`Plan: ${lastMonth?.devFC || 0}h`}
+                    trendText={summary.peopleTrendNote}
                 />
             </div>
 

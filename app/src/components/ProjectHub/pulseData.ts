@@ -84,6 +84,12 @@ export interface PulseSummary {
     monthLabel: string;
     monthIndex: number;
     totalMonths: number;
+    /** Editorial narrative paragraph shown under the hero headline. */
+    narrative: string;
+    /** Risks-tile trend text (e.g. "All clear"). */
+    risksTrendNote: string;
+    /** People-tile trend text (e.g. "6 active contributors"). */
+    peopleTrendNote: string;
 }
 
 export interface PulseData {
@@ -157,6 +163,9 @@ export const DUMMY_PULSE_DATA: PulseData = {
         monthLabel: 'April 2026',
         monthIndex: 3,
         totalMonths: 12,
+        narrative: 'April closes with the Core data pipeline fully delivered and Feature build underway. Dev hours are tracking 82% of plan — slight underspend driven by the pipeline finishing early. One high-severity risk remains on the OCR accuracy target; benchmarking is in progress.',
+        risksTrendNote: 'All clear',
+        peopleTrendNote: '6 active contributors',
     },
     risks: [
         { severity: 'high', title: 'OCR pipeline accuracy below 92% target', owner: 'Kai', due: 'May 5', note: 'Benchmarking new model family this sprint.' },
@@ -185,7 +194,15 @@ export const loadPulseData = (projectId: string | number): PulseData => {
         const raw = localStorage.getItem(STORAGE_PREFIX + projectId);
         if (!raw) return DUMMY_PULSE_DATA;
         const parsed = JSON.parse(raw);
-        return { ...DUMMY_PULSE_DATA, ...parsed };
+        // Deep-merge `summary` and `project` so older saved payloads pick up new
+        // fields (e.g. narrative, risksTrendNote) added later.
+        return {
+            ...DUMMY_PULSE_DATA,
+            ...parsed,
+            project: { ...DUMMY_PULSE_DATA.project, ...(parsed.project || {}) },
+            summary: { ...DUMMY_PULSE_DATA.summary, ...(parsed.summary || {}) },
+            includedServices: { ...DUMMY_PULSE_DATA.includedServices, ...(parsed.includedServices || {}) },
+        };
     } catch {
         return DUMMY_PULSE_DATA;
     }

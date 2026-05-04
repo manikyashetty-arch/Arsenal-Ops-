@@ -176,6 +176,22 @@ const PulseSettingsView: React.FC<PulseSettingsViewProps> = ({ projectId, initia
                     <Field label="Month index">{numberInput(data.summary.monthIndex, n => update({ ...data, summary: { ...data.summary, monthIndex: n } }))}</Field>
                     <Field label="Total months">{numberInput(data.summary.totalMonths, n => update({ ...data, summary: { ...data.summary, totalMonths: n } }))}</Field>
                 </div>
+
+                {/* Editorial fields used in the hero + status tiles */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2">
+                    <Field label="Risks tile note (e.g. 'All clear')">{textInput(data.summary.risksTrendNote ?? '', v => update({ ...data, summary: { ...data.summary, risksTrendNote: v } }), 'All clear')}</Field>
+                    <Field label="People tile note (e.g. '6 active contributors')">{textInput(data.summary.peopleTrendNote ?? '', v => update({ ...data, summary: { ...data.summary, peopleTrendNote: v } }), '6 active contributors')}</Field>
+                </div>
+                <div className="pt-2">
+                    <Field label="Hero narrative paragraph">
+                        <Textarea
+                            value={data.summary.narrative ?? ''}
+                            onChange={e => update({ ...data, summary: { ...data.summary, narrative: e.target.value } })}
+                            placeholder="One paragraph describing the month's progress, blockers, and outlook. Shows under the hero headline."
+                            className="bg-[rgba(255,255,255,0.03)] border-[rgba(255,255,255,0.07)] text-white min-h-[90px]"
+                        />
+                    </Field>
+                </div>
             </Section>
 
             {/* Budget ledger */}
