@@ -1805,7 +1805,7 @@ const ProjectsPage = () => {
                                             { label: 'Allocated Hours', value: `${selectedTask.assigned_hours || 0}h`, color: '#E0B954' },
                                             { label: 'Logged Hours', value: `${selectedTask.logged_hours || 0}h`, color: '#E0B954' },
                                             { label: 'Remaining Hours', value: `${selectedTask.remaining_hours || 0}h`, color: '#F59E0B' },
-                                            { label: 'Due Date', value: selectedTask.due_date ? new Date(selectedTask.due_date as string).toLocaleDateString() : 'Not set', color: selectedTask.due_date ? '#E0B954' : '#737373' },
+                                            { label: 'Due Date', value: selectedTask.due_date ? (parseLocalDate(selectedTask.due_date as string)?.toLocaleDateString() ?? 'Not set') : 'Not set', color: selectedTask.due_date ? '#E0B954' : '#737373' },
                                             { label: 'Status', value: (STATUS_CONFIG[selectedTask.status as keyof typeof STATUS_CONFIG] || STATUS_CONFIG.todo).label, color: (STATUS_CONFIG[selectedTask.status as keyof typeof STATUS_CONFIG] || STATUS_CONFIG.todo).color },
                                             { label: 'Priority', value: selectedTask.priority?.charAt(0).toUpperCase() + (selectedTask.priority?.slice(1) || ''), color: selectedTask.priority === 'critical' ? '#EF4444' : selectedTask.priority === 'high' ? '#F97316' : selectedTask.priority === 'medium' ? '#F59E0B' : '#737373' },
                                         ].map(d => (
