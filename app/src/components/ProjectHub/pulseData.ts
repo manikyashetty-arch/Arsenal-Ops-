@@ -59,6 +59,19 @@ export interface PulseUpdate {
     text: string;
 }
 
+export interface FeatureForecastRow {
+    feature: string;
+    employee: string;
+    fc: number;
+    act: number;
+}
+
+export interface ForecastVsActuals {
+    current: FeatureForecastRow[];  // Current month MTD
+    last: FeatureForecastRow[];     // Last month
+    project: FeatureForecastRow[];  // Entire project
+}
+
 export interface PulseProjectMeta {
     name: string;
     keyPrefix: string;
@@ -97,11 +110,14 @@ export interface PulseData {
     ledger: LedgerRow[];
     months: MonthRow[];
     lastActualIdx: number;
+    /** Percent of the current (in-month) period elapsed for the "X% of month tracked" pill. */
+    currentMonthTrackedPct: number;
     includedServices: IncludedServices;
     summary: PulseSummary;
     risks: PulseRisk[];
     milestones: PulseMilestone[];
     updates: PulseUpdate[];
+    forecastVsActuals: ForecastVsActuals;
 }
 
 export const DUMMY_PULSE_DATA: PulseData = {
@@ -136,6 +152,7 @@ export const DUMMY_PULSE_DATA: PulseData = {
         { m: 'Jan 27', devFC: 0, devAct: null, dev: 0, ad: 6000, gtm: 3000, ba: 0, mgmt: 2400 },
     ],
     lastActualIdx: 2,
+    currentMonthTrackedPct: 62,
     includedServices: {
         totalHours: 1000,
         usedHours: 1000,
@@ -185,6 +202,39 @@ export const DUMMY_PULSE_DATA: PulseData = {
         { when: 'Apr 10', author: 'Kai', type: 'risk', text: 'Raised OCR accuracy risk; benchmarking alternatives.' },
         { when: 'Apr 02', author: 'Ravi', type: 'milestone', text: 'Ingestion bridge integration passed QA.' },
     ],
+    forecastVsActuals: {
+        current: [
+            { feature: 'Template Rendering', employee: 'Maya', fc: 60, act: 48 },
+            { feature: 'Assistant Services', employee: 'Priya', fc: 45, act: 38 },
+            { feature: 'Heirloom Prototype', employee: 'Jules', fc: 32, act: 30 },
+            { feature: 'Verification Cleaning', employee: 'Ravi', fc: 40, act: 22 },
+            { feature: 'Ingestion Bridge', employee: 'Ravi', fc: 55, act: 41 },
+            { feature: 'Identity & Auth', employee: 'Tom', fc: 30, act: 29 },
+        ],
+        last: [
+            { feature: 'Structured DB Schema', employee: 'Maya', fc: 50, act: 44 },
+            { feature: 'Progression Manager', employee: 'Maya', fc: 55, act: 45 },
+            { feature: 'Task State Machine', employee: 'Maya', fc: 72, act: 62 },
+            { feature: 'Verification Cleaning', employee: 'Ravi', fc: 85, act: 70 },
+            { feature: 'Ingestion Bridge', employee: 'Ravi', fc: 105, act: 92 },
+            { feature: 'OCR & NLP Pipeline', employee: 'Kai', fc: 240, act: 210 },
+            { feature: 'Heirloom Prototype', employee: 'Jules', fc: 32, act: 32 },
+            { feature: 'Identity & Auth', employee: 'Tom', fc: 95, act: 84 },
+        ],
+        project: [
+            { feature: 'Structured DB Schema', employee: 'Maya', fc: 50, act: 44 },
+            { feature: 'Progression Manager', employee: 'Maya', fc: 55, act: 45 },
+            { feature: 'Task State Machine', employee: 'Maya', fc: 72, act: 62 },
+            { feature: 'Template Rendering', employee: 'Maya', fc: 60, act: 48 },
+            { feature: 'Unstructured Data Store', employee: 'Maya', fc: 35, act: 22 },
+            { feature: 'Verification Cleaning', employee: 'Ravi', fc: 125, act: 92 },
+            { feature: 'Ingestion Bridge', employee: 'Ravi', fc: 160, act: 133 },
+            { feature: 'Heirloom Prototype', employee: 'Jules', fc: 62, act: 62 },
+            { feature: 'OCR & NLP Pipeline', employee: 'Kai', fc: 240, act: 210 },
+            { feature: 'Assistant Services', employee: 'Priya', fc: 45, act: 38 },
+            { feature: 'Identity & Auth', employee: 'Tom', fc: 125, act: 113 },
+        ],
+    },
 };
 
 const STORAGE_PREFIX = 'pulse-data:';
@@ -202,6 +252,7 @@ export const loadPulseData = (projectId: string | number): PulseData => {
             project: { ...DUMMY_PULSE_DATA.project, ...(parsed.project || {}) },
             summary: { ...DUMMY_PULSE_DATA.summary, ...(parsed.summary || {}) },
             includedServices: { ...DUMMY_PULSE_DATA.includedServices, ...(parsed.includedServices || {}) },
+            forecastVsActuals: { ...DUMMY_PULSE_DATA.forecastVsActuals, ...(parsed.forecastVsActuals || {}) },
         };
     } catch {
         return DUMMY_PULSE_DATA;

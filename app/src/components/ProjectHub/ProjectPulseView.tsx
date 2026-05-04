@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
-import { Activity, AlertTriangle } from 'lucide-react';
-import { PulseData, computeDerived } from './pulseData';
+import { PulseData, FeatureForecastRow, computeDerived } from './pulseData';
 
 const fmt$ = (v: number) => (v < 0 ? '-' : '') + '$' + Math.abs(Math.round(v)).toLocaleString();
 const fmt$k = (v: number) => (v < 0 ? '-' : '') + '$' + Math.round(Math.abs(v) / 100) / 10 + 'k';
@@ -14,80 +13,182 @@ const CATEGORY_COLORS = [
     { key: 'gtm', label: 'GTM', color: '#F472B6' },
 ] as const;
 
-const SEVERITY_COLOR: Record<string, string> = { high: '#F87171', medium: '#FBBF24', low: '#a3a3a3' };
+const Card: React.FC<React.PropsWithChildren<{ className?: string }>> = ({ className = '', children }) => (
+    <div className={'bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-2xl ' + className}>{children}</div>
+);
 
-interface ProjectPulseViewProps {
-    pulse: PulseData;
-}
-
-const HealthRing: React.FC<{ score: number; size?: number; stroke?: number }> = ({ score, size = 96, stroke = 8 }) => {
-    const r = (size - stroke) / 2;
-    const C = 2 * Math.PI * r;
-    const pct = Math.max(0, Math.min(100, score)) / 100;
-    const color = score >= 80 ? '#34D399' : score >= 60 ? '#FBBF24' : '#EF4444';
+/* -------------------------------------------------------------------- */
+/*  STAT TILE — used inside the unified hero                            */
+/* -------------------------------------------------------------------- */
+const Stat: React.FC<{ label: string; value: React.ReactNode; sub?: string; tone?: 'neutral' | 'gold' | 'green' | 'amber'; children?: React.ReactNode }> = ({ label, value, sub, tone = 'neutral', children }) => {
+    const toneBorder: Record<string, string> = {
+        neutral: 'border-[rgba(255,255,255,0.05)]',
+        gold: 'border-[#E0B954]/25 bg-[#E0B954]/[0.04]',
+        green: 'border-[#34D399]/20 bg-[#34D399]/[0.04]',
+        amber: 'border-[#FBBF24]/20 bg-[#FBBF24]/[0.04]',
+    };
     return (
-        <div className="relative" style={{ width: size, height: size }}>
-            <svg viewBox={`0 0 ${size} ${size}`} className="-rotate-90">
-                <circle cx={size / 2} cy={size / 2} r={r} stroke="rgba(255,255,255,0.08)" strokeWidth={stroke} fill="none" />
-                <circle cx={size / 2} cy={size / 2} r={r} stroke={color} strokeWidth={stroke} fill="none"
-                    strokeDasharray={C} strokeDashoffset={C * (1 - pct)} strokeLinecap="round" />
-            </svg>
-            <div className="absolute inset-0 flex items-center justify-center text-lg font-bold text-white tabular-nums">{score}</div>
+        <div className={'rounded-xl p-4 bg-[rgba(255,255,255,0.02)] border ' + toneBorder[tone]}>
+            <div className="text-[10px] uppercase tracking-wider text-[#737373]">{label}</div>
+            <div className="text-xl font-bold text-white tabular-nums mt-1.5">{value}</div>
+            {sub && <div className="text-[11px] text-[#a3a3a3] mt-1">{sub}</div>}
+            {children}
         </div>
     );
 };
 
-const SeverityDot: React.FC<{ severity: string }> = ({ severity }) => (
-    <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ background: SEVERITY_COLOR[severity] }} />
-);
+/* -------------------------------------------------------------------- */
+/*  PROJECT HERO CARD — Variant E first box (1:1 port)                  */
+/* -------------------------------------------------------------------- */
+const ProjectHeroCard: React.FC<{ pulse: PulseData }> = ({ pulse }) => {
+    const { contractTotal, burnedToDate, forecastEnd, monthsWithCum } = computeDerived(pulse);
+    const burnedPct = contractTotal > 0 ? burnedToDate / contractTotal : 0;
+    const forecastVariance = forecastEnd - contractTotal;
+    const underBudget = forecastVariance < 0;
 
-const StatusTile: React.FC<{ kicker: string; label: string; value: string; sub: string; trendColor: string; trendText: string }> = ({ kicker, label, value, sub, trendColor, trendText }) => (
-    <div className="rounded-xl p-5 border border-[rgba(255,255,255,0.06)] bg-[rgba(255,255,255,0.015)]">
-        <div className="text-[10px] uppercase tracking-[0.18em] text-[#737373] font-mono">{kicker}</div>
-        <div className="text-[11px] text-[#a3a3a3] mt-2">{label}</div>
-        <div className="text-2xl font-bold text-white tabular-nums mt-1 tracking-tight">{value}</div>
-        <div className="text-[11px] text-[#737373] mt-1">{sub}</div>
-        <div className="text-[11px] mt-3 font-mono" style={{ color: trendColor }}>{trendText}</div>
-    </div>
-);
+    const devHoursActual = monthsWithCum.slice(0, pulse.lastActualIdx + 1).reduce((a, b) => a + (b.devAct || 0), 0);
+    const devHoursForecast = monthsWithCum.reduce((a, b) => a + (b.devFC || 0), 0);
+    const devHoursToDateFC = monthsWithCum.slice(0, pulse.lastActualIdx + 1).reduce((a, b) => a + (b.devFC || 0), 0);
+    const devHoursPct = devHoursToDateFC > 0 ? devHoursActual / devHoursToDateFC : 0;
 
-const MiniBurnChart: React.FC<{ pulse: PulseData; height?: number }> = ({ pulse, height = 220 }) => {
-    const { monthsWithCum, contractTotal } = computeDerived(pulse);
-    const W = 1000, H = height, padL = 40, padR = 20, padT = 10, padB = 30;
-    const w = W - padL - padR;
-    const h = H - padT - padB;
-    const max = Math.max(...monthsWithCum.map(m => m.total), 1);
-    const step = monthsWithCum.length > 1 ? w / (monthsWithCum.length - 1) : w;
-
-    const cumPts = monthsWithCum.map((m, i) => ({
-        x: padL + i * step,
-        y: padT + h - (m.cum / Math.max(contractTotal, m.cum, 1)) * h,
-    }));
-    const actPath = cumPts.slice(0, pulse.lastActualIdx + 1).map((p, i) => (i === 0 ? 'M' : 'L') + p.x + ' ' + p.y).join(' ');
-    const fcPath = cumPts.slice(pulse.lastActualIdx).map((p, i) => (i === 0 ? 'M' : 'L') + p.x + ' ' + p.y).join(' ');
-    const barW = Math.max(10, step * 0.5);
+    const s = pulse.includedServices;
+    const inclPct = s.totalHours > 0 ? s.usedHours / s.totalHours : 0;
+    const lastMonth = monthsWithCum[pulse.lastActualIdx];
+    const monthShort = (pulse.summary.monthLabel || '').split(' ')[0].slice(0, 3);
 
     return (
-        <svg width="100%" viewBox={`0 0 ${W} ${H}`}>
-            {[0, 0.25, 0.5, 0.75, 1].map((t, i) => (
-                <line key={i} x1={padL} x2={W - padR} y1={padT + h * (1 - t)} y2={padT + h * (1 - t)} stroke="rgba(255,255,255,0.04)" />
-            ))}
-            {monthsWithCum.map((m, i) => {
-                const h_ = (m.total / max) * h * 0.7;
-                return (
-                    <rect key={i} x={padL + i * step - barW / 2} y={padT + h - h_} width={barW} height={h_}
-                        fill={i <= pulse.lastActualIdx ? '#E0B954' : 'rgba(224,185,84,0.25)'} rx="2" />
-                );
-            })}
-            <path d={actPath} fill="none" stroke="#F4F6FF" strokeWidth="2" />
-            <path d={fcPath} fill="none" stroke="#F4F6FF" strokeWidth="2" strokeDasharray="4 3" opacity="0.65" />
-            {monthsWithCum.map((m, i) => (
-                <text key={i} x={padL + i * step} y={H - 8} fill="#737373" fontSize="10" textAnchor="middle" fontFamily="ui-monospace, monospace">{m.m.split(' ')[0]}</text>
-            ))}
-        </svg>
+        <Card className="p-6">
+            {/* Row 1 — Contract hero */}
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
+                {/* Left: big number + variance pill + burn track */}
+                <div className="lg:col-span-5">
+                    <div className="text-[10px] uppercase tracking-[0.18em] text-[#737373] font-mono">Contract</div>
+                    <div className="flex items-end gap-4 mt-2 flex-wrap">
+                        <div className="text-5xl font-bold text-white tabular-nums tracking-tight">{fmt$(contractTotal)}</div>
+                        <div className="pb-1.5">
+                            <div className={'inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-semibold ' +
+                                (underBudget ? 'bg-[#34D399]/15 text-[#34D399]' : 'bg-[#FBBF24]/15 text-[#FBBF24]')}>
+                                <span>{underBudget ? '↓' : '↑'}</span>
+                                {fmt$(Math.abs(forecastVariance))} {underBudget ? 'under' : 'over'}
+                            </div>
+                        </div>
+                    </div>
+                    <div className="text-sm text-[#a3a3a3] mt-1">
+                        Projected end-of-project: <span className="text-white font-semibold tabular-nums">{fmt$(forecastEnd)}</span>
+                    </div>
+
+                    {/* Burn track */}
+                    <div className="mt-5">
+                        <div className="flex items-center justify-between text-[11px] mb-2">
+                            <span className="text-[#737373] font-mono uppercase tracking-wider">Burned to date</span>
+                            <span className="text-white font-semibold tabular-nums">{fmt$(burnedToDate)} · {fmtPct(burnedPct)}</span>
+                        </div>
+                        <div className="relative h-3 rounded-full bg-[rgba(255,255,255,0.05)] overflow-hidden">
+                            <div className="absolute top-0 left-0 h-full rounded-full"
+                                style={{
+                                    width: `${burnedPct * 100}%`,
+                                    background: 'linear-gradient(90deg,#C79E3B,#E0B954)',
+                                }} />
+                            <div className="absolute top-0 h-full w-0.5 bg-white/50"
+                                style={{ left: `${Math.min(100, (forecastEnd / contractTotal) * 100)}%` }} />
+                        </div>
+                        <div className="flex items-center justify-between text-[10px] text-[#737373] font-mono mt-1.5">
+                            <span>{pulse.project.contractStart}</span>
+                            <span>Target launch · {pulse.project.launchTarget}</span>
+                            <span>{pulse.project.contractEnd}</span>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Right: 3 stat tiles */}
+                <div className="lg:col-span-7 grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <Stat
+                        label={`Current month (${monthShort}, MTD)`}
+                        value={fmt$(lastMonth?.total || 0)}
+                        tone="amber"
+                    >
+                        <div className="mt-3 h-1 rounded-full bg-[rgba(255,255,255,0.05)] overflow-hidden">
+                            <div className="h-full bg-[#FBBF24]" style={{ width: `${pulse.currentMonthTrackedPct}%` }} />
+                        </div>
+                        <div className="text-[10px] text-[#FBBF24] mt-1.5 font-mono">{pulse.currentMonthTrackedPct}% of month tracked</div>
+                    </Stat>
+
+                    <Stat
+                        label="Dev hours · to date"
+                        value={`${devHoursActual.toLocaleString()} / ${devHoursToDateFC.toLocaleString()}`}
+                        sub={`${fmtPct(devHoursPct)} · on pace for MVP`}
+                    >
+                        <div className="mt-3 h-1 rounded-full bg-[rgba(255,255,255,0.05)] overflow-hidden relative">
+                            <div className="absolute top-0 left-0 h-full rounded-full bg-[#E0B954]"
+                                style={{ width: `${Math.min(100, devHoursPct * 100)}%` }} />
+                        </div>
+                        <div className="text-[10px] text-[#737373] mt-1.5 font-mono">Total plan: {devHoursForecast.toLocaleString()} hrs</div>
+                    </Stat>
+
+                    <Stat
+                        label="Included hours · used"
+                        value={`${s.usedHours.toLocaleString()} / ${s.totalHours.toLocaleString()}`}
+                        sub={`Through ${s.throughMonth}`}
+                        tone={inclPct >= 1 ? 'amber' : 'gold'}
+                    >
+                        <div className="mt-3 h-1 rounded-full bg-[rgba(255,255,255,0.05)] overflow-hidden">
+                            <div className="h-full" style={{
+                                width: `${Math.min(100, inclPct * 100)}%`,
+                                background: inclPct >= 1 ? '#FBBF24' : '#E0B954',
+                            }} />
+                        </div>
+                        <div className={'text-[10px] mt-1.5 font-mono ' + (inclPct >= 1 ? 'text-[#FBBF24]' : 'text-[#a3a3a3]')}>
+                            {inclPct >= 1 ? 'Fully consumed · overage billable' : `${fmtPct(inclPct)} consumed`}
+                        </div>
+                    </Stat>
+                </div>
+            </div>
+
+            {/* Divider */}
+            <div className="h-px bg-[rgba(255,255,255,0.05)] my-6" />
+
+            {/* Row 2 — Billing & Accrual strip */}
+            <div>
+                <div className="flex items-center gap-3 mb-3">
+                    <div className="text-[10px] uppercase tracking-[0.18em] text-[#737373] font-mono">Billing & Accrual</div>
+                    <div className="flex-1 h-px bg-[rgba(255,255,255,0.05)]" />
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="rounded-xl p-5 bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)]">
+                        <div className="text-[11px] uppercase tracking-wider text-[#737373]">Billable hrs accrued</div>
+                        <div className="flex items-baseline gap-2 mt-2">
+                            <div className="text-2xl font-bold text-white tabular-nums">{s.billableAccrued}</div>
+                            <div className="text-sm text-[#737373]">hrs</div>
+                            <div className="text-sm text-[#a3a3a3] tabular-nums ml-auto">{fmt$(s.billableAccruedCost)}</div>
+                        </div>
+                        <div className="text-[11px] text-[#737373] mt-1">Mgmt + hours over included total</div>
+                    </div>
+                    <div className="rounded-xl p-5 bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)]">
+                        <div className="text-[11px] uppercase tracking-wider text-[#737373]">Invoiced to date</div>
+                        <div className="flex items-baseline gap-2 mt-2">
+                            <div className="text-2xl font-bold text-white tabular-nums">{s.billableInvoiced}</div>
+                            <div className="text-sm text-[#737373]">hrs</div>
+                            <div className="text-sm text-[#a3a3a3] ml-auto">{s.invoiceCount} invoices</div>
+                        </div>
+                        <div className="text-[11px] text-[#737373] mt-1">Submitted as of {s.throughMonth}</div>
+                    </div>
+                    <div className="rounded-xl p-5 bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)]">
+                        <div className="text-[11px] uppercase tracking-wider text-[#737373]">Billable remaining (forecast)</div>
+                        <div className="flex items-baseline gap-2 mt-2">
+                            <div className="text-2xl font-bold text-white tabular-nums">{s.expectedRemaining.toLocaleString()}</div>
+                            <div className="text-sm text-[#737373]">hrs</div>
+                        </div>
+                        <div className="text-[11px] text-[#737373] mt-1">Through end of contract · {pulse.project.contractEnd}</div>
+                    </div>
+                </div>
+            </div>
+        </Card>
     );
 };
 
+/* -------------------------------------------------------------------- */
+/*  STACKED BURN CHART — used inside SpendingViewCard "chart" view      */
+/* -------------------------------------------------------------------- */
 const BurnChart: React.FC<{ pulse: PulseData; width?: number; height?: number }> = ({ pulse, width = 1100, height = 340 }) => {
     const { monthsWithCum } = computeDerived(pulse);
     const padL = 56, padR = 56, padT = 24, padB = 44;
@@ -101,7 +202,6 @@ const BurnChart: React.FC<{ pulse: PulseData; width?: number; height?: number }>
 
     const bw = W / monthsWithCum.length;
     const barW = bw * 0.62;
-
     const xBar = (i: number) => padL + bw * i + bw / 2 - barW / 2;
     const yBar = (v: number) => padT + H - (v / yMaxBar) * H;
     const yLine = (v: number) => padT + H - (v / yMaxCum) * H;
@@ -109,7 +209,6 @@ const BurnChart: React.FC<{ pulse: PulseData; width?: number; height?: number }>
     const linePts = monthsWithCum.map((m, i) => [padL + bw * i + bw / 2, yLine(m.cum)] as [number, number]);
     const actPath = linePts.slice(0, pulse.lastActualIdx + 1).map((p, i) => (i === 0 ? 'M' : 'L') + p[0] + ' ' + p[1]).join(' ');
     const fcPath = linePts.slice(pulse.lastActualIdx).map((p, i) => (i === 0 ? 'M' : 'L') + p[0] + ' ' + p[1]).join(' ');
-
     const barTicks = [0, yMaxBar * 0.25, yMaxBar * 0.5, yMaxBar * 0.75, yMaxBar];
     const cumTicks = [0, yMaxCum * 0.25, yMaxCum * 0.5, yMaxCum * 0.75, yMaxCum];
     const todayX = padL + bw * pulse.lastActualIdx + bw / 2 + bw * 0.35;
@@ -121,28 +220,16 @@ const BurnChart: React.FC<{ pulse: PulseData; width?: number; height?: number }>
                     <line x1="0" y1="0" x2="0" y2="5" stroke="rgba(255,255,255,0.08)" strokeWidth="1.5" />
                 </pattern>
             </defs>
-            {barTicks.map((t, i) => (
-                <line key={i} x1={padL} x2={padL + W} y1={yBar(t)} y2={yBar(t)} stroke="rgba(255,255,255,0.04)" />
-            ))}
-            {barTicks.map((t, i) => (
-                <text key={i} x={padL - 8} y={yBar(t) + 4} fill="#737373" fontSize="10" textAnchor="end" fontFamily="ui-monospace, monospace">
-                    {t === 0 ? '$0' : fmt$k(t)}
-                </text>
-            ))}
-            {cumTicks.map((t, i) => (
-                <text key={i} x={padL + W + 8} y={yLine(t) + 4} fill="#a3a3a3" fontSize="10" textAnchor="start" fontFamily="ui-monospace, monospace">
-                    {t === 0 ? '$0' : fmt$k(t)}
-                </text>
-            ))}
+            {barTicks.map((t, i) => (<line key={i} x1={padL} x2={padL + W} y1={yBar(t)} y2={yBar(t)} stroke="rgba(255,255,255,0.04)" />))}
+            {barTicks.map((t, i) => (<text key={i} x={padL - 8} y={yBar(t) + 4} fill="#737373" fontSize="10" textAnchor="end" fontFamily="ui-monospace, monospace">{t === 0 ? '$0' : fmt$k(t)}</text>))}
+            {cumTicks.map((t, i) => (<text key={i} x={padL + W + 8} y={yLine(t) + 4} fill="#a3a3a3" fontSize="10" textAnchor="start" fontFamily="ui-monospace, monospace">{t === 0 ? '$0' : fmt$k(t)}</text>))}
             <text x={padL} y={padT - 8} fill="#737373" fontSize="10" fontFamily="ui-monospace, monospace">Monthly burn</text>
             <text x={padL + W} y={padT - 8} fill="#a3a3a3" fontSize="10" textAnchor="end" fontFamily="ui-monospace, monospace">Cumulative</text>
-
             <g>
                 <line x1={todayX} x2={todayX} y1={padT} y2={padT + H} stroke="#F4F6FF" strokeWidth="1" strokeDasharray="3 3" opacity="0.4" />
                 <rect x={todayX - 22} y={padT - 6} width="44" height="16" rx="4" fill="#1a1a1a" stroke="rgba(255,255,255,0.15)" />
                 <text x={todayX} y={padT + 5} fill="#F4F6FF" fontSize="9" textAnchor="middle" fontFamily="ui-monospace, monospace">TODAY</text>
             </g>
-
             {monthsWithCum.map((m, i) => {
                 let acc = 0;
                 return (
@@ -155,23 +242,21 @@ const BurnChart: React.FC<{ pulse: PulseData; width?: number; height?: number }>
                             acc += v;
                             return <rect key={s.key} x={xBar(i)} y={y} width={barW} height={h} fill={s.color} opacity={m.actual ? 1 : 0.45} />;
                         })}
-                        {!m.actual && (
-                            <rect x={xBar(i)} y={yBar(m.total)} width={barW} height={H - (yBar(m.total) - padT)} fill="url(#hatch)" pointerEvents="none" />
-                        )}
+                        {!m.actual && (<rect x={xBar(i)} y={yBar(m.total)} width={barW} height={H - (yBar(m.total) - padT)} fill="url(#hatch)" pointerEvents="none" />)}
                         <text x={xBar(i) + barW / 2} y={padT + H + 16} fill="#a3a3a3" fontSize="10" textAnchor="middle" fontFamily="ui-monospace, monospace">{m.m}</text>
                     </g>
                 );
             })}
-
             <path d={actPath} fill="none" stroke="#F4F6FF" strokeWidth="2.25" strokeLinecap="round" />
             <path d={fcPath} fill="none" stroke="#F4F6FF" strokeWidth="2.25" strokeLinecap="round" strokeDasharray="5 4" opacity="0.65" />
-            {linePts.map((p, i) => (
-                <circle key={i} cx={p[0]} cy={p[1]} r={i <= pulse.lastActualIdx ? 3.5 : 2.5} fill="#F4F6FF" stroke="#080808" strokeWidth="2" />
-            ))}
+            {linePts.map((p, i) => (<circle key={i} cx={p[0]} cy={p[1]} r={i <= pulse.lastActualIdx ? 3.5 : 2.5} fill="#F4F6FF" stroke="#080808" strokeWidth="2" />))}
         </svg>
     );
 };
 
+/* -------------------------------------------------------------------- */
+/*  CATEGORY RIBBON — used inside SpendingViewCard "timeline" view      */
+/* -------------------------------------------------------------------- */
 const CategoryRibbon: React.FC<{ pulse: PulseData; width?: number }> = ({ pulse, width = 1100 }) => {
     const cats = CATEGORY_COLORS;
     const labelW = 140;
@@ -201,17 +286,14 @@ const CategoryRibbon: React.FC<{ pulse: PulseData; width?: number }> = ({ pulse,
                         const active = v > 0;
                         return (
                             <div key={i} className="relative flex items-center justify-center" style={{ width: cellW, height: rowH, padding: '0 2px' }}>
-                                <div className="w-full h-full rounded-md"
-                                    style={{
-                                        background: active ? `color-mix(in oklab, ${c.color} ${Math.max(25, intensity * 100)}%, #0c0c0c)` : 'rgba(255,255,255,0.02)',
-                                        border: active ? `1px solid ${c.color}30` : '1px solid rgba(255,255,255,0.04)',
-                                        opacity: m.actual ? 1 : 0.85,
-                                    }} />
+                                <div className="w-full h-full rounded-md" style={{
+                                    background: active ? `color-mix(in oklab, ${c.color} ${Math.max(25, intensity * 100)}%, #0c0c0c)` : 'rgba(255,255,255,0.02)',
+                                    border: active ? `1px solid ${c.color}30` : '1px solid rgba(255,255,255,0.04)',
+                                    opacity: m.actual ? 1 : 0.85,
+                                }} />
                                 {active && intensity > 0.6 && (
                                     <div className="absolute inset-0 flex items-center justify-center text-[9px] font-mono font-semibold"
-                                        style={{ color: intensity > 0.7 ? '#080808' : '#F4F6FF' }}>
-                                        {fmt$k(v)}
-                                    </div>
+                                        style={{ color: intensity > 0.7 ? '#080808' : '#F4F6FF' }}>{fmt$k(v)}</div>
                                 )}
                             </div>
                         );
@@ -220,16 +302,17 @@ const CategoryRibbon: React.FC<{ pulse: PulseData; width?: number }> = ({ pulse,
             ))}
             <div className="mt-4 flex items-center" style={{ paddingLeft: labelW }}>
                 <div className="relative" style={{ width: cellW * pulse.months.length, height: 1 }}>
-                    <div className="absolute h-4 border-l-2 border-dashed border-[#F4F6FF]/40 -top-1"
-                        style={{ left: cellW * (pulse.lastActualIdx + 0.6) }} />
-                    <div className="absolute -top-5 text-[10px] text-[#a3a3a3] font-mono"
-                        style={{ left: cellW * (pulse.lastActualIdx + 0.6) - 18 }}>TODAY</div>
+                    <div className="absolute h-4 border-l-2 border-dashed border-[#F4F6FF]/40 -top-1" style={{ left: cellW * (pulse.lastActualIdx + 0.6) }} />
+                    <div className="absolute -top-5 text-[10px] text-[#a3a3a3] font-mono" style={{ left: cellW * (pulse.lastActualIdx + 0.6) - 18 }}>TODAY</div>
                 </div>
             </div>
         </div>
     );
 };
 
+/* -------------------------------------------------------------------- */
+/*  BURN TABLE — used inside SpendingViewCard "table" view              */
+/* -------------------------------------------------------------------- */
 const BurnTable: React.FC<{ pulse: PulseData }> = ({ pulse }) => {
     const { monthsWithCum, forecastEnd } = computeDerived(pulse);
     const sum = (key: keyof typeof monthsWithCum[number]) => monthsWithCum.reduce((a, b) => a + (Number((b as any)[key]) || 0), 0);
@@ -292,12 +375,15 @@ const BurnTable: React.FC<{ pulse: PulseData }> = ({ pulse }) => {
     );
 };
 
+/* -------------------------------------------------------------------- */
+/*  SPENDING BY CATEGORY — 3-way toggle (timeline / chart / table)      */
+/* -------------------------------------------------------------------- */
 const SpendingViewCard: React.FC<{ pulse: PulseData }> = ({ pulse }) => {
     const [view, setView] = useState<'timeline' | 'chart' | 'table'>('timeline');
     const SUB: Record<string, string> = {
-        timeline: 'When each category is active across the contract',
+        timeline: 'When each category is active across the 12-month contract',
         chart: 'Stacked monthly spend with cumulative forecast',
-        table: 'Every line item by month — the numeric source of truth',
+        table: 'Every line item by month · the numeric source of truth',
     };
     const TABS = [
         { id: 'timeline' as const, label: 'Timeline ribbon' },
@@ -305,7 +391,7 @@ const SpendingViewCard: React.FC<{ pulse: PulseData }> = ({ pulse }) => {
         { id: 'table' as const, label: 'Table' },
     ];
     return (
-        <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-2xl p-5">
+        <Card className="p-5">
             <div className="flex items-start justify-between mb-5 flex-wrap gap-3">
                 <div>
                     <h3 className="text-sm font-semibold text-white">Spending by category</h3>
@@ -321,180 +407,158 @@ const SpendingViewCard: React.FC<{ pulse: PulseData }> = ({ pulse }) => {
                     ))}
                 </div>
             </div>
-            {view === 'timeline' && (
-                <div className="overflow-x-auto"><CategoryRibbon pulse={pulse} width={1100} /></div>
-            )}
-            {view === 'chart' && (
-                <div className="overflow-x-auto"><BurnChart pulse={pulse} width={1100} /></div>
-            )}
-            {view === 'table' && (
-                <div className="-mx-5 -mb-5"><BurnTable pulse={pulse} /></div>
-            )}
-        </div>
+            {view === 'timeline' && <div className="overflow-x-auto"><CategoryRibbon pulse={pulse} width={1100} /></div>}
+            {view === 'chart' && <div className="overflow-x-auto"><BurnChart pulse={pulse} width={1100} /></div>}
+            {view === 'table' && <div className="-mx-5 -mb-5"><BurnTable pulse={pulse} /></div>}
+        </Card>
     );
 };
 
-const ProjectPulseView: React.FC<ProjectPulseViewProps> = ({ pulse }) => {
-    const { contractTotal, burnedToDate, forecastEnd, monthsWithCum } = computeDerived(pulse);
-    const burnedPct = contractTotal > 0 ? burnedToDate / contractTotal : 0;
-    const variance = contractTotal - forecastEnd;
-    const underBudget = variance >= 0;
-    const lastMonth = monthsWithCum[pulse.lastActualIdx];
-
-    const summary = pulse.summary;
-    const project = pulse.project;
-
-    // Match design: "Apr MTD" — short month derived from monthLabel ("April 2026" → "Apr").
-    const shortMonth = (summary.monthLabel || '').split(' ')[0].slice(0, 3);
+/* -------------------------------------------------------------------- */
+/*  FORECAST VS ACTUALS — Variant E bottom card (1:1 port)              */
+/* -------------------------------------------------------------------- */
+const ForecastVsActualsChart: React.FC<{ rows: FeatureForecastRow[]; width?: number }> = ({ rows, width = 1100 }) => {
+    const padL = 260, padR = 160, padT = 12, padB = 40;
+    const rowH = 36;
+    const H = rows.length * rowH;
+    const total = H + padT + padB;
+    const max = Math.max(...rows.map(r => Math.max(r.fc, r.act)), 1);
+    const yMax = Math.ceil(max / 20) * 20 || 20;
+    const W = width - padL - padR;
+    const xScale = (v: number) => (v / yMax) * W;
+    const totalFC = rows.reduce((a, b) => a + b.fc, 0);
+    const totalAct = rows.reduce((a, b) => a + b.act, 0);
+    const ticks = [0, yMax * 0.25, yMax * 0.5, yMax * 0.75, yMax];
 
     return (
-        <div className="space-y-6">
-            {/* Page header — matches IJKPageHeader from design */}
-            <div className="flex items-end justify-between flex-wrap gap-3">
+        <svg width={width} height={total + 40} style={{ display: 'block' }}>
+            {ticks.map((t, i) => (
+                <g key={i}>
+                    <line x1={padL + xScale(t)} x2={padL + xScale(t)} y1={padT} y2={padT + H} stroke="rgba(255,255,255,0.04)" />
+                    <text x={padL + xScale(t)} y={padT + H + 16} fill="#737373" fontSize="10" textAnchor="middle" fontFamily="ui-monospace, monospace">{t}h</text>
+                </g>
+            ))}
+            {rows.map((r, i) => {
+                const y = padT + i * rowH + rowH / 2;
+                const barH = 10;
+                const variance = r.act - r.fc;
+                const varPct = r.fc > 0 ? variance / r.fc : 0;
+                const over = variance > 0;
+                return (
+                    <g key={i}>
+                        {i > 0 && <line x1={0} x2={width} y1={padT + i * rowH} y2={padT + i * rowH} stroke="rgba(255,255,255,0.03)" />}
+                        <text x={12} y={y - 2} fill="#F4F6FF" fontSize="12" fontWeight="500">{r.feature}</text>
+                        <text x={12} y={y + 12} fill="#737373" fontSize="10">{r.employee}</text>
+                        <rect x={padL} y={y - barH - 1} width={xScale(r.fc)} height={barH} fill="rgba(255,255,255,0.05)" stroke="#737373" strokeWidth="1" strokeDasharray="3 2" />
+                        <rect x={padL} y={y + 1} width={xScale(r.act)} height={barH} fill={over ? '#FBBF24' : '#34D399'} opacity="0.9" />
+                        <g transform={`translate(${padL + W + 12}, ${y - 6})`}>
+                            <rect x={0} y={0} width={120} height={20} rx={4}
+                                fill={over ? 'rgba(251,191,36,0.1)' : 'rgba(52,211,153,0.1)'}
+                                stroke={over ? 'rgba(251,191,36,0.3)' : 'rgba(52,211,153,0.3)'} />
+                            <text x={60} y={13} fill={over ? '#FBBF24' : '#34D399'} fontSize="10" textAnchor="middle" fontFamily="ui-monospace, monospace" fontWeight="600">
+                                {over ? '+' : ''}{variance}h · {over ? '+' : ''}{Math.round(varPct * 100)}%
+                            </text>
+                        </g>
+                    </g>
+                );
+            })}
+            <g>
+                <line x1={0} x2={width} y1={padT + H} y2={padT + H} stroke="rgba(255,255,255,0.1)" />
+                <text x={12} y={padT + H + 34} fill="#F4F6FF" fontSize="13" fontWeight="600">Total</text>
+                <text x={padL} y={padT + H + 34} fill="#a3a3a3" fontSize="11" fontFamily="ui-monospace, monospace">Forecast {totalFC}h</text>
+                <text x={padL + 120} y={padT + H + 34} fill={totalAct > totalFC ? '#FBBF24' : '#34D399'} fontSize="11" fontFamily="ui-monospace, monospace">
+                    Actual {totalAct}h ({totalAct - totalFC >= 0 ? '+' : ''}{totalAct - totalFC}h)
+                </text>
+            </g>
+        </svg>
+    );
+};
+
+const ForecastVsActualsCard: React.FC<{ pulse: PulseData }> = ({ pulse }) => {
+    const [scope, setScope] = useState<'current' | 'last' | 'project'>('current');
+    const SCOPES = [
+        { id: 'current' as const, label: 'Current month', sub: `${pulse.summary.monthLabel} (MTD)` },
+        { id: 'last' as const, label: 'Last month', sub: 'Previous period' },
+        { id: 'project' as const, label: 'Entire project', sub: 'To date' },
+    ];
+    const rows = pulse.forecastVsActuals[scope];
+    const activeScope = SCOPES.find(s => s.id === scope)!;
+    const totalFC = rows.reduce((a, b) => a + b.fc, 0);
+    const totalAct = rows.reduce((a, b) => a + b.act, 0);
+    const variance = totalAct - totalFC;
+    const under = variance < 0;
+
+    return (
+        <Card className="p-5">
+            <div className="flex items-start justify-between mb-5 flex-wrap gap-3">
                 <div>
-                    <div className="flex items-center gap-2 text-xs text-[#737373]">
-                        <span>Pulse</span>
-                        <span>›</span>
-                        <span className="text-[#a3a3a3]">Briefing</span>
-                    </div>
-                    <h2 className="text-xl font-semibold text-white mt-1">{summary.monthLabel} · Monthly Pulse</h2>
-                    <p className="text-sm text-[#737373] mt-0.5">{project.contractStart} → {project.contractEnd} · Project is tracking {underBudget ? 'healthy' : 'at risk'}</p>
+                    <h3 className="text-sm font-semibold text-white">Forecasted vs Actuals · Dev hours by feature</h3>
+                    <p className="text-xs text-[#737373] mt-0.5">
+                        {activeScope.sub} · {rows.length} features · {under ? `${Math.abs(variance)}h under forecast` : `${variance}h over forecast`}
+                    </p>
                 </div>
-            </div>
-
-            {/* Executive hero — exact 1:1 with Variant I */}
-            <div className="rounded-2xl p-8 border border-[rgba(255,255,255,0.06)] bg-gradient-to-br from-[rgba(224,185,84,0.05)] to-transparent">
-                <div className="flex items-start gap-8 flex-wrap">
-                    <HealthRing score={summary.healthScore} size={96} stroke={8} />
-                    <div className="flex-1 min-w-[280px]">
-                        <div className="flex items-center gap-3">
-                            <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${summary.healthStatus === 'Healthy' ? 'bg-[#34D399]/15 text-[#34D399]' : summary.healthStatus === 'At Risk' ? 'bg-[#FBBF24]/15 text-[#FBBF24]' : 'bg-[#EF4444]/15 text-[#EF4444]'}`}>{summary.healthStatus}</span>
-                            <span className="text-xs text-[#737373] font-mono">MONTH {summary.monthIndex} OF {summary.totalMonths}</span>
-                        </div>
-                        <h3 className="text-2xl font-bold text-white mt-3 tracking-tight leading-tight max-w-2xl">
-                            Tracking {underBudget ? 'under' : 'over'} contract by{' '}
-                            <span className={underBudget ? 'text-[#34D399]' : 'text-[#FBBF24]'}>{fmt$(Math.abs(variance))}</span>,{' '}
-                            {summary.deliveryPct}% of planned work shipped, and {summary.openBugs === 0 ? 'zero' : summary.openBugs} open bug{summary.openBugs === 1 ? '' : 's'}.
-                        </h3>
-                        <p className="text-[#a3a3a3] mt-3 max-w-2xl text-[14px] leading-relaxed">
-                            {summary.narrative}
-                        </p>
+                <div className="flex items-center gap-4 flex-wrap">
+                    <div className="flex items-center gap-4 text-xs text-[#a3a3a3]">
+                        <span className="flex items-center gap-1.5">
+                            <span className="inline-block w-4 h-2 border border-dashed border-[#737373] bg-white/5" />Forecast
+                        </span>
+                        <span className="flex items-center gap-1.5">
+                            <span className="inline-block w-4 h-2 bg-[#34D399]" />Actual (under)
+                        </span>
+                        <span className="flex items-center gap-1.5">
+                            <span className="inline-block w-4 h-2 bg-[#FBBF24]" />Actual (over)
+                        </span>
                     </div>
-                </div>
-            </div>
-
-            {/* 4 status tiles — exact 1:1 copy from Variant I */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                <StatusTile
-                    kicker="Money"
-                    label="Burned to date"
-                    value={fmt$(burnedToDate)}
-                    sub={`${fmtPct(burnedPct)} of ${fmt$(contractTotal)} contract`}
-                    trendColor={underBudget ? '#34D399' : '#FBBF24'}
-                    trendText={`${underBudget ? '↓' : '↑'} ${fmt$(Math.abs(variance))} vs contract`}
-                />
-                <StatusTile
-                    kicker="Progress"
-                    label="On-time delivery"
-                    value={`${summary.deliveryPct}%`}
-                    sub={`${summary.deliveryCompleted} / ${summary.deliveryTotal} items shipped`}
-                    trendColor="#34D399"
-                    trendText={`${summary.overdueCount} overdue`}
-                />
-                <StatusTile
-                    kicker="Risks"
-                    label="Open bugs & critical"
-                    value={`${summary.openBugs} / ${summary.criticalOpen}`}
-                    sub="bugs · critical items"
-                    trendColor="#34D399"
-                    trendText={summary.risksTrendNote}
-                />
-                <StatusTile
-                    kicker="People"
-                    label={`Hours burned (${shortMonth} MTD)`}
-                    value={`${lastMonth?.devAct || 0}h`}
-                    sub={`of ${lastMonth?.devFC || 0}h forecast`}
-                    trendColor="#a3a3a3"
-                    trendText={summary.peopleTrendNote}
-                />
-            </div>
-
-            {/* Stakeholder summary strip */}
-            <div className="rounded-2xl p-6 border border-[rgba(255,255,255,0.06)] bg-[rgba(255,255,255,0.015)]">
-                <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
-                    <div className="flex items-center gap-2">
-                        <div className="w-6 h-6 rounded-md bg-[#E0B954]/15 flex items-center justify-center">
-                            <Activity className="w-3.5 h-3.5 text-[#E0B954]" />
-                        </div>
-                        <div className="text-sm font-semibold text-white">Stakeholder Summary</div>
-                    </div>
-                    <div className="text-xs text-[#737373]">Rolls up to month-end report</div>
-                </div>
-                <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-                    <div className="lg:col-span-6">
-                        <div className="flex items-center justify-between text-xs mb-2">
-                            <span className="text-[#737373]">Overall completion</span>
-                            <span className="text-white font-semibold tabular-nums">{summary.overallCompletion}%</span>
-                        </div>
-                        <div className="h-2 rounded-full bg-[rgba(255,255,255,0.05)] overflow-hidden">
-                            <div className="h-full bg-[#E0B954]" style={{ width: `${summary.overallCompletion}%` }} />
-                        </div>
-                    </div>
-                    <div className="lg:col-span-6 grid grid-cols-3 gap-4">
-                        <div>
-                            <div className="text-[10px] uppercase tracking-wider text-[#737373]">Total work items</div>
-                            <div className="text-lg font-bold text-white tabular-nums mt-1">{summary.workItems}</div>
-                        </div>
-                        <div>
-                            <div className="text-[10px] uppercase tracking-wider text-[#737373]">Points completed</div>
-                            <div className="text-lg font-bold text-white tabular-nums mt-1">{summary.pointsCompleted} / {summary.pointsTotal}</div>
-                        </div>
-                        <div>
-                            <div className="text-[10px] uppercase tracking-wider text-[#737373]">Active sprints</div>
-                            <div className="text-lg font-bold text-white tabular-nums mt-1">{summary.activeSprints}</div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            {/* Two-col: Burn chart + Risks log */}
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-                <div className="lg:col-span-8 rounded-2xl p-6 border border-[rgba(255,255,255,0.06)] bg-[rgba(255,255,255,0.015)]">
-                    <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
-                        <div className="text-sm font-semibold text-white">Contract burn — {pulse.months.length} months</div>
-                        <div className="text-xs text-[#a3a3a3] font-mono tabular-nums">{fmt$k(burnedToDate)} / {fmt$k(contractTotal)}</div>
-                    </div>
-                    <MiniBurnChart pulse={pulse} height={220} />
-                </div>
-                <div className="lg:col-span-4 rounded-2xl p-6 border border-[rgba(255,255,255,0.06)] bg-[rgba(255,255,255,0.015)]">
-                    <div className="flex items-center justify-between mb-4">
-                        <div className="text-sm font-semibold text-white">Risks · {pulse.risks.length}</div>
-                        <div className="text-xs text-[#737373]">{pulse.risks.filter(r => r.severity === 'high').length} high</div>
-                    </div>
-                    <div className="space-y-3">
-                        {pulse.risks.length === 0 ? (
-                            <div className="text-center py-6 text-xs text-[#737373]">
-                                <AlertTriangle className="w-6 h-6 mx-auto mb-2 opacity-40" />
-                                No active risks
-                            </div>
-                        ) : pulse.risks.map((r, i) => (
-                            <div key={i} className="pb-3 border-b border-[rgba(255,255,255,0.04)] last:border-b-0 last:pb-0">
-                                <div className="flex items-start gap-2">
-                                    <span className="mt-2"><SeverityDot severity={r.severity} /></span>
-                                    <div className="flex-1">
-                                        <div className="text-[13px] text-white leading-snug">{r.title}</div>
-                                        <div className="text-[11px] text-[#737373] mt-1">{r.owner} · due {r.due}</div>
-                                        {r.note && <div className="text-[11px] text-[#a3a3a3] mt-1 italic">{r.note}</div>}
-                                    </div>
-                                </div>
-                            </div>
+                    <div className="flex items-center p-0.5 rounded-lg border border-[rgba(255,255,255,0.07)] bg-[rgba(255,255,255,0.02)]">
+                        {SCOPES.map(s => (
+                            <button key={s.id} onClick={() => setScope(s.id)}
+                                className={'px-3 py-1.5 text-xs rounded-md transition-colors ' +
+                                    (scope === s.id ? 'bg-[#E0B954]/15 text-[#E0B954] font-semibold' : 'text-[#a3a3a3] hover:text-white')}>
+                                {s.label}
+                            </button>
                         ))}
                     </div>
                 </div>
             </div>
+            <div className="overflow-x-auto">
+                {rows.length === 0 ? (
+                    <div className="text-center py-12 text-xs text-[#737373]">No data for this period.</div>
+                ) : (
+                    <ForecastVsActualsChart rows={rows} width={1100} />
+                )}
+            </div>
+        </Card>
+    );
+};
 
-            {/* Spending by category — Timeline / Chart / Table toggle */}
+/* -------------------------------------------------------------------- */
+/*  PROJECT PULSE VIEW — Variant E (Combined / recommended)             */
+/* -------------------------------------------------------------------- */
+const ProjectPulseView: React.FC<{ pulse: PulseData }> = ({ pulse }) => {
+    return (
+        <div className="space-y-5">
+            {/* Page header — breadcrumb + title + subtitle (Variant E) */}
+            <div className="flex items-end justify-between flex-wrap gap-3">
+                <div>
+                    <div className="flex items-center gap-2 text-xs text-[#737373]">
+                        <span>Financials</span>
+                        <span>›</span>
+                        <span className="text-[#a3a3a3]">Monthly Burn</span>
+                    </div>
+                    <h2 className="text-xl font-semibold text-white mt-1">Monthly Burn · Dev + GTM</h2>
+                    <p className="text-sm text-[#737373] mt-0.5">{pulse.project.contractStart} → {pulse.project.contractEnd} · Read-only · Synced from time tracking & billing</p>
+                </div>
+                <div className="text-xs text-[#737373]">Last sync: <span className="text-[#a3a3a3] font-mono">2h ago</span></div>
+            </div>
+
+            {/* Unified hero (first box) */}
+            <ProjectHeroCard pulse={pulse} />
+
+            {/* Spending by category — 3-way toggle */}
             <SpendingViewCard pulse={pulse} />
+
+            {/* Forecasted vs Actuals — dev hours by feature */}
+            <ForecastVsActualsCard pulse={pulse} />
         </div>
     );
 };
