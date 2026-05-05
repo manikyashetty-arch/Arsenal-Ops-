@@ -125,6 +125,8 @@ interface MyTask {
     sprint?: string;
     parent_key?: string | null;
     epic_key?: string | null;
+    /** True for rows synthesized from personal tasks merged into the upcoming/overdue/completed lists. */
+    is_personal?: boolean;
 }
 
 const ProjectsPage = () => {
@@ -935,11 +937,53 @@ const ProjectsPage = () => {
         done: { label: 'Done', color: '#E0B954', icon: CheckCircle2 },
     } as const;
 
-    const filteredMyTasks = myTasks.filter(t => {
-        if (myTaskTab === 'upcoming') return t.status !== 'done' && !t.is_overdue;
-        if (myTaskTab === 'overdue') return t.is_overdue;
-        return t.status === 'done';
-    });
+    // Personal tasks coerced to MyTask shape so they render in the same list.
+    // Marked with is_personal so the row click routes to /personal-tasks instead
+    // of opening the project-workitem modal.
+    const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+    const personalAsMyTasks: (MyTask & { is_personal?: boolean })[] = personalTasks
+        .filter(t => !t.is_converted)
+        .map(t => {
+            const due = t.due_date ? new Date(t.due_date) : null;
+            return {
+                id: `personal-${t.id}`,
+                key: 'PERSONAL',
+                title: t.title,
+                type: 'personal',
+                status: t.status,
+                priority: t.priority,
+                project_id: t.project_id ?? 0,
+                project_name: 'Personal',
+                due_date: t.due_date || null,
+                estimated_hours: t.estimated_hours ?? null,
+                logged_hours: null,
+                remaining_hours: t.estimated_hours ?? null,
+                is_overdue: due ? due < todayStart && t.status !== 'done' : false,
+                description: t.description,
+                tags: t.tags,
+                is_personal: true,
+            };
+        });
+
+    const filteredMyTasks: (MyTask & { is_personal?: boolean })[] = (() => {
+        if (myTaskTab === 'upcoming') {
+            const projectUpcoming = myTasks.filter(t => t.status !== 'done' && !t.is_overdue);
+            const personalUpcoming = personalAsMyTasks.filter(t => t.status !== 'done' && !t.is_overdue);
+            return [...projectUpcoming, ...personalUpcoming];
+        }
+        if (myTaskTab === 'overdue') {
+            const projectOverdue = myTasks.filter(t => t.is_overdue);
+            const personalOverdue = personalAsMyTasks.filter(t => t.is_overdue);
+            return [...projectOverdue, ...personalOverdue];
+        }
+        if (myTaskTab === 'completed') {
+            const projectDone = myTasks.filter(t => t.status === 'done');
+            const personalDone = personalAsMyTasks.filter(t => t.status === 'done');
+            return [...projectDone, ...personalDone];
+        }
+        // 'personal' tab still rendered separately below — this branch is unused
+        return myTasks.filter(t => t.status === 'done');
+    })();
 
     const getSortedTasks = (tasks: MyTask[]) => {
         if (myTaskTab === 'upcoming') {
@@ -1172,11 +1216,14 @@ const ProjectsPage = () => {
                                 {(['upcoming', 'overdue', 'completed', 'personal'] as const).map(tab => {
                                     const count = tab === 'upcoming'
                                         ? myTasks.filter(t => t.status !== 'done' && !t.is_overdue).length
+                                          + personalAsMyTasks.filter(t => t.status !== 'done' && !t.is_overdue).length
                                         : tab === 'overdue'
                                         ? myTasks.filter(t => t.is_overdue).length
+                                          + personalAsMyTasks.filter(t => t.is_overdue).length
                                         : tab === 'personal'
                                         ? personalTasks.filter(t => !t.is_converted && t.status !== 'done').length
-                                        : myTasks.filter(t => t.status === 'done').length;
+                                        : myTasks.filter(t => t.status === 'done').length
+                                          + personalAsMyTasks.filter(t => t.status === 'done').length;
                                     return (
                                         <button
                                             key={tab}
@@ -1318,18 +1365,30 @@ const ProjectsPage = () => {
                                         <div
                                             key={task.id}
                                             className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-[rgba(255,255,255,0.03)] transition-colors cursor-pointer group"
-                                            onClick={() => setSelectedTask(task)}
+                                            onClick={() => {
+                                                if (task.is_personal) {
+                                                    // Personal tasks live in a separate table — open the personal tasks page to edit
+                                                    navigate('/personal-tasks');
+                                                } else {
+                                                    setSelectedTask(task);
+                                                }
+                                            }}
                                         >
                                             <button
                                                 type="button"
                                                 onClick={(e) => {
                                                     e.stopPropagation();
+                                                    if (task.is_personal) {
+                                                        // Mark complete via personal tasks page (different endpoint)
+                                                        navigate('/personal-tasks');
+                                                        return;
+                                                    }
                                                     if (task.status !== 'done') {
                                                         handleStatusChange(task, 'done');
                                                         toast.success(`"${task.title}" marked as done`);
                                                     }
                                                 }}
-                                                title={task.status === 'done' ? 'Completed' : 'Mark as closed'}
+                                                title={task.is_personal ? 'Open personal tasks to mark done' : task.status === 'done' ? 'Completed' : 'Mark as closed'}
                                                 className={`w-4 h-4 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
                                                     task.status === 'done' ? 'border-[#E0B954] bg-[#E0B954]' :
                                                     task.is_overdue ? 'border-red-400 hover:bg-red-400/20' : 'border-[#444] group-hover:border-[#E0B954]/50 hover:bg-[#E0B954]/10'
@@ -1342,8 +1401,12 @@ const ProjectsPage = () => {
                                             }`}>
                                                 {task.title}
                                             </span>
-                                            <span className="text-xs px-2 py-0.5 rounded-md bg-[rgba(224,185,84,0.08)] text-[#C79E3B] truncate max-w-[110px] flex-shrink-0">
-                                                {task.project_name}
+                                            <span className={`text-xs px-2 py-0.5 rounded-md truncate max-w-[110px] flex-shrink-0 ${
+                                                task.is_personal
+                                                    ? 'bg-[rgba(167,139,250,0.12)] text-[#A78BFA]'
+                                                    : 'bg-[rgba(224,185,84,0.08)] text-[#C79E3B]'
+                                            }`}>
+                                                {task.is_personal ? 'Personal' : task.project_name}
                                             </span>
                                             {task.is_overdue && (
                                                 <AlertCircle className="w-3.5 h-3.5 text-red-400 flex-shrink-0" />
