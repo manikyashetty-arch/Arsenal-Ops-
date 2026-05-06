@@ -623,6 +623,49 @@ const ProjectsPage = () => {
         }
     };
 
+    // Quick due-date change from the inline calendar popover on each task row.
+    // Routes to the right endpoint based on whether it's a project work item or
+    // a personal task, and refreshes the underlying list.
+    const handleQuickDueDateChange = async (task: MyTask & { is_personal?: boolean }, isoDate: string) => {
+        if (task.is_personal) {
+            const realId = String(task.id).replace(/^personal-/, '');
+            // Optimistic update of the personalTasks list
+            setPersonalTasks(prev => prev.map(p => String(p.id) === realId ? { ...p, due_date: isoDate } : p));
+            try {
+                const res = await fetch(`${API_BASE_URL}/api/personal-tasks/${realId}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                    body: JSON.stringify({ due_date: isoDate }),
+                });
+                if (!res.ok) throw new Error();
+                toast.success('Due date updated');
+            } catch {
+                toast.error('Failed to update due date');
+            }
+        } else {
+            // Project work item — also recompute is_overdue locally so it moves
+            // between Upcoming / Overdue tabs correctly without a refetch.
+            const today = new Date(); today.setHours(0, 0, 0, 0);
+            const due = new Date(isoDate + 'T00:00:00');
+            const isOverdue = due < today && task.status !== 'done';
+            setMyTasks(prev => prev.map(t => t.id === task.id ? { ...t, due_date: isoDate, is_overdue: isOverdue } : t));
+            try {
+                const res = await fetch(`${API_BASE_URL}/api/workitems/${task.id}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                    body: JSON.stringify({ due_date: isoDate }),
+                });
+                if (!res.ok) throw new Error();
+                toast.success('Due date updated');
+            } catch {
+                toast.error('Failed to update due date');
+            }
+        }
+    };
+
+    // Track which row's calendar popover is open (one at a time)
+    const [openDateRowId, setOpenDateRowId] = useState<string | null>(null);
+
     // Render text with newlines preserved
     const renderTextWithNewlines = (text: string) => {
         if (!text) return null;
@@ -972,8 +1015,9 @@ const ProjectsPage = () => {
             return [...projectUpcoming, ...personalUpcoming];
         }
         if (myTaskTab === 'overdue') {
-            const projectOverdue = myTasks.filter(t => t.is_overdue);
-            const personalOverdue = personalAsMyTasks.filter(t => t.is_overdue);
+            // Exclude done tasks — clicking the done-circle should make them disappear
+            const projectOverdue = myTasks.filter(t => t.is_overdue && t.status !== 'done');
+            const personalOverdue = personalAsMyTasks.filter(t => t.is_overdue && t.status !== 'done');
             return [...projectOverdue, ...personalOverdue];
         }
         if (myTaskTab === 'completed') {
@@ -1218,8 +1262,8 @@ const ProjectsPage = () => {
                                         ? myTasks.filter(t => t.status !== 'done' && !t.is_overdue).length
                                           + personalAsMyTasks.filter(t => t.status !== 'done' && !t.is_overdue).length
                                         : tab === 'overdue'
-                                        ? myTasks.filter(t => t.is_overdue).length
-                                          + personalAsMyTasks.filter(t => t.is_overdue).length
+                                        ? myTasks.filter(t => t.is_overdue && t.status !== 'done').length
+                                          + personalAsMyTasks.filter(t => t.is_overdue && t.status !== 'done').length
                                         : tab === 'personal'
                                         ? personalTasks.filter(t => !t.is_converted && t.status !== 'done').length
                                         : myTasks.filter(t => t.status === 'done').length
@@ -1411,13 +1455,58 @@ const ProjectsPage = () => {
                                             {task.is_overdue && (
                                                 <AlertCircle className="w-3.5 h-3.5 text-red-400 flex-shrink-0" />
                                             )}
-                                            {task.due_date && (
-                                                <span className={`text-xs flex-shrink-0 ${
-                                                    task.is_overdue ? 'text-red-400' : 'text-[#737373]'
-                                                }`}>
-                                                    {parseLocalDate(task.due_date)?.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                                                </span>
-                                            )}
+                                            {/* Inline calendar popover — click to set/change due date */}
+                                            <Popover
+                                                open={openDateRowId === String(task.id)}
+                                                onOpenChange={(o) => setOpenDateRowId(o ? String(task.id) : null)}
+                                            >
+                                                <PopoverTrigger asChild>
+                                                    <button
+                                                        type="button"
+                                                        onClick={(e) => e.stopPropagation()}
+                                                        title={task.due_date ? `Due ${parseLocalDate(task.due_date)?.toLocaleDateString()}` : 'Set due date'}
+                                                        className={`flex items-center gap-1 text-xs flex-shrink-0 px-1.5 py-0.5 rounded-md hover:bg-[rgba(255,255,255,0.06)] transition-colors ${
+                                                            task.is_overdue ? 'text-red-400' : task.due_date ? 'text-[#a3a3a3]' : 'text-[#555] hover:text-[#E0B954]'
+                                                        }`}
+                                                    >
+                                                        <Calendar className="w-3.5 h-3.5" />
+                                                        {task.due_date && (
+                                                            <span>
+                                                                {parseLocalDate(task.due_date)?.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                                                            </span>
+                                                        )}
+                                                    </button>
+                                                </PopoverTrigger>
+                                                <PopoverContent
+                                                    className="w-auto p-0 bg-[#0d0d0d] border-[rgba(255,255,255,0.07)] shadow-2xl"
+                                                    align="end"
+                                                    onClick={(e) => e.stopPropagation()}
+                                                >
+                                                    <CalendarIcon
+                                                        mode="single"
+                                                        selected={parseLocalDate(task.due_date || undefined)}
+                                                        onSelect={(date) => {
+                                                            if (date) {
+                                                                const y = date.getFullYear();
+                                                                const m = String(date.getMonth() + 1).padStart(2, '0');
+                                                                const d = String(date.getDate()).padStart(2, '0');
+                                                                handleQuickDueDateChange(task, `${y}-${m}-${d}`);
+                                                                setOpenDateRowId(null);
+                                                            }
+                                                        }}
+                                                        classNames={{
+                                                            months: "flex flex-col",
+                                                            month: "space-y-4",
+                                                            caption: "flex justify-between items-center px-0 pb-4 relative h-7 mb-2",
+                                                            caption_label: "text-sm font-medium text-white",
+                                                            nav: "space-x-1 flex items-center",
+                                                            nav_button: "text-white hover:bg-[rgba(224,185,84,0.1)] rounded p-1",
+                                                            nav_button_previous: "absolute left-0",
+                                                            nav_button_next: "absolute right-0",
+                                                        }}
+                                                    />
+                                                </PopoverContent>
+                                            </Popover>
                                         </div>
                                     ))
                                 )}
