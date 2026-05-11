@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
     Users,
     FolderKanban,
@@ -117,9 +117,38 @@ interface DashboardStats {
     tickets_by_priority: Record<string, number>;
 }
 
+type AdminTab = 'dashboard' | 'employees' | 'projects' | 'users' | 'developers-capacity' | 'custom-restrictions';
+const VALID_ADMIN_TABS: AdminTab[] = ['dashboard', 'employees', 'projects', 'users', 'developers-capacity', 'custom-restrictions'];
+
 const AdminDashboard = () => {
     const navigate = useNavigate();
-    const [activeTab, setActiveTab] = useState<'dashboard' | 'employees' | 'projects' | 'users' | 'developers-capacity' | 'custom-restrictions'>('dashboard');
+    const [searchParams, setSearchParams] = useSearchParams();
+    const tabFromUrl = searchParams.get('tab');
+    const initialTab: AdminTab = (tabFromUrl && (VALID_ADMIN_TABS as string[]).includes(tabFromUrl)) ? (tabFromUrl as AdminTab) : 'dashboard';
+    const [activeTab, setActiveTabState] = useState<AdminTab>(initialTab);
+
+    const setActiveTab = (tab: AdminTab) => {
+        setActiveTabState(tab);
+        if (tab === 'dashboard') {
+            const next = new URLSearchParams(searchParams);
+            next.delete('tab');
+            setSearchParams(next, { replace: false });
+        } else {
+            const next = new URLSearchParams(searchParams);
+            next.set('tab', tab);
+            setSearchParams(next, { replace: false });
+        }
+    };
+
+    // Sync state with URL on browser back/forward navigation
+    useEffect(() => {
+        const urlTab = searchParams.get('tab');
+        const resolved: AdminTab = (urlTab && (VALID_ADMIN_TABS as string[]).includes(urlTab)) ? (urlTab as AdminTab) : 'dashboard';
+        if (resolved !== activeTab) {
+            setActiveTabState(resolved);
+        }
+    }, [searchParams]);
+
     const [stats, setStats] = useState<DashboardStats | null>(null);
     const [employees, setEmployees] = useState<Employee[]>([]);
     const [developerCapacities, setDeveloperCapacities] = useState<DeveloperCapacity[]>([]);
