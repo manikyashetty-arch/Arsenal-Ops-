@@ -172,7 +172,12 @@ async def get_developers_capacity(db: Session = Depends(get_db)):
 
     result = []
     for dev in developers:
-        breakdown = compute_capacity_breakdown(dev.assigned_work_items or [], week_start)
+        breakdown = compute_capacity_breakdown(
+            dev.assigned_work_items or [],
+            week_start,
+            db=db,
+            developer_id=dev.id,
+        )
         result.append({
             "developer_id": dev.id,
             "developer_name": dev.name,
