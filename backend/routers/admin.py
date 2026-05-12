@@ -274,19 +274,24 @@ async def create_employee(employee: EmployeeCreate, db: Session = Depends(get_db
     existing = db.query(Developer).filter(Developer.email == employee.email).first()
     if existing:
         raise HTTPException(status_code=400, detail="Email already exists")
-    
+
+    # Normalize blank github_username to NULL so multiple blanks don't collide on the UNIQUE index
+    github_username = employee.github_username.strip() if employee.github_username else None
+    if not github_username:
+        github_username = None
+
     # Check github username uniqueness if provided
-    if employee.github_username:
+    if github_username:
         existing_github = db.query(Developer).filter(
-            Developer.github_username == employee.github_username
+            Developer.github_username == github_username
         ).first()
         if existing_github:
             raise HTTPException(status_code=400, detail="GitHub username already exists")
-    
+
     new_employee = Developer(
         name=employee.name,
         email=employee.email,
-        github_username=employee.github_username,
+        github_username=github_username,
         avatar_url=employee.avatar_url
     )
     
@@ -345,14 +350,16 @@ async def update_employee(
             raise HTTPException(status_code=400, detail="Email already exists")
         employee.email = update.email
     if update.github_username is not None:
-        if update.github_username:
+        # Normalize blank to NULL so it doesn't collide on the UNIQUE index
+        new_github = update.github_username.strip() or None
+        if new_github:
             existing_github = db.query(Developer).filter(
-                Developer.github_username == update.github_username,
+                Developer.github_username == new_github,
                 Developer.id != employee_id
             ).first()
             if existing_github:
                 raise HTTPException(status_code=400, detail="GitHub username already exists")
-        employee.github_username = update.github_username
+        employee.github_username = new_github
     if update.avatar_url is not None:
         employee.avatar_url = update.avatar_url
     
