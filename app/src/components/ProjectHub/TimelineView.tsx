@@ -44,10 +44,19 @@ interface Developer {
     email: string;
 }
 
+interface SprintBand {
+    id: number;
+    name: string;
+    status: string;
+    start_date?: string;
+    end_date?: string;
+}
+
 interface TimelineViewProps {
     workItems: WorkItem[];
     milestones?: Milestone[];
     goals?: Goal[];
+    sprints?: SprintBand[];
     projectStartDate: string;
     projectId: number;
     developers?: Developer[];
@@ -138,6 +147,7 @@ const TimelineView: React.FC<TimelineViewProps> = ({
     workItems,
     milestones = [],
     goals = [],
+    sprints = [],
     projectStartDate: _projectStartDate,
     projectId: _projectId,
     developers = [],
@@ -471,6 +481,55 @@ const TimelineView: React.FC<TimelineViewProps> = ({
                                         );
                                     })}
 
+                                    {/* Sprint bands */}
+                                    {sprints.filter(s => s.start_date && s.end_date).map(sprint => {
+                                        const bandStart = parseLocalDate(sprint.start_date!);
+                                        const bandEnd = parseLocalDate(sprint.end_date!);
+                                        const x1 = dateToX(bandStart);
+                                        const x2 = dateToX(addDays(bandEnd, 1));
+                                        const bandWidth = x2 - x1;
+                                        if (bandWidth <= 0) return null;
+                                        const isActive = sprint.status === 'active';
+                                        const isCompleted = sprint.status === 'completed';
+                                        const bg = isActive ? 'rgba(224,185,84,0.06)' : isCompleted ? 'rgba(115,115,115,0.04)' : 'rgba(115,115,115,0.06)';
+                                        const borderCol = isActive ? 'rgba(224,185,84,0.3)' : isCompleted ? 'rgba(115,115,115,0.15)' : 'rgba(115,115,115,0.2)';
+                                        const labelCol = isActive ? 'rgba(224,185,84,0.75)' : 'rgba(115,115,115,0.55)';
+                                        return (
+                                            <div
+                                                key={sprint.id}
+                                                style={{
+                                                    position: 'absolute',
+                                                    left: x1,
+                                                    top: 0,
+                                                    width: bandWidth,
+                                                    height: chartHeight,
+                                                    backgroundColor: bg,
+                                                    borderLeft: `2px solid ${borderCol}`,
+                                                    borderRight: `1px solid ${borderCol}`,
+                                                    pointerEvents: 'none',
+                                                }}
+                                            >
+                                                {bandWidth > 50 && (
+                                                    <span style={{
+                                                        position: 'absolute',
+                                                        top: 5,
+                                                        left: 6,
+                                                        fontSize: 10,
+                                                        fontWeight: 600,
+                                                        color: labelCol,
+                                                        whiteSpace: 'nowrap',
+                                                        overflow: 'hidden',
+                                                        textOverflow: 'ellipsis',
+                                                        maxWidth: bandWidth - 12,
+                                                        letterSpacing: '0.02em',
+                                                    }}>
+                                                        {sprint.name}
+                                                    </span>
+                                                )}
+                                            </div>
+                                        );
+                                    })}
+
                                     {/* Today highlight */}
                                     {todayX >= 0 && todayX <= totalWidth && (
                                         <div
@@ -579,7 +638,7 @@ const TimelineView: React.FC<TimelineViewProps> = ({
                     </div>
 
                     {/* Legend */}
-                    <div className="flex items-center gap-4 px-4 py-3 border-t border-[rgba(255,255,255,0.05)] text-xs">
+                    <div className="flex items-center gap-4 px-4 py-3 border-t border-[rgba(255,255,255,0.05)] text-xs flex-wrap">
                         {[
                             { color: '#E0B954', label: 'Done' },
                             { color: '#F59E0B', label: 'In Progress' },
@@ -594,6 +653,10 @@ const TimelineView: React.FC<TimelineViewProps> = ({
                                 <span className="text-[#737373]">{label}</span>
                             </div>
                         ))}
+                        <div className="flex items-center gap-1.5">
+                            <div className="w-3 h-3 rounded border-l-2" style={{ backgroundColor: 'rgba(224,185,84,0.06)', borderColor: 'rgba(224,185,84,0.3)' }} />
+                            <span className="text-[#737373]">Sprint</span>
+                        </div>
                     </div>
                 </CardContent>
             </Card>

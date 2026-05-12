@@ -767,7 +767,7 @@ const ProjectDetail = () => {
                     <div className="px-6 py-4 flex items-center justify-between">
                         <div className="flex items-center gap-4">
                             <div className="h-8 w-24 bg-[rgba(255,255,255,0.06)] rounded-lg animate-pulse" />
-                            <div className="w-px h-6 bg-[rgba(255,255,255,0.07)]" />
+                            <div className="w-px h-6 bg-[rgba(255,255,255,0.18)]" />
                             <div className="flex items-center gap-3">
                                 <div className="w-10 h-10 rounded-xl bg-[rgba(255,255,255,0.06)] animate-pulse" />
                                 <div className="space-y-1.5">
@@ -840,7 +840,7 @@ const ProjectDetail = () => {
                 </p>
                 <Button onClick={() => navigate('/')} className="bg-gradient-to-r from-[#E0B954] to-[#B8872A] text-white rounded-xl px-6">
                     <ArrowLeft className="w-4 h-4 mr-2" />
-                    Back to Projects
+                    Back to Dashboard
                 </Button>
             </div>
         );
@@ -852,7 +852,7 @@ const ProjectDetail = () => {
                 <h2 className="text-xl font-bold text-white mb-2">Project not found</h2>
                 <Button onClick={() => navigate('/')} variant="ghost" className="text-[#E0B954]">
                     <ArrowLeft className="w-4 h-4 mr-2" />
-                    Back to Projects
+                    Back to Dashboard
                 </Button>
             </div>
         );
@@ -897,31 +897,29 @@ const ProjectDetail = () => {
             {/* Header */}
             <header className="border-b border-[rgba(224,185,84,0.15)] bg-[#080808]/95 backdrop-blur-xl sticky top-0 z-40 shadow-[0_1px_0_0_rgba(224,185,84,0.08)]">
                 <div className="px-6 py-4">
-                    <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-4">
-                            <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => navigate('/')}
-                                className="text-[#737373] hover:text-white hover:bg-[rgba(244,246,255,0.05)] rounded-lg gap-2"
-                            >
-                                <ArrowLeft className="w-4 h-4" />
-                                Projects
-                            </Button>
-                            <div className="w-px h-6 bg-[rgba(255,255,255,0.07)]" />
-                            <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#E0B954] to-[#C79E3B] flex items-center justify-center text-sm font-bold text-[#080808] shadow-lg shadow-[#E0B954]/25">
-                                    {project.key_prefix.substring(0, 2)}
-                                </div>
-                                <div>
-                                    <h1 className="text-lg font-semibold text-white">{project.name}</h1>
-                                    <p className="text-xs text-[#737373] font-mono">{project.key_prefix}</p>
-                                </div>
+                    <div className="flex items-center gap-4">
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => navigate('/')}
+                            className="text-[#737373] hover:text-white hover:bg-[rgba(244,246,255,0.05)] rounded-lg gap-2"
+                        >
+                            <ArrowLeft className="w-4 h-4" />
+                            Dashboard
+                        </Button>
+                        <div className="w-px h-6 bg-[rgba(255,255,255,0.07)]" />
+                        <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#E0B954] to-[#C79E3B] flex items-center justify-center text-sm font-bold text-[#080808] shadow-lg shadow-[#E0B954]/25">
+                                {project.key_prefix.substring(0, 2)}
+                            </div>
+                            <div>
+                                <h1 className="text-lg font-semibold text-white">{project.name}</h1>
+                                <p className="text-xs text-[#737373] font-mono">{project.key_prefix}</p>
                             </div>
                         </div>
                         <Button
                             onClick={() => navigate(`/project/${project.id}/board`)}
-                            className="bg-gradient-to-r from-[#E0B954] to-[#C79E3B] hover:opacity-90 text-[#080808] rounded-xl font-semibold shadow-lg shadow-[#E0B954]/20 h-9 px-4"
+                            className="bg-gradient-to-r from-[#E0B954] to-[#C79E3B] hover:opacity-90 text-[#080808] rounded-lg font-medium h-9 px-4 transition-opacity"
                         >
                             <LayoutGrid className="w-4 h-4 mr-2" />
                             Open Board
@@ -1218,48 +1216,13 @@ const ProjectDetail = () => {
                                                 {project.end_date ? new Date(project.end_date).toLocaleDateString() : 'Not set'}
                                             </p>
                                         </div>
+                                        <div>
+                                            <span className="text-xs text-[#737373]">Key Prefix</span>
+                                            <p className="text-sm text-[#f5f5f5] font-mono">{project.key_prefix}</p>
+                                        </div>
                                     </div>
                                 </div>
                             )}
-                        </div>
-
-                        {/* Quick Stats */}
-                        <div className="grid grid-cols-4 gap-3">
-                            <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-xl p-4">
-                                <div className="flex items-center gap-3">
-                                    <div className="w-10 h-10 rounded-lg bg-[#E0B954]/10 flex items-center justify-center">
-                                        <Users className="w-5 h-5 text-[#E0B954]" />
-                                    </div>
-                                    <div>
-                                        <p className="text-2xl font-bold text-white">{project.developers.length}</p>
-                                        <p className="text-xs text-[#737373]">Developers</p>
-                                    </div>
-                                </div>
-                            </div>
-                            <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-xl p-4">
-                                <div className="flex items-center gap-3">
-                                    <div className="w-10 h-10 rounded-lg bg-[#E0B954]/10 flex items-center justify-center">
-                                        <Github className="w-5 h-5 text-[#E0B954]" />
-                                    </div>
-                                    <div>
-                                        <p className="text-2xl font-bold text-white">
-                                            {(Array.isArray(project.github_repo_urls) && project.github_repo_urls.length > 0) || project.github_repo_url ? 'Yes' : 'No'}
-                                        </p>
-                                        <p className="text-xs text-[#737373]">GitHub Repos</p>
-                                    </div>
-                                </div>
-                            </div>
-                            <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-xl p-4">
-                                <div className="flex items-center gap-3">
-                                    <div className="w-10 h-10 rounded-lg bg-[#F59E0B]/10 flex items-center justify-center">
-                                        <Info className="w-5 h-5 text-[#F59E0B]" />
-                                    </div>
-                                    <div>
-                                        <p className="text-2xl font-bold text-white">{project.key_prefix}</p>
-                                        <p className="text-xs text-[#737373]">Key Prefix</p>
-                                    </div>
-                                </div>
-                            </div>
                         </div>
 
                         {/* PRD Analysis Section */}
@@ -2181,6 +2144,7 @@ const ProjectDetail = () => {
                                 workItems={hubWorkItems}
                                 milestones={milestones}
                                 goals={goals}
+                                sprints={sprints}
                                 projectStartDate={project?.created_at}
                                 projectId={parseInt(id!)}
                                 developers={project.developers.map(d => ({ id: d.id, name: d.name, email: d.email }))}
