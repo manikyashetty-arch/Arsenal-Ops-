@@ -413,6 +413,44 @@ const ProjectsPage = () => {
         setSelectedTask(updated);
     };
 
+    const handleQuickDueDateChange = async (task: MyTask & { is_personal?: boolean }, isoDate: string) => {
+        const dueValue = isoDate || null;
+        if (task.is_personal) {
+            const realId = String(task.id).replace(/^personal-/, '');
+            setPersonalTasks(prev => prev.map(p => String(p.id) === realId ? { ...p, due_date: dueValue || undefined } : p));
+            try {
+                const res = await fetch(`${API_BASE_URL}/api/personal-tasks/${realId}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                    body: JSON.stringify({ due_date: dueValue }),
+                });
+                if (!res.ok) throw new Error();
+                toast.success(dueValue ? 'Due date updated' : 'Due date cleared');
+            } catch {
+                toast.error('Failed to update due date');
+            }
+        } else {
+            let isOverdue = false;
+            if (dueValue) {
+                const today = new Date(); today.setHours(0, 0, 0, 0);
+                const due = new Date(dueValue + 'T00:00:00');
+                isOverdue = due < today && task.status !== 'done';
+            }
+            setMyTasks(prev => prev.map(t => t.id === task.id ? { ...t, due_date: dueValue, is_overdue: isOverdue } : t));
+            try {
+                const res = await fetch(`${API_BASE_URL}/api/workitems/${task.id}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                    body: JSON.stringify({ due_date: dueValue }),
+                });
+                if (!res.ok) throw new Error();
+                toast.success(dueValue ? 'Due date updated' : 'Due date cleared');
+            } catch {
+                toast.error('Failed to update due date');
+            }
+        }
+    };
+
     const handleChangeMyTaskStatus = async (task: MyTask, newStatus: string) => {
         const previousStatus = task.status;
         setMyTasks(prev => prev.map(t =>
@@ -482,6 +520,7 @@ const ProjectsPage = () => {
                         onTogglePersonalTaskComplete={togglePersonalTaskComplete}
                         onNavigateToPersonalTasks={() => navigate('/personal-tasks')}
                         onChangeTaskStatus={handleChangeMyTaskStatus}
+                        onQuickDueDateChange={handleQuickDueDateChange}
                     />
 
                 </div>
