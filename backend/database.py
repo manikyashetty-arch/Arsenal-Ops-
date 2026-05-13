@@ -26,6 +26,10 @@ engine = create_engine(
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
+# Attach the perf query counter when PERF_LOG=1 (no-op otherwise).
+from middleware.perf import register_query_counter
+register_query_counter(engine)
+
 def get_db():
     """Dependency for getting database sessions"""
     db = SessionLocal()

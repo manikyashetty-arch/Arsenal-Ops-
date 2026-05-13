@@ -73,6 +73,10 @@ app.add_middleware(
     max_age=3600,
 )
 
+# Request timing + query count instrumentation. No-op unless PERF_LOG=1.
+from middleware.perf import PerfMiddleware
+app.add_middleware(PerfMiddleware)
+
 # Global exception handler to ensure CORS headers on errors
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
