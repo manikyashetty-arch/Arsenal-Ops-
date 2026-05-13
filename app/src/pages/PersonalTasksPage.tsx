@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
     Plus,
     CheckCircle2,
@@ -31,7 +32,7 @@ import {
     SelectValue,
 } from '@/components/ui/select';
 import { useAuth } from '@/contexts/AuthContext';
-import { API_BASE_URL } from '@/config/api';
+import { apiFetch } from '@/lib/api';
 
 // Helper function to parse YYYY-MM-DD string to local Date object (avoids UTC timezone issues)
 const parseLocalDate = (dateString: string | undefined): Date | undefined => {
@@ -53,28 +54,42 @@ interface PersonalTask {
     created_at: string;
 }
 
+interface ProjectSummary {
+    id: number;
+    name: string;
+}
+
+interface Developer {
+    id: number;
+    name: string;
+}
+
+interface ProjectDetailResponse {
+    developers?: Developer[];
+}
+
 const PersonalTasksPage = () => {
     const navigate = useNavigate();
-    const { user, token, logout } = useAuth();
-    const [tasks, setTasks] = useState<PersonalTask[]>([]);
-    const [isLoading, setIsLoading] = useState(true);
+    const { user, logout } = useAuth();
+    const queryClient = useQueryClient();
+
     const [showAddDialog, setShowAddDialog] = useState(false);
     const [showEditDialog, setShowEditDialog] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
     const [filterStatus, setFilterStatus] = useState<'all' | 'todo' | 'done'>('all');
     const [sortBy, setSortBy] = useState<'date-desc' | 'date-asc' | 'priority'>('priority');
-    const [isSubmitting, setIsSubmitting] = useState(false);
     const [editingTask, setEditingTask] = useState<PersonalTask | null>(null);
     const [showDatePickerAdd, setShowDatePickerAdd] = useState(false);
     const [showDatePickerEdit, setShowDatePickerEdit] = useState(false);
     const [showConvertDialog, setShowConvertDialog] = useState(false);
     const [convertingTask, setConvertingTask] = useState<PersonalTask | null>(null);
-    const [projects, setProjects] = useState<any[]>([]);
-    const [projectMembers, setProjectMembers] = useState<any[]>([]);
+    // Drives the ['project', id] query that loads members for the
+    // Add-dialog project selector and the Convert dialog. Only one dialog
+    // is open at a time so a single state covers both.
+    const [memberLookupProjectId, setMemberLookupProjectId] = useState<string>('');
     const [convertProjectId, setConvertProjectId] = useState('');
     const [convertAssigneeId, setConvertAssigneeId] = useState('');
     const [convertEstimatedHours, setConvertEstimatedHours] = useState('');
-    const [convertingTicket, setConvertingTicket] = useState(false);
     const [newTask, setNewTask] = useState({
         title: '',
         description: '',
@@ -91,223 +106,198 @@ const PersonalTasksPage = () => {
         low: { color: '#737373', label: 'Low' },
     };
 
-    // Fetch tasks
-    const fetchTasks = async () => {
-        setIsLoading(true);
-        try {
-            const response = await fetch(`${API_BASE_URL}/api/personal-tasks/`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            if (response.ok) {
-                setTasks(await response.json());
-            }
-        } catch (err) {
-            console.error('Failed to fetch tasks:', err);
-            toast.error('Failed to load tasks');
-        } finally {
-            setIsLoading(false);
-        }
-    };
+    const tasksQuery = useQuery<PersonalTask[]>({
+        queryKey: ['personalTasks'],
+        queryFn: () => apiFetch<PersonalTask[]>('/api/personal-tasks/'),
+    });
+    const tasks = tasksQuery.data ?? [];
+    const isLoading = tasksQuery.isLoading;
 
-    useEffect(() => {
-        if (token) {
-            fetchTasks();
-            fetchProjects();
-        }
-    }, [token]);
+    const projectsQuery = useQuery<ProjectSummary[]>({
+        queryKey: ['projects'],
+        queryFn: () => apiFetch<ProjectSummary[]>('/api/projects/'),
+    });
+    const projects = projectsQuery.data ?? [];
 
-    // Toggle task completion
-    const toggleTaskComplete = async (task: PersonalTask) => {
-        if (task.is_converted) {
-            toast.error('Cannot modify a converted task');
-            return;
-        }
+    const projectMembersQuery = useQuery<ProjectDetailResponse>({
+        queryKey: ['project', memberLookupProjectId],
+        queryFn: () => apiFetch<ProjectDetailResponse>(`/api/projects/${memberLookupProjectId}`),
+        enabled: !!memberLookupProjectId,
+    });
+    const projectMembers = projectMembersQuery.data?.developers ?? [];
 
-        const newStatus = task.status === 'done' ? 'todo' : 'done';
-        try {
-            const response = await fetch(`${API_BASE_URL}/api/personal-tasks/${task.id}`, {
+    const invalidateTasks = () =>
+        queryClient.invalidateQueries({ queryKey: ['personalTasks'] });
+
+    // Toggle is optimistic so it feels instant — every other mutation can
+    // wait on a refetch.
+    const toggleMutation = useMutation({
+        mutationFn: async (task: PersonalTask) => {
+            const newStatus = task.status === 'done' ? 'todo' : 'done';
+            await apiFetch(`/api/personal-tasks/${task.id}`, {
                 method: 'PUT',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
-                body: JSON.stringify({ status: newStatus })
+                body: JSON.stringify({ status: newStatus }),
             });
-
-            if (response.ok) {
-                setTasks(tasks.map(t => 
-                    t.id === task.id ? { ...t, status: newStatus } : t
-                ));
-                toast.success(newStatus === 'done' ? 'Task completed! 🎉' : 'Task reopened');
-            } else {
-                toast.error('Failed to update task');
-            }
-        } catch (err) {
+            return newStatus;
+        },
+        onMutate: async (task: PersonalTask) => {
+            await queryClient.cancelQueries({ queryKey: ['personalTasks'] });
+            const previous = queryClient.getQueryData<PersonalTask[]>(['personalTasks']);
+            const newStatus = task.status === 'done' ? 'todo' : 'done';
+            queryClient.setQueryData<PersonalTask[]>(['personalTasks'], (old) =>
+                (old ?? []).map((t) => (t.id === task.id ? { ...t, status: newStatus } : t)),
+            );
+            return { previous, newStatus };
+        },
+        onError: (_err, _task, ctx) => {
+            if (ctx?.previous) queryClient.setQueryData(['personalTasks'], ctx.previous);
             toast.error('Failed to update task');
-        }
-    };
+        },
+        onSuccess: (newStatus) => {
+            toast.success(newStatus === 'done' ? 'Task completed! 🎉' : 'Task reopened');
+        },
+        onSettled: () => invalidateTasks(),
+    });
 
-    // Create task
-    const createTask = async () => {
-        if (!newTask.title.trim()) {
-            toast.error('Title is required');
-            return;
-        }
-
-        setIsSubmitting(true);
-        try {
-            const response = await fetch(`${API_BASE_URL}/api/personal-tasks/`, {
+    const createMutation = useMutation({
+        mutationFn: () =>
+            apiFetch<PersonalTask>('/api/personal-tasks/', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
                 body: JSON.stringify({
                     title: newTask.title,
                     description: newTask.description,
                     priority: newTask.priority,
                     due_date: newTask.due_date || undefined,
-                    estimated_hours: newTask.estimated_hours ? parseInt(newTask.estimated_hours) : 0
-                })
+                    estimated_hours: newTask.estimated_hours
+                        ? parseInt(newTask.estimated_hours)
+                        : 0,
+                }),
+            }),
+        onSuccess: () => {
+            invalidateTasks();
+            setNewTask({
+                title: '',
+                description: '',
+                priority: 'medium',
+                due_date: '',
+                project_id: '',
+                estimated_hours: '',
             });
+            setMemberLookupProjectId('');
+            setShowAddDialog(false);
+            toast.success('Task created!');
+        },
+        onError: () => toast.error('Failed to create task'),
+    });
 
-            if (response.ok) {
-                const createdTask = await response.json();
-                setTasks([createdTask, ...tasks]);
-                setNewTask({ title: '', description: '', priority: 'medium', due_date: '', project_id: '', estimated_hours: '' });
-                setShowAddDialog(false);
-                toast.success('Task created!');
-            }
-        } catch (err) {
-            toast.error('Failed to create task');
-        } finally {
-            setIsSubmitting(false);
-        }
-    };
-
-    // Update task
-    const updateTask = async () => {
-        if (!editingTask || !newTask.title.trim()) {
-            toast.error('Title is required');
-            return;
-        }
-
-        setIsSubmitting(true);
-        try {
-            const response = await fetch(`${API_BASE_URL}/api/personal-tasks/${editingTask.id}`, {
+    const updateMutation = useMutation({
+        mutationFn: (taskId: number) =>
+            apiFetch<PersonalTask>(`/api/personal-tasks/${taskId}`, {
                 method: 'PUT',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
                 body: JSON.stringify({
                     title: newTask.title,
                     description: newTask.description,
                     priority: newTask.priority,
-                    due_date: newTask.due_date || undefined
-                })
-            });
+                    due_date: newTask.due_date || undefined,
+                }),
+            }),
+        onSuccess: () => {
+            invalidateTasks();
+            resetForm();
+            toast.success('Task updated!');
+        },
+        onError: () => toast.error('Failed to update task'),
+    });
 
-            if (response.ok) {
-                const updatedTask = await response.json();
-                setTasks(tasks.map(t => t.id === updatedTask.id ? updatedTask : t));
-                resetForm();
-                toast.success('Task updated!');
-            }
-        } catch (err) {
-            toast.error('Failed to update task');
-        } finally {
-            setIsSubmitting(false);
+    const deleteMutation = useMutation({
+        mutationFn: (taskId: number) =>
+            apiFetch<void>(`/api/personal-tasks/${taskId}`, { method: 'DELETE' }),
+        onSuccess: () => {
+            invalidateTasks();
+            toast.success('Task deleted');
+        },
+        onError: () => toast.error('Failed to delete task'),
+    });
+
+    const convertMutation = useMutation({
+        mutationFn: async () => {
+            if (!convertingTask) throw new Error('No task selected');
+            return apiFetch<{ work_item: { key: string; assignee_name?: string } }>(
+                `/api/personal-tasks/${convertingTask.id}/convert-to-ticket`,
+                {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        project_id: parseInt(convertProjectId),
+                        type: 'task',
+                        estimated_hours: convertEstimatedHours
+                            ? parseInt(convertEstimatedHours)
+                            : convertingTask.estimated_hours,
+                        assignee_developer_id: convertAssigneeId
+                            ? parseInt(convertAssigneeId)
+                            : undefined,
+                    }),
+                },
+            );
+        },
+        onSuccess: (data) => {
+            const assigneeName = data.work_item.assignee_name
+                ? ` → assigned to ${data.work_item.assignee_name}`
+                : '';
+            toast.success(`Ticket ${data.work_item.key} created!${assigneeName}`);
+            setShowConvertDialog(false);
+            setConvertingTask(null);
+            setConvertProjectId('');
+            setConvertAssigneeId('');
+            setConvertEstimatedHours('');
+            setMemberLookupProjectId('');
+            invalidateTasks();
+        },
+        onError: () => toast.error('Failed to convert'),
+    });
+
+    const toggleTaskComplete = (task: PersonalTask) => {
+        if (task.is_converted) {
+            toast.error('Cannot modify a converted task');
+            return;
         }
+        toggleMutation.mutate(task);
     };
 
-    // Delete task
-    const deleteTask = async (taskId: number) => {
+    const createTask = () => {
+        if (!newTask.title.trim()) {
+            toast.error('Title is required');
+            return;
+        }
+        createMutation.mutate();
+    };
+
+    const updateTask = () => {
+        if (!editingTask || !newTask.title.trim()) {
+            toast.error('Title is required');
+            return;
+        }
+        updateMutation.mutate(editingTask.id);
+    };
+
+    const deleteTask = (taskId: number) => {
         if (!confirm('Delete this task?')) return;
-
-        try {
-            const response = await fetch(`${API_BASE_URL}/api/personal-tasks/${taskId}`, {
-                method: 'DELETE',
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-
-            if (response.ok) {
-                setTasks(tasks.filter(t => t.id !== taskId));
-                toast.success('Task deleted');
-            }
-        } catch (err) {
-            toast.error('Failed to delete task');
-        }
+        deleteMutation.mutate(taskId);
     };
 
-    // Fetch projects
-    const fetchProjects = async () => {
-        try {
-            const response = await fetch(`${API_BASE_URL}/api/projects/`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            if (response.ok) {
-                setProjects(await response.json());
-            }
-        } catch (err) {
-            console.error('Failed to fetch projects:', err);
-        }
-    };
-
-    // Fetch project members
-    const fetchProjectMembers = async (projectId: string) => {
-        try {
-            const res = await fetch(`${API_BASE_URL}/api/projects/${projectId}`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            if (res.ok) {
-                const data = await res.json();
-                setProjectMembers(data.developers || []);
-            }
-        } catch (err) {
-            setProjectMembers([]);
-        }
-    };
-
-    // Convert to ticket
-    const convertToTicket = async () => {
+    const convertToTicket = () => {
         if (!convertingTask || !convertProjectId) return;
-        setConvertingTicket(true);
-        try {
-            const res = await fetch(`${API_BASE_URL}/api/personal-tasks/${convertingTask.id}/convert-to-ticket`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                body: JSON.stringify({
-                    project_id: parseInt(convertProjectId),
-                    type: 'task',
-                    estimated_hours: convertEstimatedHours ? parseInt(convertEstimatedHours) : convertingTask.estimated_hours,
-                    assignee_developer_id: convertAssigneeId ? parseInt(convertAssigneeId) : undefined
-                })
-            });
-            if (res.ok) {
-                const data = await res.json();
-                const assigneeName = data.work_item.assignee_name ? ` → assigned to ${data.work_item.assignee_name}` : '';
-                toast.success(`Ticket ${data.work_item.key} created!${assigneeName}`);
-                setShowConvertDialog(false);
-                setConvertingTask(null);
-                setConvertProjectId('');
-                setConvertAssigneeId('');
-                setConvertEstimatedHours('');
-                setProjectMembers([]);
-                fetchTasks();
-            } else {
-                toast.error('Failed to convert');
-            }
-        } catch (err) {
-            toast.error('Failed to convert');
-        }
-        finally {
-            setConvertingTicket(false);
-        }
+        convertMutation.mutate();
     };
 
     const resetForm = () => {
-        setNewTask({ title: '', description: '', priority: 'medium', due_date: '', project_id: '', estimated_hours: '' });
+        setNewTask({
+            title: '',
+            description: '',
+            priority: 'medium',
+            due_date: '',
+            project_id: '',
+            estimated_hours: '',
+        });
         setEditingTask(null);
         setShowEditDialog(false);
     };
@@ -365,6 +355,10 @@ const PersonalTasksPage = () => {
         completed: tasks.filter(t => t.status === 'done' && !t.is_converted).length,
         pending: tasks.filter(t => t.status !== 'done' && !t.is_converted).length,
     };
+
+    const isCreating = createMutation.isPending;
+    const isUpdating = updateMutation.isPending;
+    const isConverting = convertMutation.isPending;
 
     return (
         <div className="min-h-screen bg-[#080808] text-[#F4F6FF]">
@@ -574,7 +568,13 @@ const PersonalTasksPage = () => {
                                     {!task.is_converted && (
                                         <div className="flex-shrink-0 flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                                             <button
-                                                onClick={() => { setConvertingTask(task); setConvertProjectId(''); setConvertAssigneeId(''); setShowConvertDialog(true); }}
+                                                onClick={() => {
+                                                    setConvertingTask(task);
+                                                    setConvertProjectId('');
+                                                    setConvertAssigneeId('');
+                                                    setMemberLookupProjectId('');
+                                                    setShowConvertDialog(true);
+                                                }}
                                                 className="p-2 rounded-lg hover:bg-[rgba(224,185,84,0.1)] text-[#737373] hover:text-[#E0B954] transition-colors"
                                                 title="Tag to project"
                                             >
@@ -703,7 +703,7 @@ const PersonalTasksPage = () => {
                             <label className="text-xs text-[#737373] mb-1 block">Project <span className="text-[#555]">(optional)</span></label>
                             <Select value={newTask.project_id} onValueChange={(v) => {
                                 setNewTask({ ...newTask, project_id: v });
-                                if (v) fetchProjectMembers(v); else setProjectMembers([]);
+                                setMemberLookupProjectId(v);
                             }}>
                                 <SelectTrigger className="bg-[#0A0A14] border-[rgba(255,255,255,0.08)] text-white h-10">
                                     <SelectValue placeholder="Choose a project..." />
@@ -729,10 +729,10 @@ const PersonalTasksPage = () => {
                         )}
                         <Button
                             onClick={createTask}
-                            disabled={isSubmitting || !newTask.title.trim()}
+                            disabled={isCreating || !newTask.title.trim()}
                             className="w-full bg-gradient-to-r from-[#E0B954] to-[#C79E3B] text-[#080808] font-semibold hover:opacity-90"
                         >
-                            {isSubmitting ? 'Creating...' : 'Create Task'}
+                            {isCreating ? 'Creating...' : 'Create Task'}
                         </Button>
                     </div>
                 </DialogContent>
@@ -836,14 +836,14 @@ const PersonalTasksPage = () => {
                         <div className="flex gap-2 pt-2">
                             <Button
                                 onClick={updateTask}
-                                disabled={isSubmitting}
+                                disabled={isUpdating}
                                 className="flex-1 bg-gradient-to-r from-[#E0B954] to-[#C79E3B] text-[#080808] font-semibold hover:opacity-90"
                             >
-                                {isSubmitting ? 'Saving...' : 'Save Changes'}
+                                {isUpdating ? 'Saving...' : 'Save Changes'}
                             </Button>
                             <Button
                                 onClick={resetForm}
-                                disabled={isSubmitting}
+                                disabled={isUpdating}
                                 variant="outline"
                                 className="flex-1 bg-[#0A0A14] border-[rgba(255,255,255,0.08)] text-white hover:bg-[#0A0A14] hover:text-white"
                             >
@@ -861,7 +861,7 @@ const PersonalTasksPage = () => {
                     setConvertProjectId('');
                     setConvertAssigneeId('');
                     setConvertEstimatedHours('');
-                    setProjectMembers([]);
+                    setMemberLookupProjectId('');
                 }
             }}>
                 <DialogContent className="bg-[#0d0d0d] border-[rgba(255,255,255,0.08)] text-white">
@@ -878,7 +878,7 @@ const PersonalTasksPage = () => {
                             <label className="text-xs text-[#737373] mb-1 block">Select Project</label>
                             <Select value={convertProjectId} onValueChange={(v) => {
                                 setConvertProjectId(v);
-                                fetchProjectMembers(v);
+                                setMemberLookupProjectId(v);
                             }}>
                                 <SelectTrigger className="bg-[#0A0A14] border-[rgba(255,255,255,0.08)] text-white">
                                     <SelectValue placeholder="Choose a project..." />
@@ -928,10 +928,10 @@ const PersonalTasksPage = () => {
                         )}
                         <Button
                             onClick={convertToTicket}
-                            disabled={convertingTicket || !convertProjectId}
+                            disabled={isConverting || !convertProjectId}
                             className="w-full bg-gradient-to-r from-[#E0B954] to-[#C79E3B] text-[#080808] font-semibold hover:opacity-90"
                         >
-                            {convertingTicket ? 'Creating...' : 'Create Project Ticket'}
+                            {isConverting ? 'Creating...' : 'Create Project Ticket'}
                         </Button>
                     </div>
                 </DialogContent>
