@@ -1,5 +1,9 @@
-import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useEffect, useMemo } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import {
+    BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell,
+    PieChart, Pie
+} from 'recharts';
 import {
     Users,
     FolderKanban,
@@ -22,9 +26,10 @@ import {
     AlertCircle,
     ChevronDown,
     ChevronRight,
-    Activity as ActivityIcon,
-    Eye,
+    ChevronUp,
     TrendingUp,
+    Search,
+    ArrowUpDown,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -117,17 +122,220 @@ interface DashboardStats {
     tickets_by_priority: Record<string, number>;
 }
 
+type AdminTab = 'dashboard' | 'employees' | 'projects' | 'users' | 'developers-capacity' | 'custom-restrictions';
+const VALID_ADMIN_TABS: AdminTab[] = ['dashboard', 'employees', 'projects', 'users', 'developers-capacity', 'custom-restrictions'];
+
+const PROJECT_COLOR_PALETTE = [
+    '#E0B954', '#A78BFA', '#34D399', '#60A5FA', '#F97316',
+    '#EC4899', '#10B981', '#F59E0B', '#94A3B8', '#EF4444',
+];
+const projectColor = (projectId: number) =>
+    PROJECT_COLOR_PALETTE[Math.abs(projectId) % PROJECT_COLOR_PALETTE.length];
+
+const statusBadgeColor = (status: string) => {
+    if (status === 'in_progress') return '#E0B954';
+    if (status === 'in_review') return '#A78BFA';
+    if (status === 'done') return '#34D399';
+    if (status === 'blocked') return '#EF4444';
+    return '#737373';
+};
+
 const AdminDashboard = () => {
     const navigate = useNavigate();
-    const [activeTab, setActiveTab] = useState<'dashboard' | 'employees' | 'projects' | 'users' | 'developers-capacity' | 'custom-restrictions'>('dashboard');
+    const [searchParams, setSearchParams] = useSearchParams();
+    const tabFromUrl = searchParams.get('tab');
+    const initialTab: AdminTab = (tabFromUrl && (VALID_ADMIN_TABS as string[]).includes(tabFromUrl)) ? (tabFromUrl as AdminTab) : 'dashboard';
+    const [activeTab, setActiveTabState] = useState<AdminTab>(initialTab);
+
+    const setActiveTab = (tab: AdminTab) => {
+        setActiveTabState(tab);
+        if (tab === 'dashboard') {
+            const next = new URLSearchParams(searchParams);
+            next.delete('tab');
+            setSearchParams(next, { replace: false });
+        } else {
+            const next = new URLSearchParams(searchParams);
+            next.set('tab', tab);
+            setSearchParams(next, { replace: false });
+        }
+    };
+
+    // Sync state with URL on browser back/forward navigation
+    useEffect(() => {
+        const urlTab = searchParams.get('tab');
+        const resolved: AdminTab = (urlTab && (VALID_ADMIN_TABS as string[]).includes(urlTab)) ? (urlTab as AdminTab) : 'dashboard';
+        if (resolved !== activeTab) {
+            setActiveTabState(resolved);
+        }
+    }, [searchParams]);
+
     const [stats, setStats] = useState<DashboardStats | null>(null);
     const [employees, setEmployees] = useState<Employee[]>([]);
     const [developerCapacities, setDeveloperCapacities] = useState<DeveloperCapacity[]>([]);
     const [expandedCapacityDevId, setExpandedCapacityDevId] = useState<number | null>(null);
+
+    // Employees tab filters + sort
+    type EmployeeSortKey = 'name' | 'projects' | 'assigned' | 'capacity';
+    const [employeeSearch, setEmployeeSearch] = useState('');
+    const [employeeStatusFilter, setEmployeeStatusFilter] = useState<'all' | 'Available' | 'Moderate' | 'Busy'>('all');
+    const [employeeSpecFilter, setEmployeeSpecFilter] = useState<string>('all');
+    const [employeeSort, setEmployeeSort] = useState<{ key: EmployeeSortKey; dir: 'asc' | 'desc' }>({ key: 'capacity', dir: 'desc' });
+
+    const handleEmployeeSort = (key: EmployeeSortKey) => {
+        setEmployeeSort(prev => prev.key === key
+            ? { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' }
+            : { key, dir: key === 'name' ? 'asc' : 'desc' }
+        );
+    };
+
+    // Users tab filters + sort
+    type UsersSortKey = 'created' | 'name' | 'status' | 'last_login';
+    const [usersRoleFilter, setUsersRoleFilter] = useState<string>('all');
+    const [usersSort, setUsersSort] = useState<{ key: UsersSortKey; dir: 'asc' | 'desc' }>({ key: 'created', dir: 'desc' });
+
+    const handleUsersSort = (key: UsersSortKey) => {
+        setUsersSort(prev => prev.key === key
+            ? { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' }
+            : { key, dir: key === 'name' ? 'asc' : 'desc' }
+        );
+    };
+
+    // Team capacity summary derived from employees + capacity data
+    const WEEKLY_CAPACITY_HRS = 40;
+    const teamCapacity = useMemo(() => {
+        const perDev = employees.map(emp => {
+            const cap = developerCapacities.find(d => d.developer_id === emp.id);
+            const used = cap?.this_week_capacity_used ?? 0;
+            const inProgress = cap?.this_week_in_progress_hours ?? 0;
+            const inReview = cap?.this_week_in_review_hours ?? 0;
+            const done = cap?.this_week_done_hours ?? 0;
+            const remaining = Math.max(0, WEEKLY_CAPACITY_HRS - used);
+            const utilization = Math.round((used / WEEKLY_CAPACITY_HRS) * 100);
+            const status: 'Available' | 'Moderate' | 'Busy' =
+                remaining >= 10 ? 'Available' : remaining > 0 ? 'Moderate' : 'Busy';
+            return {
+                id: emp.id,
+                name: emp.name,
+                inProgress,
+                inReview,
+                done,
+                used,
+                remaining,
+                utilization,
+                status,
+            };
+        }).sort((a, b) => b.used - a.used);
+
+        const totalCapacity = perDev.length * WEEKLY_CAPACITY_HRS;
+        const totalUsed = perDev.reduce((s, p) => s + p.used, 0);
+        const totalInProgress = perDev.reduce((s, p) => s + p.inProgress, 0);
+        const totalInReview = perDev.reduce((s, p) => s + p.inReview, 0);
+        const totalDone = perDev.reduce((s, p) => s + p.done, 0);
+        const totalRemaining = Math.max(0, totalCapacity - totalUsed);
+        const counts = perDev.reduce(
+            (acc, p) => { acc[p.status] += 1; return acc; },
+            { Available: 0, Moderate: 0, Busy: 0 } as Record<'Available' | 'Moderate' | 'Busy', number>
+        );
+        const utilization = totalCapacity > 0 ? Math.round((totalUsed / totalCapacity) * 100) : 0;
+        const weekStart = developerCapacities.find(c => c.week_start)?.week_start;
+        const weekEnd = developerCapacities.find(c => c.week_end)?.week_end;
+        return {
+            perDev,
+            totalCapacity,
+            totalUsed,
+            totalInProgress,
+            totalInReview,
+            totalDone,
+            totalRemaining,
+            counts,
+            utilization,
+            weekStart,
+            weekEnd,
+        };
+    }, [employees, developerCapacities]);
+
+    const availableSpecs = useMemo(
+        () => Array.from(new Set(employees.map(e => e.specialization).filter((s): s is string => !!s))).sort(),
+        [employees]
+    );
+
+
+    const filteredEmployeeRows = useMemo(() => {
+        const q = employeeSearch.trim().toLowerCase();
+        const rows = employees.map(emp => {
+            const cap = developerCapacities.find(d => d.developer_id === emp.id);
+            const used = cap?.this_week_capacity_used ?? 0;
+            const inProgress = cap?.this_week_in_progress_hours ?? 0;
+            const inReview = cap?.this_week_in_review_hours ?? 0;
+            const done = cap?.this_week_done_hours ?? 0;
+            const remaining = Math.max(0, WEEKLY_CAPACITY_HRS - used);
+            const status: 'Available' | 'Moderate' | 'Busy' =
+                remaining >= 10 ? 'Available' : remaining > 0 ? 'Moderate' : 'Busy';
+            return { emp, used, inProgress, inReview, done, remaining, status };
+        });
+
+        const filtered = rows.filter(r => {
+            if (q && !(r.emp.name.toLowerCase().includes(q) || r.emp.email.toLowerCase().includes(q))) return false;
+            if (employeeStatusFilter !== 'all' && r.status !== employeeStatusFilter) return false;
+            if (employeeSpecFilter !== 'all' && (r.emp.specialization || '') !== employeeSpecFilter) return false;
+            return true;
+        });
+
+        return [...filtered].sort((a, b) => {
+            let av: number | string;
+            let bv: number | string;
+            switch (employeeSort.key) {
+                case 'name': av = a.emp.name.toLowerCase(); bv = b.emp.name.toLowerCase(); break;
+                case 'projects': av = a.emp.project_count; bv = b.emp.project_count; break;
+                case 'assigned': av = a.emp.assigned_items_count; bv = b.emp.assigned_items_count; break;
+                case 'capacity':
+                default: av = a.used; bv = b.used; break;
+            }
+            if (av < bv) return employeeSort.dir === 'asc' ? -1 : 1;
+            if (av > bv) return employeeSort.dir === 'asc' ? 1 : -1;
+            return 0;
+        });
+    }, [employees, developerCapacities, employeeSearch, employeeStatusFilter, employeeSpecFilter, employeeSort]);
+
     const [projects, setProjects] = useState<Project[]>([]);
     const [users, setUsers] = useState<User[]>([]);
     const [loading, setLoading] = useState(true);
     const { token } = useAuth();
+
+    const availableUserRoles = useMemo(() => {
+        const set = new Set<string>();
+        users.forEach(u => u.role.split(',').forEach(r => {
+            const trimmed = r.trim();
+            if (trimmed) set.add(trimmed);
+        }));
+        return Array.from(set).sort();
+    }, [users]);
+
+    const visibleUsers = useMemo(() => {
+        const filtered = usersRoleFilter === 'all'
+            ? users
+            : users.filter(u => u.role.split(',').map(r => r.trim()).includes(usersRoleFilter));
+
+        return [...filtered].sort((a, b) => {
+            let av: number | string;
+            let bv: number | string;
+            switch (usersSort.key) {
+                case 'name':
+                    av = a.name.toLowerCase(); bv = b.name.toLowerCase(); break;
+                case 'status':
+                    av = a.is_active ? 1 : 0; bv = b.is_active ? 1 : 0; break;
+                case 'last_login':
+                    av = a.last_login_at ? new Date(a.last_login_at).getTime() : 0;
+                    bv = b.last_login_at ? new Date(b.last_login_at).getTime() : 0; break;
+                case 'created':
+                default:
+                    av = new Date(a.created_at).getTime(); bv = new Date(b.created_at).getTime(); break;
+            }
+            if (av < bv) return usersSort.dir === 'asc' ? -1 : 1;
+            if (av > bv) return usersSort.dir === 'asc' ? 1 : -1;
+            return 0;
+        });
+    }, [users, usersRoleFilter, usersSort]);
     
     // Custom restrictions state
     const [customRestrictions, setCustomRestrictions] = useState<any[]>([]);
@@ -175,6 +383,15 @@ const AdminDashboard = () => {
         github_token: '',
     });
     const [invitingProjectId, setInvitingProjectId] = useState<number | null>(null);
+
+    // Project members modal state
+    const [showProjectMembersModal, setShowProjectMembersModal] = useState(false);
+    const [selectedProjectForMembers, setSelectedProjectForMembers] = useState<Project | null>(null);
+    const [projectMembers, setProjectMembers] = useState<Array<{ id: number; name: string; email: string; role?: string; responsibilities?: string; is_admin?: boolean }>>([]);
+    const [projectMembersLoading, setProjectMembersLoading] = useState(false);
+    const [addMemberForm, setAddMemberForm] = useState<{ developer_id: string; role: string }>({ developer_id: '', role: 'developer' });
+    const [addingMember, setAddingMember] = useState(false);
+    const [removingMemberId, setRemovingMemberId] = useState<number | null>(null);
 
     useEffect(() => {
         fetchData();
@@ -333,6 +550,98 @@ const AdminDashboard = () => {
             toast.error('Failed to send invitations');
         } finally {
             setInvitingProjectId(null);
+        }
+    };
+
+    // Project members management
+    const handleOpenProjectMembers = async (project: Project, e: React.MouseEvent) => {
+        e.stopPropagation();
+        setSelectedProjectForMembers(project);
+        setShowProjectMembersModal(true);
+        setAddMemberForm({ developer_id: '', role: 'developer' });
+        setProjectMembersLoading(true);
+        try {
+            const res = await fetch(`${API_BASE_URL}/api/projects/${project.id}`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (res.ok) {
+                const data = await res.json();
+                setProjectMembers(data.developers || []);
+            } else {
+                toast.error('Failed to load project members');
+                setProjectMembers([]);
+            }
+        } catch {
+            toast.error('Failed to load project members');
+            setProjectMembers([]);
+        } finally {
+            setProjectMembersLoading(false);
+        }
+    };
+
+    const handleAddProjectMember = async () => {
+        if (!selectedProjectForMembers) return;
+        const devId = parseInt(addMemberForm.developer_id, 10);
+        if (!devId) {
+            toast.error('Select an employee to add');
+            return;
+        }
+        setAddingMember(true);
+        try {
+            const res = await fetch(`${API_BASE_URL}/api/projects/${selectedProjectForMembers.id}/developers`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`,
+                },
+                body: JSON.stringify({
+                    developer_id: devId,
+                    role: addMemberForm.role || 'developer',
+                }),
+            });
+            if (res.ok) {
+                toast.success('Member added');
+                const refresh = await fetch(`${API_BASE_URL}/api/projects/${selectedProjectForMembers.id}`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (refresh.ok) {
+                    const data = await refresh.json();
+                    setProjectMembers(data.developers || []);
+                }
+                setAddMemberForm({ developer_id: '', role: 'developer' });
+                setProjects(prev => prev.map(p => p.id === selectedProjectForMembers.id ? { ...p, developer_count: p.developer_count + 1 } : p));
+            } else {
+                const err = await res.json().catch(() => ({}));
+                toast.error(err.detail || 'Failed to add member');
+            }
+        } catch {
+            toast.error('Failed to add member');
+        } finally {
+            setAddingMember(false);
+        }
+    };
+
+    const handleRemoveProjectMember = async (developerId: number) => {
+        if (!selectedProjectForMembers) return;
+        if (!confirm('Remove this member from the project? Their assigned work items will be unassigned.')) return;
+        setRemovingMemberId(developerId);
+        try {
+            const res = await fetch(`${API_BASE_URL}/api/projects/${selectedProjectForMembers.id}/developers/${developerId}`, {
+                method: 'DELETE',
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (res.ok) {
+                toast.success('Member removed');
+                setProjectMembers(prev => prev.filter(m => m.id !== developerId));
+                setProjects(prev => prev.map(p => p.id === selectedProjectForMembers.id ? { ...p, developer_count: Math.max(0, p.developer_count - 1) } : p));
+            } else {
+                const err = await res.json().catch(() => ({}));
+                toast.error(err.detail || 'Failed to remove member');
+            }
+        } catch {
+            toast.error('Failed to remove member');
+        } finally {
+            setRemovingMemberId(null);
         }
     };
 
@@ -607,73 +916,183 @@ const AdminDashboard = () => {
                 ) : (
                     <>
                         {/* Dashboard Tab */}
-                        {activeTab === 'dashboard' && stats && (
+                        {activeTab === 'dashboard' && stats && (() => {
+                            const statusColor = (s: string) => {
+                                const key = s.toLowerCase();
+                                if (key === 'done' || key === 'completed' || key === 'closed') return '#34D399';
+                                if (key === 'in_progress' || key === 'in progress') return '#E0B954';
+                                if (key === 'in_review' || key === 'in review' || key === 'review') return '#A78BFA';
+                                if (key === 'blocked') return '#EF4444';
+                                if (key === 'cancelled' || key === 'canceled' || key === 'wontfix') return '#525252';
+                                if (key === 'backlog') return '#64748B';
+                                if (key === 'todo' || key === 'to_do' || key === 'to do') return '#94A3B8';
+                                if (key === 'open' || key === 'new') return '#60A5FA';
+                                return '#737373';
+                            };
+                            const priorityColor = (p: string) => {
+                                const key = p.toLowerCase();
+                                if (key === 'critical') return '#EF4444';
+                                if (key === 'high') return '#F97316';
+                                if (key === 'medium') return '#F59E0B';
+                                if (key === 'low') return '#E0B954';
+                                return '#737373';
+                            };
+                            const priorityOrder = ['critical', 'high', 'medium', 'low'];
+                            const statusData = Object.entries(stats.tickets_by_status)
+                                .map(([name, value]) => ({ name, label: name.replace(/_/g, ' '), value, color: statusColor(name) }))
+                                .sort((a, b) => b.value - a.value);
+                            const priorityData = Object.entries(stats.tickets_by_priority)
+                                .map(([name, value]) => ({ name, label: name.charAt(0).toUpperCase() + name.slice(1), value, color: priorityColor(name) }))
+                                .sort((a, b) => {
+                                    const ai = priorityOrder.indexOf(a.name.toLowerCase());
+                                    const bi = priorityOrder.indexOf(b.name.toLowerCase());
+                                    if (ai === -1 && bi === -1) return 0;
+                                    if (ai === -1) return 1;
+                                    if (bi === -1) return -1;
+                                    return ai - bi;
+                                });
+
+                            const kpis: Array<{ label: string; value: number; icon: typeof Users; color: string; tab?: AdminTab }> = [
+                                { label: 'Total Employees', value: stats.total_employees, icon: Users, color: '#E0B954', tab: 'employees' },
+                                { label: 'Total Projects', value: stats.total_projects, icon: FolderKanban, color: '#E0B954', tab: 'projects' },
+                                { label: 'Total Tickets', value: stats.total_tickets, icon: Ticket, color: '#F59E0B' },
+                                { label: 'Active Sprints', value: stats.active_sprints, icon: Calendar, color: '#EC4899' },
+                            ];
+
+                            return (
                             <div className="space-y-6">
                                 {/* Stats Cards */}
                                 <div className="grid grid-cols-4 gap-4">
-                                    {[
-                                        { label: 'Total Employees', value: stats.total_employees, icon: Users, color: '#E0B954' },
-                                        { label: 'Total Projects', value: stats.total_projects, icon: FolderKanban, color: '#E0B954' },
-                                        { label: 'Total Tickets', value: stats.total_tickets, icon: Ticket, color: '#F59E0B' },
-                                        { label: 'Active Sprints', value: stats.active_sprints, icon: Calendar, color: '#EC4899' },
-                                    ].map((stat, i) => (
-                                        <div key={i} className="bg-[#0d0d0d] border border-[rgba(255,255,255,0.05)] rounded-xl p-5">
-                                            <div className="flex items-center justify-between mb-3">
-                                                <div className="p-2 rounded-lg" style={{ backgroundColor: `${stat.color}20` }}>
-                                                    <stat.icon className="w-5 h-5" style={{ color: stat.color }} />
+                                    {kpis.map((stat, i) => {
+                                        const clickable = !!stat.tab;
+                                        const Wrapper: any = clickable ? 'button' : 'div';
+                                        return (
+                                            <Wrapper
+                                                key={i}
+                                                {...(clickable ? {
+                                                    onClick: () => setActiveTab(stat.tab as AdminTab),
+                                                    type: 'button',
+                                                    title: `Go to ${stat.label.replace('Total ', '')} tab`,
+                                                } : {})}
+                                                className={`text-left bg-[#0d0d0d] border border-[rgba(255,255,255,0.05)] rounded-xl p-5 transition-colors ${
+                                                    clickable
+                                                        ? 'cursor-pointer hover:border-[rgba(224,185,84,0.3)] hover:bg-[rgba(255,255,255,0.015)] focus:outline-none focus:ring-1 focus:ring-[#E0B954]'
+                                                        : ''
+                                                }`}
+                                            >
+                                                <div className="flex items-center justify-between mb-3">
+                                                    <div className="p-2 rounded-lg" style={{ backgroundColor: `${stat.color}20` }}>
+                                                        <stat.icon className="w-5 h-5" style={{ color: stat.color }} />
+                                                    </div>
+                                                    {clickable && (
+                                                        <ChevronRight className="w-4 h-4 text-[#737373]" />
+                                                    )}
                                                 </div>
-                                            </div>
-                                            <div className="text-2xl font-bold text-white">{stat.value}</div>
-                                            <div className="text-sm text-[#737373]">{stat.label}</div>
-                                        </div>
-                                    ))}
+                                                <div className="text-2xl font-bold text-white tabular-nums">{stat.value}</div>
+                                                <div className="text-sm text-[#737373]">{stat.label}</div>
+                                            </Wrapper>
+                                        );
+                                    })}
                                 </div>
 
                                 {/* Charts */}
                                 <div className="grid grid-cols-2 gap-6">
-                                    {/* Tickets by Status */}
+                                    {/* Tickets by Status — donut */}
                                     <div className="bg-[#0d0d0d] border border-[rgba(255,255,255,0.05)] rounded-xl p-5">
                                         <h3 className="text-lg font-semibold text-white mb-4">Tickets by Status</h3>
-                                        <div className="space-y-3">
-                                            {Object.entries(stats.tickets_by_status).map(([status, count]) => (
-                                                <div key={status} className="flex items-center gap-3">
-                                                    <div className="w-24 text-sm text-[#a3a3a3] capitalize">{status.replace('_', ' ')}</div>
-                                                    <div className="flex-1 h-2 bg-[rgba(255,255,255,0.05)] rounded-full overflow-hidden">
-                                                        <div
-                                                            className="h-full bg-[#E0B954] rounded-full"
-                                                            style={{ width: `${stats.total_tickets ? (count / stats.total_tickets) * 100 : 0}%` }}
-                                                        />
+                                        {statusData.length === 0 || stats.total_tickets === 0 ? (
+                                            <div className="text-sm text-[#737373] py-10 text-center">No ticket data yet.</div>
+                                        ) : (
+                                            <div className="flex items-center gap-5">
+                                                <div className="relative flex-shrink-0" style={{ width: 180, height: 180 }}>
+                                                    <ResponsiveContainer width="100%" height="100%">
+                                                        <PieChart>
+                                                            <Pie
+                                                                data={statusData}
+                                                                dataKey="value"
+                                                                nameKey="label"
+                                                                innerRadius={55}
+                                                                outerRadius={80}
+                                                                paddingAngle={2}
+                                                                stroke="none"
+                                                            >
+                                                                {statusData.map(d => (
+                                                                    <Cell key={d.name} fill={d.color} />
+                                                                ))}
+                                                            </Pie>
+                                                            <Tooltip
+                                                                contentStyle={{ backgroundColor: '#121212', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 8, fontSize: 12, textTransform: 'capitalize' }}
+                                                                itemStyle={{ color: '#a3a3a3' }}
+                                                                wrapperStyle={{ outline: 'none', zIndex: 50 }}
+                                                                formatter={(value: number, name: string) => [
+                                                                    `${value} (${Math.round((value / stats.total_tickets) * 100)}%)`,
+                                                                    name,
+                                                                ]}
+                                                            />
+                                                        </PieChart>
+                                                    </ResponsiveContainer>
+                                                    <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                                                        <div className="text-2xl font-bold text-white tabular-nums">{stats.total_tickets}</div>
+                                                        <div className="text-[10px] text-[#737373] uppercase tracking-wider">Total</div>
                                                     </div>
-                                                    <div className="w-12 text-sm text-[#a3a3a3] text-right">{count}</div>
                                                 </div>
-                                            ))}
-                                        </div>
+                                                <ul className="flex-1 space-y-1.5 min-w-0">
+                                                    {statusData.map(d => {
+                                                        const pct = Math.round((d.value / stats.total_tickets) * 100);
+                                                        return (
+                                                            <li key={d.name} className="flex items-center gap-2 text-xs">
+                                                                <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ backgroundColor: d.color }} />
+                                                                <span className="text-[#a3a3a3] capitalize truncate">{d.label}</span>
+                                                                <span className="ml-auto text-[#737373] tabular-nums">{d.value}</span>
+                                                                <span className="text-[#525252] tabular-nums w-9 text-right">{pct}%</span>
+                                                            </li>
+                                                        );
+                                                    })}
+                                                </ul>
+                                            </div>
+                                        )}
                                     </div>
 
-                                    {/* Tickets by Priority */}
+                                    {/* Tickets by Priority — bar chart */}
                                     <div className="bg-[#0d0d0d] border border-[rgba(255,255,255,0.05)] rounded-xl p-5">
                                         <h3 className="text-lg font-semibold text-white mb-4">Tickets by Priority</h3>
-                                        <div className="space-y-3">
-                                            {Object.entries(stats.tickets_by_priority).map(([priority, count]) => (
-                                                <div key={priority} className="flex items-center gap-3">
-                                                    <div className="w-24 text-sm text-[#a3a3a3] capitalize">{priority}</div>
-                                                    <div className="flex-1 h-2 bg-[rgba(255,255,255,0.05)] rounded-full overflow-hidden">
-                                                        <div
-                                                            className="h-full rounded-full"
-                                                            style={{
-                                                                width: `${stats.total_tickets ? (count / stats.total_tickets) * 100 : 0}%`,
-                                                                backgroundColor: priority === 'critical' ? '#EF4444' : priority === 'high' ? '#F97316' : priority === 'medium' ? '#F59E0B' : '#E0B954'
-                                                            }}
-                                                        />
-                                                    </div>
-                                                    <div className="w-12 text-sm text-[#a3a3a3] text-right">{count}</div>
-                                                </div>
-                                            ))}
-                                        </div>
+                                        {priorityData.length === 0 || stats.total_tickets === 0 ? (
+                                            <div className="text-sm text-[#737373] py-10 text-center">No ticket data yet.</div>
+                                        ) : (
+                                            <ResponsiveContainer width="100%" height={180}>
+                                                <BarChart data={priorityData} margin={{ top: 8, right: 8, bottom: 0, left: -8 }}>
+                                                    <XAxis
+                                                        dataKey="label"
+                                                        tick={{ fill: '#a3a3a3', fontSize: 11 }}
+                                                        axisLine={{ stroke: 'rgba(255,255,255,0.08)' }}
+                                                        tickLine={false}
+                                                    />
+                                                    <YAxis
+                                                        tick={{ fill: '#737373', fontSize: 10 }}
+                                                        axisLine={false}
+                                                        tickLine={false}
+                                                        allowDecimals={false}
+                                                    />
+                                                    <Tooltip
+                                                        cursor={{ fill: 'rgba(255,255,255,0.03)' }}
+                                                        contentStyle={{ backgroundColor: '#121212', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 8, fontSize: 12 }}
+                                                        labelStyle={{ color: '#fff', fontWeight: 600 }}
+                                                        itemStyle={{ color: '#a3a3a3' }}
+                                                        formatter={(value: number) => [`${value} tickets`, '']}
+                                                    />
+                                                    <Bar dataKey="value" radius={[6, 6, 0, 0]}>
+                                                        {priorityData.map(d => (
+                                                            <Cell key={d.name} fill={d.color} />
+                                                        ))}
+                                                    </Bar>
+                                                </BarChart>
+                                            </ResponsiveContainer>
+                                        )}
                                     </div>
                                 </div>
                             </div>
-                        )}
+                            );
+                        })()}
 
                         {/* Employees Tab */}
                         {activeTab === 'employees' && (
@@ -689,21 +1108,195 @@ const AdminDashboard = () => {
                                     </Button>
                                 </div>
 
+                                {employees.length > 0 && (
+                                    <div className="bg-[#0d0d0d] border border-[rgba(255,255,255,0.05)] rounded-xl p-5 space-y-5">
+                                        <div className="flex items-start justify-between gap-4 flex-wrap">
+                                            <div>
+                                                <div className="flex items-center gap-2">
+                                                    <TrendingUp className="w-4 h-4 text-[#E0B954]" />
+                                                    <h3 className="text-sm font-semibold text-white">Team Capacity Overview</h3>
+                                                </div>
+                                                <div className="text-xs text-[#737373] mt-1">
+                                                    Week:{' '}
+                                                    <span className="text-[#a3a3a3] font-mono">
+                                                        {teamCapacity.weekStart
+                                                            ? new Date(teamCapacity.weekStart).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+                                                            : '—'}
+                                                        {' → '}
+                                                        {teamCapacity.weekEnd
+                                                            ? new Date(teamCapacity.weekEnd).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+                                                            : '—'}
+                                                    </span>
+                                                    <span className="ml-2 text-[#737373]">(Sat → Fri, UTC)</span>
+                                                </div>
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                                {([
+                                                    { key: 'Available', count: teamCapacity.counts.Available, base: 'rgba(224,185,84', text: '#E0B954' },
+                                                    { key: 'Moderate', count: teamCapacity.counts.Moderate, base: 'rgba(245,158,11', text: '#F59E0B' },
+                                                    { key: 'Busy', count: teamCapacity.counts.Busy, base: 'rgba(239,68,68', text: '#EF4444' },
+                                                ] as const).map(pill => {
+                                                    const active = employeeStatusFilter === pill.key;
+                                                    return (
+                                                        <button
+                                                            key={pill.key}
+                                                            onClick={() => setEmployeeStatusFilter(active ? 'all' : pill.key)}
+                                                            className={`px-2.5 py-1 rounded-md text-xs font-medium border transition-colors ${active ? 'ring-1 ring-offset-0' : 'hover:opacity-90'}`}
+                                                            style={{
+                                                                backgroundColor: active ? `${pill.base},0.25)` : `${pill.base},0.12)`,
+                                                                color: pill.text,
+                                                                borderColor: `${pill.base},${active ? '0.45' : '0.2'})`,
+                                                            }}
+                                                            title={active ? 'Clear filter' : `Show only ${pill.key} developers`}
+                                                        >
+                                                            {pill.count} {pill.key}
+                                                        </button>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+
+                                        {/* KPI tiles */}
+                                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                                            <div className="rounded-lg p-3 bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)]">
+                                                <div className="text-[10px] uppercase tracking-wider text-[#737373]">Headcount</div>
+                                                <div className="text-xl font-bold text-white tabular-nums mt-1">{teamCapacity.perDev.length}</div>
+                                            </div>
+                                            <div className="rounded-lg p-3 bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)]">
+                                                <div className="text-[10px] uppercase tracking-wider text-[#737373]">Hours Used</div>
+                                                <div className="text-xl font-bold text-white tabular-nums mt-1">
+                                                    {teamCapacity.totalUsed}
+                                                    <span className="text-sm text-[#737373] font-normal"> / {teamCapacity.totalCapacity}h</span>
+                                                </div>
+                                            </div>
+                                            <div className="rounded-lg p-3 bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)]">
+                                                <div className="text-[10px] uppercase tracking-wider text-[#737373]">Utilization</div>
+                                                <div className={`text-xl font-bold tabular-nums mt-1 ${
+                                                    teamCapacity.utilization >= 90 ? 'text-[#EF4444]' :
+                                                    teamCapacity.utilization >= 70 ? 'text-[#F59E0B]' :
+                                                    'text-[#34D399]'
+                                                }`}>{teamCapacity.utilization}%</div>
+                                            </div>
+                                            <div className="rounded-lg p-3 bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)]">
+                                                <div className="text-[10px] uppercase tracking-wider text-[#737373]">Slack Remaining</div>
+                                                <div className="text-xl font-bold text-white tabular-nums mt-1">{teamCapacity.totalRemaining}h</div>
+                                            </div>
+                                        </div>
+
+                                        {/* Team-wide stacked bar */}
+                                        <div>
+                                            <div className="flex items-center justify-between text-[11px] text-[#737373] mb-1.5">
+                                                <span>Team workload split</span>
+                                                <span className="font-mono tabular-nums">{teamCapacity.totalUsed}h of {teamCapacity.totalCapacity}h</span>
+                                            </div>
+                                            <div className="h-3 bg-[rgba(255,255,255,0.05)] rounded-full overflow-hidden flex">
+                                                <div className="h-full bg-[#E0B954]" style={{ width: `${teamCapacity.totalCapacity ? (teamCapacity.totalInProgress / teamCapacity.totalCapacity) * 100 : 0}%` }} title={`In progress: ${teamCapacity.totalInProgress}h`} />
+                                                <div className="h-full bg-[#A78BFA]" style={{ width: `${teamCapacity.totalCapacity ? (teamCapacity.totalInReview / teamCapacity.totalCapacity) * 100 : 0}%` }} title={`In review: ${teamCapacity.totalInReview}h`} />
+                                                <div className="h-full bg-[#34D399]" style={{ width: `${teamCapacity.totalCapacity ? (teamCapacity.totalDone / teamCapacity.totalCapacity) * 100 : 0}%` }} title={`Done: ${teamCapacity.totalDone}h`} />
+                                            </div>
+                                            <div className="text-[10px] text-[#737373] mt-1.5 flex items-center gap-3 flex-wrap">
+                                                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-[#E0B954]" />In progress · {teamCapacity.totalInProgress}h</span>
+                                                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-[#A78BFA]" />In review · {teamCapacity.totalInReview}h</span>
+                                                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-[#34D399]" />Done · {teamCapacity.totalDone}h</span>
+                                                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-[rgba(255,255,255,0.15)]" />Remaining · {teamCapacity.totalRemaining}h</span>
+                                            </div>
+                                        </div>
+
+                                    </div>
+                                )}
+
+                                {/* Search + filter bar */}
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <div className="relative flex-1 min-w-[220px]">
+                                        <Search className="w-3.5 h-3.5 text-[#737373] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                                        <Input
+                                            value={employeeSearch}
+                                            onChange={e => setEmployeeSearch(e.target.value)}
+                                            placeholder="Search by name or email..."
+                                            className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl h-9 pl-8 text-sm"
+                                        />
+                                    </div>
+                                    {availableSpecs.length > 0 && (
+                                        <select
+                                            value={employeeSpecFilter}
+                                            onChange={e => setEmployeeSpecFilter(e.target.value)}
+                                            className="h-9 bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.07)] text-[#f5f5f5] rounded-xl px-3 text-sm"
+                                            title="Filter by specialization"
+                                        >
+                                            <option value="all">All specializations</option>
+                                            {availableSpecs.map(s => (
+                                                <option key={s} value={s} className="capitalize">{s}</option>
+                                            ))}
+                                        </select>
+                                    )}
+                                    <select
+                                        value={employeeStatusFilter}
+                                        onChange={e => setEmployeeStatusFilter(e.target.value as typeof employeeStatusFilter)}
+                                        className="h-9 bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.07)] text-[#f5f5f5] rounded-xl px-3 text-sm"
+                                        title="Filter by capacity status"
+                                    >
+                                        <option value="all">All statuses</option>
+                                        <option value="Available">Available</option>
+                                        <option value="Moderate">Moderate</option>
+                                        <option value="Busy">Busy</option>
+                                    </select>
+                                    {(employeeSearch || employeeStatusFilter !== 'all' || employeeSpecFilter !== 'all') && (
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            onClick={() => {
+                                                setEmployeeSearch('');
+                                                setEmployeeStatusFilter('all');
+                                                setEmployeeSpecFilter('all');
+                                            }}
+                                            className="h-9 text-xs text-[#737373] hover:text-white rounded-xl px-3"
+                                        >
+                                            Clear filters
+                                        </Button>
+                                    )}
+                                    <div className="ml-auto text-xs text-[#737373]">
+                                        {filteredEmployeeRows.length} of {employees.length}
+                                    </div>
+                                </div>
+
                                 <div className="bg-[#0d0d0d] border border-[rgba(255,255,255,0.05)] rounded-xl overflow-hidden">
                                     <table className="w-full">
                                         <thead>
                                             <tr className="border-b border-[rgba(255,255,255,0.05)]">
-                                                <th className="text-left text-xs font-medium text-[#737373] uppercase tracking-wider px-5 py-3">Name</th>
-                                                <th className="text-left text-xs font-medium text-[#737373] uppercase tracking-wider px-5 py-3">Email</th>
-                                                <th className="text-left text-xs font-medium text-[#737373] uppercase tracking-wider px-5 py-3">GitHub</th>
-                                                <th className="text-left text-xs font-medium text-[#737373] uppercase tracking-wider px-5 py-3">Projects</th>
-                                                <th className="text-left text-xs font-medium text-[#737373] uppercase tracking-wider px-5 py-3">Assigned</th>
-                                                <th className="text-left text-xs font-medium text-[#737373] uppercase tracking-wider px-5 py-3">Capacity</th>
-                                                <th className="text-right text-xs font-medium text-[#737373] uppercase tracking-wider px-5 py-3">Actions</th>
+                                                {([
+                                                    { key: 'name' as const, label: 'Name', sortable: true, align: 'left' },
+                                                    { key: null, label: 'Email', sortable: false, align: 'left' },
+                                                    { key: null, label: 'GitHub', sortable: false, align: 'left' },
+                                                    { key: 'projects' as const, label: 'Projects', sortable: true, align: 'left' },
+                                                    { key: 'assigned' as const, label: 'Assigned', sortable: true, align: 'left' },
+                                                    { key: 'capacity' as const, label: 'Capacity', sortable: true, align: 'left' },
+                                                    { key: null, label: 'Actions', sortable: false, align: 'right' },
+                                                ] as const).map((col, i) => {
+                                                    const isActive = col.sortable && col.key && employeeSort.key === col.key;
+                                                    const ArrowIcon = isActive
+                                                        ? (employeeSort.dir === 'asc' ? ChevronUp : ChevronDown)
+                                                        : ArrowUpDown;
+                                                    const baseCls = `text-xs font-medium text-[#737373] uppercase tracking-wider px-5 py-3 ${col.align === 'right' ? 'text-right' : 'text-left'}`;
+                                                    if (!col.sortable || !col.key) {
+                                                        return <th key={i} className={baseCls}>{col.label}</th>;
+                                                    }
+                                                    return (
+                                                        <th key={i} className={baseCls}>
+                                                            <button
+                                                                onClick={() => handleEmployeeSort(col.key as EmployeeSortKey)}
+                                                                className={`inline-flex items-center gap-1 hover:text-white transition-colors ${isActive ? 'text-white' : ''}`}
+                                                                title={`Sort by ${col.label}`}
+                                                            >
+                                                                {col.label}
+                                                                <ArrowIcon className={`w-3 h-3 ${isActive ? 'opacity-100' : 'opacity-40'}`} />
+                                                            </button>
+                                                        </th>
+                                                    );
+                                                })}
                                             </tr>
                                         </thead>
                                         <tbody>
-                                            {employees.map(emp => {
+                                            {filteredEmployeeRows.map(({ emp }) => {
                                                 const devCapacity = developerCapacities.find(d => d.developer_id === emp.id);
                                                 const capacityUsed = devCapacity?.this_week_capacity_used ?? 0;
                                                 const capacityPercentage = Math.round((capacityUsed / 40) * 100);
@@ -711,18 +1304,18 @@ const AdminDashboard = () => {
                                                 const capacityStatus = remaining >= 10 ? 'Available'
                                                     : remaining > 0 ? 'Moderate'
                                                     : 'Busy';
-                                                const inProgressH = devCapacity?.this_week_in_progress_hours ?? 0;
-                                                const inReviewH = devCapacity?.this_week_in_review_hours ?? 0;
-                                                const doneH = devCapacity?.this_week_done_hours ?? 0;
                                                 const isExpanded = expandedCapacityDevId === emp.id;
                                                 const tickets = devCapacity?.tickets ?? [];
 
-                                                // Group tickets by status for the expanded view
-                                                const groupedTickets = {
-                                                    in_progress: tickets.filter(t => t.status === 'in_progress'),
-                                                    in_review: tickets.filter(t => t.status === 'in_review'),
-                                                    done: tickets.filter(t => t.status === 'done'),
-                                                };
+                                                // Group tickets by project for inline distribution + expanded view
+                                                const projectGroupsMap = tickets.reduce<Record<number, { projectId: number; projectName: string; tickets: CapacityTicket[]; total: number }>>((acc, t) => {
+                                                    const pid = t.project_id;
+                                                    if (!acc[pid]) acc[pid] = { projectId: pid, projectName: t.project_name || `Project ${pid}`, tickets: [], total: 0 };
+                                                    acc[pid].tickets.push(t);
+                                                    acc[pid].total += t.counted_hours;
+                                                    return acc;
+                                                }, {});
+                                                const projectsByHours = Object.values(projectGroupsMap).sort((a, b) => b.total - a.total);
 
                                                 return (
                                                 <React.Fragment key={emp.id}>
@@ -755,20 +1348,41 @@ const AdminDashboard = () => {
                                                                 : <ChevronRight className="w-3.5 h-3.5 text-[#737373] flex-shrink-0" />}
                                                             <div className="flex-1 min-w-0 max-w-xs">
                                                                 <div className="h-2 bg-[rgba(255,255,255,0.05)] rounded-full overflow-hidden flex">
-                                                                    {capacityUsed > 0 && (
-                                                                        <>
-                                                                            <div className="h-full bg-[#E0B954]" style={{ width: `${Math.min(100, (inProgressH / 40) * 100)}%` }} title={`In progress: ${inProgressH}h`} />
-                                                                            <div className="h-full bg-[#A78BFA]" style={{ width: `${Math.min(100, (inReviewH / 40) * 100)}%` }} title={`In review: ${inReviewH}h`} />
-                                                                            <div className="h-full bg-[#34D399]" style={{ width: `${Math.min(100, (doneH / 40) * 100)}%` }} title={`Done this week: ${doneH}h`} />
-                                                                        </>
-                                                                    )}
+                                                                    {projectsByHours.map(p => (
+                                                                        <div
+                                                                            key={p.projectId}
+                                                                            className="h-full"
+                                                                            style={{
+                                                                                width: `${Math.min(100, (p.total / 40) * 100)}%`,
+                                                                                backgroundColor: projectColor(p.projectId),
+                                                                            }}
+                                                                            title={`${p.projectName}: ${p.total}h (${p.tickets.length} ticket${p.tickets.length === 1 ? '' : 's'})`}
+                                                                        />
+                                                                    ))}
                                                                 </div>
                                                                 <div className="text-[10px] text-[#737373] mt-1.5 flex items-center gap-2 flex-wrap">
-                                                                    <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-sm bg-[#E0B954]" />{inProgressH}h in-progress</span>
-                                                                    <span className="text-[rgba(255,255,255,0.15)]">·</span>
-                                                                    <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-sm bg-[#A78BFA]" />{inReviewH}h in-review</span>
-                                                                    <span className="text-[rgba(255,255,255,0.15)]">·</span>
-                                                                    <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-sm bg-[#34D399]" />{doneH}h done</span>
+                                                                    {projectsByHours.length === 0 ? (
+                                                                        <span>No tickets this week</span>
+                                                                    ) : (
+                                                                        <>
+                                                                            {projectsByHours.slice(0, 3).map((p, i) => (
+                                                                                <React.Fragment key={p.projectId}>
+                                                                                    {i > 0 && <span className="text-[rgba(255,255,255,0.15)]">·</span>}
+                                                                                    <span className="flex items-center gap-1">
+                                                                                        <span className="w-1.5 h-1.5 rounded-sm" style={{ backgroundColor: projectColor(p.projectId) }} />
+                                                                                        <span className="truncate max-w-[120px]" title={p.projectName}>{p.projectName}</span>
+                                                                                        <span>· {p.total}h</span>
+                                                                                    </span>
+                                                                                </React.Fragment>
+                                                                            ))}
+                                                                            {projectsByHours.length > 3 && (
+                                                                                <>
+                                                                                    <span className="text-[rgba(255,255,255,0.15)]">·</span>
+                                                                                    <span>+{projectsByHours.length - 3} more</span>
+                                                                                </>
+                                                                            )}
+                                                                        </>
+                                                                    )}
                                                                 </div>
                                                             </div>
                                                             <span className={`text-xs font-medium whitespace-nowrap ${
@@ -819,51 +1433,57 @@ const AdminDashboard = () => {
                                                                     )}
                                                                 </div>
 
-                                                                {tickets.length > 0 && (
-                                                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                                                                        {([
-                                                                            { key: 'in_progress', label: 'In progress', color: '#E0B954', icon: ActivityIcon, items: groupedTickets.in_progress, total: inProgressH },
-                                                                            { key: 'in_review', label: 'In review', color: '#A78BFA', icon: Eye, items: groupedTickets.in_review, total: inReviewH },
-                                                                            { key: 'done', label: 'Done this week', color: '#34D399', icon: CheckCircle2, items: groupedTickets.done, total: doneH },
-                                                                        ] as const).map(group => {
-                                                                            const Icon = group.icon;
+                                                                {projectsByHours.length > 0 && (
+                                                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                                                        {projectsByHours.map(p => {
+                                                                            const color = projectColor(p.projectId);
+                                                                            const sortedTickets = [...p.tickets].sort((a, b) => b.counted_hours - a.counted_hours);
                                                                             return (
-                                                                                <div key={group.key} className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-xl p-3">
+                                                                                <div key={p.projectId} className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-xl p-3">
                                                                                     <div className="flex items-center justify-between mb-2">
-                                                                                        <div className="flex items-center gap-2">
-                                                                                            <Icon className="w-3.5 h-3.5" style={{ color: group.color }} />
-                                                                                            <span className="text-xs font-semibold text-white">{group.label}</span>
-                                                                                            <span className="text-[10px] text-[#737373]">({group.items.length})</span>
+                                                                                        <div className="flex items-center gap-2 min-w-0">
+                                                                                            <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ backgroundColor: color }} />
+                                                                                            <span className="text-xs font-semibold text-white truncate" title={p.projectName}>{p.projectName}</span>
+                                                                                            <span className="text-[10px] text-[#737373] flex-shrink-0">({p.tickets.length})</span>
                                                                                         </div>
-                                                                                        <span className="text-xs font-mono tabular-nums" style={{ color: group.color }}>{group.total}h</span>
+                                                                                        <span className="text-xs font-mono tabular-nums flex-shrink-0" style={{ color }}>{p.total}h</span>
                                                                                     </div>
-                                                                                    {group.items.length === 0 ? (
-                                                                                        <div className="text-[11px] text-[#737373] py-2">No tickets</div>
-                                                                                    ) : (
-                                                                                        <ul className="space-y-1.5">
-                                                                                            {group.items.map(t => (
-                                                                                                <li key={t.id} className="flex items-start gap-2 text-xs">
-                                                                                                    <span className="font-mono text-[#E0B954] mt-0.5 flex-shrink-0">{t.key}</span>
-                                                                                                    <div className="flex-1 min-w-0">
-                                                                                                        <div className="text-white truncate">{t.title}</div>
-                                                                                                        <div className="text-[10px] text-[#737373] mt-0.5 flex items-center gap-1.5 flex-wrap">
-                                                                                                            <span>{t.project_name || `project ${t.project_id}`}</span>
-                                                                                                            <span className="text-[rgba(255,255,255,0.15)]">·</span>
-                                                                                                            <span>est {t.estimated_hours}h</span>
-                                                                                                            <span className="text-[rgba(255,255,255,0.15)]">·</span>
-                                                                                                            <span>logged {t.logged_hours}h</span>
-                                                                                                            {t.counted_basis === 'remaining (transferred)' && (
-                                                                                                                <span className="px-1 py-0.5 rounded bg-[#FBBF24]/15 text-[#FBBF24] text-[9px] font-semibold uppercase tracking-wider">transferred</span>
-                                                                                                            )}
+                                                                                    <ul className="space-y-1.5">
+                                                                                            {sortedTickets.map(t => {
+                                                                                                const sColor = statusBadgeColor(t.status);
+                                                                                                return (
+                                                                                                    <li key={t.id} className="flex items-start gap-2 text-xs">
+                                                                                                        <span className="font-mono text-[#E0B954] mt-0.5 flex-shrink-0">{t.key}</span>
+                                                                                                        <div className="flex-1 min-w-0">
+                                                                                                            <div className="text-white truncate">{t.title}</div>
+                                                                                                            <div className="text-[10px] text-[#737373] mt-0.5 flex items-center gap-1.5 flex-wrap">
+                                                                                                                <span
+                                                                                                                    className="px-1.5 py-0.5 rounded font-semibold uppercase tracking-wider"
+                                                                                                                    style={{
+                                                                                                                        backgroundColor: `${sColor}22`,
+                                                                                                                        color: sColor,
+                                                                                                                        fontSize: '9px',
+                                                                                                                    }}
+                                                                                                                >
+                                                                                                                    {t.status.replace('_', ' ')}
+                                                                                                                </span>
+                                                                                                                <span>est {t.estimated_hours}h</span>
+                                                                                                                <span className="text-[rgba(255,255,255,0.15)]">·</span>
+                                                                                                                <span>logged {t.logged_hours}h</span>
+                                                                                                                <span className="text-[rgba(255,255,255,0.15)]">·</span>
+                                                                                                                <span>remaining {t.remaining_hours}h</span>
+                                                                                                                {t.counted_basis === 'remaining (transferred)' && (
+                                                                                                                    <span className="px-1 py-0.5 rounded bg-[#FBBF24]/15 text-[#FBBF24] text-[9px] font-semibold uppercase tracking-wider">transferred</span>
+                                                                                                                )}
+                                                                                                            </div>
                                                                                                         </div>
-                                                                                                    </div>
-                                                                                                    <span className="font-mono tabular-nums flex-shrink-0" style={{ color: group.color }} title={`Counted as ${t.counted_basis}`}>
-                                                                                                        +{t.counted_hours}h
-                                                                                                    </span>
-                                                                                                </li>
-                                                                                            ))}
-                                                                                        </ul>
-                                                                                    )}
+                                                                                                        <span className="font-mono tabular-nums flex-shrink-0" style={{ color }} title={`Counted as ${t.counted_basis}`}>
+                                                                                                            +{t.counted_hours}h
+                                                                                                        </span>
+                                                                                                    </li>
+                                                                                                );
+                                                                                            })}
+                                                                                    </ul>
                                                                                 </div>
                                                                             );
                                                                         })}
@@ -881,6 +1501,11 @@ const AdminDashboard = () => {
                                     {employees.length === 0 && (
                                         <div className="text-center py-12 text-[#737373]">
                                             No employees yet. Click "Add Employee" to get started.
+                                        </div>
+                                    )}
+                                    {employees.length > 0 && filteredEmployeeRows.length === 0 && (
+                                        <div className="text-center py-12 text-sm text-[#737373]">
+                                            No employees match the current filters.
                                         </div>
                                     )}
                                 </div>
@@ -959,10 +1584,14 @@ const AdminDashboard = () => {
                                                 </div>
                                             )}
                                             <div className="flex items-center gap-4 mt-4 text-xs text-[#737373]">
-                                                <div className="flex items-center gap-1">
+                                                <button
+                                                    onClick={(e) => handleOpenProjectMembers(project, e)}
+                                                    className="flex items-center gap-1 hover:text-[#E0B954] transition-colors cursor-pointer rounded px-1 -mx-1 hover:bg-[rgba(224,185,84,0.08)]"
+                                                    title="View and manage project members"
+                                                >
                                                     <Users className="w-3.5 h-3.5" />
-                                                    {project.developer_count}
-                                                </div>
+                                                    <span className="underline-offset-2 hover:underline">{project.developer_count}</span>
+                                                </button>
                                                 <div className="flex items-center gap-1">
                                                     <Ticket className="w-3.5 h-3.5" />
                                                     {project.total_items}
@@ -1000,19 +1629,71 @@ const AdminDashboard = () => {
                                 <div className="flex items-center justify-between">
                                     <h2 className="text-lg font-semibold text-white">User Management</h2>
                                 </div>
+
+                                {/* Filter bar */}
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <select
+                                        value={usersRoleFilter}
+                                        onChange={e => setUsersRoleFilter(e.target.value)}
+                                        className="h-9 bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.07)] text-[#f5f5f5] rounded-xl px-3 text-sm"
+                                        title="Filter by role"
+                                    >
+                                        <option value="all">All roles</option>
+                                        {availableUserRoles.map(r => (
+                                            <option key={r} value={r}>{toPascalCase(r)}</option>
+                                        ))}
+                                    </select>
+                                    {usersRoleFilter !== 'all' && (
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            onClick={() => setUsersRoleFilter('all')}
+                                            className="h-9 text-xs text-[#737373] hover:text-white rounded-xl px-3"
+                                        >
+                                            Clear filter
+                                        </Button>
+                                    )}
+                                    <div className="ml-auto text-xs text-[#737373]">
+                                        {visibleUsers.length} of {users.length}
+                                    </div>
+                                </div>
+
                                 <div className="bg-[#0d0d0d] border border-[rgba(255,255,255,0.05)] rounded-xl overflow-visible">
                                     <table className="w-full">
                                         <thead className="bg-[rgba(255,255,255,0.02)]">
                                             <tr>
-                                                <th className="text-left text-xs font-medium text-[#737373] py-3 px-4">User</th>
-                                                <th className="text-left text-xs font-medium text-[#737373] py-3 px-4">Roles</th>
-                                                <th className="text-left text-xs font-medium text-[#737373] py-3 px-4">Status</th>
-                                                <th className="text-left text-xs font-medium text-[#737373] py-3 px-4">Last Login</th>
-                                                <th className="text-left text-xs font-medium text-[#737373] py-3 px-4">Restrictions</th>
+                                                {([
+                                                    { key: 'name' as const, label: 'User', sortable: true },
+                                                    { key: null, label: 'Roles', sortable: false },
+                                                    { key: 'status' as const, label: 'Status', sortable: true },
+                                                    { key: 'last_login' as const, label: 'Last Login', sortable: true },
+                                                    { key: null, label: 'Restrictions', sortable: false },
+                                                ] as const).map((col, i) => {
+                                                    const isActive = col.sortable && col.key && usersSort.key === col.key;
+                                                    const ArrowIcon = isActive
+                                                        ? (usersSort.dir === 'asc' ? ChevronUp : ChevronDown)
+                                                        : ArrowUpDown;
+                                                    const baseCls = 'text-left text-xs font-medium text-[#737373] py-3 px-4';
+                                                    if (!col.sortable || !col.key) {
+                                                        return <th key={i} className={baseCls}>{col.label}</th>;
+                                                    }
+                                                    return (
+                                                        <th key={i} className={baseCls}>
+                                                            <button
+                                                                onClick={() => handleUsersSort(col.key as UsersSortKey)}
+                                                                className={`inline-flex items-center gap-1 hover:text-white transition-colors ${isActive ? 'text-white' : ''}`}
+                                                                title={`Sort by ${col.label}`}
+                                                            >
+                                                                {col.label}
+                                                                <ArrowIcon className={`w-3 h-3 ${isActive ? 'opacity-100' : 'opacity-40'}`} />
+                                                            </button>
+                                                        </th>
+                                                    );
+                                                })}
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-[rgba(255,255,255,0.03)]">
-                                            {users.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).map(user => (
+                                            {visibleUsers.map(user => (
                                                 <tr key={user.id} className="hover:bg-[rgba(255,255,255,0.02)]">
                                                     <td className="py-3 px-4">
                                                         <div className="flex items-center gap-3">
@@ -1100,6 +1781,11 @@ const AdminDashboard = () => {
                                     {users.length === 0 && (
                                         <div className="text-center py-12 text-[#737373]">
                                             No users yet. Click "Add User" to create one.
+                                        </div>
+                                    )}
+                                    {users.length > 0 && visibleUsers.length === 0 && (
+                                        <div className="text-center py-12 text-sm text-[#737373]">
+                                            No users match the current filter.
                                         </div>
                                     )}
                                 </div>
@@ -1600,6 +2286,153 @@ const AdminDashboard = () => {
                                 <Github className="w-4 h-4 mr-2" />
                                 Save Settings
                             </Button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Project Members Modal */}
+            {showProjectMembersModal && selectedProjectForMembers && (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setShowProjectMembersModal(false)}>
+                    <div className="bg-[#0d0d0d] border border-[rgba(255,255,255,0.07)] rounded-2xl w-full max-w-2xl shadow-2xl max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
+                        <div className="flex items-center justify-between p-5 border-b border-[rgba(255,255,255,0.05)]">
+                            <div>
+                                <h2 className="text-lg font-bold text-white">Project Members</h2>
+                                <div className="text-xs text-[#737373] mt-0.5">{selectedProjectForMembers.name}</div>
+                            </div>
+                            <button onClick={() => setShowProjectMembersModal(false)} className="p-2 rounded-lg hover:bg-[rgba(244,246,255,0.05)] text-[#737373] hover:text-white">
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+
+                        <div className="p-5 space-y-5 overflow-y-auto">
+                            {/* Current members */}
+                            <div>
+                                <div className="flex items-center justify-between mb-2">
+                                    <h3 className="text-xs font-semibold text-[#a3a3a3] uppercase tracking-wider">Current Members</h3>
+                                    <span className="text-xs text-[#737373]">{projectMembers.length} total</span>
+                                </div>
+                                {projectMembersLoading ? (
+                                    <div className="flex items-center justify-center py-8">
+                                        <div className="animate-spin w-6 h-6 border-2 border-[#E0B954] border-t-transparent rounded-full" />
+                                    </div>
+                                ) : projectMembers.length === 0 ? (
+                                    <div className="text-center py-8 text-sm text-[#737373] bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-xl">
+                                        No members assigned yet.
+                                    </div>
+                                ) : (
+                                    <ul className="space-y-2">
+                                        {projectMembers.map(m => (
+                                            <li key={m.id} className="flex items-center justify-between gap-3 p-3 rounded-xl bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)]">
+                                                <div className="flex items-center gap-3 min-w-0">
+                                                    <div className="w-8 h-8 rounded-full bg-[rgba(224,185,84,0.2)] flex items-center justify-center text-sm font-medium text-[#E0B954] flex-shrink-0">
+                                                        {m.name.charAt(0).toUpperCase()}
+                                                    </div>
+                                                    <div className="min-w-0">
+                                                        <div className="text-sm font-medium text-white truncate flex items-center gap-2">
+                                                            {m.name}
+                                                            {m.is_admin && (
+                                                                <span className="px-1.5 py-0.5 rounded bg-[rgba(224,185,84,0.15)] text-[#E0B954] text-[9px] font-semibold uppercase tracking-wider">Admin</span>
+                                                            )}
+                                                        </div>
+                                                        <div className="text-xs text-[#737373] truncate">
+                                                            {m.email}
+                                                            {m.role && <span className="ml-2 capitalize">· {m.role}</span>}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <Button
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    onClick={() => handleRemoveProjectMember(m.id)}
+                                                    disabled={removingMemberId === m.id}
+                                                    className="text-red-400 hover:text-red-300 h-8 w-8 p-0 flex-shrink-0"
+                                                    title="Remove from project"
+                                                >
+                                                    {removingMemberId === m.id ? (
+                                                        <div className="w-3.5 h-3.5 border border-red-400/30 border-t-red-400 rounded-full animate-spin" />
+                                                    ) : (
+                                                        <Trash2 className="w-4 h-4" />
+                                                    )}
+                                                </Button>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                )}
+                            </div>
+
+                            {/* Add member */}
+                            <div>
+                                <h3 className="text-xs font-semibold text-[#a3a3a3] uppercase tracking-wider mb-2">Add Member</h3>
+                                {(() => {
+                                    const assignedIds = new Set(projectMembers.map(m => m.id));
+                                    const available = employees.filter(e => !assignedIds.has(e.id));
+                                    return (
+                                        <div className="p-3 rounded-xl bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] space-y-3">
+                                            {available.length === 0 ? (
+                                                <div className="text-xs text-[#737373] py-2 text-center">
+                                                    All employees are already on this project.
+                                                </div>
+                                            ) : (
+                                                <>
+                                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                                        <div>
+                                                            <label className="text-[10px] font-medium text-[#737373] uppercase tracking-wider block mb-1.5">Employee</label>
+                                                            <select
+                                                                value={addMemberForm.developer_id}
+                                                                onChange={e => setAddMemberForm(f => ({ ...f, developer_id: e.target.value }))}
+                                                                className="w-full h-10 bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.07)] text-[#f5f5f5] rounded-xl px-3 text-sm"
+                                                            >
+                                                                <option value="">Select an employee</option>
+                                                                {available.map(emp => (
+                                                                    <option key={emp.id} value={emp.id}>
+                                                                        {emp.name} · {emp.email}
+                                                                    </option>
+                                                                ))}
+                                                            </select>
+                                                        </div>
+                                                        <div>
+                                                            <label className="text-[10px] font-medium text-[#737373] uppercase tracking-wider block mb-1.5">Role</label>
+                                                            <select
+                                                                value={addMemberForm.role}
+                                                                onChange={e => setAddMemberForm(f => ({ ...f, role: e.target.value }))}
+                                                                className="w-full h-10 bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.07)] text-[#f5f5f5] rounded-xl px-3 text-sm"
+                                                            >
+                                                                <option value="developer">Developer</option>
+                                                                <option value="lead">Lead</option>
+                                                                <option value="qa">QA</option>
+                                                                <option value="designer">Designer</option>
+                                                                <option value="pm">Product Manager</option>
+                                                            </select>
+                                                        </div>
+                                                    </div>
+                                                    <Button
+                                                        onClick={handleAddProjectMember}
+                                                        disabled={addingMember || !addMemberForm.developer_id}
+                                                        className="w-full h-9 bg-gradient-to-r from-[#E0B954] to-[#B8872A] text-white rounded-xl font-medium disabled:opacity-50"
+                                                    >
+                                                        {addingMember ? (
+                                                            <>
+                                                                <div className="w-3.5 h-3.5 border border-white/30 border-t-white rounded-full animate-spin mr-2" />
+                                                                Adding...
+                                                            </>
+                                                        ) : (
+                                                            <>
+                                                                <Plus className="w-4 h-4 mr-1.5" />
+                                                                Add to Project
+                                                            </>
+                                                        )}
+                                                    </Button>
+                                                </>
+                                            )}
+                                        </div>
+                                    );
+                                })()}
+                            </div>
+                        </div>
+
+                        <div className="flex justify-end gap-3 p-5 border-t border-[rgba(255,255,255,0.05)]">
+                            <Button variant="ghost" onClick={() => setShowProjectMembersModal(false)} className="text-[#737373] rounded-xl px-5">Close</Button>
                         </div>
                     </div>
                 </div>

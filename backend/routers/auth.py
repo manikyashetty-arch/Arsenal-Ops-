@@ -404,18 +404,22 @@ async def google_login(
             detail="Invalid Google token"
         )
     
-    # Restrict SSO to approved email domain(s)
-    allowed_domains = os.getenv("ALLOWED_EMAIL_DOMAINS", "arsenalai.com").split(",")
+    # Domain-based access control:
+    # - Internal domains (e.g., arsenalai.com) can sign in via SSO and are auto-provisioned.
+    # - Any other domain may sign in only if an admin has pre-registered the user.
+    allowed_domains = [d.strip().lower() for d in os.getenv("ALLOWED_EMAIL_DOMAINS", "arsenalai.com").split(",") if d.strip()]
     email_domain = user_info['email'].split('@')[-1].lower()
-    if email_domain not in [d.strip().lower() for d in allowed_domains]:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access restricted to authorized organization accounts only"
-        )
-    
+    is_internal_domain = email_domain in allowed_domains
+
     # Check if user already exists by email
     user = db.query(User).filter(User.email == user_info['email']).first()
-    
+
+    if not user and not is_internal_domain:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This Google account is not authorized. Ask an admin to add your account before signing in."
+        )
+
     if user:
         # Existing user - verify account is active
         if not user.is_active:

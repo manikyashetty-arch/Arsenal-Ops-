@@ -111,6 +111,7 @@ interface DeveloperHours {
     current_week_logged: number;
     total_items: number;
     completed_items: number;
+    done_logged_hours?: number;
     my_tickets: TicketBreakdown[];
     hours_logged_on_others_tickets: HoursOnOthersTicket[];
     attribution_note: string;
@@ -523,22 +524,20 @@ export default function PMView({ projectId, token, isAdmin = false, userRestrict
                                     <th className="text-right py-3 px-4 text-xs font-medium text-[#737373] uppercase">Logged</th>
                                     <th className="text-right py-3 px-4 text-xs font-medium text-[#C79E3B] uppercase">This Week</th>
                                     <th className="text-right py-3 px-4 text-xs font-medium text-[#737373] uppercase">Remaining</th>
-                                    <th className="text-right py-3 px-4 text-xs font-medium text-[#737373] uppercase">Items</th>
-                                    <th className="text-right py-3 px-4 text-xs font-medium text-[#737373] uppercase">Completed</th>
+                                    <th className="text-right py-3 px-4 text-xs font-medium text-[#737373] uppercase">Done</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {analytics.developer_hours.length === 0 ? (
                                     <tr>
-                                        <td colSpan={8} className="py-8 text-center text-[#737373]">
+                                        <td colSpan={7} className="py-8 text-center text-[#737373]">
                                             No developers assigned to this project
                                         </td>
                                     </tr>
                                 ) : (
                                     analytics.developer_hours.map((dev) => {
                                         const isExpanded = expandedDeveloper === dev.developer_id;
-                                        const hasHoursOnOthersTickets = dev.hours_logged_on_others_tickets && dev.hours_logged_on_others_tickets.length > 0;
-                                        
+
                                         return (
                                             <React.Fragment key={dev.developer_id}>
                                                 <tr 
@@ -554,11 +553,6 @@ export default function PMView({ projectId, token, isAdmin = false, userRestrict
                                                                 <p className="text-sm text-white">{dev.developer_name}</p>
                                                                 <p className="text-xs text-[#737373]">{dev.developer_email}</p>
                                                             </div>
-                                                            {hasHoursOnOthersTickets && (
-                                                                <Badge className="bg-[#F59E0B]/20 text-[#F59E0B] border-0 text-xs">
-                                                                    +{dev.hours_logged_on_others_tickets.reduce((sum, t) => sum + t.hours, 0)}h on others' tickets
-                                                                </Badge>
-                                                            )}
                                                         </div>
                                                     </td>
                                                     <td className="py-3 px-4">
@@ -610,7 +604,6 @@ export default function PMView({ projectId, token, isAdmin = false, userRestrict
                                                             {dev.remaining_hours}h
                                                         </span>
                                                     </td>
-                                                    <td className="py-3 px-4 text-sm text-right text-white">{dev.total_items}</td>
                                                     <td className="py-3 px-4 text-sm text-right">
                                                         <Badge className="bg-[#E0B954]/20 text-[#E0B954] border-0">
                                                             {dev.completed_items}/{dev.total_items}
@@ -621,7 +614,7 @@ export default function PMView({ projectId, token, isAdmin = false, userRestrict
                                                 {/* Expanded Detail Row */}
                                                 {isExpanded && (
                                                     <tr className="bg-[rgba(255,255,255,0.01)]">
-                                                        <td colSpan={8} className="py-4 px-4">
+                                                        <td colSpan={7} className="py-4 px-4">
                                                             <div className="space-y-4">
                                                                 {/* This Week — by status breakdown (Sat-Fri) */}
                                                                 {(dev.this_week_tickets && dev.this_week_tickets.length > 0) && (
@@ -724,28 +717,6 @@ export default function PMView({ projectId, token, isAdmin = false, userRestrict
                                                                         <p className="text-xs text-[#737373]">No assigned tickets</p>
                                                                     )}
                                                                 </div>
-                                                                
-                                                                {/* Hours on Others' Tickets */}
-                                                                {hasHoursOnOthersTickets && (
-                                                                    <div>
-                                                                        <h4 className="text-xs font-medium text-[#737373] uppercase mb-2">Hours Logged on Others' Tickets</h4>
-                                                                        <div className="space-y-2">
-                                                                            {dev.hours_logged_on_others_tickets.map((entry, idx) => (
-                                                                                <div key={idx} className="flex items-center justify-between py-2 px-3 bg-[rgba(245,158,11,0.05)] rounded border border-[rgba(245,158,11,0.1)]">
-                                                                                    <div className="flex items-center gap-3">
-                                                                                        <span className="text-sm text-white">{entry.ticket_key}</span>
-                                                                                        <span className="text-sm text-[#a3a3a3] truncate max-w-[200px]">{entry.ticket_title}</span>
-                                                                                        <span className="text-xs text-[#737373]">(Assignee: {entry.ticket_assignee})</span>
-                                                                                    </div>
-                                                                                    <div className="flex items-center gap-4 text-xs">
-                                                                                        <span className="text-[#F59E0B] font-medium">{entry.hours}h logged</span>
-                                                                                        <span className="text-[#737373]">{new Date(entry.logged_at).toLocaleDateString()}</span>
-                                                                                    </div>
-                                                                                </div>
-                                                                            ))}
-                                                                        </div>
-                                                                    </div>
-                                                                )}
                                                                 
                                                                 <p className="text-xs text-[#737373] italic">
                                                                     {dev.attribution_note}

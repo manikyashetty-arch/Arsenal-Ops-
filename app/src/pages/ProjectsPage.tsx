@@ -39,6 +39,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar as CalendarIcon } from '@/components/ui/calendar';
+import TicketContributors from '@/components/TicketContributors';
 import { toast, Toaster } from 'sonner';
 import {
     Select,
@@ -2336,6 +2337,9 @@ const ProjectsPage = () => {
                                     Current: {selectedTask.logged_hours || 0}h logged · {selectedTask.remaining_hours || 0}h remaining
                                 </p>
                             </div>
+
+                            {/* Contributors (only renders when 2+ people have logged hours) */}
+                            <TicketContributors workItemId={selectedTask.id} token={token || ''} />
 
                             {/* Status Buttons - Move to */}
                             <div className="pt-4 border-t border-[rgba(255,255,255,0.05)]">

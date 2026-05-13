@@ -505,6 +505,43 @@ def run_migrations():
         except Exception as e:
             print(f"[MIGRATION ERROR] {e}")
 
+        # Migration: Create work_item_assignment_history + backfill from current state
+        try:
+            result = conn.execute(text("""
+                SELECT table_name
+                FROM information_schema.tables
+                WHERE table_name = 'work_item_assignment_history'
+            """))
+
+            if not result.fetchone():
+                print("[MIGRATION] Creating work_item_assignment_history table...")
+                conn.execute(text("""
+                    CREATE TABLE work_item_assignment_history (
+                        id SERIAL PRIMARY KEY,
+                        work_item_id INTEGER NOT NULL REFERENCES work_items(id) ON DELETE CASCADE,
+                        developer_id INTEGER REFERENCES developers(id) ON DELETE SET NULL,
+                        assigned_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                        unassigned_at TIMESTAMP NULL
+                    )
+                """))
+                conn.execute(text("CREATE INDEX idx_wiah_work_item_assigned ON work_item_assignment_history(work_item_id, assigned_at)"))
+                conn.execute(text("CREATE INDEX idx_wiah_developer_assigned ON work_item_assignment_history(developer_id, assigned_at)"))
+                conn.commit()
+                print("[MIGRATION] work_item_assignment_history table created!")
+
+                # One-time backfill: open a current span for every assigned work item.
+                print("[MIGRATION] Backfilling assignment history from current work_items state...")
+                conn.execute(text("""
+                    INSERT INTO work_item_assignment_history (work_item_id, developer_id, assigned_at, unassigned_at)
+                    SELECT id, assignee_id, COALESCE(last_assigned_at, created_at), NULL
+                    FROM work_items
+                    WHERE assignee_id IS NOT NULL
+                """))
+                conn.commit()
+                print("[MIGRATION] Backfill complete.")
+        except Exception as e:
+            print(f"[MIGRATION ERROR] work_item_assignment_history: {e}")
+
         # Migration: Make hashed_password nullable for SSO users
         try:
             result = conn.execute(text("""
@@ -526,11 +563,11 @@ def run_migrations():
 def init_db():
     """Initialize database tables"""
     from models import (
-        project, task, persona, user_story, 
+        project, task, persona, user_story,
         market_insight, developer, work_item, sprint,
         architecture, user, time_entry, task_dependency,
         project_goal, project_milestone, activity_log, project_file,
-        custom_restriction, personal_task
+        custom_restriction, personal_task, work_item_assignment_history
     )
     Base.metadata.create_all(bind=engine)
     
