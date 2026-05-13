@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import {
     PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line
@@ -46,8 +46,8 @@ import { Badge } from '@/components/ui/badge';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar as CalendarIcon } from '@/components/ui/calendar';
 import { toast, Toaster } from 'sonner';
-import MermaidRenderer from '@/components/MermaidRenderer';
-import ArchitectureEditor from '@/components/ArchitectureEditor';
+const MermaidRenderer = lazy(() => import('@/components/MermaidRenderer'));
+const ArchitectureEditor = lazy(() => import('@/components/ArchitectureEditor'));
 import { useAuth, isProjectManager, isAdmin } from '@/contexts/AuthContext';
 
 import { API_BASE_URL } from '@/config/api';
@@ -1510,10 +1510,12 @@ const ProjectDetail = () => {
                                     </div>
                                 </div>
                                 <div className="p-4 bg-[#080808] min-h-[400px]">
-                                    <MermaidRenderer 
-                                        code={arch.mermaid_code} 
-                                        className="w-full h-full min-h-[350px]"
-                                    />
+                                    <Suspense fallback={<div className="flex items-center justify-center p-8"><div className="w-8 h-8 border-2 border-[#E0B954]/30 border-t-[#E0B954] rounded-full animate-spin" /></div>}>
+                                        <MermaidRenderer
+                                            code={arch.mermaid_code}
+                                            className="w-full h-full min-h-[350px]"
+                                        />
+                                    </Suspense>
                                 </div>
                                 
                                 {/* Architecture Details */}
@@ -2327,11 +2329,13 @@ const ProjectDetail = () => {
 
             {/* Architecture Editor Modal */}
             {editingArchitecture && (
-                <ArchitectureEditor
-                    architecture={editingArchitecture}
-                    onSave={handleSaveArchitecture}
-                    onClose={() => setEditingArchitecture(null)}
-                />
+                <Suspense fallback={<div className="flex items-center justify-center p-8"><div className="w-8 h-8 border-2 border-[#E0B954]/30 border-t-[#E0B954] rounded-full animate-spin" /></div>}>
+                    <ArchitectureEditor
+                        architecture={editingArchitecture}
+                        onSave={handleSaveArchitecture}
+                        onClose={() => setEditingArchitecture(null)}
+                    />
+                </Suspense>
             )}
         </div>
     );
