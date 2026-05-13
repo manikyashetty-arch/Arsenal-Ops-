@@ -1,5 +1,6 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import TimeEntriesTable from '@/components/TimeEntriesTable';
 import TicketContributors from '@/components/TicketContributors';
 import {
@@ -44,8 +45,7 @@ import ArchitectureCard from '@/components/ArchitectureCard';
 import ArchitectureEditor from '@/components/ArchitectureEditor';
 import { ReviewerView } from '@/components/ProjectHub';
 import { useAuth } from '@/contexts/AuthContext';
-
-import { API_BASE_URL } from '@/config/api';
+import { apiFetch } from '@/lib/api';
 
 // Helper function to parse YYYY-MM-DD string to local Date object (avoids UTC timezone issues)
 const parseLocalDate = (dateString: string | undefined): Date | undefined => {
@@ -194,17 +194,12 @@ const PRIORITY_COLORS = {
 const ProjectBoard = () => {
     const { id, ticketId } = useParams<{ id: string; ticketId?: string }>();
     const navigate = useNavigate();
-    const { token } = useAuth();
-    const [project, setProject] = useState<Project | null>(null);
-    const [workItems, setWorkItems] = useState<WorkItem[]>([]);
+    const { token } = useAuth(); // kept for legacy child components (TimeEntriesTable, TicketContributors, ReviewerView)
+    const queryClient = useQueryClient();
     const [showReviewer, setShowReviewer] = useState(false);
-    const [selectedItem, setSelectedItem] = useState<WorkItem | null>(null);
     const [isEditing, setIsEditing] = useState(false);
-    const [isSavingEdit, setIsSavingEdit] = useState(false);
     const [editForm, setEditForm] = useState<Partial<WorkItem>>({});
-    const [isLoading, setIsLoading] = useState(true);
     const [isGenerating, setIsGenerating] = useState(false);
-    const [isCreatingItem, setIsCreatingItem] = useState(false);
     const [showCreateForm, setShowCreateForm] = useState(false);
     const [viewMode, setViewMode] = useState<'board' | 'list'>('board');
     const [searchQuery, setSearchQuery] = useState('');
@@ -241,7 +236,6 @@ const ProjectBoard = () => {
     // Sprint and timeline states
     const [startDate, setStartDate] = useState('');
     const [endDate, setEndDate] = useState('');
-    const [sprints, setSprints] = useState<Sprint[]>([]);
     const [selectedSprintId, setSelectedSprintId] = useState<number | 'all' | 'backlog'>('all');
     const [showCreateSprintModal, setShowCreateSprintModal] = useState(false);
     const [newSprint, setNewSprint] = useState({ name: '', goal: '', start_date: '', end_date: '' });
@@ -252,22 +246,10 @@ const ProjectBoard = () => {
     const [showCalendarSprintStart, setShowCalendarSprintStart] = useState(false);
     const [showCalendarSprintEnd, setShowCalendarSprintEnd] = useState(false);
 
-    // Comments state
-    const [comments, setComments] = useState<Array<{
-        id: number;
-        work_item_id: number;
-        author_id: number | null;
-        author_name: string;
-        content: string;
-        mentions: number[];
-        comment_type: string;
-        created_at: string;
-        updated_at: string;
-    }>>([]);
+    // Comments UI state only — actual comment data lives in react-query cache
     const [newComment, setNewComment] = useState('');
     const [showMentions, setShowMentions] = useState(false);
     const [mentionFilter, setMentionFilter] = useState('');
-    const [allDevelopers, setAllDevelopers] = useState<Array<{ id: number; name: string; email: string }>>([]);
 
     const [createForm, setCreateForm] = useState({
         type: 'user_story',
@@ -284,82 +266,69 @@ const ProjectBoard = () => {
         tags: [] as string[],
     });
     const [tagInput, setTagInput] = useState('');
-    const [existingTags, setExistingTags] = useState<string[]>([]);
 
-    // Extract unique tags from all tasks in the current project
-    useEffect(() => {
-        const allTags = new Set<string>();
-        const tasks = workItems.filter(item => item.type === 'task');
-        
-        tasks.forEach(item => {
-            if (item.tags && Array.isArray(item.tags)) {
-                item.tags.forEach((tag: string | any) => {
-                    const tagStr = String(tag).trim().toLowerCase();
-                    if (tagStr) {
-                        allTags.add(tagStr);
-                    }
-                });
-            }
+    // ── react-query: project, workItems, sprints, developers, comments ────────
+
+    const projectQuery = useQuery<Project>({
+        queryKey: ['project', id],
+        queryFn: () => apiFetch<Project>(`/api/projects/${id}`),
+        enabled: !!id,
+    });
+    const project = projectQuery.data ?? null;
+    const isLoading = projectQuery.isLoading;
+
+    // Filters object drives the query key so filter changes auto-refetch
+    const workItemFilters = { project_id: id };
+    const workItemsQuery = useQuery<WorkItem[]>({
+        queryKey: ['workItems', workItemFilters],
+        queryFn: () => apiFetch<WorkItem[]>(`/api/workitems/?project_id=${id}`),
+        enabled: !!id,
+    });
+    const workItems = workItemsQuery.data ?? [];
+
+    const sprintsQuery = useQuery<Sprint[]>({
+        queryKey: ['sprints', id],
+        queryFn: () => apiFetch<Sprint[]>(`/api/workitems/projects/${id}/sprints`),
+        enabled: !!id,
+    });
+    const sprints = sprintsQuery.data ?? [];
+
+    const developersQuery = useQuery<Array<{ id: number; name: string; email: string }>>({
+        queryKey: ['developers'],
+        queryFn: () => apiFetch('/api/developers/'),
+    });
+    const allDevelopers = developersQuery.data ?? [];
+
+    // Selected ticket — derived from URL param + workItems cache (no extra fetch)
+    const selectedItem = ticketId ? (workItems.find(item => item.id === ticketId) ?? null) : null;
+
+    // Comments — lazy: only fetches when a ticket is open
+    const commentsQuery = useQuery<Array<{
+        id: number; work_item_id: number; author_id: number | null;
+        author_name: string; content: string; mentions: number[];
+        comment_type: string; created_at: string; updated_at: string;
+    }>>({
+        queryKey: ['workItem', selectedItem?.id, 'comments'],
+        queryFn: () => apiFetch(`/api/comments/workitem/${selectedItem!.id}`),
+        enabled: !!selectedItem?.id,
+    });
+    const comments = commentsQuery.data ?? [];
+
+    // Prefetch comments on hover so data is ready before the drawer opens
+    const prefetchComments = (itemId: string) => {
+        queryClient.prefetchQuery({
+            queryKey: ['workItem', itemId, 'comments'],
+            queryFn: () => apiFetch(`/api/comments/workitem/${itemId}`),
         });
-        
-        const tagsArray = Array.from(allTags).sort();
-        setExistingTags(tagsArray);
-    }, [workItems]);
+    };
 
-    // Client-side comment cache (cache-aside pattern) — avoids re-fetching on re-open
-    const commentCache = useRef<Map<string, Array<{
-        id: number; work_item_id: number; author_id: number; author_name: string;
-        content: string; mentions: number[]; comment_type: string;
-        created_at: string; updated_at: string;
-    }>>>(new Map());
-
-    // Prefetch comments for a ticket (call on hover) — data is ready before click
-    const prefetchComments = useCallback((itemId: string) => {
-        if (!token || commentCache.current.has(itemId)) return;
-        fetch(`${API_BASE_URL}/api/comments/workitem/${itemId}`, {
-            headers: { 'Authorization': `Bearer ${token}` }
-        }).then(r => r.ok ? r.json() : null)
-          .then(data => { if (data) commentCache.current.set(itemId, data); })
-          .catch(() => {});
-    }, [token]);
-
-    // Fetch project and work items — NEVER re-runs on ticket click
-    useEffect(() => {
-        if (!id) return;
-        const fetchData = async () => {
-            try {
-                const headers = { 'Authorization': `Bearer ${token}` };
-                const [projRes, itemsRes, sprintsRes] = await Promise.all([
-                    fetch(`${API_BASE_URL}/api/projects/${id}`, { headers }),
-                    fetch(`${API_BASE_URL}/api/workitems/?project_id=${id}`, { headers }),
-                    fetch(`${API_BASE_URL}/api/workitems/projects/${id}/sprints`, { headers }),
-                ]);
-                if (projRes.ok) setProject(await projRes.json());
-                if (itemsRes.ok) setWorkItems(await itemsRes.json());
-                if (sprintsRes.ok) setSprints(await sprintsRes.json());
-            } catch (err) {
-                console.error('Failed to fetch data:', err);
-                toast.error('Failed to load project data');
-            } finally {
-                setIsLoading(false);
-            }
-        };
-        fetchData();
-    }, [id, token]); // ticketId intentionally excluded — clicking a ticket must NOT re-fetch all data
-
-    // Handle URL-based ticket selection — reads from already-loaded workItems (instant)
+    // Derived: reset isEditing when selected ticket changes
     useEffect(() => {
         if (!ticketId) {
-            setSelectedItem(null);
             setIsEditing(false);
             setEditForm({});
-            return;
         }
-        if (workItems.length > 0) {
-            const found = workItems.find(item => item.id === ticketId);
-            if (found) setSelectedItem(found);
-        }
-    }, [ticketId, workItems]);
+    }, [ticketId]);
 
     // Close filter menu when clicking outside
     useEffect(() => {
@@ -375,16 +344,20 @@ const ProjectBoard = () => {
         }
     }, [showFilterMenu]);
 
-    // Refresh project stats
-    const refreshProjectStats = useCallback(async () => {
-        if (!id) return;
-        try {
-            const res = await fetch(`${API_BASE_URL}/api/projects/${id}`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            if (res.ok) setProject(await res.json());
-        } catch { /* ignore */ }
-    }, [id, token]);
+    // Derived: unique tags computed from cached workItems — no useEffect needed
+    const existingTags = Array.from(new Set(
+        workItems
+            .filter(item => item.type === 'task')
+            .flatMap(item => (item.tags ?? []).map((t: string) => String(t).trim().toLowerCase()))
+            .filter(Boolean)
+    )).sort();
+
+    // Helper: invalidate workItems list (prefix match)
+    const invalidateWorkItems = () =>
+        queryClient.invalidateQueries({ queryKey: ['workItems'] });
+    // Helper: invalidate project (stats)
+    const invalidateProject = () =>
+        queryClient.invalidateQueries({ queryKey: ['project', id] });
 
     // Filtered items
     const filteredItems = workItems.filter(item => {
@@ -428,26 +401,38 @@ const ProjectBoard = () => {
         setDragOverColumn(null);
     };
 
-    const handleDrop = async (e: React.DragEvent, newStatus: string) => {
+    // ── Mutations ─────────────────────────────────────────────────────────────
+
+    // Drag-drop: optimistic status update
+    const moveMutation = useMutation({
+        mutationFn: ({ itemId, newStatus }: { itemId: string; newStatus: string }) =>
+            apiFetch(`/api/workitems/${itemId}`, {
+                method: 'PUT',
+                body: JSON.stringify({ status: newStatus }),
+            }),
+        onMutate: async ({ itemId, newStatus }) => {
+            await queryClient.cancelQueries({ queryKey: ['workItems', workItemFilters] });
+            const previous = queryClient.getQueryData<WorkItem[]>(['workItems', workItemFilters]);
+            queryClient.setQueryData<WorkItem[]>(['workItems', workItemFilters], (old) =>
+                (old ?? []).map(t => t.id === itemId ? { ...t, status: newStatus as WorkItem['status'] } : t)
+            );
+            return { previous };
+        },
+        onError: (_err, _vars, ctx) => {
+            if (ctx?.previous) queryClient.setQueryData(['workItems', workItemFilters], ctx.previous);
+            toast.error('Failed to move ticket');
+        },
+        onSettled: () => {
+            invalidateWorkItems();
+            invalidateProject();
+        },
+    });
+
+    const handleDrop = (e: React.DragEvent, newStatus: string) => {
         e.preventDefault();
         setDragOverColumn(null);
         if (!draggedItem) return;
-
-        // Optimistic update
-        setWorkItems(prev => prev.map(item =>
-            item.id === draggedItem ? { ...item, status: newStatus as WorkItem['status'] } : item
-        ));
-
-        try {
-            await fetch(`${API_BASE_URL}/api/workitems/${draggedItem}`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                body: JSON.stringify({ status: newStatus }),
-            });
-            refreshProjectStats();
-        } catch {
-            toast.error('Failed to update item status');
-        }
+        moveMutation.mutate({ itemId: draggedItem, newStatus });
         setDraggedItem(null);
     };
 
@@ -457,17 +442,9 @@ const ProjectBoard = () => {
         setTagInput('');
     };
 
-    // Create work item
-    const handleCreateItem = async () => {
-        
-        if (!createForm.title.trim()) {
-            toast.error('Title is required');
-            return;
-        }
-        setIsCreatingItem(true);
-        const startTime = Date.now();
-        try {
-            // Build payload explicitly - don't spread createForm with sprint property
+    // Create work item mutation
+    const createItemMutation = useMutation({
+        mutationFn: () => {
             const payload: any = {
                 type: createForm.type,
                 title: createForm.title,
@@ -483,8 +460,6 @@ const ProjectBoard = () => {
                 due_date: createForm.due_date || null,
                 estimated_hours: createForm.estimated_hours ? parseInt(createForm.estimated_hours as string) : 0,
             };
-            
-            // Calculate hours based on type
             if (createForm.type !== 'task') {
                 payload.assigned_hours = createForm.story_points * 4;
                 payload.remaining_hours = createForm.story_points * 4;
@@ -492,70 +467,49 @@ const ProjectBoard = () => {
                 payload.assigned_hours = payload.estimated_hours || 0;
                 payload.remaining_hours = payload.estimated_hours || 0;
             }
-            
-            const response = await fetch(`${API_BASE_URL}/api/workitems/`, {
+            return apiFetch<WorkItem>('/api/workitems/', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                 body: JSON.stringify(payload),
             });
-            
-            if (response.ok) {
-                const newItem = await response.json();
-                
-                // Ensure tags are preserved
-                if (newItem.type === 'task' && payload.tags && payload.tags.length > 0) {
-                    if (!newItem.tags || newItem.tags.length === 0) {
-                        newItem.tags = payload.tags;
-                    }
-                }
-                
-                setWorkItems(prev => [...prev, newItem]);
-                handleCloseCreateForm();
-                toast.success('Work item created!', { duration: 1000 });
-                refreshProjectStats();
-            } else {
-                const errorText = await response.text();
-                console.error('❌ API Error Response:', response.status, errorText);
-                toast.error(`Failed to create item: ${response.statusText}`);
-            }
-        } catch (err) {
-            console.error('❌ Error creating item:', err);
+        },
+        onSuccess: () => {
+            handleCloseCreateForm();
+            toast.success('Work item created!', { duration: 1000 });
+            invalidateWorkItems();
+            invalidateProject();
+        },
+        onError: (err: any) => {
+            console.error('Failed to create item:', err);
             toast.error('Failed to create item');
-        } finally {
-            const elapsedTime = Date.now() - startTime;
-            const remainingTime = Math.max(0, 300 - elapsedTime);
-            setTimeout(() => {
-                setIsCreatingItem(false);
-            }, remainingTime);
+        },
+    });
+    const isCreatingItem = createItemMutation.isPending;
+
+    const handleCreateItem = () => {
+        if (!createForm.title.trim()) {
+            toast.error('Title is required');
+            return;
         }
+        createItemMutation.mutate();
     };
 
-    // Move ticket to sprint
-    const handleMoveToSprint = async (itemId: string, targetSprintId: number | null) => {
-        try {
-            const response = await fetch(`${API_BASE_URL}/api/workitems/${itemId}/move-sprint`, {
+    // Move ticket to sprint mutation
+    const moveSprintMutation = useMutation({
+        mutationFn: ({ itemId, targetSprintId }: { itemId: string; targetSprintId: number | null }) =>
+            apiFetch<WorkItem>(`/api/workitems/${itemId}/move-sprint`, {
                 method: 'PUT',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                 body: JSON.stringify({ target_sprint_id: targetSprintId }),
-            });
-            if (response.ok) {
-                const updated = await response.json();
-                setWorkItems(prev => prev.map(wi => wi.id === itemId ? updated : wi));
-                if (selectedItem?.id === itemId) {
-                    setSelectedItem(updated);
-                }
-                toast.success(targetSprintId ? 'Moved to sprint' : 'Moved to backlog');
-                // Refresh sprints
-                const sprintsRes = await fetch(`${API_BASE_URL}/api/workitems/projects/${id}/sprints`, {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
-                if (sprintsRes.ok) {
-                    setSprints(await sprintsRes.json());
-                }
-            }
-        } catch {
-            toast.error('Failed to move ticket');
-        }
+            }),
+        onSuccess: (_data, { targetSprintId }) => {
+            toast.success(targetSprintId ? 'Moved to sprint' : 'Moved to backlog');
+            invalidateWorkItems();
+            queryClient.invalidateQueries({ queryKey: ['sprints', id] });
+        },
+        onError: () => toast.error('Failed to move ticket'),
+    });
+
+    const handleMoveToSprint = (itemId: string, targetSprintId: number | null) => {
+        moveSprintMutation.mutate({ itemId, targetSprintId });
     };
 
     // Get next sprint
@@ -613,9 +567,8 @@ const ProjectBoard = () => {
             }
         }
         try {
-            const response = await fetch(`${API_BASE_URL}/api/workitems/sprints/`, {
+            await apiFetch('/api/workitems/sprints/', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                 body: JSON.stringify({
                     project_id: parseInt(id!),
                     name: newSprint.name,
@@ -624,68 +577,14 @@ const ProjectBoard = () => {
                     end_date: newSprint.end_date || null,
                 }),
             });
-            if (response.ok) {
-                toast.success('Sprint created!');
-                setShowCreateSprintModal(false);
-                setNewSprint({ name: '', goal: '', start_date: '', end_date: '' });
-                // Refresh sprints
-                const sprintsRes = await fetch(`${API_BASE_URL}/api/workitems/projects/${id}/sprints`, {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
-                if (sprintsRes.ok) {
-                    setSprints(await sprintsRes.json());
-                }
-            }
+            toast.success('Sprint created!');
+            setShowCreateSprintModal(false);
+            setNewSprint({ name: '', goal: '', start_date: '', end_date: '' });
+            queryClient.invalidateQueries({ queryKey: ['sprints', id] });
         } catch {
             toast.error('Failed to create sprint');
         }
     };
-
-    // Fetch all developers for @mentions
-    useEffect(() => {
-        const fetchAllDevelopers = async () => {
-            try {
-                const response = await fetch(`${API_BASE_URL}/api/developers/`, {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
-                if (response.ok) {
-                    setAllDevelopers(await response.json());
-                }
-            } catch (error) {
-                console.error('Failed to fetch developers:', error);
-            }
-        };
-        fetchAllDevelopers();
-    }, [token]);
-
-    // Fetch comments — serves from cache if available (cache-aside pattern)
-    useEffect(() => {
-        const fetchComments = async () => {
-            if (!selectedItem) {
-                setComments([]);
-                return;
-            }
-            // Serve from cache instantly if available
-            const cached = commentCache.current.get(selectedItem.id);
-            if (cached) {
-                setComments(cached);
-                return;
-            }
-            try {
-                const response = await fetch(`${API_BASE_URL}/api/comments/workitem/${selectedItem.id}`, {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
-                if (response.ok) {
-                    const data = await response.json();
-                    commentCache.current.set(selectedItem.id, data); // cache it
-                    setComments(data);
-                }
-            } catch (error) {
-                console.error('Failed to fetch comments:', error);
-            }
-        };
-        fetchComments();
-    }, [selectedItem]);
 
     // Handle comment input with @mention detection
     const handleCommentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -717,38 +616,34 @@ const ProjectBoard = () => {
         setMentionFilter('');
     };
 
-    // Submit comment
-    const handleSubmitComment = async (commentType: 'comment' | 'blocker' | 'business_review' = 'comment') => {
-        if (!selectedItem || !newComment.trim()) return;
-
-        try {
-            const response = await fetch(`${API_BASE_URL}/api/comments/`, {
+    // Submit comment mutation
+    const submitCommentMutation = useMutation({
+        mutationFn: (commentType: 'comment' | 'blocker' | 'business_review') =>
+            apiFetch('/api/comments/', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                 body: JSON.stringify({
-                    work_item_id: parseInt(selectedItem.id),
+                    work_item_id: parseInt(selectedItem!.id),
                     content: newComment,
-                    author_id: project?.developers?.[0]?.id || 1, // TODO: Use actual logged-in user
+                    author_id: project?.developers?.[0]?.id || 1,
                     comment_type: commentType,
                 }),
-            });
-            if (response.ok) {
-                const newCommentData = await response.json();
-                const updated = [newCommentData, ...comments];
-                setComments(updated);
-                // Invalidate cache so next open fetches fresh
-                if (selectedItem) commentCache.current.delete(selectedItem.id);
-                setNewComment('');
-                const messages = {
-                    'blocker': 'Blocker reported!',
-                    'business_review': 'Business Review comment added!',
-                    'comment': 'Comment added!'
-                };
-                toast.success(messages[commentType]);
-            }
-        } catch {
-            toast.error('Failed to add comment');
-        }
+            }),
+        onSuccess: (_data, commentType) => {
+            setNewComment('');
+            queryClient.invalidateQueries({ queryKey: ['workItem', selectedItem?.id, 'comments'] });
+            const messages = {
+                blocker: 'Blocker reported!',
+                business_review: 'Business Review comment added!',
+                comment: 'Comment added!',
+            } as const;
+            toast.success(messages[commentType]);
+        },
+        onError: () => toast.error('Failed to add comment'),
+    });
+
+    const handleSubmitComment = (commentType: 'comment' | 'blocker' | 'business_review' = 'comment') => {
+        if (!selectedItem || !newComment.trim()) return;
+        submitCommentMutation.mutate(commentType);
     };
 
     // Render comment with mentions highlighted and links as clickable
@@ -822,74 +717,76 @@ const ProjectBoard = () => {
         ]).flat().filter(Boolean);
     };
 
-    // Save edited item
-    const handleSaveEdit = async () => {
-        if (!selectedItem || isSavingEdit) return;
-        setIsSavingEdit(true);
-        try {
-            const response = await fetch(`${API_BASE_URL}/api/workitems/${selectedItem.id}`, {
+    // Save edited item mutation
+    const saveEditMutation = useMutation({
+        mutationFn: () =>
+            apiFetch<WorkItem>(`/api/workitems/${selectedItem!.id}`, {
                 method: 'PUT',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                 body: JSON.stringify(editForm),
-            });
-            if (response.ok) {
-                const updated = await response.json();
-                // Merge so any field the backend response omits (e.g. due_date) still
-                // reflects the user's edit instead of vanishing from the panel.
-                const merged = { ...selectedItem, ...editForm, ...updated } as WorkItem;
-                setWorkItems(prev => prev.map(wi => wi.id === selectedItem.id ? merged : wi));
-                setSelectedItem(merged);
-                setIsEditing(false);
-                setEditForm({});
-                toast.success('Item updated!');
-                refreshProjectStats();
-            }
-        } catch {
-            toast.error('Failed to update item');
-        } finally {
-            setIsSavingEdit(false);
-        }
+            }),
+        onSuccess: (updated) => {
+            // Merge: backend may omit fields like due_date; prefer editForm values
+            const merged = { ...selectedItem!, ...editForm, ...updated } as WorkItem;
+            queryClient.setQueryData<WorkItem[]>(['workItems', workItemFilters], (old) =>
+                (old ?? []).map(wi => wi.id === merged.id ? merged : wi)
+            );
+            setIsEditing(false);
+            setEditForm({});
+            toast.success('Item updated!');
+            invalidateWorkItems();
+            invalidateProject();
+        },
+        onError: () => toast.error('Failed to update item'),
+    });
+    const isSavingEdit = saveEditMutation.isPending;
+
+    const handleSaveEdit = () => {
+        if (!selectedItem || isSavingEdit) return;
+        saveEditMutation.mutate();
     };
 
-    // Delete item
-    const handleDeleteItem = async (itemId: string) => {
-        if (!confirm('Delete this work item?')) return;
-        try {
-            await fetch(`${API_BASE_URL}/api/workitems/${itemId}`, {
-                method: 'DELETE',
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            setWorkItems(prev => prev.filter(wi => wi.id !== itemId));
-            setSelectedItem(null);
+    // Delete item mutation
+    const deleteItemMutation = useMutation({
+        mutationFn: (itemId: string) =>
+            apiFetch(`/api/workitems/${itemId}`, { method: 'DELETE' }),
+        onSuccess: () => {
+            navigate(`/project/${id}/board`);
             toast.success('Item deleted');
-            refreshProjectStats();
-        } catch {
-            toast.error('Failed to delete item');
-        }
+            invalidateWorkItems();
+            invalidateProject();
+        },
+        onError: () => toast.error('Failed to delete item'),
+    });
+
+    const handleDeleteItem = (itemId: string) => {
+        if (!confirm('Delete this work item?')) return;
+        deleteItemMutation.mutate(itemId);
     };
 
-    // Log hours to a work item
-    const handleLogHours = async (item: WorkItem, hoursToLog: number) => {
-        try {
-            const response = await fetch(`${API_BASE_URL}/api/workitems/${item.id}/log-hours`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                body: JSON.stringify({
-                    hours: hoursToLog,
-                }),
-            });
-            if (response.ok) {
-                const data = await response.json();
-                // Update the work item with new values
-                const updated = { ...item, logged_hours: data.logged_hours, remaining_hours: data.remaining_hours };
-                setWorkItems(prev => prev.map(wi => wi.id === item.id ? updated : wi));
-                setSelectedItem(updated);
-                toast.success(`Logged ${hoursToLog}h! Remaining: ${data.remaining_hours}h`);
-                refreshProjectStats();
-            }
-        } catch {
-            toast.error('Failed to log hours');
-        }
+    // Log hours mutation
+    const logHoursMutation = useMutation({
+        mutationFn: ({ itemId, hours }: { itemId: string; hours: number }) =>
+            apiFetch<{ logged_hours: number; remaining_hours: number }>(
+                `/api/workitems/${itemId}/log-hours`,
+                { method: 'POST', body: JSON.stringify({ hours }) }
+            ),
+        onSuccess: (data, { itemId, hours }) => {
+            queryClient.setQueryData<WorkItem[]>(['workItems', workItemFilters], (old) =>
+                (old ?? []).map(wi =>
+                    wi.id === itemId
+                        ? { ...wi, logged_hours: data.logged_hours, remaining_hours: data.remaining_hours }
+                        : wi
+                )
+            );
+            toast.success(`Logged ${hours}h! Remaining: ${data.remaining_hours}h`);
+            invalidateWorkItems();
+            invalidateProject();
+        },
+        onError: () => toast.error('Failed to log hours'),
+    });
+
+    const handleLogHours = (item: WorkItem, hoursToLog: number) => {
+        logHoursMutation.mutate({ itemId: item.id, hours: hoursToLog });
     };
 
     // AI Generate - Open the AI Planning Modal
@@ -950,46 +847,28 @@ const ProjectBoard = () => {
         setIsGenerating(true);
 
         try {
-            let response;
-            
+            let data: any;
+
             if (prdFile) {
-                // File upload
+                // File upload — apiFetch skips Content-Type for FormData
                 const formData = new FormData();
                 formData.append('file', prdFile);
                 formData.append('project_id', String(project.id));
                 formData.append('additional_context', additionalContext);
-                
-                response = await fetch(`${API_BASE_URL}/api/prd/analyze-file`, {
-                    method: 'POST',
-                    headers: { 'Authorization': `Bearer ${token}` },
-                    body: formData,
-                });
+                data = await apiFetch('/api/prd/analyze-file', { method: 'POST', body: formData });
             } else {
-                // Text input
-                response = await fetch(`${API_BASE_URL}/api/prd/analyze-text`, {
+                data = await apiFetch('/api/prd/analyze-text', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                    body: JSON.stringify({
-                        project_id: project.id,
-                        prd_content: prdText,
-                        additional_context: additionalContext,
-                    }),
+                    body: JSON.stringify({ project_id: project.id, prd_content: prdText, additional_context: additionalContext }),
                 });
             }
 
-            if (response.ok) {
-                const data = await response.json();
-                setAnalysis(data.analysis);
-                setArchitectures(data.architectures);
-                setAiStep('architectures');
-                toast.success('PRD analyzed successfully!');
-            } else {
-                const error = await response.json();
-                toast.error(error.detail || 'Failed to analyze PRD');
-                setAiStep('upload');
-            }
-        } catch (err) {
-            toast.error('Failed to analyze PRD');
+            setAnalysis(data.analysis);
+            setArchitectures(data.architectures);
+            setAiStep('architectures');
+            toast.success('PRD analyzed successfully!');
+        } catch (err: any) {
+            toast.error(err?.message || 'Failed to analyze PRD');
             setAiStep('upload');
         } finally {
             setIsGenerating(false);
@@ -1011,26 +890,14 @@ const ProjectBoard = () => {
             formData.append('file', roadmapFile);
             formData.append('project_id', String(project.id));
             formData.append('sprint_weeks', String(sprintWeeks));
-            
-            const response = await fetch(`${API_BASE_URL}/api/roadmap/parse-file`, {
-                method: 'POST',
-                headers: { 'Authorization': `Bearer ${token}` },
-                body: formData,
-            });
 
-            if (response.ok) {
-                const data = await response.json();
-                setRoadmapSummary(data.summary);
-                setRoadmapParsedData(data.parsed_data);
-                setAiStep('architectures');  // Reuse architectures step for summary display
-                toast.success('Roadmap parsed successfully!');
-            } else {
-                const error = await response.json();
-                toast.error(error.detail || 'Failed to parse roadmap');
-                setAiStep('upload');
-            }
-        } catch (err) {
-            toast.error('Failed to parse roadmap');
+            const data = await apiFetch<any>('/api/roadmap/parse-file', { method: 'POST', body: formData });
+            setRoadmapSummary(data.summary);
+            setRoadmapParsedData(data.parsed_data);
+            setAiStep('architectures');  // Reuse architectures step for summary display
+            toast.success('Roadmap parsed successfully!');
+        } catch (err: any) {
+            toast.error(err?.message || 'Failed to parse roadmap');
             setAiStep('upload');
         } finally {
             setIsGenerating(false);
@@ -1041,10 +908,7 @@ const ProjectBoard = () => {
     const handleSelectArchitecture = async (archId: number) => {
         setSelectedArchitectureId(archId);
         try {
-            await fetch(`${API_BASE_URL}/api/prd/architectures/${archId}/select`, { 
-                method: 'POST',
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
+            await apiFetch(`/api/prd/architectures/${archId}/select`, { method: 'POST' });
         } catch (err) {
             console.error('Failed to select architecture:', err);
         }
@@ -1053,17 +917,13 @@ const ProjectBoard = () => {
     // Save architecture edits
     const handleSaveArchitecture = async (archId: number, updates: { mermaid_code?: string; name?: string; description?: string }): Promise<void> => {
         try {
-            const response = await fetch(`${API_BASE_URL}/api/prd/architectures/${archId}`, {
+            const updated = await apiFetch<Architecture>(`/api/prd/architectures/${archId}`, {
                 method: 'PUT',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                 body: JSON.stringify(updates),
             });
-            if (response.ok) {
-                const updated = await response.json();
-                setArchitectures(prev => prev.map(a => a.id === archId ? updated : a));
-                toast.success('Architecture saved!');
-                setEditingArchitecture(null);
-            }
+            setArchitectures(prev => prev.map(a => a.id === archId ? updated : a));
+            toast.success('Architecture saved!');
+            setEditingArchitecture(null);
         } catch (err) {
             toast.error('Failed to save architecture');
         }
@@ -1072,29 +932,21 @@ const ProjectBoard = () => {
     // Preview generated tickets
     const handlePreviewTickets = async () => {
         if (!project || !selectedArchitectureId) return;
-        
+
         setAiStep('preview');
         setIsGenerating(true);
 
         try {
-            const response = await fetch(`${API_BASE_URL}/api/prd/projects/${project.id}/generate-tickets-preview`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                body: JSON.stringify({ architecture_id: selectedArchitectureId }),
+            const data = await apiFetch<any>(
+                `/api/prd/projects/${project.id}/generate-tickets-preview`,
+                { method: 'POST', body: JSON.stringify({ architecture_id: selectedArchitectureId }) }
+            );
+            setGeneratedTickets(data.tickets);
+            setTicketsSummary({
+                total_story_points: data.total_story_points,
+                total_estimated_hours: data.total_estimated_hours,
+                sprint_recommendation: data.sprint_recommendation,
             });
-
-            if (response.ok) {
-                const data = await response.json();
-                setGeneratedTickets(data.tickets);
-                setTicketsSummary({
-                    total_story_points: data.total_story_points,
-                    total_estimated_hours: data.total_estimated_hours,
-                    sprint_recommendation: data.sprint_recommendation,
-                });
-            } else {
-                toast.error('Failed to generate tickets preview');
-                setAiStep('architectures');
-            }
         } catch (err) {
             toast.error('Failed to generate tickets');
             setAiStep('architectures');
@@ -1111,9 +963,8 @@ const ProjectBoard = () => {
         setIsGenerating(true);
 
         try {
-            const response = await fetch(`${API_BASE_URL}/api/prd/projects/${project.id}/commit-architecture`, {
+            const data = await apiFetch<any>(`/api/prd/projects/${project.id}/commit-architecture`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                 body: JSON.stringify({
                     architecture_id: selectedArchitectureId,
                     start_date: startDate || null,
@@ -1121,48 +972,28 @@ const ProjectBoard = () => {
                 }),
             });
 
-            if (response.ok) {
-                const data = await response.json();
-                
-                // Check if AI actually created tickets
-                if (!data.success || data.tickets_created === 0) {
-                    toast.error(data.error || 'AI failed to generate tickets. Existing tickets preserved.');
-                    setAiStep('preview');
-                    return;
-                }
-                
-                setAiStep('done');
-                toast.success(`Created ${data.tickets_created} tickets${data.sprints?.length ? ` in ${data.sprints.length} sprints` : ''}!`);
-                setCreatedTicketCount(data.tickets_created);
-                
-                // Refresh work items and sprints with auth headers
-                const [itemsRes, sprintsRes] = await Promise.all([
-                    fetch(`${API_BASE_URL}/api/workitems/?project_id=${project.id}`, {
-                        headers: { 'Authorization': `Bearer ${token}` }
-                    }),
-                    fetch(`${API_BASE_URL}/api/workitems/projects/${project.id}/sprints`, {
-                        headers: { 'Authorization': `Bearer ${token}` }
-                    }),
-                ]);
-                if (itemsRes.ok) {
-                    setWorkItems(await itemsRes.json());
-                }
-                if (sprintsRes.ok) {
-                    setSprints(await sprintsRes.json());
-                }
-                refreshProjectStats();
-                
-                // Close modal after delay
-                setTimeout(() => {
-                    setShowAIModal(false);
-                }, 2000);
-            } else {
-                const error = await response.json();
-                toast.error(error.detail || 'Failed to commit architecture');
+            // Check if AI actually created tickets
+            if (!data.success || data.tickets_created === 0) {
+                toast.error(data.error || 'AI failed to generate tickets. Existing tickets preserved.');
                 setAiStep('preview');
+                return;
             }
-        } catch (err) {
-            toast.error('Failed to commit architecture');
+
+            setAiStep('done');
+            toast.success(`Created ${data.tickets_created} tickets${data.sprints?.length ? ` in ${data.sprints.length} sprints` : ''}!`);
+            setCreatedTicketCount(data.tickets_created);
+
+            // Invalidate react-query caches so board refreshes automatically
+            invalidateWorkItems();
+            queryClient.invalidateQueries({ queryKey: ['sprints', id] });
+            invalidateProject();
+
+            // Close modal after delay
+            setTimeout(() => {
+                setShowAIModal(false);
+            }, 2000);
+        } catch (err: any) {
+            toast.error(err?.message || 'Failed to commit architecture');
             setAiStep('preview');
         } finally {
             setIsGenerating(false);
@@ -1177,73 +1008,60 @@ const ProjectBoard = () => {
         setIsGenerating(true);
 
         try {
-            const response = await fetch(`${API_BASE_URL}/api/roadmap/commit`, {
+            const data = await apiFetch<any>('/api/roadmap/commit', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                body: JSON.stringify({
-                    project_id: project.id,
-                    parsed_data: roadmapParsedData,
-                }),
+                body: JSON.stringify({ project_id: project.id, parsed_data: roadmapParsedData }),
             });
 
-            if (response.ok) {
-                const data = await response.json();
-                
-                setAiStep('done');
-                const sprintMsg = data.sprints_created > 0 ? ` and ${data.sprints_created} sprints` : '';
-                toast.success(`Created ${data.tickets_created} tasks in ${data.epics_created} epics${sprintMsg}!${data.assignees_not_found > 0 ? ` (${data.assignees_not_found} auto-assigned)` : ''}`);
-                setCreatedTicketCount(data.tickets_created);
-                
-                // Refresh work items
-                const itemsRes = await fetch(`${API_BASE_URL}/api/workitems/?project_id=${project.id}`, {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
-                if (itemsRes.ok) {
-                    setWorkItems(await itemsRes.json());
-                }
-                
-                // Refresh sprints
-                const sprintsRes = await fetch(`${API_BASE_URL}/api/workitems/projects/${project.id}/sprints`, {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
-                if (sprintsRes.ok) {
-                    setSprints(await sprintsRes.json());
-                }
-                
-                refreshProjectStats();
-                
-                // Close modal after delay
-                setTimeout(() => {
-                    setShowAIModal(false);
-                }, 2000);
-            } else {
-                const error = await response.json();
-                toast.error(error.detail || 'Failed to commit roadmap');
-                setAiStep('preview');
-            }
-        } catch (err) {
-            toast.error('Failed to commit roadmap');
+            setAiStep('done');
+            const sprintMsg = data.sprints_created > 0 ? ` and ${data.sprints_created} sprints` : '';
+            toast.success(`Created ${data.tickets_created} tasks in ${data.epics_created} epics${sprintMsg}!${data.assignees_not_found > 0 ? ` (${data.assignees_not_found} auto-assigned)` : ''}`);
+            setCreatedTicketCount(data.tickets_created);
+
+            // Invalidate react-query caches so board refreshes automatically
+            invalidateWorkItems();
+            queryClient.invalidateQueries({ queryKey: ['sprints', id] });
+            invalidateProject();
+
+            // Close modal after delay
+            setTimeout(() => {
+                setShowAIModal(false);
+            }, 2000);
+        } catch (err: any) {
+            toast.error(err?.message || 'Failed to commit roadmap');
             setAiStep('preview');
         } finally {
             setIsGenerating(false);
         }
     };
 
-    // Quick status change
-    const handleStatusChange = async (item: WorkItem, newStatus: string) => {
-        const updated = { ...item, status: newStatus as WorkItem['status'] };
-        setWorkItems(prev => prev.map(wi => wi.id === item.id ? updated : wi));
-        if (selectedItem?.id === item.id) setSelectedItem(updated);
-        try {
-            await fetch(`${API_BASE_URL}/api/workitems/${item.id}`, {
+    // Quick status change — optimistic via the same cache key as drag-drop
+    const statusChangeMutation = useMutation({
+        mutationFn: ({ itemId, newStatus }: { itemId: string; newStatus: string }) =>
+            apiFetch(`/api/workitems/${itemId}`, {
                 method: 'PUT',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                 body: JSON.stringify({ status: newStatus }),
-            });
-            refreshProjectStats();
-        } catch {
+            }),
+        onMutate: async ({ itemId, newStatus }) => {
+            await queryClient.cancelQueries({ queryKey: ['workItems', workItemFilters] });
+            const previous = queryClient.getQueryData<WorkItem[]>(['workItems', workItemFilters]);
+            queryClient.setQueryData<WorkItem[]>(['workItems', workItemFilters], (old) =>
+                (old ?? []).map(t => t.id === itemId ? { ...t, status: newStatus as WorkItem['status'] } : t)
+            );
+            return { previous };
+        },
+        onError: (_err, _vars, ctx) => {
+            if (ctx?.previous) queryClient.setQueryData(['workItems', workItemFilters], ctx.previous);
             toast.error('Failed to update status');
-        }
+        },
+        onSettled: () => {
+            invalidateWorkItems();
+            invalidateProject();
+        },
+    });
+
+    const handleStatusChange = (item: WorkItem, newStatus: string) => {
+        statusChangeMutation.mutate({ itemId: item.id, newStatus });
     };
 
     if (isLoading) {
@@ -3639,9 +3457,10 @@ onClick={() => { navigate(`/project/${id}/board/${item.id}`); setIsEditing(false
                             projectId={id!}
                             token={token!}
                             onTaskUpdate={(itemId, updates) => {
-                                setWorkItems(prev => prev.map(item =>
-                                    item.id === itemId ? { ...item, ...updates } : item
-                                ));
+                                queryClient.setQueryData<WorkItem[]>(['workItems', workItemFilters], (old) =>
+                                    (old ?? []).map(item => item.id === itemId ? { ...item, ...updates } : item)
+                                );
+                                invalidateWorkItems();
                             }}
                         />
                     </div>
