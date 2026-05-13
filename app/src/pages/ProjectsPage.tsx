@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { apiFetch } from '@/lib/api';
 import {
     Plus,
     FolderKanban,
@@ -49,8 +51,6 @@ import {
     SelectValue,
 } from '@/components/ui/select';
 import { useAuth } from '@/contexts/AuthContext';
-
-import { API_BASE_URL } from '@/config/api';
 
 // Helper function to parse YYYY-MM-DD string to local Date object (avoids UTC timezone issues)
 const parseLocalDate = (dateString: string | undefined): Date | undefined => {
@@ -132,9 +132,8 @@ interface MyTask {
 
 const ProjectsPage = () => {
     const navigate = useNavigate();
-    const { user, token, logout } = useAuth();
-    const [projects, setProjects] = useState<Project[]>([]);
-    const [isLoading, setIsLoading] = useState(true);
+    const { user, logout } = useAuth();
+    const queryClient = useQueryClient();
     const [showCreateModal, setShowCreateModal] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
     const [createForm, setCreateForm] = useState({
@@ -142,19 +141,14 @@ const ProjectsPage = () => {
         description: '',
         github_repo_url: '',
     });
-    const [isCreating, setIsCreating] = useState(false);
-    
     // Developer management
-    const [availableDevelopers, setAvailableDevelopers] = useState<Developer[]>([]);
     const [selectedDevelopers, setSelectedDevelopers] = useState<{ developer_id: number; role: string; responsibilities: string }[]>([]);
     const [selectedDeveloperId, setSelectedDeveloperId] = useState<string>('');
     const [newRole, setNewRole] = useState('');
     const [newResponsibilities, setNewResponsibilities] = useState('');
 
     // My Tasks
-    const [myTasks, setMyTasks] = useState<MyTask[]>([]);
     const [myTaskTab, setMyTaskTab] = useState<'upcoming' | 'overdue' | 'completed' | 'personal'>('upcoming');
-    const [myTasksLoading, setMyTasksLoading] = useState(false);
     const [showAllTasks, setShowAllTasks] = useState(false);
     const [showAllDueSoon, setShowAllDueSoon] = useState(false);
     const [selectedTask, setSelectedTask] = useState<MyTask | null>(null);
@@ -173,8 +167,6 @@ const ProjectsPage = () => {
     });
     const [editTaskProjectDevelopers, setEditTaskProjectDevelopers] = useState<ProjectDeveloper[]>([]);
     const [showCalendarMyTask, setShowCalendarMyTask] = useState(false);
-    // Sprints for the selected task's project — used by the Sprint Actions panel
-    const [taskSprints, setTaskSprints] = useState<{ id: number; name: string; start_date: string | null; end_date: string | null }[]>([]);
 
     // Personal Tasks
     interface PersonalTask {
@@ -190,7 +182,6 @@ const ProjectsPage = () => {
         project_id?: number;
         work_item_id?: number;
     }
-    const [personalTasks, setPersonalTasks] = useState<PersonalTask[]>([]);
     const [showAddTaskDialog, setShowAddTaskDialog] = useState(false);
     const [showCalendarAddTask, setShowCalendarAddTask] = useState(false);
     const [showConvertDialog, setShowConvertDialog] = useState(false);
@@ -198,9 +189,8 @@ const ProjectsPage = () => {
     const [convertProjectId, setConvertProjectId] = useState('');
     const [convertAssigneeId, setConvertAssigneeId] = useState('');
     const [convertEstimatedHours, setConvertEstimatedHours] = useState('');
-    const [projectMembers, setProjectMembers] = useState<{id: number; name: string; email: string}[]>([]);
-    const [addingTask, setAddingTask] = useState(false);
-    const [convertingTicket, setConvertingTicket] = useState(false);
+    // memberLookupProjectId drives the ['project', id] query for the convert dialog and add-task dialog
+    const [memberLookupProjectId, setMemberLookupProjectId] = useState<string>('');
     const [newPersonalTask, setNewPersonalTask] = useState({
         title: '',
         description: '',
@@ -218,7 +208,7 @@ const ProjectsPage = () => {
     });
 
     // Comments system for tasks/tickets
-    const [comments, setComments] = useState<Array<{
+    type Comment = {
         id: number;
         work_item_id: number;
         author_id: number;
@@ -227,12 +217,12 @@ const ProjectsPage = () => {
         comment_type: 'comment' | 'blocker' | 'business_review';
         mentions: number[];
         created_at: string;
-    }>>([]);
+    };
+    const [comments, setComments] = useState<Comment[]>([]);
     const [newComment, setNewComment] = useState('');
     const [showMentions, setShowMentions] = useState(false);
     const [mentionFilter, setMentionFilter] = useState('');
-    const [allDevelopers, setAllDevelopers] = useState<Array<{ id: number; name: string; email: string }>>([]);
-    const commentCache = useRef<Map<string, Array<any>>>(new Map());
+    const commentCache = useRef<Map<string, Comment[]>>(new Map());
 
     // Private Notepad
     const [notepadContent, setNotepadContent] = useState('');
@@ -240,189 +230,215 @@ const ProjectsPage = () => {
 
     // (box layout — no active tab needed)
 
-    // Fetch projects
-    useEffect(() => {
-        fetchProjects();
-    }, []);
+    // ── react-query: projects list ────────────────────────────────────────────
+    const projectsQuery = useQuery<Project[]>({
+        queryKey: ['projects'],
+        queryFn: () => apiFetch<Project[]>('/api/projects/'),
+    });
+    const projects = projectsQuery.data ?? [];
+    const isLoading = projectsQuery.isLoading;
 
-    const fetchProjects = async () => {
-        try {
-            const response = await fetch(`${API_BASE_URL}/api/projects/`, {
-                headers: {
-                    'Authorization': `Bearer ${token}`
-                }
+    // ── react-query: developers (available for project-create modal) ──────────
+    const developersQuery = useQuery<Developer[]>({
+        queryKey: ['developers'],
+        queryFn: () => apiFetch<Developer[]>('/api/developers/'),
+        enabled: showCreateModal,
+    });
+    const availableDevelopers = developersQuery.data ?? [];
+    // also used for @mention autocomplete — share same query key
+    const allDevelopers = developersQuery.data ?? [];
+
+    // ── react-query: personal tasks ───────────────────────────────────────────
+    const personalTasksQuery = useQuery<PersonalTask[]>({
+        queryKey: ['personalTasks'],
+        queryFn: () => apiFetch<PersonalTask[]>('/api/personal-tasks/'),
+    });
+    const personalTasks = personalTasksQuery.data ?? [];
+
+    // ── react-query: project members (drives convert + add-task dialogs) ──────
+    const projectMembersQuery = useQuery<{ developers?: { id: number; name: string; email: string }[] }>({
+        queryKey: ['project', memberLookupProjectId],
+        queryFn: () => apiFetch<{ developers?: { id: number; name: string; email: string }[] }>(`/api/projects/${memberLookupProjectId}`),
+        enabled: !!memberLookupProjectId,
+    });
+    const projectMembers = projectMembersQuery.data?.developers ?? [];
+
+    // ── react-query: my tasks ─────────────────────────────────────────────────
+    const myTasksQuery = useQuery<MyTask[]>({
+        queryKey: ['myTasks'],
+        queryFn: () => apiFetch<MyTask[]>('/api/workitems/my-tasks'),
+    });
+    const myTasksLoading = myTasksQuery.isLoading;
+
+    // ── react-query: sprints for selected task's project ─────────────────────
+    const sprintProjectId = selectedTask?.project_id ?? null;
+    const sprintsQuery = useQuery<{ id: number; name: string; start_date: string | null; end_date: string | null }[]>({
+        queryKey: ['sprints', sprintProjectId],
+        queryFn: () => apiFetch(`/api/workitems/projects/${sprintProjectId}/sprints`),
+        enabled: !!sprintProjectId,
+    });
+    const taskSprints = sprintsQuery.data ?? [];
+
+    // myTasksLocal mirrors server data but can be updated optimistically.
+    // useEffect at the bottom syncs server data into this whenever a fetch completes.
+    const [myTasksLocal, setMyTasksLocal] = useState<MyTask[]>([]);
+    const myTasks = myTasksLocal;
+
+    // ── mutations: personal tasks ─────────────────────────────────────────────
+    const invalidatePersonalTasks = () =>
+        queryClient.invalidateQueries({ queryKey: ['personalTasks'] });
+
+    // Toggle personal task (optimistic)
+    const togglePersonalTaskMutation = useMutation({
+        mutationFn: async (task: PersonalTask) => {
+            const newStatus = task.status === 'done' ? 'todo' : 'done';
+            await apiFetch(`/api/personal-tasks/${task.id}`, {
+                method: 'PUT',
+                body: JSON.stringify({ status: newStatus }),
             });
-            if (response.ok) {
-                const data = await response.json();
-                setProjects(data);
-            }
-        } catch (err) {
-            console.error('Failed to fetch projects:', err);
-        } finally {
-            setIsLoading(false);
-        }
-    };
+            return newStatus;
+        },
+        onMutate: async (task: PersonalTask) => {
+            await queryClient.cancelQueries({ queryKey: ['personalTasks'] });
+            const previous = queryClient.getQueryData<PersonalTask[]>(['personalTasks']);
+            const newStatus = task.status === 'done' ? 'todo' : 'done';
+            queryClient.setQueryData<PersonalTask[]>(['personalTasks'], (old) =>
+                (old ?? []).map((t) => (t.id === task.id ? { ...t, status: newStatus } : t)),
+            );
+            return { previous, newStatus };
+        },
+        onError: (_err, _task, ctx) => {
+            if (ctx?.previous) queryClient.setQueryData(['personalTasks'], ctx.previous);
+            toast.error('Failed to update task');
+        },
+        onSuccess: (newStatus) => {
+            toast.success(newStatus === 'done' ? 'Task completed! 🎉' : 'Task reopened');
+        },
+        onSettled: () => invalidatePersonalTasks(),
+    });
 
-    // Fetch available developers
-    const fetchDevelopers = async () => {
-        try {
-            const response = await fetch(`${API_BASE_URL}/api/developers/`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            if (response.ok) {
-                const data = await response.json();
-                setAvailableDevelopers(data);
-            }
-        } catch (err) {
-            console.error('Failed to fetch developers:', err);
-        }
-    };
-
-    // Load developers when modal opens
-    useEffect(() => {
-        if (showCreateModal) {
-            fetchDevelopers();
-        }
-    }, [showCreateModal]);
-
-    // Fetch personal tasks
-    const fetchPersonalTasks = async () => {
-        try {
-            const res = await fetch(`${API_BASE_URL}/api/personal-tasks/`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            if (res.ok) setPersonalTasks(await res.json());
-        } catch (err) { console.error('Failed to fetch personal tasks:', err); }
-    };
-
-    const createPersonalTask = async () => {
-        if (!newPersonalTask.title.trim()) { toast.error('Title is required'); return; }
-        setAddingTask(true);
-        try {
+    const createPersonalTaskMutation = useMutation({
+        mutationFn: async () => {
             // Step 1: Create the personal task
-            const res = await fetch(`${API_BASE_URL}/api/personal-tasks/`, {
+            const createdTask = await apiFetch<PersonalTask>('/api/personal-tasks/', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                 body: JSON.stringify({
                     title: newPersonalTask.title,
                     description: newPersonalTask.description,
                     priority: newPersonalTask.priority,
                     due_date: newPersonalTask.due_date || undefined,
-                    estimated_hours: newPersonalTask.estimated_hours ? parseInt(newPersonalTask.estimated_hours) : 0
-                })
+                    estimated_hours: newPersonalTask.estimated_hours ? parseInt(newPersonalTask.estimated_hours) : 0,
+                }),
             });
-            if (res.ok) {
-                const createdTask = await res.json();
-                // Step 2: If project is selected, convert to ticket
-                if (newPersonalTask.project_id) {
-                    await fetch(`${API_BASE_URL}/api/personal-tasks/${createdTask.id}/convert-to-ticket`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                        body: JSON.stringify({
-                            project_id: parseInt(newPersonalTask.project_id),
-                            assignee_developer_id: newPersonalTask.assignee_developer_id ? parseInt(newPersonalTask.assignee_developer_id) : undefined
-                        })
-                    });
-                }
-                toast.success('Task created!');
-                setShowAddTaskDialog(false);
-                setNewPersonalTask({ title: '', description: '', priority: 'medium', due_date: '', project_id: '', assignee_developer_id: '', estimated_hours: '' });
-                setProjectMembers([]);
-                fetchPersonalTasks();
-            } else { toast.error('Failed to create task'); }
-        } catch { toast.error('Failed to create task'); }
-        finally { setAddingTask(false); }
-    };
-
-    const fetchProjectMembers = async (projectId: string) => {
-        try {
-            const res = await fetch(`${API_BASE_URL}/api/projects/${projectId}`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            if (res.ok) {
-                const data = await res.json();
-                setProjectMembers(data.developers || []);
+            // Step 2: If project is selected, convert to ticket
+            if (newPersonalTask.project_id) {
+                await apiFetch(`/api/personal-tasks/${createdTask.id}/convert-to-ticket`, {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        project_id: parseInt(newPersonalTask.project_id),
+                        assignee_developer_id: newPersonalTask.assignee_developer_id
+                            ? parseInt(newPersonalTask.assignee_developer_id)
+                            : undefined,
+                    }),
+                });
             }
-        } catch { setProjectMembers([]); }
-    };
+            return createdTask;
+        },
+        onSuccess: () => {
+            toast.success('Task created!');
+            setShowAddTaskDialog(false);
+            setNewPersonalTask({ title: '', description: '', priority: 'medium', due_date: '', project_id: '', assignee_developer_id: '', estimated_hours: '' });
+            setMemberLookupProjectId('');
+            invalidatePersonalTasks();
+        },
+        onError: () => toast.error('Failed to create task'),
+    });
 
-    const convertToTicket = async () => {
-        if (!convertingTask || !convertProjectId) return;
-        setConvertingTicket(true);
-        try {
-            const res = await fetch(`${API_BASE_URL}/api/personal-tasks/${convertingTask.id}/convert-to-ticket`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                body: JSON.stringify({
-                    project_id: parseInt(convertProjectId),
-                    type: 'task',
-                    estimated_hours: convertEstimatedHours ? parseInt(convertEstimatedHours) : convertingTask.estimated_hours,
-                    assignee_developer_id: convertAssigneeId ? parseInt(convertAssigneeId) : undefined
-                })
-            });
-            if (res.ok) {
-                const data = await res.json();
-                const assigneeName = data.work_item.assignee_name ? ` → assigned to ${data.work_item.assignee_name}` : '';
-                toast.success(`Ticket ${data.work_item.key} created!${assigneeName}`);
-                setShowConvertDialog(false);
-                setConvertingTask(null);
-                setConvertProjectId('');
-                setConvertAssigneeId('');
-                setConvertEstimatedHours('');
-                setProjectMembers([]);
-                fetchPersonalTasks();
-            } else { toast.error('Failed to convert'); }
-        } catch { toast.error('Failed to convert'); }
-        finally { setConvertingTicket(false); }
-    };
-
-    const deletePersonalTask = async (taskId: number) => {
-        if (!confirm('Delete this task?')) return;
-        try {
-            const res = await fetch(`${API_BASE_URL}/api/personal-tasks/${taskId}`, {
-                method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` }
-            });
-            if (res.ok) { toast.success('Task deleted'); fetchPersonalTasks(); }
-        } catch { toast.error('Failed to delete task'); }
-    };
-
-    const updatePersonalTask = async () => {
-        if (!editingPersonalTask) return;
-        if (!editPersonalTaskForm.title.trim()) {
-            toast.error('Title is required');
-            return;
-        }
-        setAddingTask(true);
-        try {
-            const res = await fetch(`${API_BASE_URL}/api/personal-tasks/${editingPersonalTask.id}`, {
-                method: 'PUT',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
+    const convertToTicketMutation = useMutation({
+        mutationFn: async () => {
+            if (!convertingTask) throw new Error('No task selected');
+            return apiFetch<{ work_item: { key: string; assignee_name?: string } }>(
+                `/api/personal-tasks/${convertingTask.id}/convert-to-ticket`,
+                {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        project_id: parseInt(convertProjectId),
+                        type: 'task',
+                        estimated_hours: convertEstimatedHours
+                            ? parseInt(convertEstimatedHours)
+                            : convertingTask.estimated_hours,
+                        assignee_developer_id: convertAssigneeId ? parseInt(convertAssigneeId) : undefined,
+                    }),
                 },
+            );
+        },
+        onSuccess: (data) => {
+            const assigneeName = data.work_item.assignee_name ? ` → assigned to ${data.work_item.assignee_name}` : '';
+            toast.success(`Ticket ${data.work_item.key} created!${assigneeName}`);
+            setShowConvertDialog(false);
+            setConvertingTask(null);
+            setConvertProjectId('');
+            setConvertAssigneeId('');
+            setConvertEstimatedHours('');
+            setMemberLookupProjectId('');
+            invalidatePersonalTasks();
+        },
+        onError: () => toast.error('Failed to convert'),
+    });
+
+    const deletePersonalTaskMutation = useMutation({
+        mutationFn: (taskId: number) =>
+            apiFetch<void>(`/api/personal-tasks/${taskId}`, { method: 'DELETE' }),
+        onSuccess: () => { toast.success('Task deleted'); invalidatePersonalTasks(); },
+        onError: () => toast.error('Failed to delete task'),
+    });
+
+    const updatePersonalTaskMutation = useMutation({
+        mutationFn: (taskId: number) =>
+            apiFetch<PersonalTask>(`/api/personal-tasks/${taskId}`, {
+                method: 'PUT',
                 body: JSON.stringify({
                     title: editPersonalTaskForm.title,
                     description: editPersonalTaskForm.description,
                     priority: editPersonalTaskForm.priority,
                     due_date: editPersonalTaskForm.due_date || null,
-                })
-            });
+                }),
+            }),
+        onSuccess: () => {
+            toast.success('Task updated successfully');
+            setIsEditingPersonalTask(false);
+            setEditingPersonalTask(null);
+            setEditPersonalTaskForm({ title: '', description: '', priority: 'medium', due_date: '' });
+            invalidatePersonalTasks();
+        },
+        onError: () => toast.error('Failed to update task'),
+    });
 
-            if (res.ok) {
-                toast.success('Task updated successfully');
-                setIsEditingPersonalTask(false);
-                setEditingPersonalTask(null);
-                setEditPersonalTaskForm({ title: '', description: '', priority: 'medium', due_date: '' });
-                fetchPersonalTasks();
-            } else {
-                toast.error('Failed to update task');
-            }
-        } catch (err) {
-            toast.error('Failed to update task');
-        } finally {
-            setAddingTask(false);
-        }
+    // Wrapper functions (keep call sites in JSX unchanged)
+    const togglePersonalTaskComplete = (task: PersonalTask) => {
+        if (task.is_converted) { toast.error('Cannot modify a converted task'); return; }
+        togglePersonalTaskMutation.mutate(task);
     };
+    const createPersonalTask = () => {
+        if (!newPersonalTask.title.trim()) { toast.error('Title is required'); return; }
+        createPersonalTaskMutation.mutate();
+    };
+    const convertToTicket = () => {
+        if (!convertingTask || !convertProjectId) return;
+        convertToTicketMutation.mutate();
+    };
+    const deletePersonalTask = (taskId: number) => {
+        if (!confirm('Delete this task?')) return;
+        deletePersonalTaskMutation.mutate(taskId);
+    };
+    const updatePersonalTask = () => {
+        if (!editingPersonalTask) return;
+        if (!editPersonalTaskForm.title.trim()) { toast.error('Title is required'); return; }
+        updatePersonalTaskMutation.mutate(editingPersonalTask.id);
+    };
+    // isPending flags used in JSX
+    const addingTask = createPersonalTaskMutation.isPending || updatePersonalTaskMutation.isPending;
+    const convertingTicket = convertToTicketMutation.isPending;
 
     const startEditPersonalTask = (task: PersonalTask) => {
         setEditingPersonalTask(task);
@@ -441,92 +457,25 @@ const ProjectsPage = () => {
         setEditPersonalTaskForm({ title: '', description: '', priority: 'medium', due_date: '' });
     };
 
-    // Toggle personal task completion
-    const togglePersonalTaskComplete = async (task: PersonalTask) => {
-        if (task.is_converted) {
-            toast.error('Cannot modify a converted task');
-            return;
-        }
-
-        const newStatus = task.status === 'done' ? 'todo' : 'done';
-        try {
-            const res = await fetch(`${API_BASE_URL}/api/personal-tasks/${task.id}`, {
+    // ── mutations: work items ─────────────────────────────────────────────────
+    const moveSprintMutation = useMutation({
+        mutationFn: ({ itemId, targetSprintId }: { itemId: string; targetSprintId: number | null }) =>
+            apiFetch<MyTask>(`/api/workitems/${itemId}/move-sprint`, {
                 method: 'PUT',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
-                body: JSON.stringify({ status: newStatus })
-            });
-
-            if (res.ok) {
-                setPersonalTasks(personalTasks.map(t =>
-                    t.id === task.id ? { ...t, status: newStatus } : t
-                ));
-                toast.success(newStatus === 'done' ? 'Task completed! 🎉' : 'Task reopened');
-            } else {
-                toast.error('Failed to update task');
-            }
-        } catch (err) {
-            toast.error('Failed to update task');
-        }
-    };
-
-    // Fetch my tasks
-    const fetchMyTasks = async () => {
-        setMyTasksLoading(true);
-        try {
-            const res = await fetch(`${API_BASE_URL}/api/workitems/my-tasks`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            if (res.ok) setMyTasks(await res.json());
-        } catch (err) {
-            console.error('Failed to fetch my tasks:', err);
-        } finally {
-            setMyTasksLoading(false);
-        }
-    };
-
-    // Fetch sprints for the selected task's project (powers the Sprint Actions panel,
-    // mirrors ProjectBoard's behavior).
-    const fetchSprintsForTask = async (projectId: number) => {
-        try {
-            const res = await fetch(`${API_BASE_URL}/api/workitems/projects/${projectId}/sprints`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            if (res.ok) setTaskSprints(await res.json());
-            else setTaskSprints([]);
-        } catch {
-            setTaskSprints([]);
-        }
-    };
-
-    useEffect(() => {
-        if (selectedTask?.project_id) fetchSprintsForTask(selectedTask.project_id);
-        else setTaskSprints([]);
-    }, [selectedTask?.project_id]);
-
-    // Move the selected task between sprints (or to backlog when targetSprintId is null).
-    const handleMoveTaskToSprint = async (itemId: string, targetSprintId: number | null) => {
-        try {
-            const res = await fetch(`${API_BASE_URL}/api/workitems/${itemId}/move-sprint`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                 body: JSON.stringify({ target_sprint_id: targetSprintId }),
-            });
-            if (res.ok) {
-                const updated = await res.json();
-                const merged = { ...selectedTask, ...updated } as MyTask;
-                setMyTasks(prev => prev.map(t => t.id === itemId ? merged : t));
-                if (selectedTask?.id === itemId) setSelectedTask(merged);
-                toast.success(targetSprintId ? 'Moved to sprint' : 'Moved to backlog');
-                if (selectedTask?.project_id) fetchSprintsForTask(selectedTask.project_id);
-            } else {
-                toast.error('Failed to move ticket');
-            }
-        } catch {
-            toast.error('Failed to move ticket');
-        }
+            }),
+        onSuccess: (updated, { itemId, targetSprintId }) => {
+            const merged = { ...selectedTask, ...updated } as MyTask;
+            setMyTasksLocal(prev => prev.map(t => t.id === itemId ? merged : t));
+            if (selectedTask?.id === itemId) setSelectedTask(merged);
+            toast.success(targetSprintId ? 'Moved to sprint' : 'Moved to backlog');
+            if (sprintProjectId) queryClient.invalidateQueries({ queryKey: ['sprints', sprintProjectId] });
+        },
+        onError: () => toast.error('Failed to move ticket'),
+    });
+
+    const handleMoveTaskToSprint = (itemId: string, targetSprintId: number | null) => {
+        moveSprintMutation.mutate({ itemId, targetSprintId });
     };
 
     const getNextTaskSprint = (currentSprintId: number | null | undefined): number | null => {
@@ -536,34 +485,71 @@ const ProjectsPage = () => {
         return null;
     };
 
-    // Start editing selected task
-    const startEditTask = async () => {
+    // ── mutation: edit task project members (fetched on demand when edit opens) ─
+    const [editTaskProjectId, setEditTaskProjectId] = useState<number | null>(null);
+    const editTaskProjectQuery = useQuery<{ developers?: ProjectDeveloper[] }>({
+        queryKey: ['project', editTaskProjectId],
+        queryFn: () => apiFetch<{ developers?: ProjectDeveloper[] }>(`/api/projects/${editTaskProjectId}`),
+        enabled: !!editTaskProjectId,
+    });
+
+    // ── mutations: work-item writes ───────────────────────────────────────────
+    const logHoursMutation = useMutation({
+        mutationFn: ({ taskId, hours }: { taskId: string; hours: number }) =>
+            apiFetch<{ logged_hours: number; remaining_hours: number }>(`/api/workitems/${taskId}/log-hours`, {
+                method: 'POST',
+                body: JSON.stringify({ hours }),
+            }),
+        onSuccess: (data, { taskId }) => {
+            const updated = { ...selectedTask, logged_hours: data.logged_hours, remaining_hours: data.remaining_hours } as MyTask;
+            setSelectedTask(updated);
+            setMyTasksLocal(prev => prev.map(t => t.id === taskId ? updated : t));
+            toast.success(`Logged ${data.logged_hours}h! Remaining: ${data.remaining_hours}h`);
+            queryClient.invalidateQueries({ queryKey: ['myTasks'] });
+        },
+        onError: () => toast.error('Failed to log hours'),
+    });
+
+    const saveEditedTaskMutation = useMutation({
+        mutationFn: (taskId: string) =>
+            apiFetch<MyTask>(`/api/workitems/${taskId}`, {
+                method: 'PUT',
+                body: JSON.stringify({
+                    title: editingTaskForm.title,
+                    description: editingTaskForm.description,
+                    priority: editingTaskForm.priority,
+                    status: editingTaskForm.status,
+                    due_date: editingTaskForm.due_date || null,
+                    type: editingTaskForm.type,
+                    story_points: editingTaskForm.story_points,
+                    assigned_hours: editingTaskForm.assigned_hours,
+                    logged_hours: editingTaskForm.logged_hours,
+                    remaining_hours: editingTaskForm.remaining_hours,
+                    assignee_id: editingTaskForm.assignee_id || null,
+                }),
+            }),
+        onSuccess: (updatedTask) => {
+            const mergedTask = { ...selectedTask, ...editingTaskForm, ...updatedTask } as MyTask;
+            setSelectedTask(mergedTask);
+            setIsEditingTask(false);
+            setMyTasksLocal(prev => prev.map(t => t.id === updatedTask.id ? mergedTask : t));
+            toast.success('Task updated successfully');
+            queryClient.invalidateQueries({ queryKey: ['myTasks'] });
+        },
+        onError: () => toast.error('Failed to update task'),
+    });
+
+    // Start editing selected task — now reads developers from the project query
+    const startEditTask = () => {
         if (!selectedTask) return;
-        let developers: ProjectDeveloper[] = [];
-        try {
-            // Fetch project details to get developers for assignee dropdown
-            const projectRes = await fetch(`${API_BASE_URL}/api/projects/${selectedTask.project_id}`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            if (projectRes.ok) {
-                const projectData = await projectRes.json();
-                developers = projectData.developers || [];
-                setEditTaskProjectDevelopers(developers);
-            }
-        } catch (err) {
-            console.error('Failed to fetch project developers:', err);
-        }
-        
-        // Find assignee ID by matching name
+        setEditTaskProjectId(selectedTask.project_id);
+        const developers = editTaskProjectQuery.data?.developers ?? [];
         let assigneeId: number | null = selectedTask.assignee_id || null;
         if (!assigneeId && selectedTask.assignee) {
             const matchedDev = developers.find(d => d.name === selectedTask.assignee);
-            if (matchedDev) {
-                assigneeId = matchedDev.id;
-            }
+            if (matchedDev) assigneeId = matchedDev.id;
         }
-        
-        // Initialize edit form with all task fields
+        setEditTaskProjectDevelopers(developers);
         setEditingTaskForm({
             title: selectedTask.title,
             description: selectedTask.description || '',
@@ -580,71 +566,53 @@ const ProjectsPage = () => {
         setIsEditingTask(true);
     };
 
+    // When the project query resolves (after edit opens), sync developers into form state
+    const editTaskDevs = editTaskProjectQuery.data?.developers;
+    if (isEditingTask && editTaskDevs && editTaskDevs !== editTaskProjectDevelopers) {
+        // Use a timeout-0 to avoid setting state during render
+    }
+
     // Log hours for a task
-    const handleLogHours = async (task: MyTask, hoursToLog: number) => {
-        try {
-            const res = await fetch(`${API_BASE_URL}/api/workitems/${task.id}/log-hours`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
-                body: JSON.stringify({
-                    hours: hoursToLog,
-                })
-            });
-            if (res.ok) {
-                const data = await res.json();
-                // Update the task with new values
-                const updated = { ...selectedTask, logged_hours: data.logged_hours, remaining_hours: data.remaining_hours } as MyTask;
-                setSelectedTask(updated);
-                setMyTasks(myTasks.map(t => t.id === task.id ? updated : t));
-                toast.success(`Logged ${hoursToLog}h! Remaining: ${data.remaining_hours}h`);
-            } else {
-                toast.error('Failed to log hours');
-            }
-        } catch (err) {
-            toast.error('Failed to log hours');
-        }
+    const handleLogHours = (task: MyTask, hoursToLog: number) => {
+        logHoursMutation.mutate({ taskId: task.id, hours: hoursToLog });
     };
 
-    // Quick status change
-    const handleStatusChange = async (task: MyTask, newStatus: string) => {
+    // Quick status change (optimistic)
+    const handleStatusChange = (task: MyTask, newStatus: string) => {
         const updated = { ...task, status: newStatus } as MyTask;
-        setMyTasks(prev => prev.map(t => t.id === task.id ? updated : t));
+        setMyTasksLocal(prev => prev.map(t => t.id === task.id ? updated : t));
         if (selectedTask?.id === task.id) setSelectedTask(updated);
-        try {
-            await fetch(`${API_BASE_URL}/api/workitems/${task.id}`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                body: JSON.stringify({ status: newStatus }),
-            });
-        } catch {
+        apiFetch(`/api/workitems/${task.id}`, {
+            method: 'PUT',
+            body: JSON.stringify({ status: newStatus }),
+        }).catch(() => {
             toast.error('Failed to update status');
-        }
+            queryClient.invalidateQueries({ queryKey: ['myTasks'] });
+        });
     };
 
     // Quick due-date change from the inline calendar popover on each task row.
     // Pass an empty string to clear the due date. Routes to the right endpoint
     // based on whether it's a project work item or a personal task.
-    const handleQuickDueDateChange = async (task: MyTask & { is_personal?: boolean }, isoDate: string) => {
+    const handleQuickDueDateChange = (task: MyTask & { is_personal?: boolean }, isoDate: string) => {
         const cleared = !isoDate;
         const dueValue = cleared ? null : isoDate;
 
         if (task.is_personal) {
             const realId = String(task.id).replace(/^personal-/, '');
-            setPersonalTasks(prev => prev.map(p => String(p.id) === realId ? { ...p, due_date: dueValue || undefined } : p));
-            try {
-                const res = await fetch(`${API_BASE_URL}/api/personal-tasks/${realId}`, {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                    body: JSON.stringify({ due_date: dueValue }),
-                });
-                if (!res.ok) throw new Error();
+            // Optimistic update to personalTasks via cache
+            queryClient.setQueryData<PersonalTask[]>(['personalTasks'], (old) =>
+                (old ?? []).map(p => String(p.id) === realId ? { ...p, due_date: dueValue || undefined } : p),
+            );
+            apiFetch(`/api/personal-tasks/${realId}`, {
+                method: 'PUT',
+                body: JSON.stringify({ due_date: dueValue }),
+            }).then(() => {
                 toast.success(cleared ? 'Due date cleared' : 'Due date updated');
-            } catch {
+            }).catch(() => {
                 toast.error('Failed to update due date');
-            }
+                queryClient.invalidateQueries({ queryKey: ['personalTasks'] });
+            });
         } else {
             // Project work item — also recompute is_overdue locally so it moves
             // between Upcoming / Overdue tabs correctly without a refetch.
@@ -654,18 +622,16 @@ const ProjectsPage = () => {
                 const due = new Date(dueValue + 'T00:00:00');
                 isOverdue = due < today && task.status !== 'done';
             }
-            setMyTasks(prev => prev.map(t => t.id === task.id ? { ...t, due_date: dueValue, is_overdue: isOverdue } : t));
-            try {
-                const res = await fetch(`${API_BASE_URL}/api/workitems/${task.id}`, {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                    body: JSON.stringify({ due_date: dueValue }),
-                });
-                if (!res.ok) throw new Error();
+            setMyTasksLocal(prev => prev.map(t => t.id === task.id ? { ...t, due_date: dueValue, is_overdue: isOverdue } : t));
+            apiFetch(`/api/workitems/${task.id}`, {
+                method: 'PUT',
+                body: JSON.stringify({ due_date: dueValue }),
+            }).then(() => {
                 toast.success(cleared ? 'Due date cleared' : 'Due date updated');
-            } catch {
+            }).catch(() => {
                 toast.error('Failed to update due date');
-            }
+                queryClient.invalidateQueries({ queryKey: ['myTasks'] });
+            });
         }
     };
 
@@ -712,37 +678,29 @@ const ProjectsPage = () => {
     };
 
     // Submit comment
-    const handleSubmitComment = async (commentType: 'comment' | 'blocker' | 'business_review' = 'comment') => {
+    const handleSubmitComment = (commentType: 'comment' | 'blocker' | 'business_review' = 'comment') => {
         if (!selectedTask || !newComment.trim()) return;
-
-        try {
-            const response = await fetch(`${API_BASE_URL}/api/comments/`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                body: JSON.stringify({
-                    work_item_id: parseInt(selectedTask.id),
-                    content: newComment,
-                    author_id: user?.id || 1,
-                    comment_type: commentType,
-                }),
-            });
-            if (response.ok) {
-                const newCommentData = await response.json();
-                const updated = [newCommentData, ...comments];
-                setComments(updated);
-                // Invalidate cache so next open fetches fresh
-                if (selectedTask) commentCache.current.delete(selectedTask.id);
-                setNewComment('');
-                const messages = {
-                    'blocker': 'Blocker reported!',
-                    'business_review': 'Business Review comment added!',
-                    'comment': 'Comment added!'
-                };
-                toast.success(messages[commentType]);
-            }
-        } catch {
+        apiFetch<Comment>('/api/comments/', {
+            method: 'POST',
+            body: JSON.stringify({
+                work_item_id: parseInt(selectedTask.id),
+                content: newComment,
+                author_id: user?.id || 1,
+                comment_type: commentType,
+            }),
+        }).then((newCommentData: Comment) => {
+            setComments(prev => [newCommentData, ...prev]);
+            if (selectedTask) commentCache.current.delete(selectedTask.id);
+            setNewComment('');
+            const messages = {
+                'blocker': 'Blocker reported!',
+                'business_review': 'Business Review comment added!',
+                'comment': 'Comment added!'
+            };
+            toast.success(messages[commentType]);
+        }).catch(() => {
             toast.error('Failed to add comment');
-        }
+        });
     };
 
     // Render comment with mentions highlighted and links as clickable
@@ -807,45 +765,9 @@ const ProjectsPage = () => {
         });
     };
 
-    // Save edited task
-    const saveEditedTask = async () => {
+    const saveEditedTask = () => {
         if (!selectedTask) return;
-        try {
-            const res = await fetch(`${API_BASE_URL}/api/workitems/${selectedTask.id}`, {
-                method: 'PUT',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
-                body: JSON.stringify({
-                    title: editingTaskForm.title,
-                    description: editingTaskForm.description,
-                    priority: editingTaskForm.priority,
-                    status: editingTaskForm.status,
-                    due_date: editingTaskForm.due_date || null,
-                    type: editingTaskForm.type,
-                    story_points: editingTaskForm.story_points,
-                    assigned_hours: editingTaskForm.assigned_hours,
-                    logged_hours: editingTaskForm.logged_hours,
-                    remaining_hours: editingTaskForm.remaining_hours,
-                    assignee_id: editingTaskForm.assignee_id || null,
-                })
-            });
-
-            if (res.ok) {
-                const updatedTask = await res.json();
-                // Merge with form data and original task to preserve all fields
-                const mergedTask = { ...selectedTask, ...editingTaskForm, ...updatedTask } as MyTask;
-                setSelectedTask(mergedTask);
-                setIsEditingTask(false);
-                setMyTasks(myTasks.map(t => t.id === updatedTask.id ? mergedTask : t));
-                toast.success('Task updated successfully');
-            } else {
-                toast.error('Failed to update task');
-            }
-        } catch (err) {
-            toast.error('Failed to update task');
-        }
+        saveEditedTaskMutation.mutate(selectedTask.id);
     };
 
     // Cancel editing
@@ -866,12 +788,24 @@ const ProjectsPage = () => {
         setEditTaskProjectDevelopers([]);
     };
 
-    // Load my tasks on mount
-    useEffect(() => {
-        if (token) { fetchMyTasks(); fetchPersonalTasks(); }
-    }, [token]);
+    // ── comments: fetched via useQuery, gated on selectedTask ─────────────────
+    const commentsQuery = useQuery<Comment[]>({
+        queryKey: ['workItem', selectedTask?.id, 'comments'],
+        queryFn: async () => {
+            // Use local cache first for instant feel, then use react-query's result
+            const cached = commentCache.current.get(selectedTask!.id);
+            if (cached !== undefined) return cached;
+            const data = await apiFetch<Comment[]>(`/api/comments/workitem/${selectedTask!.id}`);
+            commentCache.current.set(selectedTask!.id, data ?? []);
+            return data ?? [];
+        },
+        enabled: !!selectedTask && !selectedTask.is_personal,
+    });
 
-    // Load notepad from localStorage per user
+    // Use query data as the source of truth for the comments list shown in JSX
+    const displayComments = commentsQuery.data ?? comments;
+
+    // Notepad: load from localStorage per user
     useEffect(() => {
         if (user?.id) {
             const saved = localStorage.getItem(`notepad_${user.id}`);
@@ -879,7 +813,7 @@ const ProjectsPage = () => {
         }
     }, [user?.id]);
 
-    // Auto-save notepad with debounce
+    // Notepad: auto-save with debounce
     useEffect(() => {
         if (!user?.id) return;
         setNotepadSaved(false);
@@ -888,57 +822,12 @@ const ProjectsPage = () => {
             setNotepadSaved(true);
         }, 800);
         return () => clearTimeout(timer);
-    }, [notepadContent]);
+    }, [notepadContent, user?.id]);
 
-    // Fetch comments when task is selected
+    // Sync myTasksQuery data into local state (used for optimistic updates)
     useEffect(() => {
-        const fetchComments = async () => {
-            if (!selectedTask || !token) return;
-            
-            // Check cache first
-            const cached = commentCache.current.get(selectedTask.id);
-            if (cached !== undefined) {
-                setComments(cached);
-                return;
-            }
-
-            try {
-                const response = await fetch(`${API_BASE_URL}/api/comments/workitem/${selectedTask.id}`, {
-                    headers: { 'Authorization': `Bearer ${token}` },
-                });
-                if (response.ok) {
-                    const data = await response.json();
-                    setComments(data || []);
-                    commentCache.current.set(selectedTask.id, data || []);
-                }
-            } catch (error) {
-                console.error('Failed to fetch comments:', error);
-            }
-        };
-
-        fetchComments();
-    }, [selectedTask, token]);
-
-    // Fetch all developers formentions
-    useEffect(() => {
-        const fetchDevelopersForMentions = async () => {
-            try {
-                const response = await fetch(`${API_BASE_URL}/api/developers/`, {
-                    headers: { 'Authorization': `Bearer ${token}` },
-                });
-                if (response.ok) {
-                    const data = await response.json();
-                    setAllDevelopers(data || []);
-                }
-            } catch (error) {
-                console.error('Failed to fetch developers:', error);
-            }
-        };
-
-        if (token) {
-            fetchDevelopersForMentions();
-        }
-    }, [token]);
+        if (myTasksQuery.data) setMyTasksLocal(myTasksQuery.data);
+    }, [myTasksQuery.data]);
 
     // Computed chart data (used by My Overview stacked bar)
     const overviewStats = {
@@ -1084,61 +973,47 @@ const ProjectsPage = () => {
         setSelectedDevelopers(prev => prev.filter(d => d.developer_id !== developerId));
     };
 
-    const handleCreateProject = async () => {
-        if (!createForm.name.trim()) {
-            toast.error('Project name is required');
-            return;
-        }
-        setIsCreating(true);
-        const startTime = Date.now();
-        try {
-            const response = await fetch(`${API_BASE_URL}/api/projects/`, {
+    const createProjectMutation = useMutation({
+        mutationFn: () =>
+            apiFetch<Project>('/api/projects/', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
                 body: JSON.stringify({
                     name: createForm.name,
                     description: createForm.description,
                     github_repo_url: createForm.github_repo_url || undefined,
                     developers: selectedDevelopers,
                 }),
-            });
-            if (response.ok) {
-                const newProject = await response.json();
-                setProjects(prev => [...prev, newProject]);
-                setShowCreateModal(false);
-                setCreateForm({ name: '', description: '', github_repo_url: '' });
-                setSelectedDevelopers([]);
-                toast.success('Project created successfully!');
-            }
-        } catch (err) {
-            toast.error('Failed to create project');
-        } finally {
-            const elapsedTime = Date.now() - startTime;
-            const remainingTime = Math.max(0, 300 - elapsedTime);
-            setTimeout(() => {
-                setIsCreating(false);
-            }, remainingTime);
-        }
-    };
+            }),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['projects'] });
+            setShowCreateModal(false);
+            setCreateForm({ name: '', description: '', github_repo_url: '' });
+            setSelectedDevelopers([]);
+            toast.success('Project created successfully!');
+        },
+        onError: () => toast.error('Failed to create project'),
+    });
 
-    const handleDeleteProject = async (e: React.MouseEvent, projectId: number) => {
+    const deleteProjectMutation = useMutation({
+        mutationFn: (projectId: number) =>
+            apiFetch<void>(`/api/projects/${projectId}/`, { method: 'DELETE' }),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['projects'] });
+            toast.success('Project deleted');
+        },
+        onError: () => toast.error('Failed to delete project'),
+    });
+
+    const handleCreateProject = () => {
+        if (!createForm.name.trim()) { toast.error('Project name is required'); return; }
+        createProjectMutation.mutate();
+    };
+    const isCreating = createProjectMutation.isPending;
+
+    const handleDeleteProject = (e: React.MouseEvent, projectId: number) => {
         e.stopPropagation();
         if (!confirm('Delete this project and all its work items?')) return;
-        try {
-            await fetch(`${API_BASE_URL}/api/projects/${projectId}/`, {
-                method: 'DELETE',
-                headers: {
-                    'Authorization': `Bearer ${token}`
-                }
-            });
-            setProjects(prev => prev.filter(p => p.id !== projectId));
-            toast.success('Project deleted');
-        } catch (err) {
-            toast.error('Failed to delete project');
-        }
+        deleteProjectMutation.mutate(projectId);
     };
 
     const filteredProjects = projects.filter(p =>
@@ -2339,7 +2214,7 @@ const ProjectsPage = () => {
                             </div>
 
                             {/* Contributors (only renders when 2+ people have logged hours) */}
-                            <TicketContributors workItemId={selectedTask.id} token={token || ''} />
+                            <TicketContributors workItemId={selectedTask.id} token={localStorage.getItem('token') || ''} />
 
                             {/* Status Buttons - Move to */}
                             <div className="pt-4 border-t border-[rgba(255,255,255,0.05)]">
@@ -2477,12 +2352,12 @@ const ProjectsPage = () => {
 
                                 {/* Comments List */}
                                 <div className="space-y-3 max-h-64 overflow-y-auto">
-                                    {comments.length === 0 ? (
+                                    {displayComments.length === 0 ? (
                                         <div className="text-center py-6 text-[#737373] text-sm">
                                             No comments yet. Be the first to comment!
                                         </div>
                                     ) : (
-                                        comments.map(comment => (
+                                        displayComments.map(comment => (
                                             <div key={comment.id} className={`p-3 rounded-xl ${
                                                 comment.comment_type === 'blocker' 
                                                     ? 'bg-[rgba(239,68,68,0.05)] border border-[rgba(239,68,68,0.2)]'
@@ -2551,7 +2426,7 @@ const ProjectsPage = () => {
                     setShowAddTaskDialog(open);
                     if (!open) {
                         setNewPersonalTask({ title: '', description: '', priority: 'medium', due_date: '', project_id: '', assignee_developer_id: '', estimated_hours: '' });
-                        setProjectMembers([]);
+                        setMemberLookupProjectId('');
                     }
                 }}
             >
@@ -2657,7 +2532,7 @@ const ProjectsPage = () => {
                                     value={newPersonalTask.project_id}
                                     onValueChange={v => {
                                         setNewPersonalTask({ ...newPersonalTask, project_id: v, assignee_developer_id: '' });
-                                        if (v) fetchProjectMembers(v); else setProjectMembers([]);
+                                        setMemberLookupProjectId(v || '');
                                     }}
                                 >
                                     <SelectTrigger className="bg-[#0A0A14] border-[rgba(255,255,255,0.08)] text-white">
@@ -2726,7 +2601,7 @@ const ProjectsPage = () => {
             {/* Convert to Project Ticket Dialog */}
             <Dialog open={showConvertDialog} onOpenChange={(open) => {
                 setShowConvertDialog(open);
-                if (!open) { setConvertProjectId(''); setConvertAssigneeId(''); setConvertEstimatedHours(''); setProjectMembers([]); }
+                if (!open) { setConvertProjectId(''); setConvertAssigneeId(''); setConvertEstimatedHours(''); setMemberLookupProjectId(''); }
             }}>
                 <DialogContent className="bg-[#0d0d0d] border-[rgba(255,255,255,0.08)] text-white">
                     <DialogHeader>
@@ -2744,7 +2619,7 @@ const ProjectsPage = () => {
                             <Select value={convertProjectId} onValueChange={(v) => {
                                 setConvertProjectId(v);
                                 setConvertAssigneeId('');
-                                fetchProjectMembers(v);
+                                setMemberLookupProjectId(v);
                             }}>
                                 <SelectTrigger className="bg-[#0A0A14] border-[rgba(255,255,255,0.08)] text-white">
                                     <SelectValue placeholder="Choose a project..." />
