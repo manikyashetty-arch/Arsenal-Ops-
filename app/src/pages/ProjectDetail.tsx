@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { apiFetch } from '@/lib/api';
 import {
     PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line
 } from 'recharts';
@@ -49,8 +51,6 @@ import { toast, Toaster } from 'sonner';
 const MermaidRenderer = lazy(() => import('@/components/MermaidRenderer'));
 const ArchitectureEditor = lazy(() => import('@/components/ArchitectureEditor'));
 import { useAuth, isProjectManager, isAdmin } from '@/contexts/AuthContext';
-
-import { API_BASE_URL } from '@/config/api';
 
 // Helper function to parse YYYY-MM-DD string to local Date object (avoids UTC timezone issues)
 const parseLocalDate = (dateString: string | undefined): Date | undefined => {
@@ -243,8 +243,9 @@ const ProjectDetail = () => {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
     const [searchParams, setSearchParams] = useSearchParams();
-    const { token, user } = useAuth();
-    const [project, setProject] = useState<Project | null>(null);
+    const { user } = useAuth();
+    const queryClient = useQueryClient();
+
     // Initial tab respects ?tab= URL param so external links (e.g. admin "Pulse Settings"
     // button) can deep-link to a specific tab on this project.
     const initialTab = (searchParams.get('tab') as TabType) || 'overview';
@@ -259,10 +260,9 @@ const ProjectDetail = () => {
             setSearchParams(next, { replace: true });
         }
     }, [activeTab]);
-    const [isLoading, setIsLoading] = useState(true);
+
     const [isEditing, setIsEditing] = useState(false);
     const [editForm, setEditForm] = useState<Partial<Project>>({});
-    const [allDevelopers, setAllDevelopers] = useState<Developer[]>([]);
     const [showAddDeveloper, setShowAddDeveloper] = useState(false);
     const [newDeveloper, setNewDeveloper] = useState({
         developer_id: '',
@@ -270,20 +270,9 @@ const ProjectDetail = () => {
         responsibilities: '',
     });
 
-    const [accessDenied, setAccessDenied] = useState(false);
-    const [prdAnalysis, setPrdAnalysis] = useState<PRDAnalysis | null>(null);
-    const [sprints, setSprints] = useState<Sprint[]>([]);
-    const [analytics, setAnalytics] = useState<ProjectAnalytics | null>(null);
-    
     // Architecture editing state
     const [editingArchitecture, setEditingArchitecture] = useState<Architecture | null>(null);
 
-    // Lifted hub state (was inside ProjectHubView)
-    const [hubWorkItems, setHubWorkItems] = useState<HubWorkItem[]>([]);
-    const [goals, setGoals] = useState<Goal[]>([]);
-    const [milestones, setMilestones] = useState<Milestone[]>([]);
-    const [activities, setActivities] = useState<ActivityItem[]>([]);
-    const [hubLoading, setHubLoading] = useState(true);
     const [sprintsExpanded, setSprintsExpanded] = useState(false);
 
     // Pulse view data — admin-edited variables, hydrated from localStorage with dummy defaults
@@ -291,16 +280,14 @@ const ProjectDetail = () => {
     useEffect(() => {
         if (id) setPulseData(loadPulseData(id));
     }, [id]);
-    
+
     // Calendar pickers for start & end dates
     const [showCalendarStartDate, setShowCalendarStartDate] = useState(false);
     const [showCalendarEndDate, setShowCalendarEndDate] = useState(false);
-    
+
     // Files/Links state
-    const [links, setLinks] = useState<ProjectLink[]>([]);
     const [showAddLink, setShowAddLink] = useState(false);
     const [newLink, setNewLink] = useState({ name: '', url: '' });
-    const [linksLoading, setLinksLoading] = useState(false);
     const addLinkFormRef = useRef<HTMLDivElement>(null);
 
     // Scroll to add link form when it opens
@@ -310,324 +297,218 @@ const ProjectDetail = () => {
         }
     }, [showAddLink]);
 
-    // Custom restrictions state
-    const [userRestrictions, setUserRestrictions] = useState<CustomRestriction[]>([]);
+    // ── react-query: project ────────────────────────────────────────────────
+    const projectQuery = useQuery<Project>({
+        queryKey: ['project', id],
+        queryFn: () => apiFetch<Project>(`/api/projects/${id}`),
+        enabled: !!id,
+    });
+    const project = projectQuery.data ?? null;
+    const isLoading = projectQuery.isLoading;
+    const accessDenied = !!(projectQuery.error && (projectQuery.error as any)?.status === 403);
 
-    // Refetch all data (used on mount and when window regains focus)
-    const refetchAll = () => {
-        if (!id) return;
-        fetchProject();
-        fetchAllDevelopers();
-        fetchSprints();
-        fetchHubData(); // analytics is now included inside fetchHubData
-        fetchLinks();
-        fetchUserRestrictions();
-    };
-
-    // Fetch project data on mount
+    // Show toast when 403 is encountered
     useEffect(() => {
-        if (!id) return;
-        refetchAll();
-    }, [id]);
+        if (accessDenied) {
+            toast.error('You do not have access to this project');
+        }
+    }, [accessDenied]);
 
-    // Refetch when user returns to this tab/window (e.g. after creating sprint in Board)
+    // Keep editForm in sync when project first loads (not while user is editing)
     useEffect(() => {
-        const handleFocus = () => {
-            if (document.visibilityState === 'visible') {
-                fetchSprints();
-                fetchHubData(); // analytics is now included inside fetchHubData
-            }
-        };
-        document.addEventListener('visibilitychange', handleFocus);
-        window.addEventListener('focus', handleFocus);
-        return () => {
-            document.removeEventListener('visibilitychange', handleFocus);
-            window.removeEventListener('focus', handleFocus);
-        };
-    }, [id]);
-
-    const fetchProject = async () => {
-        try {
-            const res = await fetch(`${API_BASE_URL}/api/projects/${id}`, {
-                headers: {
-                    'Authorization': `Bearer ${token}`
-                }
-            });
-            if (res.ok) {
-                const data = await res.json();
-                setProject(data);
-                setEditForm(data);
-                setAccessDenied(false);
-            } else if (res.status === 403) {
-                setAccessDenied(true);
-                toast.error('You do not have access to this project');
-            } else {
-                toast.error('Failed to load project');
-            }
-        } catch (err) {
-            toast.error('Failed to load project');
-        } finally {
-            setIsLoading(false);
-        }
-    };
-
-    const fetchAllDevelopers = async () => {
-        try {
-            const res = await fetch(`${API_BASE_URL}/api/developers/`, {
-                headers: {
-                    'Authorization': `Bearer ${token}`
-                }
-            });
-            if (res.ok) {
-                setAllDevelopers(await res.json());
-            }
-        } catch (err) {
-            console.error('Failed to fetch developers:', err);
-        }
-    };
-
-    const fetchSprints = async () => {
-        if (!id) return;
-        try {
-            const res = await fetch(`${API_BASE_URL}/api/workitems/projects/${id}/sprints`, {
-                headers: {
-                    'Authorization': `Bearer ${token}`
-                }
-            });
-            if (res.ok) {
-                setSprints(await res.json());
-            }
-        } catch (err) {
-            console.error('Failed to fetch sprints:', err);
-        }
-    };
-
-    const fetchAnalytics = async () => {
-        if (!id) return;
-        try {
-            const res = await fetch(`${API_BASE_URL}/api/workitems/projects/${id}/analytics`, {
-                headers: {
-                    'Authorization': `Bearer ${token}`
-                }
-            });
-            if (res.ok) {
-                setAnalytics(await res.json());
-            }
-        } catch (err) {
-            console.error('Failed to fetch analytics:', err);
-        }
-    };
-
-    const fetchPrdAnalysis = async () => {
-        if (!id) return;
-        try {
-            const res = await fetch(`${API_BASE_URL}/api/prd/projects/${id}/analysis`, {
-                headers: {
-                    'Authorization': `Bearer ${token}`
-                }
-            });
-            if (res.ok) {
-                const data = await res.json();
-                setPrdAnalysis(data);
-            }
-        } catch (err) {
-            console.error('Failed to fetch PRD analysis:', err);
-        }
-    };
-
-    const fetchLinks = async () => {
-        if (!id) return;
-        setLinksLoading(true);
-        try {
-            const res = await fetch(`${API_BASE_URL}/api/projects/${id}/links`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            if (res.ok) {
-                const data = await res.json();
-                setLinks(data);
-            }
-        } catch (err) {
-            console.error('Failed to fetch links:', err);
-        } finally {
-            setLinksLoading(false);
-        }
-    };
-
-    const fetchUserRestrictions = async () => {
-        try {
-            const res = await fetch(`${API_BASE_URL}/api/auth/me/custom-restrictions`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            if (res.ok) {
-                const data = await res.json();
-                setUserRestrictions(data || []);
-            }
-        } catch (err) {
-            console.error('Failed to fetch user restrictions:', err);
-        }
-    };
-
-    const handleAddLink = async () => {
-        if (!id || !newLink.name || !newLink.url) return;
-        try {
-            const res = await fetch(`${API_BASE_URL}/api/projects/${id}/links`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
-                body: JSON.stringify(newLink)
-            });
-            if (res.ok) {
-                toast.success('Link added!');
-                setNewLink({ name: '', url: '' });
-                setShowAddLink(false);
-                fetchLinks();
-            } else {
-                toast.error('Failed to add link');
-            }
-        } catch (err) {
-            toast.error('Error adding link');
-        }
-    };
-
-    const handleDeleteLink = async (linkId: number) => {
-        if (!id) return;
-        try {
-            const res = await fetch(`${API_BASE_URL}/api/projects/${id}/links/${linkId}`, {
-                method: 'DELETE',
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            if (res.ok) {
-                toast.success('Link deleted!');
-                fetchLinks();
-            } else {
-                toast.error('Failed to delete link');
-            }
-        } catch (err) {
-            toast.error('Error deleting link');
-        }
-    };
-
-    // Hub data fetch functions (also includes analytics + prdAnalysis to share one loading gate)
-    const fetchHubData = async () => {
-        if (!id) return;
-        setHubLoading(true);
-        await Promise.all([
-            fetchHubWorkItems(),
-            fetchGoals(),
-            fetchMilestones(),
-            fetchActivities(),
-            fetchAnalytics(),
-            fetchPrdAnalysis(),
-        ]);
-        setHubLoading(false);
-    };
-
-    const fetchHubWorkItems = async () => {
-        if (!id) return;
-        try {
-            const res = await fetch(`${API_BASE_URL}/api/workitems/?project_id=${id}`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            if (res.ok) {
-                const data = await res.json();
-                setHubWorkItems(data.map((item: any) => ({
-                    id: item.id,
-                    key: item.key,
-                    title: item.title,
-                    description: item.description,
-                    type: item.type,
-                    status: item.status,
-                    priority: item.priority,
-                    assignee: item.assignee,
-                    assignee_id: item.assignee_id,
-                    due_date: item.due_date,
-                    start_date: item.start_date || item.started_at,
-                    estimated_hours: item.estimated_hours,
-                    logged_hours: item.logged_hours,
-                    remaining_hours: item.remaining_hours,
-                    sprint: item.sprint,
-                    story_points: item.story_points,
-                })));
-            }
-        } catch (err) {
-            console.error('Failed to fetch hub work items:', err);
-        }
-    };
-
-    const fetchGoals = async () => {
-        if (!id) return;
-        try {
-            const res = await fetch(`${API_BASE_URL}/api/projects/${id}/goals`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            if (res.ok) setGoals(await res.json());
-        } catch (err) {
-            console.error('Failed to fetch goals:', err);
-        }
-    };
-
-    const fetchMilestones = async () => {
-        if (!id) return;
-        try {
-            const res = await fetch(`${API_BASE_URL}/api/projects/${id}/milestones`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            if (res.ok) setMilestones(await res.json());
-        } catch (err) {
-            console.error('Failed to fetch milestones:', err);
-        }
-    };
-
-    const fetchActivities = async () => {
-        if (!id) return;
-        try {
-            const res = await fetch(`${API_BASE_URL}/api/projects/${id}/activity`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            if (res.ok) setActivities(await res.json());
-        } catch (err) {
-            console.error('Failed to fetch activities:', err);
-        }
-    };
-
-
-    // Task update/create handlers for TimelineView
-    const handleTaskUpdate = async (itemId: string, updates: any) => {
-        try {
-            const res = await fetch(`${API_BASE_URL}/api/workitems/${itemId}`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                body: JSON.stringify(updates),
-            });
-            if (res.ok) fetchHubWorkItems();
-        } catch { toast.error('Failed to update task'); }
-    };
-
-    const handleTaskCreate = async (taskData: any) => {
-        try {
-            const res = await fetch(`${API_BASE_URL}/api/workitems/`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                body: JSON.stringify({ ...taskData, project_id: id }),
-            });
-            if (res.ok) { toast.success('Task created!'); fetchHubWorkItems(); }
-        } catch { toast.error('Failed to create task'); }
-    };
-
-    // Fetch PRD analysis when project loads
-    useEffect(() => {
-        if (project) {
-            // prdAnalysis is now loaded inside fetchHubData — no separate trigger needed
+        if (project && !isEditing) {
+            setEditForm(project);
         }
     }, [project]);
 
-    // Save project edits
-    const handleSaveEdit = async () => {
-        if (!project) return;
-        try {
-            // Only send the fields that can be updated - don't send nested objects
+    // ── react-query: developers ─────────────────────────────────────────────
+    const developersQuery = useQuery<Developer[]>({
+        queryKey: ['developers'],
+        queryFn: () => apiFetch<Developer[]>('/api/developers/'),
+    });
+    const allDevelopers = developersQuery.data ?? [];
+
+    // ── react-query: sprints ────────────────────────────────────────────────
+    const sprintsQuery = useQuery<Sprint[]>({
+        queryKey: ['sprints', id],
+        queryFn: () => apiFetch<Sprint[]>(`/api/workitems/projects/${id}/sprints`),
+        enabled: !!id,
+    });
+    const sprints = sprintsQuery.data ?? [];
+
+    // ── react-query: hub work items ─────────────────────────────────────────
+    const hubWorkItemsQuery = useQuery<HubWorkItem[]>({
+        queryKey: ['workItems', { project_id: id }],
+        queryFn: async () => {
+            const data = await apiFetch<any[]>(`/api/workitems/?project_id=${id}`);
+            return data.map((item: any) => ({
+                id: item.id,
+                key: item.key,
+                title: item.title,
+                description: item.description,
+                type: item.type,
+                status: item.status,
+                priority: item.priority,
+                assignee: item.assignee,
+                assignee_id: item.assignee_id,
+                due_date: item.due_date,
+                start_date: item.start_date || item.started_at,
+                estimated_hours: item.estimated_hours,
+                logged_hours: item.logged_hours,
+                remaining_hours: item.remaining_hours,
+                sprint: item.sprint,
+                story_points: item.story_points,
+            }));
+        },
+        enabled: !!id,
+    });
+    const hubWorkItems = hubWorkItemsQuery.data ?? [];
+
+    // ── react-query: goals ──────────────────────────────────────────────────
+    const goalsQuery = useQuery<Goal[]>({
+        queryKey: ['hubData', id, 'goals'],
+        queryFn: () => apiFetch<Goal[]>(`/api/projects/${id}/goals`),
+        enabled: !!id,
+    });
+    const goals = goalsQuery.data ?? [];
+
+    // ── react-query: milestones ─────────────────────────────────────────────
+    const milestonesQuery = useQuery<Milestone[]>({
+        queryKey: ['hubData', id, 'milestones'],
+        queryFn: () => apiFetch<Milestone[]>(`/api/projects/${id}/milestones`),
+        enabled: !!id,
+    });
+    const milestones = milestonesQuery.data ?? [];
+
+    // ── react-query: activities ─────────────────────────────────────────────
+    const activitiesQuery = useQuery<ActivityItem[]>({
+        queryKey: ['hubData', id, 'activities'],
+        queryFn: () => apiFetch<ActivityItem[]>(`/api/projects/${id}/activity`),
+        enabled: !!id,
+    });
+    const activities = activitiesQuery.data ?? [];
+
+    // ── react-query: analytics ──────────────────────────────────────────────
+    const analyticsQuery = useQuery<ProjectAnalytics>({
+        queryKey: ['hubData', id, 'analytics'],
+        queryFn: () => apiFetch<ProjectAnalytics>(`/api/workitems/projects/${id}/analytics`),
+        enabled: !!id,
+    });
+    const analytics = analyticsQuery.data ?? null;
+
+    // ── react-query: PRD analysis ───────────────────────────────────────────
+    const prdAnalysisQuery = useQuery<PRDAnalysis>({
+        queryKey: ['hubData', id, 'prd'],
+        queryFn: () => apiFetch<PRDAnalysis>(`/api/prd/projects/${id}/analysis`),
+        enabled: !!id,
+    });
+    const prdAnalysis = prdAnalysisQuery.data ?? null;
+
+    // ── react-query: links ──────────────────────────────────────────────────
+    const linksQuery = useQuery<ProjectLink[]>({
+        queryKey: ['project', id, 'links'],
+        queryFn: () => apiFetch<ProjectLink[]>(`/api/projects/${id}/links`),
+        enabled: !!id,
+    });
+    const links = linksQuery.data ?? [];
+    const linksLoading = linksQuery.isLoading;
+
+    // ── react-query: user restrictions ─────────────────────────────────────
+    const userRestrictionsQuery = useQuery<CustomRestriction[]>({
+        queryKey: ['userRestrictions'],
+        queryFn: async () => {
+            const data = await apiFetch<CustomRestriction[]>('/api/auth/me/custom-restrictions');
+            return data ?? [];
+        },
+    });
+    const userRestrictions = userRestrictionsQuery.data ?? [];
+
+    // hubLoading: true until all hub sub-resources are done loading
+    const hubLoading =
+        hubWorkItemsQuery.isLoading ||
+        goalsQuery.isLoading ||
+        milestonesQuery.isLoading ||
+        activitiesQuery.isLoading ||
+        analyticsQuery.isLoading ||
+        prdAnalysisQuery.isLoading;
+
+    // ── mutations: links ────────────────────────────────────────────────────
+    const addLinkMutation = useMutation({
+        mutationFn: () =>
+            apiFetch<ProjectLink>(`/api/projects/${id}/links`, {
+                method: 'POST',
+                body: JSON.stringify(newLink),
+            }),
+        onSuccess: () => {
+            toast.success('Link added!');
+            setNewLink({ name: '', url: '' });
+            setShowAddLink(false);
+            queryClient.invalidateQueries({ queryKey: ['project', id, 'links'] });
+        },
+        onError: () => toast.error('Failed to add link'),
+    });
+
+    const deleteLinkMutation = useMutation({
+        mutationFn: (linkId: number) =>
+            apiFetch<void>(`/api/projects/${id}/links/${linkId}`, { method: 'DELETE' }),
+        onSuccess: () => {
+            toast.success('Link deleted!');
+            queryClient.invalidateQueries({ queryKey: ['project', id, 'links'] });
+        },
+        onError: () => toast.error('Error deleting link'),
+    });
+
+    const handleAddLink = () => {
+        if (!id || !newLink.name || !newLink.url) return;
+        addLinkMutation.mutate();
+    };
+
+    const handleDeleteLink = (linkId: number) => {
+        deleteLinkMutation.mutate(linkId);
+    };
+
+
+    // ── mutations: hub work items ───────────────────────────────────────────
+    const taskUpdateMutation = useMutation({
+        mutationFn: ({ itemId, updates }: { itemId: string; updates: any }) =>
+            apiFetch<any>(`/api/workitems/${itemId}`, {
+                method: 'PUT',
+                body: JSON.stringify(updates),
+            }),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['workItems', { project_id: id }] });
+            queryClient.invalidateQueries({ queryKey: ['workItems'] });
+        },
+        onError: () => toast.error('Failed to update task'),
+    });
+
+    const taskCreateMutation = useMutation({
+        mutationFn: (taskData: any) =>
+            apiFetch<any>('/api/workitems/', {
+                method: 'POST',
+                body: JSON.stringify({ ...taskData, project_id: id }),
+            }),
+        onSuccess: () => {
+            toast.success('Task created!');
+            queryClient.invalidateQueries({ queryKey: ['workItems', { project_id: id }] });
+            queryClient.invalidateQueries({ queryKey: ['workItems'] });
+        },
+        onError: () => toast.error('Failed to create task'),
+    });
+
+    // Task update/create handlers for TimelineView
+    const handleTaskUpdate = (itemId: string, updates: any) => {
+        taskUpdateMutation.mutate({ itemId, updates });
+    };
+
+    const handleTaskCreate = (taskData: any) => {
+        taskCreateMutation.mutate(taskData);
+    };
+
+    // ── mutation: save project edits ────────────────────────────────────────
+    const saveEditMutation = useMutation({
+        mutationFn: () => {
+            if (!project) throw new Error('No project');
             const updateData: any = {
                 name: editForm.name || undefined,
                 description: editForm.description || undefined,
@@ -636,118 +517,122 @@ const ProjectDetail = () => {
                 created_at: editForm.created_at || undefined,
                 end_date: editForm.end_date || undefined,
             };
-            
-            // Remove undefined values to only send what changed
             Object.keys(updateData).forEach((key) => {
-                if (updateData[key] === undefined) {
-                    delete updateData[key];
-                }
+                if (updateData[key] === undefined) delete updateData[key];
             });
-            
             console.log('Sending update data:', updateData);
-            
-            const res = await fetch(`${API_BASE_URL}/api/projects/${project.id}`, {
+            return apiFetch<Project>(`/api/projects/${project.id}`, {
                 method: 'PUT',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                 body: JSON.stringify(updateData),
             });
-            if (res.ok) {
-                const responseData = await res.json();
-                console.log('Update response:', responseData);
-                toast.success('Project updated!');
-                setIsEditing(false);
-                await fetchProject();
-            } else {
-                const errorData = await res.json();
-                console.error('Update error:', errorData);
-                toast.error(errorData.detail || 'Failed to update project');
-            }
-        } catch (err) {
+        },
+        onSuccess: (responseData) => {
+            console.log('Update response:', responseData);
+            toast.success('Project updated!');
+            setIsEditing(false);
+            queryClient.invalidateQueries({ queryKey: ['project', id] });
+            queryClient.invalidateQueries({ queryKey: ['projects'] });
+        },
+        onError: (err: any) => {
             console.error('Error updating project:', err);
-            toast.error('Failed to update project');
-        }
+            toast.error(err?.message || 'Failed to update project');
+        },
+    });
+
+    // Save project edits
+    const handleSaveEdit = () => {
+        saveEditMutation.mutate();
     };
 
-    // Add developer to project
-    const handleAddDeveloper = async () => {
-        if (!project || !newDeveloper.developer_id) return;
-        try {
-            const res = await fetch(`${API_BASE_URL}/api/projects/${project.id}/developers`, {
+    // ── mutation: add developer ─────────────────────────────────────────────
+    const addDeveloperMutation = useMutation({
+        mutationFn: () => {
+            if (!project) throw new Error('No project');
+            return apiFetch<void>(`/api/projects/${project.id}/developers`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                 body: JSON.stringify({
                     developer_id: parseInt(newDeveloper.developer_id),
                     role: newDeveloper.role,
                     responsibilities: newDeveloper.responsibilities,
                 }),
             });
-            if (res.ok) {
-                toast.success('Developer added!');
-                setShowAddDeveloper(false);
-                setNewDeveloper({ developer_id: '', role: '', responsibilities: '' });
-                fetchProject();
-            }
-        } catch {
-            toast.error('Failed to add developer');
-        }
+        },
+        onSuccess: () => {
+            toast.success('Developer added!');
+            setShowAddDeveloper(false);
+            setNewDeveloper({ developer_id: '', role: '', responsibilities: '' });
+            queryClient.invalidateQueries({ queryKey: ['project', id] });
+        },
+        onError: () => toast.error('Failed to add developer'),
+    });
+
+    // Add developer to project
+    const handleAddDeveloper = () => {
+        if (!project || !newDeveloper.developer_id) return;
+        addDeveloperMutation.mutate();
     };
+
+    // ── mutation: remove developer ──────────────────────────────────────────
+    const removeDeveloperMutation = useMutation({
+        mutationFn: (developerId: number) => {
+            if (!project) throw new Error('No project');
+            return apiFetch<void>(`/api/projects/${project.id}/developers/${developerId}`, {
+                method: 'DELETE',
+            });
+        },
+        onSuccess: () => {
+            toast.success('Developer removed!');
+            queryClient.invalidateQueries({ queryKey: ['project', id] });
+        },
+        onError: () => toast.error('Failed to remove developer'),
+    });
 
     // Remove developer from project
-    const handleRemoveDeveloper = async (developerId: number) => {
+    const handleRemoveDeveloper = (developerId: number) => {
         if (!project) return;
         if (!confirm('Remove this developer from the project?')) return;
-        try {
-            const res = await fetch(`${API_BASE_URL}/api/projects/${project.id}/developers/${developerId}`, {
-                method: 'DELETE',
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            if (res.ok) {
-                toast.success('Developer removed!');
-                fetchProject();
-            }
-        } catch {
-            toast.error('Failed to remove developer');
-        }
+        removeDeveloperMutation.mutate(developerId);
     };
 
-    // Promote developer to project admin
-    const handlePromoteToAdmin = async (developerId: number) => {
-        if (!project) return;
-        try {
-            const res = await fetch(`${API_BASE_URL}/api/projects/${project.id}/developers/${developerId}/admin`, {
+    // ── mutation: promote/demote developer admin ────────────────────────────
+    const promoteToAdminMutation = useMutation({
+        mutationFn: (developerId: number) => {
+            if (!project) throw new Error('No project');
+            return apiFetch<void>(`/api/projects/${project.id}/developers/${developerId}/admin`, {
                 method: 'PUT',
-                headers: { 'Authorization': `Bearer ${token}` }
             });
-            if (res.ok) {
-                toast.success('Developer promoted to project admin!');
-                fetchProject();
-            } else {
-                const error = await res.json();
-                toast.error(error.detail || 'Failed to promote developer');
-            }
-        } catch {
-            toast.error('Failed to promote developer');
-        }
+        },
+        onSuccess: () => {
+            toast.success('Developer promoted to project admin!');
+            queryClient.invalidateQueries({ queryKey: ['project', id] });
+        },
+        onError: (err: any) => toast.error(err?.message || 'Failed to promote developer'),
+    });
+
+    const demoteFromAdminMutation = useMutation({
+        mutationFn: (developerId: number) => {
+            if (!project) throw new Error('No project');
+            return apiFetch<void>(`/api/projects/${project.id}/developers/${developerId}/member`, {
+                method: 'PUT',
+            });
+        },
+        onSuccess: () => {
+            toast.success('Developer demoted from project admin!');
+            queryClient.invalidateQueries({ queryKey: ['project', id] });
+        },
+        onError: (err: any) => toast.error(err?.message || 'Failed to demote developer'),
+    });
+
+    // Promote developer to project admin
+    const handlePromoteToAdmin = (developerId: number) => {
+        if (!project) return;
+        promoteToAdminMutation.mutate(developerId);
     };
 
     // Demote developer from project admin
-    const handleDemoteFromAdmin = async (developerId: number) => {
+    const handleDemoteFromAdmin = (developerId: number) => {
         if (!project) return;
-        try {
-            const res = await fetch(`${API_BASE_URL}/api/projects/${project.id}/developers/${developerId}/member`, {
-                method: 'PUT',
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            if (res.ok) {
-                toast.success('Developer demoted from project admin!');
-                fetchProject();
-            } else {
-                const error = await res.json();
-                toast.error(error.detail || 'Failed to demote developer');
-            }
-        } catch {
-            toast.error('Failed to demote developer');
-        }
+        demoteFromAdminMutation.mutate(developerId);
     };
 
     // Check if current user is a system admin or project admin
@@ -760,24 +645,24 @@ const ProjectDetail = () => {
         return isSystemAdmin || isProjectAdmin;
     };
 
-    // Save architecture changes
-    const handleSaveArchitecture = async (id: number, updates: { mermaid_code?: string; name?: string; description?: string }) => {
-        try {
-            const res = await fetch(`${API_BASE_URL}/api/prd/architectures/${id}`, {
+    // ── mutation: save architecture ─────────────────────────────────────────
+    const saveArchitectureMutation = useMutation({
+        mutationFn: ({ archId, updates }: { archId: number; updates: { mermaid_code?: string; name?: string; description?: string } }) =>
+            apiFetch<void>(`/api/prd/architectures/${archId}`, {
                 method: 'PUT',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                 body: JSON.stringify(updates),
-            });
-            if (res.ok) {
-                toast.success('Architecture updated!');
-                setEditingArchitecture(null);
-                fetchProject();
-            } else {
-                toast.error('Failed to update architecture');
-            }
-        } catch {
-            toast.error('Failed to update architecture');
-        }
+            }),
+        onSuccess: () => {
+            toast.success('Architecture updated!');
+            setEditingArchitecture(null);
+            queryClient.invalidateQueries({ queryKey: ['project', id] });
+        },
+        onError: () => toast.error('Failed to update architecture'),
+    });
+
+    // Save architecture changes
+    const handleSaveArchitecture = (archId: number, updates: { mermaid_code?: string; name?: string; description?: string }) => {
+        saveArchitectureMutation.mutate({ archId, updates });
     };
 
     if (isLoading) {
@@ -2320,7 +2205,7 @@ const ProjectDetail = () => {
                     ) : (
                     <div className="space-y-4">
                         {!isSubsectionRestricted('project_manager', 'pmview') && (
-                        <PMView projectId={id!} token={token!} userRestrictions={userRestrictions} sprints={sprints} />
+                        <PMView projectId={id!} token={localStorage.getItem('token')!} userRestrictions={userRestrictions} sprints={sprints} />
                         )}
                     </div>
                     )
