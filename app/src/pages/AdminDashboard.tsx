@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
     BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell,
     PieChart, Pie
@@ -35,8 +36,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { toast, Toaster } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
-
-import { API_BASE_URL } from '@/config/api';
+import { apiFetch } from '@/lib/api';
 
 interface Employee {
     id: number;
@@ -169,9 +169,52 @@ const AdminDashboard = () => {
         }
     }, [searchParams]);
 
-    const [stats, setStats] = useState<DashboardStats | null>(null);
-    const [employees, setEmployees] = useState<Employee[]>([]);
-    const [developerCapacities, setDeveloperCapacities] = useState<DeveloperCapacity[]>([]);
+    const queryClient = useQueryClient();
+
+    const statsQuery = useQuery<DashboardStats>({
+        queryKey: ['admin', 'stats'],
+        queryFn: () => apiFetch<DashboardStats>('/api/admin/stats'),
+    });
+    const stats = statsQuery.data ?? null;
+
+    const employeesQuery = useQuery<Employee[]>({
+        queryKey: ['admin', 'employees'],
+        queryFn: () => apiFetch<Employee[]>('/api/admin/employees'),
+    });
+    const employees = employeesQuery.data ?? [];
+
+    const capacityQuery = useQuery<DeveloperCapacity[]>({
+        queryKey: ['admin', 'developers-capacity'],
+        queryFn: () => apiFetch<DeveloperCapacity[]>('/api/admin/developers/capacity'),
+    });
+    const developerCapacities = capacityQuery.data ?? [];
+
+    const projectsQuery = useQuery<Project[]>({
+        queryKey: ['admin', 'projects'],
+        queryFn: () => apiFetch<Project[]>('/api/admin/projects'),
+    });
+    const projects = projectsQuery.data ?? [];
+
+    const usersQuery = useQuery<User[]>({
+        queryKey: ['admin', 'users'],
+        queryFn: () => apiFetch<User[]>('/api/auth/admin/users'),
+    });
+    const users = usersQuery.data ?? [];
+
+    const restrictionsQuery = useQuery<any[]>({
+        queryKey: ['admin', 'custom-restrictions'],
+        queryFn: () => apiFetch<any[]>('/api/auth/admin/custom-restrictions'),
+    });
+    const customRestrictions = restrictionsQuery.data ?? [];
+
+    const loading =
+        statsQuery.isLoading ||
+        employeesQuery.isLoading ||
+        capacityQuery.isLoading ||
+        projectsQuery.isLoading ||
+        usersQuery.isLoading ||
+        restrictionsQuery.isLoading;
+
     const [expandedCapacityDevId, setExpandedCapacityDevId] = useState<number | null>(null);
 
     // Employees tab filters + sort
@@ -297,10 +340,7 @@ const AdminDashboard = () => {
         });
     }, [employees, developerCapacities, employeeSearch, employeeStatusFilter, employeeSpecFilter, employeeSort]);
 
-    const [projects, setProjects] = useState<Project[]>([]);
-    const [users, setUsers] = useState<User[]>([]);
-    const [loading, setLoading] = useState(true);
-    const { token } = useAuth();
+    useAuth(); // keeps auth guard active; token read from localStorage by apiFetch
 
     const availableUserRoles = useMemo(() => {
         const set = new Set<string>();
@@ -338,7 +378,6 @@ const AdminDashboard = () => {
     }, [users, usersRoleFilter, usersSort]);
     
     // Custom restrictions state
-    const [customRestrictions, setCustomRestrictions] = useState<any[]>([]);
     const [showRestrictionModal, setShowRestrictionModal] = useState(false);
     const [editingRestriction, setEditingRestriction] = useState<any | null>(null);
     const [restrictionForm, setRestrictionForm] = useState({
@@ -350,8 +389,6 @@ const AdminDashboard = () => {
     // User restrictions management state
     const [showUserRestrictionsModal, setShowUserRestrictionsModal] = useState(false);
     const [selectedUserForRestrictions, setSelectedUserForRestrictions] = useState<User | null>(null);
-    const [userRestrictionsList, setUserRestrictionsList] = useState<number[]>([]);
-    const [userRestrictionsLoading, setUserRestrictionsLoading] = useState(false);
     
     // Role dropdown state
     const [openRoleDropdown, setOpenRoleDropdown] = useState<number | null>(null);
@@ -387,45 +424,8 @@ const AdminDashboard = () => {
     // Project members modal state
     const [showProjectMembersModal, setShowProjectMembersModal] = useState(false);
     const [selectedProjectForMembers, setSelectedProjectForMembers] = useState<Project | null>(null);
-    const [projectMembers, setProjectMembers] = useState<Array<{ id: number; name: string; email: string; role?: string; responsibilities?: string; is_admin?: boolean }>>([]);
-    const [projectMembersLoading, setProjectMembersLoading] = useState(false);
     const [addMemberForm, setAddMemberForm] = useState<{ developer_id: string; role: string }>({ developer_id: '', role: 'developer' });
-    const [addingMember, setAddingMember] = useState(false);
-    const [removingMemberId, setRemovingMemberId] = useState<number | null>(null);
 
-    useEffect(() => {
-        fetchData();
-    }, []);
-
-    const fetchData = async () => {
-        setLoading(true);
-        try {
-            const [statsRes, employeesRes, projectsRes, usersRes, capacityRes, restrictionsRes] = await Promise.all([
-                fetch(`${API_BASE_URL}/api/admin/stats`),
-                fetch(`${API_BASE_URL}/api/admin/employees`),
-                fetch(`${API_BASE_URL}/api/admin/projects`),
-                fetch(`${API_BASE_URL}/api/auth/admin/users`, {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                }),
-                fetch(`${API_BASE_URL}/api/admin/developers/capacity`),
-                fetch(`${API_BASE_URL}/api/auth/admin/custom-restrictions`, {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                }),
-            ]);
-
-            if (statsRes.ok) setStats(await statsRes.json());
-            if (employeesRes.ok) setEmployees(await employeesRes.json());
-            if (projectsRes.ok) setProjects(await projectsRes.json());
-            if (usersRes.ok) setUsers(await usersRes.json());
-            if (capacityRes.ok) setDeveloperCapacities(await capacityRes.json());
-            if (restrictionsRes.ok) setCustomRestrictions(await restrictionsRes.json());
-        } catch (error) {
-            console.error('Failed to fetch admin data:', error);
-            toast.error('Failed to load dashboard data');
-        } finally {
-            setLoading(false);
-        }
-    };
 
     const handleCreateEmployee = () => {
         setEditingEmployee(null);
@@ -444,54 +444,47 @@ const AdminDashboard = () => {
         setShowEmployeeModal(true);
     };
 
-    const handleSaveEmployee = async () => {
+    const saveEmployeeMutation = useMutation({
+        mutationFn: () => {
+            const url = editingEmployee
+                ? `/api/admin/employees/${editingEmployee.id}`
+                : `/api/admin/employees`;
+            const method = editingEmployee ? 'PUT' : 'POST';
+            return apiFetch<Employee>(url, { method, body: JSON.stringify(employeeForm) });
+        },
+        onSuccess: () => {
+            toast.success(editingEmployee ? 'Employee updated!' : 'Employee created!');
+            setShowEmployeeModal(false);
+            queryClient.invalidateQueries({ queryKey: ['admin', 'employees'] });
+            queryClient.invalidateQueries({ queryKey: ['admin', 'stats'] });
+            queryClient.invalidateQueries({ queryKey: ['admin', 'developers-capacity'] });
+        },
+        onError: (err: any) => toast.error(err?.message || 'Failed to save employee'),
+    });
+
+    const handleSaveEmployee = () => {
         if (!employeeForm.name.trim() || !employeeForm.email.trim()) {
             toast.error('Name and email are required');
             return;
         }
-
-        try {
-            const url = editingEmployee
-                ? `${API_BASE_URL}/api/admin/employees/${editingEmployee.id}`
-                : `${API_BASE_URL}/api/admin/employees`;
-            const method = editingEmployee ? 'PUT' : 'POST';
-
-            const response = await fetch(url, {
-                method,
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(employeeForm),
-            });
-
-            if (response.ok) {
-                toast.success(editingEmployee ? 'Employee updated!' : 'Employee created!');
-                setShowEmployeeModal(false);
-                fetchData();
-            } else {
-                const error = await response.json();
-                toast.error(error.detail || 'Failed to save employee');
-            }
-        } catch {
-            toast.error('Failed to save employee');
-        }
+        saveEmployeeMutation.mutate();
     };
 
-    const handleDeleteEmployee = async (id: number) => {
+    const deleteEmployeeMutation = useMutation({
+        mutationFn: (id: number) =>
+            apiFetch<void>(`/api/admin/employees/${id}`, { method: 'DELETE' }),
+        onSuccess: () => {
+            toast.success('Employee deleted');
+            queryClient.invalidateQueries({ queryKey: ['admin', 'employees'] });
+            queryClient.invalidateQueries({ queryKey: ['admin', 'stats'] });
+            queryClient.invalidateQueries({ queryKey: ['admin', 'developers-capacity'] });
+        },
+        onError: () => toast.error('Failed to delete employee'),
+    });
+
+    const handleDeleteEmployee = (id: number) => {
         if (!confirm('Are you sure you want to delete this employee?')) return;
-
-        try {
-            const response = await fetch(`${API_BASE_URL}/api/admin/employees/${id}`, {
-                method: 'DELETE',
-            });
-
-            if (response.ok) {
-                toast.success('Employee deleted');
-                fetchData();
-            } else {
-                toast.error('Failed to delete employee');
-            }
-        } catch {
-            toast.error('Failed to delete employee');
-        }
+        deleteEmployeeMutation.mutate(id);
     };
 
     // GitHub settings functions
@@ -506,143 +499,105 @@ const AdminDashboard = () => {
         setShowGitHubModal(true);
     };
 
-    const handleSaveGitHubSettings = async () => {
-        if (!editingProject) return;
-
-        try {
-            const response = await fetch(`${API_BASE_URL}/api/admin/projects/${editingProject.id}/github`, {
+    const saveGitHubMutation = useMutation({
+        mutationFn: () => {
+            if (!editingProject) throw new Error('No project selected');
+            return apiFetch<void>(`/api/admin/projects/${editingProject.id}/github`, {
                 method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(gitHubForm),
             });
+        },
+        onSuccess: () => {
+            toast.success('GitHub settings updated!');
+            setShowGitHubModal(false);
+            queryClient.invalidateQueries({ queryKey: ['admin', 'projects'] });
+        },
+        onError: () => toast.error('Failed to update GitHub settings'),
+    });
 
-            if (response.ok) {
-                toast.success('GitHub settings updated!');
-                setShowGitHubModal(false);
-                fetchData();
-            } else {
-                toast.error('Failed to update GitHub settings');
-            }
-        } catch {
-            toast.error('Failed to update GitHub settings');
-        }
-    };
+    const handleSaveGitHubSettings = () => saveGitHubMutation.mutate();
 
-    const handleSendGitHubInvites = async (project: Project, e: React.MouseEvent) => {
+    const sendGitHubInvitesMutation = useMutation({
+        mutationFn: (project: Project) =>
+            apiFetch<{ successful_invitations: number }>(`/api/projects/${project.id}/github-invite?role=push`, {
+                method: 'POST',
+            }),
+        onSuccess: (data, project) => {
+            toast.success(`Sent ${data.successful_invitations} GitHub invitation(s) for ${project.name}!`);
+            setInvitingProjectId(null);
+        },
+        onError: (err: any) => {
+            toast.error(err?.message || 'Failed to send invitations');
+            setInvitingProjectId(null);
+        },
+    });
+
+    const handleSendGitHubInvites = (project: Project, e: React.MouseEvent) => {
         e.stopPropagation();
         if (!project.github_repo_url) {
             toast.error('No GitHub repository configured');
             return;
         }
         setInvitingProjectId(project.id);
-        try {
-            const res = await fetch(`${API_BASE_URL}/api/projects/${project.id}/github-invite?role=push`, {
-                method: 'POST',
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            const data = await res.json();
-            if (res.ok) {
-                toast.success(`Sent ${data.successful_invitations} GitHub invitation(s) for ${project.name}!`);
-            } else {
-                toast.error(data.detail || 'Failed to send invitations');
-            }
-        } catch {
-            toast.error('Failed to send invitations');
-        } finally {
-            setInvitingProjectId(null);
-        }
+        sendGitHubInvitesMutation.mutate(project);
     };
 
     // Project members management
-    const handleOpenProjectMembers = async (project: Project, e: React.MouseEvent) => {
+    const projectMembersQuery = useQuery<{ developers: Array<{ id: number; name: string; email: string; role?: string; responsibilities?: string; is_admin?: boolean }> }>({
+        queryKey: ['project', selectedProjectForMembers?.id],
+        queryFn: () => apiFetch(`/api/projects/${selectedProjectForMembers!.id}`),
+        enabled: !!selectedProjectForMembers,
+    });
+    const projectMembers = projectMembersQuery.data?.developers ?? [];
+    const projectMembersLoading = projectMembersQuery.isLoading;
+
+    const handleOpenProjectMembers = (project: Project, e: React.MouseEvent) => {
         e.stopPropagation();
         setSelectedProjectForMembers(project);
         setShowProjectMembersModal(true);
         setAddMemberForm({ developer_id: '', role: 'developer' });
-        setProjectMembersLoading(true);
-        try {
-            const res = await fetch(`${API_BASE_URL}/api/projects/${project.id}`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            if (res.ok) {
-                const data = await res.json();
-                setProjectMembers(data.developers || []);
-            } else {
-                toast.error('Failed to load project members');
-                setProjectMembers([]);
-            }
-        } catch {
-            toast.error('Failed to load project members');
-            setProjectMembers([]);
-        } finally {
-            setProjectMembersLoading(false);
-        }
     };
 
-    const handleAddProjectMember = async () => {
+    const addMemberMutation = useMutation({
+        mutationFn: ({ projectId, devId, role }: { projectId: number; devId: number; role: string }) =>
+            apiFetch<void>(`/api/projects/${projectId}/developers`, {
+                method: 'POST',
+                body: JSON.stringify({ developer_id: devId, role }),
+            }),
+        onSuccess: () => {
+            toast.success('Member added');
+            setAddMemberForm({ developer_id: '', role: 'developer' });
+            queryClient.invalidateQueries({ queryKey: ['project', selectedProjectForMembers?.id] });
+            queryClient.invalidateQueries({ queryKey: ['admin', 'projects'] });
+        },
+        onError: (err: any) => toast.error(err?.message || 'Failed to add member'),
+    });
+
+    const handleAddProjectMember = () => {
         if (!selectedProjectForMembers) return;
         const devId = parseInt(addMemberForm.developer_id, 10);
         if (!devId) {
             toast.error('Select an employee to add');
             return;
         }
-        setAddingMember(true);
-        try {
-            const res = await fetch(`${API_BASE_URL}/api/projects/${selectedProjectForMembers.id}/developers`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`,
-                },
-                body: JSON.stringify({
-                    developer_id: devId,
-                    role: addMemberForm.role || 'developer',
-                }),
-            });
-            if (res.ok) {
-                toast.success('Member added');
-                const refresh = await fetch(`${API_BASE_URL}/api/projects/${selectedProjectForMembers.id}`, {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
-                if (refresh.ok) {
-                    const data = await refresh.json();
-                    setProjectMembers(data.developers || []);
-                }
-                setAddMemberForm({ developer_id: '', role: 'developer' });
-                setProjects(prev => prev.map(p => p.id === selectedProjectForMembers.id ? { ...p, developer_count: p.developer_count + 1 } : p));
-            } else {
-                const err = await res.json().catch(() => ({}));
-                toast.error(err.detail || 'Failed to add member');
-            }
-        } catch {
-            toast.error('Failed to add member');
-        } finally {
-            setAddingMember(false);
-        }
+        addMemberMutation.mutate({ projectId: selectedProjectForMembers.id, devId, role: addMemberForm.role || 'developer' });
     };
 
-    const handleRemoveProjectMember = async (developerId: number) => {
+    const removeMemberMutation = useMutation({
+        mutationFn: ({ projectId, developerId }: { projectId: number; developerId: number }) =>
+            apiFetch<void>(`/api/projects/${projectId}/developers/${developerId}`, { method: 'DELETE' }),
+        onSuccess: () => {
+            toast.success('Member removed');
+            queryClient.invalidateQueries({ queryKey: ['project', selectedProjectForMembers?.id] });
+            queryClient.invalidateQueries({ queryKey: ['admin', 'projects'] });
+        },
+        onError: (err: any) => toast.error(err?.message || 'Failed to remove member'),
+    });
+
+    const handleRemoveProjectMember = (developerId: number) => {
         if (!selectedProjectForMembers) return;
         if (!confirm('Remove this member from the project? Their assigned work items will be unassigned.')) return;
-        setRemovingMemberId(developerId);
-        try {
-            const res = await fetch(`${API_BASE_URL}/api/projects/${selectedProjectForMembers.id}/developers/${developerId}`, {
-                method: 'DELETE',
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            if (res.ok) {
-                toast.success('Member removed');
-                setProjectMembers(prev => prev.filter(m => m.id !== developerId));
-                setProjects(prev => prev.map(p => p.id === selectedProjectForMembers.id ? { ...p, developer_count: Math.max(0, p.developer_count - 1) } : p));
-            } else {
-                const err = await res.json().catch(() => ({}));
-                toast.error(err.detail || 'Failed to remove member');
-            }
-        } catch {
-            toast.error('Failed to remove member');
-        } finally {
-            setRemovingMemberId(null);
-        }
+        removeMemberMutation.mutate({ projectId: selectedProjectForMembers.id, developerId });
     };
 
     // User management functions
@@ -659,71 +614,52 @@ const AdminDashboard = () => {
         });
     };
 
-    const handleSaveUser = async () => {
+    const createUserMutation = useMutation({
+        mutationFn: () =>
+            apiFetch<{ temporary_password: string }>('/api/auth/admin/create-user', {
+                method: 'POST',
+                body: JSON.stringify({ ...userForm, role: userForm.roles.join(',') }),
+            }),
+        onSuccess: (data) => {
+            toast.success('User created successfully!');
+            setGeneratedPassword(data.temporary_password);
+            queryClient.invalidateQueries({ queryKey: ['admin', 'users'] });
+            queryClient.invalidateQueries({ queryKey: ['admin', 'stats'] });
+        },
+        onError: (err: any) => toast.error(err?.message || 'Failed to create user'),
+    });
+
+    const handleSaveUser = () => {
         if (!userForm.email.trim() || !userForm.name.trim()) {
             toast.error('Email and name are required');
             return;
         }
-
-        try {
-            const response = await fetch(`${API_BASE_URL}/api/auth/admin/create-user`, {
-                method: 'POST',
-                headers: { 
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
-                body: JSON.stringify({
-                    ...userForm,
-                    role: userForm.roles.join(','),
-                }),
-            });
-
-            if (response.ok) {
-                const data = await response.json();
-                toast.success('User created successfully!');
-                setGeneratedPassword(data.temporary_password);
-                fetchData();
-            } else {
-                const error = await response.json();
-                toast.error(error.detail || 'Failed to create user');
-            }
-        } catch {
-            toast.error('Failed to create user');
-        }
+        createUserMutation.mutate();
     };
 
-    const handleToggleUserRole = async (user: User, roleToToggle: string) => {
+    const toggleUserRoleMutation = useMutation({
+        mutationFn: ({ userId, newRole }: { userId: number; newRole: string }) =>
+            apiFetch<void>(`/api/auth/admin/users/${userId}/role`, {
+                method: 'PUT',
+                body: JSON.stringify({ role: newRole }),
+            }),
+        onSuccess: () => {
+            toast.success('User roles updated');
+            queryClient.invalidateQueries({ queryKey: ['admin', 'users'] });
+        },
+        onError: () => toast.error('Failed to update role'),
+    });
+
+    const handleToggleUserRole = (user: User, roleToToggle: string) => {
         const currentRoles = user.role.split(',').map(r => r.trim());
         let newRoles: string[];
-        
         if (currentRoles.includes(roleToToggle)) {
-            // Remove role, but ensure at least one role remains
             newRoles = currentRoles.filter(r => r !== roleToToggle);
             if (newRoles.length === 0) newRoles = ['developer'];
         } else {
             newRoles = [...currentRoles, roleToToggle];
         }
-        
-        const newRole = newRoles.join(',');
-        try {
-            const response = await fetch(`${API_BASE_URL}/api/auth/admin/users/${user.id}/role`, {
-                method: 'PUT',
-                headers: { 
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
-                body: JSON.stringify({ role: newRole }),
-            });
-
-            if (response.ok) {
-                toast.success('User roles updated');
-                fetchData();
-            } else {
-                toast.error('Failed to update role');
-            }
-        } catch {
-            toast.error('Failed to update role');
-        }
+        toggleUserRoleMutation.mutate({ userId: user.id, newRole: newRoles.join(',') });
     };
 
     // Custom Restrictions Handlers
@@ -743,116 +679,77 @@ const AdminDashboard = () => {
         setShowRestrictionModal(true);
     };
 
-    const handleSaveRestriction = async () => {
+    const saveRestrictionMutation = useMutation({
+        mutationFn: () => {
+            const url = editingRestriction
+                ? `/api/auth/admin/custom-restrictions/${editingRestriction.id}`
+                : `/api/auth/admin/custom-restrictions`;
+            const method = editingRestriction ? 'PUT' : 'POST';
+            return apiFetch<any>(url, { method, body: JSON.stringify(restrictionForm) });
+        },
+        onSuccess: () => {
+            toast.success(editingRestriction ? 'Restriction updated!' : 'Restriction created!');
+            setShowRestrictionModal(false);
+            queryClient.invalidateQueries({ queryKey: ['admin', 'custom-restrictions'] });
+        },
+        onError: (err: any) => toast.error(err?.message || 'Failed to save restriction'),
+    });
+
+    const handleSaveRestriction = () => {
         if (!restrictionForm.name.trim() || !restrictionForm.tab_name || !restrictionForm.subsection) {
             toast.error('All fields are required');
             return;
         }
-
-        try {
-            const url = editingRestriction
-                ? `${API_BASE_URL}/api/auth/admin/custom-restrictions/${editingRestriction.id}`
-                : `${API_BASE_URL}/api/auth/admin/custom-restrictions`;
-            const method = editingRestriction ? 'PUT' : 'POST';
-
-            const response = await fetch(url, {
-                method,
-                headers: { 
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
-                body: JSON.stringify(restrictionForm),
-            });
-
-            if (response.ok) {
-                toast.success(editingRestriction ? 'Restriction updated!' : 'Restriction created!');
-                setShowRestrictionModal(false);
-                fetchData();
-            } else {
-                const error = await response.json();
-                toast.error(error.detail || 'Failed to save restriction');
-            }
-        } catch {
-            toast.error('Failed to save restriction');
-        }
+        saveRestrictionMutation.mutate();
     };
 
-    const handleDeleteRestriction = async (restrictionId: number) => {
+    const deleteRestrictionMutation = useMutation({
+        mutationFn: (restrictionId: number) =>
+            apiFetch<void>(`/api/auth/admin/custom-restrictions/${restrictionId}`, { method: 'DELETE' }),
+        onSuccess: () => {
+            toast.success('Restriction deleted!');
+            queryClient.invalidateQueries({ queryKey: ['admin', 'custom-restrictions'] });
+        },
+        onError: () => toast.error('Failed to delete restriction'),
+    });
+
+    const handleDeleteRestriction = (restrictionId: number) => {
         if (!confirm('Are you sure you want to delete this custom restriction?')) return;
-
-        try {
-            const response = await fetch(`${API_BASE_URL}/api/auth/admin/custom-restrictions/${restrictionId}`, {
-                method: 'DELETE',
-                headers: { 
-                    'Authorization': `Bearer ${token}`
-                },
-            });
-
-            if (response.ok) {
-                toast.success('Restriction deleted!');
-                fetchData();
-            } else {
-                const error = await response.json();
-                toast.error(error.detail || 'Failed to delete restriction');
-            }
-        } catch {
-            toast.error('Failed to delete restriction');
-        }
+        deleteRestrictionMutation.mutate(restrictionId);
     };
 
     // User Restrictions Management Handlers
-    const handleOpenUserRestrictionsModal = async (user: User) => {
+    const userRestrictionsQuery = useQuery<any[]>({
+        queryKey: ['admin', 'user-restrictions', selectedUserForRestrictions?.id],
+        queryFn: () => apiFetch<any[]>(`/api/auth/admin/users/${selectedUserForRestrictions!.id}/custom-restrictions`),
+        enabled: !!selectedUserForRestrictions,
+    });
+    const userRestrictionsList: number[] = (userRestrictionsQuery.data ?? []).map((r: any) => r.id);
+    const userRestrictionsLoading = userRestrictionsQuery.isLoading;
+
+    const handleOpenUserRestrictionsModal = (user: User) => {
         setSelectedUserForRestrictions(user);
-        setUserRestrictionsLoading(true);
-        
-        try {
-            const response = await fetch(`${API_BASE_URL}/api/auth/admin/users/${user.id}/custom-restrictions`, {
-                headers: { 
-                    'Authorization': `Bearer ${token}`
-                },
-            });
-            
-            if (response.ok) {
-                const userRestrictions = await response.json();
-                setUserRestrictionsList(userRestrictions.map((r: any) => r.id));
-            }
-        } catch {
-            toast.error('Failed to load user restrictions');
-        } finally {
-            setUserRestrictionsLoading(false);
-            setShowUserRestrictionsModal(true);
-        }
+        setShowUserRestrictionsModal(true);
     };
 
-    const handleToggleUserRestriction = async (restrictionId: number, isChecked: boolean) => {
-        if (!selectedUserForRestrictions) return;
-
-        try {
+    const toggleUserRestrictionMutation = useMutation({
+        mutationFn: ({ restrictionId, isChecked }: { restrictionId: number; isChecked: boolean }) => {
+            if (!selectedUserForRestrictions) throw new Error('No user selected');
             const method = isChecked ? 'POST' : 'DELETE';
-            const response = await fetch(
-                `${API_BASE_URL}/api/auth/admin/users/${selectedUserForRestrictions.id}/custom-restrictions/${restrictionId}`,
-                {
-                    method,
-                    headers: { 
-                        'Authorization': `Bearer ${token}`
-                    },
-                }
+            return apiFetch<void>(
+                `/api/auth/admin/users/${selectedUserForRestrictions.id}/custom-restrictions/${restrictionId}`,
+                { method },
             );
+        },
+        onSuccess: (_data, { isChecked }) => {
+            toast.success(isChecked ? 'Restriction assigned!' : 'Restriction removed!');
+            queryClient.invalidateQueries({ queryKey: ['admin', 'user-restrictions', selectedUserForRestrictions?.id] });
+        },
+        onError: (err: any) => toast.error(err?.message || 'Failed to update restriction'),
+    });
 
-            if (response.ok) {
-                if (isChecked) {
-                    setUserRestrictionsList([...userRestrictionsList, restrictionId]);
-                } else {
-                    setUserRestrictionsList(userRestrictionsList.filter(id => id !== restrictionId));
-                }
-                toast.success(isChecked ? 'Restriction assigned!' : 'Restriction removed!');
-            } else {
-                const error = await response.json();
-                toast.error(error.detail || 'Failed to update restriction');
-            }
-        } catch {
-            toast.error('Failed to update restriction');
-        }
+    const handleToggleUserRestriction = (restrictionId: number, isChecked: boolean) => {
+        toggleUserRestrictionMutation.mutate({ restrictionId, isChecked });
     };
 
     return (
@@ -2345,11 +2242,11 @@ const AdminDashboard = () => {
                                                     variant="ghost"
                                                     size="sm"
                                                     onClick={() => handleRemoveProjectMember(m.id)}
-                                                    disabled={removingMemberId === m.id}
+                                                    disabled={removeMemberMutation.isPending}
                                                     className="text-red-400 hover:text-red-300 h-8 w-8 p-0 flex-shrink-0"
                                                     title="Remove from project"
                                                 >
-                                                    {removingMemberId === m.id ? (
+                                                    {removeMemberMutation.isPending ? (
                                                         <div className="w-3.5 h-3.5 border border-red-400/30 border-t-red-400 rounded-full animate-spin" />
                                                     ) : (
                                                         <Trash2 className="w-4 h-4" />
@@ -2408,10 +2305,10 @@ const AdminDashboard = () => {
                                                     </div>
                                                     <Button
                                                         onClick={handleAddProjectMember}
-                                                        disabled={addingMember || !addMemberForm.developer_id}
+                                                        disabled={addMemberMutation.isPending || !addMemberForm.developer_id}
                                                         className="w-full h-9 bg-gradient-to-r from-[#E0B954] to-[#B8872A] text-white rounded-xl font-medium disabled:opacity-50"
                                                     >
-                                                        {addingMember ? (
+                                                        {addMemberMutation.isPending ? (
                                                             <>
                                                                 <div className="w-3.5 h-3.5 border border-white/30 border-t-white rounded-full animate-spin mr-2" />
                                                                 Adding...
