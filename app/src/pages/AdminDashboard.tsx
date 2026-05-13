@@ -160,13 +160,17 @@ const AdminDashboard = () => {
         }
     };
 
-    // Sync state with URL on browser back/forward navigation
+    // Sync state with URL on browser back/forward navigation. Pre-existing
+    // pattern; deliberately reads activeTab without listing it as a dep so
+    // the effect only runs when the URL changes, not when state changes back.
     useEffect(() => {
         const urlTab = searchParams.get('tab');
         const resolved: AdminTab = (urlTab && (VALID_ADMIN_TABS as string[]).includes(urlTab)) ? (urlTab as AdminTab) : 'dashboard';
         if (resolved !== activeTab) {
+            // eslint-disable-next-line react-hooks/set-state-in-effect
             setActiveTabState(resolved);
         }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [searchParams]);
 
     const queryClient = useQueryClient();
@@ -181,13 +185,16 @@ const AdminDashboard = () => {
         queryKey: ['admin', 'employees'],
         queryFn: () => apiFetch<Employee[]>('/api/admin/employees'),
     });
-    const employees = employeesQuery.data ?? [];
+    // useMemo keeps the array reference stable across renders so the
+    // useMemo hooks downstream (filtered/sorted views) don't bust their
+    // caches every render.
+    const employees = useMemo(() => employeesQuery.data ?? [], [employeesQuery.data]);
 
     const capacityQuery = useQuery<DeveloperCapacity[]>({
         queryKey: ['admin', 'developers-capacity'],
         queryFn: () => apiFetch<DeveloperCapacity[]>('/api/admin/developers/capacity'),
     });
-    const developerCapacities = capacityQuery.data ?? [];
+    const developerCapacities = useMemo(() => capacityQuery.data ?? [], [capacityQuery.data]);
 
     const projectsQuery = useQuery<Project[]>({
         queryKey: ['admin', 'projects'],
@@ -199,7 +206,7 @@ const AdminDashboard = () => {
         queryKey: ['admin', 'users'],
         queryFn: () => apiFetch<User[]>('/api/auth/admin/users'),
     });
-    const users = usersQuery.data ?? [];
+    const users = useMemo(() => usersQuery.data ?? [], [usersQuery.data]);
 
     const restrictionsQuery = useQuery<any[]>({
         queryKey: ['admin', 'custom-restrictions'],

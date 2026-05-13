@@ -275,9 +275,12 @@ const ProjectDetail = () => {
 
     const [sprintsExpanded, setSprintsExpanded] = useState(false);
 
-    // Pulse view data — admin-edited variables, hydrated from localStorage with dummy defaults
+    // Pulse view data — admin-edited variables, hydrated from localStorage with dummy defaults.
+    // Effect form is intentional: id can change via in-place navigation, so we
+    // re-hydrate from storage when it does. Same pattern as on main.
     const [pulseData, setPulseData] = useState<PulseData | null>(null);
     useEffect(() => {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         if (id) setPulseData(loadPulseData(id));
     }, [id]);
 
@@ -313,13 +316,6 @@ const ProjectDetail = () => {
             toast.error('You do not have access to this project');
         }
     }, [accessDenied]);
-
-    // Keep editForm in sync when project first loads (not while user is editing)
-    useEffect(() => {
-        if (project && !isEditing) {
-            setEditForm(project);
-        }
-    }, [project]);
 
     // ── react-query: developers ─────────────────────────────────────────────
     const developersQuery = useQuery<Developer[]>({
