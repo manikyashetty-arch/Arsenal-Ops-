@@ -10,11 +10,10 @@ Builds a SQLite fixture database, runs the batch helper, and asserts:
    (stats, developers, architectures), independent of project count —
    this is the win this PR exists for.
 """
+
 import os
 import sys
-from contextvars import ContextVar
 from datetime import datetime
-from unittest.mock import patch
 
 import pytest
 from sqlalchemy import create_engine, event
@@ -26,16 +25,29 @@ from database import Base  # noqa: E402
 
 # Importing every model side-effects table registration on Base.metadata
 from models import (  # noqa: E402, F401
-    project, task, persona, user_story, market_insight, developer,
-    work_item, sprint, architecture, user, time_entry, task_dependency,
-    project_goal, project_milestone, activity_log, project_file,
-    custom_restriction, personal_task,
+    activity_log,
+    architecture,
+    custom_restriction,
+    developer,
+    market_insight,
+    persona,
+    personal_task,
+    project,
+    project_file,
+    project_goal,
+    project_milestone,
+    sprint,
+    task,
+    task_dependency,
+    time_entry,
+    user,
+    user_story,
+    work_item,
 )
-from models.project import Project  # noqa: E402
-from models.developer import Developer, project_developers  # noqa: E402
-from models.work_item import WorkItem  # noqa: E402
 from models.architecture import Architecture  # noqa: E402
-
+from models.developer import Developer, project_developers  # noqa: E402
+from models.project import Project  # noqa: E402
+from models.work_item import WorkItem  # noqa: E402
 from routers.projects import (  # noqa: E402
     format_project,
     format_projects_batch,
@@ -64,14 +76,33 @@ def seed(db):
     """Seed three projects with varied work-item, developer, and architecture data."""
     now = datetime(2026, 1, 1, 12, 0, 0)
 
-    p1 = Project(id=1, name="Alpha", description="d1", status="active",
-                 github_repo_url="https://github.com/o/repo",
-                 github_repo_urls=["https://github.com/o/repo"],
-                 created_at=now)
-    p2 = Project(id=2, name="Beta", description="d2", status="planning",
-                 github_repo_url=None, github_repo_urls=[], created_at=now)
-    p3 = Project(id=3, name="Gamma", description="d3", status="active",
-                 github_repo_url=None, github_repo_urls=[], created_at=now)
+    p1 = Project(
+        id=1,
+        name="Alpha",
+        description="d1",
+        status="active",
+        github_repo_url="https://github.com/o/repo",
+        github_repo_urls=["https://github.com/o/repo"],
+        created_at=now,
+    )
+    p2 = Project(
+        id=2,
+        name="Beta",
+        description="d2",
+        status="planning",
+        github_repo_url=None,
+        github_repo_urls=[],
+        created_at=now,
+    )
+    p3 = Project(
+        id=3,
+        name="Gamma",
+        description="d3",
+        status="active",
+        github_repo_url=None,
+        github_repo_urls=[],
+        created_at=now,
+    )
     db.add_all([p1, p2, p3])
     db.commit()
 
@@ -80,38 +111,98 @@ def seed(db):
     db.add_all([d1, d2])
     db.commit()
 
-    db.execute(project_developers.insert().values([
-        {"project_id": 1, "developer_id": 1, "role": "Lead",
-         "responsibilities": "x", "is_admin": True},
-        {"project_id": 1, "developer_id": 2, "role": "Dev",
-         "responsibilities": None, "is_admin": False},
-        {"project_id": 2, "developer_id": 1, "role": "Owner",
-         "responsibilities": None, "is_admin": True},
-    ]))
+    db.execute(
+        project_developers.insert().values(
+            [
+                {
+                    "project_id": 1,
+                    "developer_id": 1,
+                    "role": "Lead",
+                    "responsibilities": "x",
+                    "is_admin": True,
+                },
+                {
+                    "project_id": 1,
+                    "developer_id": 2,
+                    "role": "Dev",
+                    "responsibilities": None,
+                    "is_admin": False,
+                },
+                {
+                    "project_id": 2,
+                    "developer_id": 1,
+                    "role": "Owner",
+                    "responsibilities": None,
+                    "is_admin": True,
+                },
+            ]
+        )
+    )
     db.commit()
 
     # p1: 3 todo, 1 in_progress, 2 done. Story points: 1+2+3+4+5+6 = 21.
     # p2: 1 done. Story points 5.
     # p3: no items.
-    db.add_all([
-        WorkItem(project_id=1, type="story", title="t1", status="todo", story_points=1, key="A-1"),
-        WorkItem(project_id=1, type="story", title="t2", status="todo", story_points=2, key="A-2"),
-        WorkItem(project_id=1, type="story", title="t3", status="todo", story_points=3, key="A-3"),
-        WorkItem(project_id=1, type="story", title="t4", status="in_progress", story_points=4, key="A-4"),
-        WorkItem(project_id=1, type="story", title="t5", status="done", story_points=5, key="A-5"),
-        WorkItem(project_id=1, type="story", title="t6", status="done", story_points=6, key="A-6"),
-        WorkItem(project_id=2, type="story", title="b1", status="done", story_points=5, key="B-1"),
-    ])
+    db.add_all(
+        [
+            WorkItem(
+                project_id=1, type="story", title="t1", status="todo", story_points=1, key="A-1"
+            ),
+            WorkItem(
+                project_id=1, type="story", title="t2", status="todo", story_points=2, key="A-2"
+            ),
+            WorkItem(
+                project_id=1, type="story", title="t3", status="todo", story_points=3, key="A-3"
+            ),
+            WorkItem(
+                project_id=1,
+                type="story",
+                title="t4",
+                status="in_progress",
+                story_points=4,
+                key="A-4",
+            ),
+            WorkItem(
+                project_id=1, type="story", title="t5", status="done", story_points=5, key="A-5"
+            ),
+            WorkItem(
+                project_id=1, type="story", title="t6", status="done", story_points=6, key="A-6"
+            ),
+            WorkItem(
+                project_id=2, type="story", title="b1", status="done", story_points=5, key="B-1"
+            ),
+        ]
+    )
     db.commit()
 
-    db.add_all([
-        Architecture(id=10, project_id=1, name="A1", mermaid_code="g1",
-                     is_selected=True, created_at=datetime(2026, 1, 5)),
-        Architecture(id=11, project_id=1, name="A2", mermaid_code="g2",
-                     is_selected=False, created_at=datetime(2026, 1, 6)),
-        Architecture(id=12, project_id=2, name="B1", mermaid_code="g3",
-                     is_selected=False, created_at=datetime(2026, 1, 7)),
-    ])
+    db.add_all(
+        [
+            Architecture(
+                id=10,
+                project_id=1,
+                name="A1",
+                mermaid_code="g1",
+                is_selected=True,
+                created_at=datetime(2026, 1, 5),
+            ),
+            Architecture(
+                id=11,
+                project_id=1,
+                name="A2",
+                mermaid_code="g2",
+                is_selected=False,
+                created_at=datetime(2026, 1, 6),
+            ),
+            Architecture(
+                id=12,
+                project_id=2,
+                name="B1",
+                mermaid_code="g3",
+                is_selected=False,
+                created_at=datetime(2026, 1, 7),
+            ),
+        ]
+    )
     db.commit()
 
     return [p1, p2, p3]
@@ -144,8 +235,11 @@ class TestStatsBatch:
         }
 
     def test_null_status_buckets_as_todo(self, db, seed):
-        db.add(WorkItem(project_id=3, type="story", title="orphan", status=None,
-                        story_points=2, key="G-1"))
+        db.add(
+            WorkItem(
+                project_id=3, type="story", title="orphan", status=None, story_points=2, key="G-1"
+            )
+        )
         db.commit()
 
         stats = get_work_item_stats_batch([3], db)
@@ -193,13 +287,16 @@ class TestFormatProjectsBatch:
         assert r3["architectures"] == []
         assert r3["selected_architecture"] is None
         assert r3["work_item_stats"] == {
-            "total": 0, "by_status": {}, "total_points": 0,
-            "completed": 0, "completion_pct": 0,
+            "total": 0,
+            "by_status": {},
+            "total_points": 0,
+            "completed": 0,
+            "completion_pct": 0,
         }
 
     def test_single_wrapper_matches_batch(self, db, seed):
         """format_project(p, db) should equal format_projects_batch([p], db)[0]."""
-        for project in seed:
+        for project in seed:  # noqa: F402 — shadows `models.project` module import
             wrapped = format_project(project, db)
             batched = format_projects_batch([project], db)[0]
             assert wrapped == batched
@@ -235,10 +332,17 @@ class TestQueryCount:
         """Adding more projects must not multiply query count."""
         # Add 5 more empty projects so we exercise larger N.
         from datetime import datetime as _dt
+
         new_projects = [
-            Project(id=i, name=f"P{i}", description=f"d{i}", status="active",
-                    github_repo_url=None, github_repo_urls=[],
-                    created_at=_dt(2026, 1, 1))
+            Project(
+                id=i,
+                name=f"P{i}",
+                description=f"d{i}",
+                status="active",
+                github_repo_url=None,
+                github_repo_urls=[],
+                created_at=_dt(2026, 1, 1),
+            )
             for i in range(100, 105)
         ]
         db.add_all(new_projects)

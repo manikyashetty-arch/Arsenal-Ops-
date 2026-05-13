@@ -1,34 +1,38 @@
 """ProjectMilestone model - Project milestones"""
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Index
-from sqlalchemy.orm import relationship
-from datetime import datetime
 
 import sys
-sys.path.append('..')
+from datetime import datetime
+
+from sqlalchemy import Column, DateTime, ForeignKey, Index, Integer, String
+from sqlalchemy.orm import relationship
+
+sys.path.append("..")
 from database import Base
 
 
 class ProjectMilestone(Base):
     __tablename__ = "project_milestones"
-    
+
     id = Column(Integer, primary_key=True, index=True)
-    project_id = Column(Integer, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True)
-    
+    project_id = Column(
+        Integer, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+
     title = Column(String(255), nullable=False)
     description = Column(String(500))
-    
+
     due_date = Column(DateTime)
     completed_at = Column(DateTime)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    
+
     # Relationships
     project = relationship("Project", back_populates="project_milestones")
-    
+
     __table_args__ = (
-        Index('idx_project_milestone_project', 'project_id'),
-        Index('idx_project_milestone_due_date', 'due_date'),
+        Index("idx_project_milestone_project", "project_id"),
+        Index("idx_project_milestone_due_date", "due_date"),
     )
-    
+
     def to_dict(self):
         return {
             "id": self.id,

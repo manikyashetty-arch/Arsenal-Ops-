@@ -1,10 +1,10 @@
 """Tests for the PERF_LOG request timing + query count middleware."""
+
 import os
 import re
 import sys
 from unittest.mock import patch
 
-import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
@@ -37,8 +37,7 @@ class TestPerfLogDisabled:
         assert response.status_code == 200
         captured = capsys.readouterr()
         assert "/ping" not in captured.out, (
-            f"middleware should be silent when PERF_LOG_ENABLED is False; "
-            f"got: {captured.out!r}"
+            f"middleware should be silent when PERF_LOG_ENABLED is False; got: {captured.out!r}"
         )
 
 
@@ -98,8 +97,9 @@ class TestPerfLogEnabled:
 class TestRegistrationGuard:
     def test_register_is_noop_when_disabled(self):
         """When PERF_LOG_ENABLED is False, register_query_counter attaches nothing."""
-        from middleware.perf import register_query_counter
         from sqlalchemy import event
+
+        from middleware.perf import register_query_counter
 
         with patch("middleware.perf.PERF_LOG_ENABLED", False):
             test_engine = create_engine("sqlite:///:memory:")
@@ -108,7 +108,7 @@ class TestRegistrationGuard:
             # The engine should have no `before_cursor_execute` listeners attached
             # by us. (SQLAlchemy may have its own internal ones; we only assert
             # ours is absent.)
-            listeners = event.registry._key_to_collection
+            _ = event.registry._key_to_collection
             # Smoke check: a query should not raise (counter never touched).
             with test_engine.connect() as conn:
                 conn.execute(text("SELECT 1"))

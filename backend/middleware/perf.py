@@ -22,7 +22,6 @@ Implementation notes:
 import os
 import time
 from contextvars import ContextVar
-from typing import List
 
 from sqlalchemy import event
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -30,7 +29,7 @@ from starlette.requests import Request
 
 PERF_LOG_ENABLED = os.getenv("PERF_LOG") == "1"
 
-_query_counter: ContextVar[List[int]] = ContextVar("query_counter")
+_query_counter: ContextVar[list[int]] = ContextVar("query_counter")
 
 
 class PerfMiddleware(BaseHTTPMiddleware):
@@ -48,8 +47,7 @@ class PerfMiddleware(BaseHTTPMiddleware):
         finally:
             elapsed_ms = (time.perf_counter() - start) * 1000
             print(
-                f"[{request.method} {request.url.path}] "
-                f"{elapsed_ms:.0f}ms (Q={counter[0]})",
+                f"[{request.method} {request.url.path}] {elapsed_ms:.0f}ms (Q={counter[0]})",
                 flush=True,
             )
             _query_counter.reset(token)

@@ -1,12 +1,13 @@
 """Admin router - Employee and developer management"""
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session, joinedload
-from pydantic import BaseModel
-from typing import List, Optional
-from datetime import datetime
 
 import sys
-sys.path.append('..')
+from datetime import datetime
+
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
+from sqlalchemy.orm import Session, joinedload
+
+sys.path.append("..")
 from database import get_db
 from models.developer import Developer
 from models.project import Project
@@ -18,26 +19,26 @@ router = APIRouter(prefix="/api/admin", tags=["admin"])
 class EmployeeCreate(BaseModel):
     name: str
     email: str
-    github_username: Optional[str] = None
-    avatar_url: Optional[str] = None
-    specialization: Optional[str] = None  # frontend, backend, devops, etc.
+    github_username: str | None = None
+    avatar_url: str | None = None
+    specialization: str | None = None  # frontend, backend, devops, etc.
 
 
 class EmployeeUpdate(BaseModel):
-    name: Optional[str] = None
-    email: Optional[str] = None
-    github_username: Optional[str] = None
-    avatar_url: Optional[str] = None
-    specialization: Optional[str] = None
+    name: str | None = None
+    email: str | None = None
+    github_username: str | None = None
+    avatar_url: str | None = None
+    specialization: str | None = None
 
 
 class EmployeeResponse(BaseModel):
     id: int
     name: str
     email: str
-    github_username: Optional[str]
-    avatar_url: Optional[str]
-    specialization: Optional[str]
+    github_username: str | None
+    avatar_url: str | None
+    specialization: str | None
     created_at: datetime
     updated_at: datetime
     project_count: int
@@ -59,7 +60,7 @@ class DashboardStats(BaseModel):
 # Developer specialization mapping
 SPECIALIZATIONS = [
     "frontend",
-    "backend", 
+    "backend",
     "fullstack",
     "devops",
     "qa",
@@ -67,83 +68,82 @@ SPECIALIZATIONS = [
     "data",
     "ml",
     "design",
-    "pm"
+    "pm",
 ]
 
 
 @router.get("/stats", response_model=DashboardStats)
 def get_dashboard_stats(db: Session = Depends(get_db)):
     """Get admin dashboard statistics"""
-    from models.sprint import Sprint
     from models.developer import Developer
+    from models.sprint import Sprint
     from models.user import User
-    
+
     # Sync users to developers - ensure every user has a developer record
     try:
-        users = db.query(User).filter(User.is_active == True).all()
+        users = db.query(User).filter(User.is_active.is_(True)).all()
         for user in users:
             existing_dev = db.query(Developer).filter(Developer.email == user.email).first()
             if not existing_dev:
-                new_developer = Developer(
-                    name=user.name,
-                    email=user.email
-                )
+                new_developer = Developer(name=user.name, email=user.email)
                 db.add(new_developer)
         db.commit()
     except Exception as e:
         db.rollback()
         print(f"Warning: Failed to sync users to developers: {e}")
-    
+
     total_employees = db.query(Developer).count()
     total_projects = db.query(Project).count()
     total_tickets = db.query(WorkItem).count()
     active_sprints = db.query(Sprint).filter(Sprint.status == "active").count()
-    
+
     # Tickets by status
     tickets_by_status = {}
     for status in ["backlog", "todo", "in_progress", "in_review", "done"]:
         count = db.query(WorkItem).filter(WorkItem.status == status).count()
         tickets_by_status[status] = count
-    
+
     # Tickets by priority
     tickets_by_priority = {}
     for priority in ["low", "medium", "high", "critical"]:
         count = db.query(WorkItem).filter(WorkItem.priority == priority).count()
         tickets_by_priority[priority] = count
-    
+
     return DashboardStats(
         total_employees=total_employees,
         total_projects=total_projects,
         total_tickets=total_tickets,
         active_sprints=active_sprints,
         tickets_by_status=tickets_by_status,
-        tickets_by_priority=tickets_by_priority
+        tickets_by_priority=tickets_by_priority,
     )
 
 
-@router.get("/employees", response_model=List[EmployeeResponse])
+@router.get("/employees", response_model=list[EmployeeResponse])
 def list_employees(db: Session = Depends(get_db)):
     """Get all employees/developers"""
     developers = db.query(Developer).all()
-    
+
     result = []
     for dev in developers:
         # Get specialization from metadata if available
-        specialization = getattr(dev, 'specialization', None)
-        
-        result.append(EmployeeResponse(
-            id=dev.id,
-            name=dev.name,
-            email=dev.email,
-            github_username=dev.github_username,
-            avatar_url=dev.avatar_url,
-            specialization=specialization,
-            created_at=dev.created_at,
-            updated_at=dev.updated_at,
-            project_count=len(dev.projects) if dev.projects else 0,
-            assigned_items_count=len(dev.assigned_work_items) if dev.assigned_work_items else 0
-        ))
-    
+        specialization = getattr(dev, "specialization", None)
+
+        result.append(
+            EmployeeResponse(
+                id=dev.id,
+                name=dev.name,
+                email=dev.email,
+                github_username=dev.github_username,
+                avatar_url=dev.avatar_url,
+                specialization=specialization,
+                created_at=dev.created_at,
+                updated_at=dev.updated_at,
+                project_count=len(dev.projects) if dev.projects else 0,
+                assigned_items_count=len(dev.assigned_work_items) if dev.assigned_work_items else 0,
+            )
+        )
+
     return result
 
 
@@ -155,7 +155,7 @@ def get_developers_capacity(db: Session = Depends(get_db)):
     Response embeds a per-ticket breakdown so the UI can drill down without a
     second round-trip.
     """
-    from services.capacity_service import week_boundaries, compute_capacity_breakdown
+    from services.capacity_service import compute_capacity_breakdown, week_boundaries
 
     week_start, week_end = week_boundaries()
 
@@ -178,17 +178,19 @@ def get_developers_capacity(db: Session = Depends(get_db)):
             db=db,
             developer_id=dev.id,
         )
-        result.append({
-            "developer_id": dev.id,
-            "developer_name": dev.name,
-            "developer_email": dev.email,
-            "avatar_url": dev.avatar_url,
-            "project_count": len(dev.projects) if dev.projects else 0,
-            "week_start": week_start.isoformat(),
-            "week_end": week_end.isoformat(),
-            "specialization": getattr(dev, 'specialization', None),
-            **breakdown,
-        })
+        result.append(
+            {
+                "developer_id": dev.id,
+                "developer_name": dev.name,
+                "developer_email": dev.email,
+                "avatar_url": dev.avatar_url,
+                "project_count": len(dev.projects) if dev.projects else 0,
+                "week_start": week_start.isoformat(),
+                "week_end": week_end.isoformat(),
+                "specialization": getattr(dev, "specialization", None),
+                **breakdown,
+            }
+        )
 
     return result
 
@@ -196,14 +198,14 @@ def get_developers_capacity(db: Session = Depends(get_db)):
 class EmployeeTicketResponse(BaseModel):
     id: int
     title: str
-    description: Optional[str]
+    description: str | None
     status: str
     priority: str
     project_id: int
     project_name: str
-    assigned_to: Optional[int]
-    assigned_to_name: Optional[str]
-    estimated_hours: Optional[int]
+    assigned_to: int | None
+    assigned_to_name: str | None
+    estimated_hours: int | None
     logged_hours: int
     created_at: datetime
     updated_at: datetime
@@ -212,61 +214,58 @@ class EmployeeTicketResponse(BaseModel):
         from_attributes = True
 
 
-@router.get("/employees/{employee_id}/in-progress-tickets", response_model=List[EmployeeTicketResponse])
+@router.get(
+    "/employees/{employee_id}/in-progress-tickets", response_model=list[EmployeeTicketResponse]
+)
 def get_employee_in_progress_tickets(employee_id: int, db: Session = Depends(get_db)):
     """Get all active tickets assigned to an employee across all projects, sorted by priority"""
     from sqlalchemy import case
-    
+
     # Verify employee exists
     employee = db.query(Developer).filter(Developer.id == employee_id).first()
     if not employee:
         raise HTTPException(status_code=404, detail="Employee not found")
-    
+
     # Priority order: critical > high > medium > low
     priority_order = case(
         (WorkItem.priority == "critical", 1),
         (WorkItem.priority == "high", 2),
         (WorkItem.priority == "medium", 3),
         (WorkItem.priority == "low", 4),
-        else_=5
+        else_=5,
     )
-    
-    # Status order: in_progress first, then in_review, then todo, then backlog
-    status_order = case(
-        (WorkItem.status == "in_progress", 1),
-        (WorkItem.status == "in_review", 2),
-        (WorkItem.status == "todo", 3),
-        (WorkItem.status == "backlog", 4),
-        else_=5
-    )
-    
+
     # Get only in-progress work items assigned to this employee
-    work_items = db.query(WorkItem).filter(
-        WorkItem.assignee_id == employee_id,
-        WorkItem.status == "in_progress"
-    ).order_by(priority_order).all()
-    
+    work_items = (
+        db.query(WorkItem)
+        .filter(WorkItem.assignee_id == employee_id, WorkItem.status == "in_progress")
+        .order_by(priority_order)
+        .all()
+    )
+
     result = []
     for item in work_items:
         # Get project name
         project_name = item.project.name if item.project else "Unknown Project"
-        
-        result.append(EmployeeTicketResponse(
-            id=item.id,
-            title=item.title,
-            description=item.description,
-            status=item.status,
-            priority=item.priority,
-            project_id=item.project_id,
-            project_name=project_name,
-            assigned_to=item.assignee_id,
-            assigned_to_name=employee.name,
-            estimated_hours=item.estimated_hours,
-            logged_hours=item.logged_hours or 0,
-            created_at=item.created_at,
-            updated_at=item.updated_at
-        ))
-    
+
+        result.append(
+            EmployeeTicketResponse(
+                id=item.id,
+                title=item.title,
+                description=item.description,
+                status=item.status,
+                priority=item.priority,
+                project_id=item.project_id,
+                project_name=project_name,
+                assigned_to=item.assignee_id,
+                assigned_to_name=employee.name,
+                estimated_hours=item.estimated_hours,
+                logged_hours=item.logged_hours or 0,
+                created_at=item.created_at,
+                updated_at=item.updated_at,
+            )
+        )
+
     return result
 
 
@@ -274,7 +273,7 @@ def get_employee_in_progress_tickets(employee_id: int, db: Session = Depends(get
 def create_employee(employee: EmployeeCreate, db: Session = Depends(get_db)):
     """Create a new employee/developer"""
     from models.user import User, UserRole
-    
+
     # Check if email already exists in developers
     existing = db.query(Developer).filter(Developer.email == employee.email).first()
     if existing:
@@ -287,9 +286,9 @@ def create_employee(employee: EmployeeCreate, db: Session = Depends(get_db)):
 
     # Check github username uniqueness if provided
     if github_username:
-        existing_github = db.query(Developer).filter(
-            Developer.github_username == github_username
-        ).first()
+        existing_github = (
+            db.query(Developer).filter(Developer.github_username == github_username).first()
+        )
         if existing_github:
             raise HTTPException(status_code=400, detail="GitHub username already exists")
 
@@ -297,27 +296,27 @@ def create_employee(employee: EmployeeCreate, db: Session = Depends(get_db)):
         name=employee.name,
         email=employee.email,
         github_username=github_username,
-        avatar_url=employee.avatar_url
+        avatar_url=employee.avatar_url,
     )
-    
+
     db.add(new_employee)
     db.commit()
     db.refresh(new_employee)
-    
+
     # Also create a User record if it doesn't exist
     existing_user = db.query(User).filter(User.email == employee.email).first()
     if not existing_user:
         new_user = User(
             email=employee.email,
             name=employee.name,
-            hashed_password='',  # Empty password for manually created employees
+            hashed_password="",  # Empty password for manually created employees
             role=UserRole.DEVELOPER.value,
             is_active=True,
-            is_first_login=False
+            is_first_login=False,
         )
         db.add(new_user)
         db.commit()
-    
+
     return EmployeeResponse(
         id=new_employee.id,
         name=new_employee.name,
@@ -328,29 +327,26 @@ def create_employee(employee: EmployeeCreate, db: Session = Depends(get_db)):
         created_at=new_employee.created_at,
         updated_at=new_employee.updated_at,
         project_count=0,
-        assigned_items_count=0
+        assigned_items_count=0,
     )
 
 
 @router.put("/employees/{employee_id}", response_model=EmployeeResponse)
-def update_employee(
-    employee_id: int,
-    update: EmployeeUpdate,
-    db: Session = Depends(get_db)
-):
+def update_employee(employee_id: int, update: EmployeeUpdate, db: Session = Depends(get_db)):
     """Update an employee/developer"""
     employee = db.query(Developer).filter(Developer.id == employee_id).first()
     if not employee:
         raise HTTPException(status_code=404, detail="Employee not found")
-    
+
     if update.name:
         employee.name = update.name
     if update.email:
         # Check email uniqueness
-        existing = db.query(Developer).filter(
-            Developer.email == update.email,
-            Developer.id != employee_id
-        ).first()
+        existing = (
+            db.query(Developer)
+            .filter(Developer.email == update.email, Developer.id != employee_id)
+            .first()
+        )
         if existing:
             raise HTTPException(status_code=400, detail="Email already exists")
         employee.email = update.email
@@ -358,19 +354,20 @@ def update_employee(
         # Normalize blank to NULL so it doesn't collide on the UNIQUE index
         new_github = update.github_username.strip() or None
         if new_github:
-            existing_github = db.query(Developer).filter(
-                Developer.github_username == new_github,
-                Developer.id != employee_id
-            ).first()
+            existing_github = (
+                db.query(Developer)
+                .filter(Developer.github_username == new_github, Developer.id != employee_id)
+                .first()
+            )
             if existing_github:
                 raise HTTPException(status_code=400, detail="GitHub username already exists")
         employee.github_username = new_github
     if update.avatar_url is not None:
         employee.avatar_url = update.avatar_url
-    
+
     db.commit()
     db.refresh(employee)
-    
+
     return EmployeeResponse(
         id=employee.id,
         name=employee.name,
@@ -381,7 +378,9 @@ def update_employee(
         created_at=employee.created_at,
         updated_at=employee.updated_at,
         project_count=len(employee.projects) if employee.projects else 0,
-        assigned_items_count=len(employee.assigned_work_items) if employee.assigned_work_items else 0
+        assigned_items_count=len(employee.assigned_work_items)
+        if employee.assigned_work_items
+        else 0,
     )
 
 
@@ -389,25 +388,23 @@ def update_employee(
 def delete_employee(employee_id: int, db: Session = Depends(get_db)):
     """Delete an employee/developer and their user account"""
     from models.user import User
-    
+
     employee = db.query(Developer).filter(Developer.id == employee_id).first()
     if not employee:
         raise HTTPException(status_code=404, detail="Employee not found")
-    
+
     # Unassign from work items
-    db.query(WorkItem).filter(WorkItem.assignee_id == employee_id).update(
-        {"assignee_id": None}
-    )
-    
+    db.query(WorkItem).filter(WorkItem.assignee_id == employee_id).update({"assignee_id": None})
+
     # Delete corresponding user record
     user = db.query(User).filter(User.email == employee.email).first()
     if user:
         db.delete(user)
-    
+
     # Delete employee
     db.delete(employee)
     db.commit()
-    
+
     return {"message": "Employee and user account deleted"}
 
 
@@ -418,82 +415,82 @@ def get_specializations():
 
 
 class ProjectGitHubUpdate(BaseModel):
-    github_repo_url: Optional[str] = None
-    github_repo_name: Optional[str] = None
-    github_token: Optional[str] = None
+    github_repo_url: str | None = None
+    github_repo_name: str | None = None
+    github_token: str | None = None
 
 
 class ProjectResponse(BaseModel):
     id: int
     name: str
-    description: Optional[str]
+    description: str | None
     status: str
-    created_at: Optional[str]
+    created_at: str | None
     total_items: int
     done_items: int
     completion_pct: float
     developer_count: int
-    github_repo_url: Optional[str]
-    github_repo_name: Optional[str]
+    github_repo_url: str | None
+    github_repo_name: str | None
     has_github_token: bool
 
     class Config:
         from_attributes = True
 
 
-@router.get("/projects", response_model=List[ProjectResponse])
+@router.get("/projects", response_model=list[ProjectResponse])
 def list_all_projects(db: Session = Depends(get_db)):
     """Get all projects with stats for admin"""
     projects = db.query(Project).all()
-    
+
     result = []
     for project in projects:
         total_items = len(project.work_items) if project.work_items else 0
         done_items = len([i for i in (project.work_items or []) if i.status == "done"])
-        
-        result.append(ProjectResponse(
-            id=project.id,
-            name=project.name,
-            description=project.description,
-            status=project.status,
-            created_at=project.created_at.isoformat() if project.created_at else None,
-            total_items=total_items,
-            done_items=done_items,
-            completion_pct=round((done_items / total_items * 100) if total_items > 0 else 0, 1),
-            developer_count=len(project.developers) if project.developers else 0,
-            github_repo_url=project.github_repo_url,
-            github_repo_name=project.github_repo_name,
-            has_github_token=bool(project.github_token)
-        ))
-    
+
+        result.append(
+            ProjectResponse(
+                id=project.id,
+                name=project.name,
+                description=project.description,
+                status=project.status,
+                created_at=project.created_at.isoformat() if project.created_at else None,
+                total_items=total_items,
+                done_items=done_items,
+                completion_pct=round((done_items / total_items * 100) if total_items > 0 else 0, 1),
+                developer_count=len(project.developers) if project.developers else 0,
+                github_repo_url=project.github_repo_url,
+                github_repo_name=project.github_repo_name,
+                has_github_token=bool(project.github_token),
+            )
+        )
+
     return result
 
 
 @router.put("/projects/{project_id}/github")
 def update_project_github(
-    project_id: int,
-    update: ProjectGitHubUpdate,
-    db: Session = Depends(get_db)
+    project_id: int, update: ProjectGitHubUpdate, db: Session = Depends(get_db)
 ):
     """Update project GitHub settings"""
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
-    
+
     if update.github_repo_url is not None:
         project.github_repo_url = update.github_repo_url
     if update.github_repo_name is not None:
         project.github_repo_name = update.github_repo_name
     if update.github_token is not None:
         project.github_token = update.github_token
-    
+
     db.commit()
     db.refresh(project)
-    
+
     return {
         "id": project.id,
         "name": project.name,
         "github_repo_url": project.github_repo_url,
         "github_repo_name": project.github_repo_name,
-        "has_github_token": bool(project.github_token)
+        "has_github_token": bool(project.github_token),
     }

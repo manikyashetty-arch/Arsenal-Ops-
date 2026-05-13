@@ -13,9 +13,10 @@ and asserts on the result.
 Run with:
     cd backend && python -m pytest test_capacity_transfers.py -v
 """
+
 import os
 import sys
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 import pytest
 
@@ -23,24 +24,36 @@ import pytest
 sys.path.insert(0, os.path.dirname(__file__))
 
 # Import every model so SQLAlchemy can resolve relationships when create_all runs.
+import contextlib
+
 from models import (  # noqa: F401
-    project, task, persona, user_story,
-    market_insight, developer, work_item, sprint,
-    architecture, user, time_entry, task_dependency,
-    project_goal, project_milestone, activity_log, project_file,
+    activity_log,
+    architecture,
+    developer,
+    market_insight,
+    persona,
+    project,
+    project_file,
+    project_goal,
+    project_milestone,
+    sprint,
+    task,
+    task_dependency,
+    time_entry,
+    user,
+    user_story,
+    work_item,
     work_item_assignment_history,
 )
-try:
+
+with contextlib.suppress(ImportError):
     from models import custom_restriction, personal_task  # noqa: F401
-except ImportError:
-    pass
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from database import Base
 from services.capacity_service import compute_capacity_breakdown, week_boundaries
-
 
 # --------------- In-memory SQLite test DB ---------------
 TEST_DB_URL = "sqlite:///:memory:"
@@ -82,15 +95,21 @@ def _mid_week():
 
 def create_project(db, name="Test Project"):
     from models.project import Project
+
     p = Project(name=name, description="t", status="active")
-    db.add(p); db.commit(); db.refresh(p)
+    db.add(p)
+    db.commit()
+    db.refresh(p)
     return p
 
 
 def create_developer(db, name, email):
     from models.developer import Developer
+
     d = Developer(name=name, email=email)
-    db.add(d); db.commit(); db.refresh(d)
+    db.add(d)
+    db.commit()
+    db.refresh(d)
     return d
 
 
@@ -101,6 +120,7 @@ def create_work_item(db, project_id, assignee_id, **kwargs):
     """Create a work item. `logged_hours` is treated as the cumulative total on the
     ticket — callers should match it to the sum of time entries they later add."""
     from models.work_item import WorkItem
+
     _wi_counter["n"] += 1
     defaults = {
         "key": f"T-{_wi_counter['n']}",
@@ -117,40 +137,49 @@ def create_work_item(db, project_id, assignee_id, **kwargs):
         0, (defaults.get("estimated_hours") or 0) - (defaults.get("logged_hours") or 0)
     )
     wi = WorkItem(**defaults)
-    db.add(wi); db.commit(); db.refresh(wi)
+    db.add(wi)
+    db.commit()
+    db.refresh(wi)
     return wi
 
 
-def add_time_entry(db, work_item, developer_id, hours, logged_at):
+def add_time_entry(db, work_item, developer_id, hours, logged_at):  # noqa: F811 — `work_item` param shadows the side-effect-only module import above
     """Insert a TimeEntry. Does NOT touch work_item.logged_hours — caller controls
     the cumulative total when constructing the scenario, so tests can model
     'X hours were logged previously'."""
     from models.time_entry import TimeEntry
+
     e = TimeEntry(
         work_item_id=work_item.id,
         developer_id=developer_id,
         hours=hours,
         logged_at=logged_at,
     )
-    db.add(e); db.commit(); db.refresh(e)
+    db.add(e)
+    db.commit()
+    db.refresh(e)
     return e
 
 
 def add_assignment_span(db, work_item_id, developer_id, assigned_at, unassigned_at=None):
     from models.work_item_assignment_history import WorkItemAssignmentHistory
+
     s = WorkItemAssignmentHistory(
         work_item_id=work_item_id,
         developer_id=developer_id,
         assigned_at=assigned_at,
         unassigned_at=unassigned_at,
     )
-    db.add(s); db.commit(); db.refresh(s)
+    db.add(s)
+    db.commit()
+    db.refresh(s)
     return s
 
 
 def get_capacity(db, dev):
     """Run compute_capacity_breakdown for `dev` using all their currently-assigned items."""
     from models.work_item import WorkItem
+
     items = db.query(WorkItem).filter(WorkItem.assignee_id == dev.id).all()
     week_start, _ = _wb()
     return compute_capacity_breakdown(items, week_start, db=db, developer_id=dev.id)
@@ -165,9 +194,12 @@ def test_in_progress_started_this_week_no_logs(db):
     dev = create_developer(db, "A", "a@t.com")
     ws, _ = _wb()
     wi = create_work_item(
-        db, p.id, dev.id,
+        db,
+        p.id,
+        dev.id,
         status="in_progress",
-        estimated_hours=10, logged_hours=0,
+        estimated_hours=10,
+        logged_hours=0,
         started_at=ws + timedelta(hours=1),
     )
     add_assignment_span(db, wi.id, dev.id, assigned_at=ws + timedelta(hours=1))
@@ -191,9 +223,12 @@ def test_in_progress_partial_log_current_holder(db):
     dev = create_developer(db, "A", "a@t.com")
     ws, _ = _wb()
     wi = create_work_item(
-        db, p.id, dev.id,
+        db,
+        p.id,
+        dev.id,
         status="in_progress",
-        estimated_hours=10, logged_hours=4,  # 4h already accounted for on ticket
+        estimated_hours=10,
+        logged_hours=4,  # 4h already accounted for on ticket
         started_at=ws + timedelta(hours=1),
     )
     add_assignment_span(db, wi.id, dev.id, assigned_at=ws + timedelta(hours=1))
@@ -216,9 +251,12 @@ def test_in_progress_carryover_no_log_this_week(db):
     dev = create_developer(db, "A", "a@t.com")
     lw = _last_week()
     wi = create_work_item(
-        db, p.id, dev.id,
+        db,
+        p.id,
+        dev.id,
         status="in_progress",
-        estimated_hours=10, logged_hours=3,  # logged last week
+        estimated_hours=10,
+        logged_hours=3,  # logged last week
         started_at=lw,
     )
     add_assignment_span(db, wi.id, dev.id, assigned_at=lw)
@@ -243,9 +281,12 @@ def test_transfer_logged_hours_stay_with_previous_owner(db):
     ws, _ = _wb()
     transfer_at = ws + timedelta(days=2)
     wi = create_work_item(
-        db, p.id, B.id,  # B is the CURRENT assignee post-transfer
+        db,
+        p.id,
+        B.id,  # B is the CURRENT assignee post-transfer
         status="in_progress",
-        estimated_hours=5, logged_hours=1,
+        estimated_hours=5,
+        logged_hours=1,
         started_at=ws,
         last_assigned_at=transfer_at,
     )
@@ -279,15 +320,18 @@ def test_bouncing_assignment(db):
     t1 = ws + timedelta(days=1, hours=12)
     t2 = ws + timedelta(days=3)
     wi = create_work_item(
-        db, p.id, A.id,
+        db,
+        p.id,
+        A.id,
         status="in_progress",
-        estimated_hours=5, logged_hours=4,
+        estimated_hours=5,
+        logged_hours=4,
         started_at=ws,
         last_assigned_at=t2,
     )
     # Three spans
-    add_assignment_span(db, wi.id, A.id, assigned_at=ws,   unassigned_at=t1)
-    add_assignment_span(db, wi.id, B.id, assigned_at=t1,   unassigned_at=t2)
+    add_assignment_span(db, wi.id, A.id, assigned_at=ws, unassigned_at=t1)
+    add_assignment_span(db, wi.id, B.id, assigned_at=t1, unassigned_at=t2)
     add_assignment_span(db, wi.id, A.id, assigned_at=t2)
     # Logs
     add_time_entry(db, wi, A.id, 1, logged_at=ws + timedelta(hours=2))
@@ -318,9 +362,12 @@ def test_done_carryover_only_this_weeks_logs(db):
     lw = _last_week()
     completed = ws + timedelta(days=2)
     wi = create_work_item(
-        db, p.id, dev.id,
+        db,
+        p.id,
+        dev.id,
         status="done",
-        estimated_hours=8, logged_hours=8,
+        estimated_hours=8,
+        logged_hours=8,
         started_at=lw,
         completed_at=completed,
     )
@@ -350,14 +397,17 @@ def test_done_split_between_two_devs(db):
     transfer_at = ws + timedelta(days=2)
     completed = ws + timedelta(days=4)
     wi = create_work_item(
-        db, p.id, B.id,
+        db,
+        p.id,
+        B.id,
         status="done",
-        estimated_hours=6, logged_hours=6,
+        estimated_hours=6,
+        logged_hours=6,
         started_at=ws,
         last_assigned_at=transfer_at,
         completed_at=completed,
     )
-    add_assignment_span(db, wi.id, A.id, assigned_at=ws,           unassigned_at=transfer_at)
+    add_assignment_span(db, wi.id, A.id, assigned_at=ws, unassigned_at=transfer_at)
     add_assignment_span(db, wi.id, B.id, assigned_at=transfer_at)
     add_time_entry(db, wi, A.id, 2, logged_at=ws + timedelta(days=1))
     add_time_entry(db, wi, B.id, 4, logged_at=ws + timedelta(days=3))
@@ -384,9 +434,12 @@ def test_done_no_log_this_week(db):
     ws, _ = _wb()
     lw = _last_week()
     wi = create_work_item(
-        db, p.id, dev.id,
+        db,
+        p.id,
+        dev.id,
         status="done",
-        estimated_hours=4, logged_hours=4,
+        estimated_hours=4,
+        logged_hours=4,
         started_at=lw,
         completed_at=ws + timedelta(days=1),
     )
@@ -409,9 +462,12 @@ def test_previous_week_logs_excluded(db):
     dev = create_developer(db, "A", "a@t.com")
     lw = _last_week()
     wi = create_work_item(
-        db, p.id, dev.id,
+        db,
+        p.id,
+        dev.id,
         status="in_progress",
-        estimated_hours=10, logged_hours=5,
+        estimated_hours=10,
+        logged_hours=5,
         started_at=lw,
     )
     add_assignment_span(db, wi.id, dev.id, assigned_at=lw)
@@ -433,9 +489,12 @@ def test_in_review_current_holder_partial_log(db):
     dev = create_developer(db, "A", "a@t.com")
     ws, _ = _wb()
     wi = create_work_item(
-        db, p.id, dev.id,
+        db,
+        p.id,
+        dev.id,
         status="in_review",
-        estimated_hours=8, logged_hours=3,
+        estimated_hours=8,
+        logged_hours=3,
         started_at=ws,
     )
     add_assignment_span(db, wi.id, dev.id, assigned_at=ws)
@@ -459,9 +518,12 @@ def test_transferred_away_no_logs_no_credit(db):
     ws, _ = _wb()
     transfer_at = ws + timedelta(days=1)
     wi = create_work_item(
-        db, p.id, B.id,
+        db,
+        p.id,
+        B.id,
         status="in_progress",
-        estimated_hours=10, logged_hours=0,
+        estimated_hours=10,
+        logged_hours=0,
         started_at=ws,
         last_assigned_at=transfer_at,
     )
@@ -489,18 +551,24 @@ def test_aggregate_multiple_tickets(db):
 
     # T1: in_progress, started this week, no logs, current holder. → 10h
     t1 = create_work_item(
-        db, p.id, dev.id,
+        db,
+        p.id,
+        dev.id,
         status="in_progress",
-        estimated_hours=10, logged_hours=0,
+        estimated_hours=10,
+        logged_hours=0,
         started_at=ws + timedelta(hours=2),
     )
     add_assignment_span(db, t1.id, dev.id, assigned_at=ws + timedelta(hours=2))
 
     # T2: in_review, current holder, 4h logged this week. → 4 + remaining(2) = 6h
     t2 = create_work_item(
-        db, p.id, dev.id,
+        db,
+        p.id,
+        dev.id,
         status="in_review",
-        estimated_hours=6, logged_hours=4,
+        estimated_hours=6,
+        logged_hours=4,
         started_at=ws,
     )
     add_assignment_span(db, t2.id, dev.id, assigned_at=ws)
@@ -508,9 +576,12 @@ def test_aggregate_multiple_tickets(db):
 
     # T3: done this week, 2h logged last week + 3h logged this week. → 3h
     t3 = create_work_item(
-        db, p.id, dev.id,
+        db,
+        p.id,
+        dev.id,
         status="done",
-        estimated_hours=5, logged_hours=5,
+        estimated_hours=5,
+        logged_hours=5,
         started_at=lw,
         completed_at=ws + timedelta(days=2),
     )
@@ -536,9 +607,12 @@ def test_todo_and_backlog_not_counted(db):
     ws, _ = _wb()
     for status in ("todo", "backlog"):
         wi = create_work_item(
-            db, p.id, dev.id,
+            db,
+            p.id,
+            dev.id,
             status=status,
-            estimated_hours=10, logged_hours=0,
+            estimated_hours=10,
+            logged_hours=0,
         )
         add_assignment_span(db, wi.id, dev.id, assigned_at=ws)
 
@@ -555,9 +629,12 @@ def test_done_completed_last_week_excluded(db):
     dev = create_developer(db, "A", "a@t.com")
     lw = _last_week()
     wi = create_work_item(
-        db, p.id, dev.id,
+        db,
+        p.id,
+        dev.id,
         status="done",
-        estimated_hours=5, logged_hours=5,
+        estimated_hours=5,
+        logged_hours=5,
         started_at=lw - timedelta(days=2),
         completed_at=lw,
     )
@@ -580,9 +657,12 @@ def test_done_started_and_completed_this_week(db):
     dev = create_developer(db, "A", "a@t.com")
     ws, _ = _wb()
     wi = create_work_item(
-        db, p.id, dev.id,
+        db,
+        p.id,
+        dev.id,
         status="done",
-        estimated_hours=5, logged_hours=5,
+        estimated_hours=5,
+        logged_hours=5,
         started_at=ws + timedelta(hours=2),
         completed_at=ws + timedelta(days=2),
     )
@@ -603,9 +683,12 @@ def test_in_progress_started_this_week_then_transferred(db):
     started = ws + timedelta(hours=2)
     transfer = ws + timedelta(days=2)
     wi = create_work_item(
-        db, p.id, B.id,
+        db,
+        p.id,
+        B.id,
         status="in_progress",
-        estimated_hours=10, logged_hours=3,
+        estimated_hours=10,
+        logged_hours=3,
         started_at=started,
         last_assigned_at=transfer,
     )
@@ -627,9 +710,12 @@ def test_multiple_entries_same_dev_same_ticket(db):
     dev = create_developer(db, "A", "a@t.com")
     ws, _ = _wb()
     wi = create_work_item(
-        db, p.id, dev.id,
+        db,
+        p.id,
+        dev.id,
         status="in_progress",
-        estimated_hours=10, logged_hours=6,
+        estimated_hours=10,
+        logged_hours=6,
         started_at=ws,
     )
     add_assignment_span(db, wi.id, dev.id, assigned_at=ws)
@@ -650,9 +736,12 @@ def test_log_at_week_start_boundary_included(db):
     dev = create_developer(db, "A", "a@t.com")
     ws, _ = _wb()
     wi = create_work_item(
-        db, p.id, dev.id,
+        db,
+        p.id,
+        dev.id,
         status="in_progress",
-        estimated_hours=5, logged_hours=2,
+        estimated_hours=5,
+        logged_hours=2,
         started_at=ws,
     )
     add_assignment_span(db, wi.id, dev.id, assigned_at=ws)
@@ -669,9 +758,12 @@ def test_log_at_week_end_boundary_included(db):
     dev = create_developer(db, "A", "a@t.com")
     ws, we = _wb()
     wi = create_work_item(
-        db, p.id, dev.id,
+        db,
+        p.id,
+        dev.id,
         status="in_progress",
-        estimated_hours=5, logged_hours=1,
+        estimated_hours=5,
+        logged_hours=1,
         started_at=ws,
     )
     add_assignment_span(db, wi.id, dev.id, assigned_at=ws)
@@ -687,9 +779,12 @@ def test_log_just_before_week_start_excluded(db):
     dev = create_developer(db, "A", "a@t.com")
     ws, _ = _wb()
     wi = create_work_item(
-        db, p.id, dev.id,
+        db,
+        p.id,
+        dev.id,
         status="in_progress",
-        estimated_hours=5, logged_hours=2,
+        estimated_hours=5,
+        logged_hours=2,
         started_at=ws - timedelta(days=1),
     )
     add_assignment_span(db, wi.id, dev.id, assigned_at=ws - timedelta(days=1))
@@ -708,9 +803,12 @@ def test_overrun_logged_exceeds_estimated(db):
     dev = create_developer(db, "A", "a@t.com")
     ws, _ = _wb()
     wi = create_work_item(
-        db, p.id, dev.id,
+        db,
+        p.id,
+        dev.id,
         status="in_progress",
-        estimated_hours=5, logged_hours=8,  # overrun by 3
+        estimated_hours=5,
+        logged_hours=8,  # overrun by 3
         started_at=ws,
     )
     add_assignment_span(db, wi.id, dev.id, assigned_at=ws)
@@ -731,16 +829,22 @@ def test_capacity_exceeds_weekly_cap_clamps_to_zero(db):
     ws, _ = _wb()
     # Two tickets totaling 50h
     t1 = create_work_item(
-        db, p.id, dev.id,
+        db,
+        p.id,
+        dev.id,
         status="in_progress",
-        estimated_hours=30, logged_hours=0,
+        estimated_hours=30,
+        logged_hours=0,
         started_at=ws + timedelta(hours=1),
     )
     add_assignment_span(db, t1.id, dev.id, assigned_at=ws + timedelta(hours=1))
     t2 = create_work_item(
-        db, p.id, dev.id,
+        db,
+        p.id,
+        dev.id,
         status="in_progress",
-        estimated_hours=20, logged_hours=0,
+        estimated_hours=20,
+        logged_hours=0,
         started_at=ws + timedelta(hours=1),
     )
     add_assignment_span(db, t2.id, dev.id, assigned_at=ws + timedelta(hours=1))
@@ -756,9 +860,12 @@ def test_time_entry_null_developer_id_is_ignored(db):
     dev = create_developer(db, "A", "a@t.com")
     ws, _ = _wb()
     wi = create_work_item(
-        db, p.id, dev.id,
+        db,
+        p.id,
+        dev.id,
         status="in_progress",
-        estimated_hours=5, logged_hours=2,
+        estimated_hours=5,
+        logged_hours=2,
         started_at=ws,
     )
     add_assignment_span(db, wi.id, dev.id, assigned_at=ws)
@@ -783,9 +890,12 @@ def test_three_way_transfer(db):
     t1 = ws + timedelta(days=1)
     t2 = ws + timedelta(days=3)
     wi = create_work_item(
-        db, p.id, C.id,  # C is the current holder
+        db,
+        p.id,
+        C.id,  # C is the current holder
         status="in_progress",
-        estimated_hours=12, logged_hours=6,
+        estimated_hours=12,
+        logged_hours=6,
         started_at=ws,
         last_assigned_at=t2,
     )
@@ -805,9 +915,11 @@ def test_three_way_transfer(db):
     # C: 2 logged + remaining(12-6=6) = 8
     assert cap_C["this_week_in_progress_hours"] == 8
     # Total across all three: 1 + 3 + 8 = 12 = total estimated
-    assert (cap_A["this_week_in_progress_hours"]
-            + cap_B["this_week_in_progress_hours"]
-            + cap_C["this_week_in_progress_hours"]) == 12
+    assert (
+        cap_A["this_week_in_progress_hours"]
+        + cap_B["this_week_in_progress_hours"]
+        + cap_C["this_week_in_progress_hours"]
+    ) == 12
 
 
 # Scenario 25: estimated=0 ticket with logged hours this week — counts logged only
@@ -816,9 +928,12 @@ def test_zero_estimate_with_logs(db):
     dev = create_developer(db, "A", "a@t.com")
     ws, _ = _wb()
     wi = create_work_item(
-        db, p.id, dev.id,
+        db,
+        p.id,
+        dev.id,
         status="in_progress",
-        estimated_hours=0, logged_hours=3,
+        estimated_hours=0,
+        logged_hours=3,
         started_at=ws,
     )
     add_assignment_span(db, wi.id, dev.id, assigned_at=ws)
@@ -836,9 +951,12 @@ def test_cancelled_status_not_counted(db):
     dev = create_developer(db, "A", "a@t.com")
     ws, _ = _wb()
     wi = create_work_item(
-        db, p.id, dev.id,
+        db,
+        p.id,
+        dev.id,
         status="cancelled",
-        estimated_hours=10, logged_hours=4,
+        estimated_hours=10,
+        logged_hours=4,
         started_at=ws,
     )
     add_assignment_span(db, wi.id, dev.id, assigned_at=ws)
@@ -858,14 +976,17 @@ def test_bouncing_in_review(db):
     t1 = ws + timedelta(days=1, hours=12)
     t2 = ws + timedelta(days=3)
     wi = create_work_item(
-        db, p.id, A.id,
+        db,
+        p.id,
+        A.id,
         status="in_review",
-        estimated_hours=8, logged_hours=5,
+        estimated_hours=8,
+        logged_hours=5,
         started_at=ws,
         last_assigned_at=t2,
     )
-    add_assignment_span(db, wi.id, A.id, assigned_at=ws,   unassigned_at=t1)
-    add_assignment_span(db, wi.id, B.id, assigned_at=t1,   unassigned_at=t2)
+    add_assignment_span(db, wi.id, A.id, assigned_at=ws, unassigned_at=t1)
+    add_assignment_span(db, wi.id, B.id, assigned_at=t1, unassigned_at=t2)
     add_assignment_span(db, wi.id, A.id, assigned_at=t2)
     add_time_entry(db, wi, A.id, 2, logged_at=ws + timedelta(hours=2))
     add_time_entry(db, wi, B.id, 2, logged_at=ws + timedelta(days=2))
@@ -887,9 +1008,12 @@ def test_expansion_via_logged_ids_with_empty_input(db):
     ws, _ = _wb()
     transfer_at = ws + timedelta(days=1)
     wi = create_work_item(
-        db, p.id, B.id,  # B currently holds it
+        db,
+        p.id,
+        B.id,  # B currently holds it
         status="in_progress",
-        estimated_hours=5, logged_hours=2,
+        estimated_hours=5,
+        logged_hours=2,
         started_at=ws,
         last_assigned_at=transfer_at,
     )
@@ -914,9 +1038,12 @@ def test_held_briefly_no_logs_filtered_out(db):
     ws, _ = _wb()
     transfer_at = ws + timedelta(hours=2)
     wi = create_work_item(
-        db, p.id, B.id,
+        db,
+        p.id,
+        B.id,
         status="in_progress",
-        estimated_hours=5, logged_hours=0,
+        estimated_hours=5,
+        logged_hours=0,
         started_at=ws,
         last_assigned_at=transfer_at,
     )
@@ -937,9 +1064,12 @@ def test_only_current_holder_claims_remaining(db):
     ws, _ = _wb()
     transfer_at = ws + timedelta(days=2)
     wi = create_work_item(
-        db, p.id, B.id,
+        db,
+        p.id,
+        B.id,
         status="in_progress",
-        estimated_hours=10, logged_hours=2,
+        estimated_hours=10,
+        logged_hours=2,
         started_at=ws,
         last_assigned_at=transfer_at,
     )
@@ -958,7 +1088,7 @@ def test_only_current_holder_claims_remaining(db):
 
 # Scenario 31: Week summary keys are always present and correct types
 def test_response_shape_keys_present(db):
-    p = create_project(db)
+    _ = create_project(db)
     dev = create_developer(db, "A", "a@t.com")
     cap = get_capacity(db, dev)  # no tickets at all
     expected_keys = {
@@ -998,16 +1128,19 @@ def test_carryover_multi_transfer_this_week(db):
 
     # Final state at calc time: 10h estimated, 9h cumulative logged, currently with E.
     wi = create_work_item(
-        db, p.id, E.id,
+        db,
+        p.id,
+        E.id,
         status="in_progress",
-        estimated_hours=10, logged_hours=9,
+        estimated_hours=10,
+        logged_hours=9,
         started_at=lw,
         last_assigned_at=d_to_e,
     )
 
     # Assignment history (only this-week part of C's span matters for the math).
-    add_assignment_span(db, wi.id, C.id, assigned_at=lw,      unassigned_at=c_to_d)
-    add_assignment_span(db, wi.id, D.id, assigned_at=c_to_d,  unassigned_at=d_to_e)
+    add_assignment_span(db, wi.id, C.id, assigned_at=lw, unassigned_at=c_to_d)
+    add_assignment_span(db, wi.id, D.id, assigned_at=c_to_d, unassigned_at=d_to_e)
     add_assignment_span(db, wi.id, E.id, assigned_at=d_to_e)
 
     # Last week: 6h total logged across various owners (doesn't affect this week's math).
@@ -1037,9 +1170,11 @@ def test_carryover_multi_transfer_this_week(db):
     assert cap_E["tickets"][0]["your_logged_this_week"] == 0
 
     # Invariant: total attributed = start-of-week remaining (10 estimated − 6 last-week logged = 4h).
-    total = (cap_C["this_week_in_progress_hours"]
-             + cap_D["this_week_in_progress_hours"]
-             + cap_E["this_week_in_progress_hours"])
+    total = (
+        cap_C["this_week_in_progress_hours"]
+        + cap_D["this_week_in_progress_hours"]
+        + cap_E["this_week_in_progress_hours"]
+    )
     assert total == 4
 
 

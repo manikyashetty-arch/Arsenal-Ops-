@@ -2,14 +2,17 @@
 LLM Agent Service - Core AI capabilities for Arsenal Ops
 Uses Azure OpenAI API with structured outputs for agentic tasks
 """
-import os
-import json
+
 import asyncio
-from typing import List, Dict, Any, Optional
+import json
+import os
+from typing import Any
+
 from pydantic import BaseModel
 
 # Lazy initialization of Azure OpenAI client
 _client = None
+
 
 def get_openai_client():
     """Get or create the Azure OpenAI client"""
@@ -17,19 +20,22 @@ def get_openai_client():
     if _client is None:
         try:
             from openai import AzureOpenAI
+
             _client = AzureOpenAI(
                 azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT", ""),
                 api_key=os.getenv("AZURE_OPENAI_API_KEY", ""),
                 api_version=os.getenv("AZURE_OPENAI_API_VERSION", "2024-02-15-preview"),
-                timeout=90.0
+                timeout=90.0,
             )
         except Exception as e:
             print(f"[WARNING] Failed to initialize Azure OpenAI client: {e}")
             _client = None
     return _client
 
+
 # Default deployment name
 DEPLOYMENT_NAME = os.getenv("AZURE_OPENAI_DEPLOYMENT", "gpt-4o-mini")
+
 
 # Pydantic models for structured outputs
 class GeneratedTask(BaseModel):
@@ -37,59 +43,66 @@ class GeneratedTask(BaseModel):
     description: str
     priority: str
     story_points: int
-    acceptance_criteria: List[str]
-    dependencies: List[str]
-    epic: Optional[str] = None
+    acceptance_criteria: list[str]
+    dependencies: list[str]
+    epic: str | None = None
+
 
 class GeneratedUserStory(BaseModel):
     title: str
     as_a: str
     i_want: str
     so_that: str
-    acceptance_criteria: List[str]
+    acceptance_criteria: list[str]
     story_points: int
     priority: str
+
 
 class GeneratedMilestone(BaseModel):
     name: str
     phase: str
     duration_weeks: int
-    deliverables: List[str]
-    dependencies: List[str]
+    deliverables: list[str]
+    dependencies: list[str]
+
 
 class GeneratedPersona(BaseModel):
     name: str
     role: str
     age_range: str
     company_size: str
-    goals: List[str]
-    pain_points: List[str]
-    motivations: List[str]
+    goals: list[str]
+    pain_points: list[str]
+    motivations: list[str]
     bio: str
     quote: str
+
 
 class MarketAnalysis(BaseModel):
     tam: str
     sam: str
     som: str
     cagr: float
-    key_trends: List[str]
-    opportunities: List[str]
-    threats: List[str]
-    competitors: List[Dict[str, Any]]
+    key_trends: list[str]
+    opportunities: list[str]
+    threats: list[str]
+    competitors: list[dict[str, Any]]
+
 
 class LLMAgent:
     """Agentic LLM service for PM tasks using Azure OpenAI"""
-    
+
     def __init__(self, deployment: str = None):
         self.deployment = deployment or DEPLOYMENT_NAME
-    
+
     @property
     def client(self):
         """Lazy client access"""
         return get_openai_client()
-    
-    async def decompose_project(self, project_description: str, target_market: str = "") -> Dict[str, Any]:
+
+    async def decompose_project(
+        self, project_description: str, target_market: str = ""
+    ) -> dict[str, Any]:
         """Break a project description into tasks, milestones, and user stories"""
         prompt = f"""You are an expert Product Manager. Analyze this project and create a complete breakdown:
 
@@ -110,17 +123,19 @@ Return as JSON with keys: milestones, tasks, user_stories"""
                 model=deployment,
                 messages=[{"role": "user", "content": prompt}],
                 response_format={"type": "json_object"},
-                temperature=1
+                temperature=1,
             )
         )
         return json.loads(response.choices[0].message.content)
-    
-    async def generate_jira_tickets(self, feature_description: str, epic_name: str = "") -> List[Dict[str, Any]]:
+
+    async def generate_jira_tickets(
+        self, feature_description: str, epic_name: str = ""
+    ) -> list[dict[str, Any]]:
         """Generate Jira-ready tickets from a feature description"""
         prompt = f"""You are a Senior PM creating Jira tickets. Generate tickets for:
 
 FEATURE: {feature_description}
-EPIC: {epic_name or 'Core Product'}
+EPIC: {epic_name or "Core Product"}
 
 Create 5-8 Jira tickets with:
 - title (concise, action-oriented)
@@ -140,12 +155,12 @@ Return as JSON with key: tickets"""
                 model=deployment,
                 messages=[{"role": "user", "content": prompt}],
                 response_format={"type": "json_object"},
-                temperature=1
+                temperature=1,
             )
         )
         return json.loads(response.choices[0].message.content)
-    
-    async def create_timeline(self, project_description: str, team_size: int = 5) -> Dict[str, Any]:
+
+    async def create_timeline(self, project_description: str, team_size: int = 5) -> dict[str, Any]:
         """Generate a project timeline with Gantt-chart ready data"""
         prompt = f"""You are a Project Planning expert. Create a timeline for:
 
@@ -167,12 +182,14 @@ Return as JSON with keys: phases, total_weeks, critical_path, risks"""
                 model=deployment,
                 messages=[{"role": "user", "content": prompt}],
                 response_format={"type": "json_object"},
-                temperature=1
+                temperature=1,
             )
         )
         return json.loads(response.choices[0].message.content)
-    
-    async def analyze_market(self, industry: str, product: str, competitors: List[str] = None) -> Dict[str, Any]:
+
+    async def analyze_market(
+        self, industry: str, product: str, competitors: list[str] = None
+    ) -> dict[str, Any]:
         """Deep market research and competitor analysis"""
         competitor_text = ", ".join(competitors) if competitors else "Unknown competitors"
         prompt = f"""You are a Market Research Analyst. Analyze:
@@ -198,12 +215,14 @@ Return as JSON with keys: market_size, competitors, swot, trends, opportunities,
                 model=deployment,
                 messages=[{"role": "user", "content": prompt}],
                 response_format={"type": "json_object"},
-                temperature=1
+                temperature=1,
             )
         )
         return json.loads(response.choices[0].message.content)
-    
-    async def generate_personas(self, product: str, target_market: str, count: int = 3) -> List[Dict[str, Any]]:
+
+    async def generate_personas(
+        self, product: str, target_market: str, count: int = 3
+    ) -> list[dict[str, Any]]:
         """Generate detailed buyer personas"""
         prompt = f"""You are a GTM Strategist. Create {count} buyer personas for:
 
@@ -232,12 +251,14 @@ Return as JSON with key: personas"""
                 model=deployment,
                 messages=[{"role": "user", "content": prompt}],
                 response_format={"type": "json_object"},
-                temperature=1
+                temperature=1,
             )
         )
         return json.loads(response.choices[0].message.content)
-    
-    async def draft_release_notes(self, version: str, features: List[str], fixes: List[str], tone: str = "professional") -> Dict[str, Any]:
+
+    async def draft_release_notes(
+        self, version: str, features: list[str], fixes: list[str], tone: str = "professional"
+    ) -> dict[str, Any]:
         """Generate professional release notes"""
         prompt = f"""You are a Technical Writer. Create release notes for:
 
@@ -263,12 +284,14 @@ Return as JSON"""
                 model=deployment,
                 messages=[{"role": "user", "content": prompt}],
                 response_format={"type": "json_object"},
-                temperature=1
+                temperature=1,
             )
         )
         return json.loads(response.choices[0].message.content)
-    
-    async def generate_stakeholder_brief(self, project: str, audience: str, key_metrics: Dict = None) -> Dict[str, Any]:
+
+    async def generate_stakeholder_brief(
+        self, project: str, audience: str, key_metrics: dict = None
+    ) -> dict[str, Any]:
         """Generate executive stakeholder communication"""
         metrics_text = json.dumps(key_metrics) if key_metrics else "{}"
         prompt = f"""You are an Executive Communications expert. Create a stakeholder brief for:
@@ -294,12 +317,12 @@ Return as JSON"""
                 model=deployment,
                 messages=[{"role": "user", "content": prompt}],
                 response_format={"type": "json_object"},
-                temperature=1
+                temperature=1,
             )
         )
         return json.loads(response.choices[0].message.content)
-    
-    async def brainstorm_ideas(self, problem: str, constraints: List[str] = None) -> Dict[str, Any]:
+
+    async def brainstorm_ideas(self, problem: str, constraints: list[str] = None) -> dict[str, Any]:
         """Generate creative product ideas and scenarios"""
         constraints_text = ", ".join(constraints) if constraints else "None specified"
         prompt = f"""You are a Product Innovation expert. Brainstorm for:
@@ -323,11 +346,14 @@ Return as JSON with keys: ideas, scenarios, quick_wins, moonshots, differentiato
                 model=deployment,
                 messages=[{"role": "user", "content": prompt}],
                 response_format={"type": "json_object"},
-                temperature=1
+                temperature=1,
             )
         )
         return json.loads(response.choices[0].message.content)
-    async def generate_strategy_ideation(self, product: str, description: str, target_market: str) -> Dict[str, Any]:
+
+    async def generate_strategy_ideation(
+        self, product: str, description: str, target_market: str
+    ) -> dict[str, Any]:
         """Generate product ideas and concepts"""
         prompt = f"""You are a Head of Product. Ideate for:
 PRODUCT: {product}
@@ -346,12 +372,14 @@ Return as JSON with keys: ideas_grouped (list of {{category, ideas}}), concepts 
                 model=deployment,
                 messages=[{"role": "user", "content": prompt}],
                 response_format={"type": "json_object"},
-                temperature=1
+                temperature=1,
             )
         )
         return json.loads(response.choices[0].message.content)
 
-    async def generate_market_sizing(self, product: str, target_market: str, assumptions: List[str] = None) -> Dict[str, Any]:
+    async def generate_market_sizing(
+        self, product: str, target_market: str, assumptions: list[str] = None
+    ) -> dict[str, Any]:
         """Generate TAM/SAM/SOM market sizing"""
         assumptions_text = ", ".join(assumptions) if assumptions else "None"
         prompt = f"""You are a Strategy Consultant. Estimate market size for:
@@ -370,12 +398,12 @@ Return as JSON with keys: tam (value + reasoning), sam (value + reasoning), som 
                 model=deployment,
                 messages=[{"role": "user", "content": prompt}],
                 response_format={"type": "json_object"},
-                temperature=1
+                temperature=1,
             )
         )
         return json.loads(response.choices[0].message.content)
 
-    async def generate_scenario_planning(self, product: str, strategy: str) -> Dict[str, Any]:
+    async def generate_scenario_planning(self, product: str, strategy: str) -> dict[str, Any]:
         """Generate best/base/worst case scenarios"""
         prompt = f"""You are a Risk Manager. Create scenario planning for:
 PRODUCT: {product}
@@ -383,7 +411,7 @@ STRATEGY: {strategy}
 
 Create 3 scenarios (Best, Base, Worst) with probability, impact, and mitigation strategies.
 
-Return as JSON with keys: scenarios (list of {name, probability, description, impact, mitigation})"""
+Return as JSON with keys: scenarios (list of {{name, probability, description, impact, mitigation}})"""
 
         client = self.client
         deployment = self.deployment
@@ -392,10 +420,11 @@ Return as JSON with keys: scenarios (list of {name, probability, description, im
                 model=deployment,
                 messages=[{"role": "user", "content": prompt}],
                 response_format={"type": "json_object"},
-                temperature=1
+                temperature=1,
             )
         )
         return json.loads(response.choices[0].message.content)
+
 
 # Singleton instance
 llm_agent = LLMAgent()

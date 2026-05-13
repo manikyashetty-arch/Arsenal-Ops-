@@ -1,13 +1,15 @@
 """
 Architecture Generator Service - AI-powered PRD analysis and architecture generation
 """
-import os
-import json
+
 import asyncio
-from typing import List, Dict, Any, Optional
+import json
+import os
+from typing import Any
 
 # Lazy initialization of Azure OpenAI client to prevent startup crashes
 _client = None
+
 
 def get_openai_client():
     """Get or create the Azure OpenAI client"""
@@ -15,32 +17,36 @@ def get_openai_client():
     if _client is None:
         try:
             from openai import AzureOpenAI
+
             _client = AzureOpenAI(
                 azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT", ""),
                 api_key=os.getenv("AZURE_OPENAI_API_KEY", ""),
                 api_version=os.getenv("AZURE_OPENAI_API_VERSION", "2024-02-15-preview"),
-                timeout=90.0
+                timeout=90.0,
             )
         except Exception as e:
             print(f"[WARNING] Failed to initialize Azure OpenAI client: {e}")
             _client = None
     return _client
 
+
 DEPLOYMENT_NAME = os.getenv("AZURE_OPENAI_DEPLOYMENT", "gpt-4o-mini")
 
 
 class ArchitectureGenerator:
     """AI service for analyzing PRDs and generating architectures"""
-    
+
     def __init__(self):
         self.deployment = DEPLOYMENT_NAME
-    
+
     @property
     def client(self):
         """Lazy client access"""
         return get_openai_client()
-    
-    async def analyze_prd(self, prd_content: str, project_name: str, additional_context: str = "") -> Dict[str, Any]:
+
+    async def analyze_prd(
+        self, prd_content: str, project_name: str, additional_context: str = ""
+    ) -> dict[str, Any]:
         """
         Analyze PRD as a PM/Product Manager
         Returns: cost analysis, recommended tools, project summary
@@ -89,7 +95,7 @@ Perform a comprehensive analysis including:
    - duration: string like "2-3 weeks"
    - tasks: list of 3-5 specific tasks for this phase
 
-Return as valid JSON with these exact keys: 
+Return as valid JSON with these exact keys:
 - summary (string)
 - key_features (array of strings)
 - technical_requirements (array of strings)
@@ -106,7 +112,7 @@ Return as valid JSON with these exact keys:
                 lambda: client.chat.completions.create(
                     model=deployment,
                     messages=[{"role": "user", "content": prompt}],
-                    response_format={"type": "json_object"}
+                    response_format={"type": "json_object"},
                 )
             )
             return json.loads(response.choices[0].message.content)
@@ -120,22 +126,19 @@ Return as valid JSON with these exact keys:
                 "cost_analysis": {},
                 "recommended_tools": {},
                 "risks": [],
-                "timeline": []
+                "timeline": [],
             }
-    
+
     async def generate_architectures(
-        self, 
-        prd_content: str, 
-        project_name: str, 
-        analysis: Dict[str, Any]
-    ) -> Dict[str, Any]:
+        self, prd_content: str, project_name: str, analysis: dict[str, Any]
+    ) -> dict[str, Any]:
         """
         Generate 2 architecture diagrams based on PRD analysis
         Returns: Recommended and Alternative architectures with Mermaid code
         """
         tools_str = json.dumps(analysis.get("recommended_tools", {}), indent=2)
         features_str = "\n".join(f"- {f}" for f in analysis.get("key_features", []))
-        
+
         prompt = f"""You are a Senior Solutions Architect. Based on this PRD analysis, create 2 architecture designs.
 
 PROJECT: {project_name}
@@ -209,11 +212,11 @@ Return as JSON with keys:
                 lambda: client.chat.completions.create(
                     model=deployment,
                     messages=[{"role": "user", "content": prompt}],
-                    response_format={"type": "json_object"}
+                    response_format={"type": "json_object"},
                 )
             )
             result = json.loads(response.choices[0].message.content)
-            
+
             # Validate mermaid code
             for arch_type in ["recommended", "alternative"]:
                 if arch_type in result:
@@ -222,7 +225,7 @@ Return as JSON with keys:
                     if not code.startswith("graph"):
                         code = "graph TB\n" + code
                     result[arch_type]["mermaid_code"] = code
-            
+
             return result
         except Exception as e:
             # Return fallback architectures
@@ -253,7 +256,7 @@ Return as JSON with keys:
                     "cons": ["Higher initial complexity", "More infrastructure"],
                     "estimated_cost": "$200-500/month",
                     "complexity": "medium",
-                    "time_to_implement": "8-12 weeks"
+                    "time_to_implement": "8-12 weeks",
                 },
                 "alternative": {
                     "name": "Simple Monolith",
@@ -266,19 +269,19 @@ Return as JSON with keys:
                     "cons": ["Limited scalability", "Single point of failure"],
                     "estimated_cost": "$50-100/month",
                     "complexity": "low",
-                    "time_to_implement": "4-6 weeks"
-                }
+                    "time_to_implement": "4-6 weeks",
+                },
             }
-    
+
     async def generate_tickets_from_architecture(
         self,
-        architecture: Dict[str, Any],
-        developers: List[Dict[str, Any]],
+        architecture: dict[str, Any],
+        developers: list[dict[str, Any]],
         project_name: str,
-        start_date = None,
-        end_date = None,
-        prd_analysis: Dict[str, Any] = None
-    ) -> Dict[str, Any]:
+        start_date=None,
+        end_date=None,
+        prd_analysis: dict[str, Any] = None,
+    ) -> dict[str, Any]:
         """
         Generate Jira tickets from selected architecture and PRD analysis
         Assign to developers based on their specialization
@@ -287,7 +290,7 @@ Return as JSON with keys:
         arch_name = architecture.get("name", "Architecture")
         arch_desc = architecture.get("description", "")
         mermaid_code = architecture.get("mermaid_code", "")
-        
+
         # Build PRD context if available
         prd_context = ""
         if prd_analysis:
@@ -295,49 +298,52 @@ Return as JSON with keys:
             key_features = prd_analysis.get("key_features", [])
             tech_reqs = prd_analysis.get("technical_requirements", [])
             timeline_data = prd_analysis.get("timeline", [])
-            
+
             prd_context = f"""
 PRD ANALYSIS:
 - Summary: {summary}
-- Key Features: {', '.join(key_features[:10]) if key_features else 'Not specified'}
-- Technical Requirements: {', '.join(tech_reqs[:10]) if tech_reqs else 'Not specified'}
+- Key Features: {", ".join(key_features[:10]) if key_features else "Not specified"}
+- Technical Requirements: {", ".join(tech_reqs[:10]) if tech_reqs else "Not specified"}
 - Timeline Phases: {len(timeline_data)} phases planned
 """
             if timeline_data:
                 prd_context += "\nPRD Timeline:\n"
                 for phase in timeline_data[:5]:
-                    prd_context += f"  - {phase.get('phase', 'Unknown')}: {phase.get('duration', 'TBD')}\n"
-        
+                    prd_context += (
+                        f"  - {phase.get('phase', 'Unknown')}: {phase.get('duration', 'TBD')}\n"
+                    )
+
         # Format developers info
         devs_info = []
         for dev in developers:
-            devs_info.append(f"- {dev['name']} ({dev.get('role', 'Developer')}): {dev.get('responsibilities', 'General development')}")
+            devs_info.append(
+                f"- {dev['name']} ({dev.get('role', 'Developer')}): {dev.get('responsibilities', 'General development')}"
+            )
         devs_str = "\n".join(devs_info) if devs_info else "No developers assigned"
-        
+
         # Build timeline context if provided
         timeline_context = ""
         sprint_instructions = ""
-        
+
         if start_date and end_date:
-            from datetime import timedelta
             total_days = (end_date - start_date).days
             total_weeks = total_days // 7
             # Standard 2-week sprints
             num_sprints = max(1, total_weeks // 2)
-            
+
             timeline_context = f"""
 PROJECT TIMELINE:
-- Start Date: {start_date.strftime('%Y-%m-%d')}
-- End Date: {end_date.strftime('%Y-%m-%d')}
+- Start Date: {start_date.strftime("%Y-%m-%d")}
+- End Date: {end_date.strftime("%Y-%m-%d")}
 - Total Duration: {total_weeks} weeks
 - Number of Sprints: {num_sprints} (2-week sprints)
 """
-            
+
             sprint_instructions = f"""
 SPRINT PLANNING REQUIREMENTS:
 - Divide all tickets into {num_sprints} sprints
 - Each sprint is 2 weeks (10 working days)
-- Sprint 1 starts on {start_date.strftime('%Y-%m-%d')}
+- Sprint 1 starts on {start_date.strftime("%Y-%m-%d")}
 - Order tickets by priority and dependencies
 - Infrastructure and setup tasks go in early sprints
 - Testing and documentation go in later sprints
@@ -349,7 +355,7 @@ SPRINT PLANNING REQUIREMENTS:
   - end_date: ISO date (YYYY-MM-DD)
   - capacity_hours: Estimated team capacity (hours)
 """
-        
+
         prompt = f"""You are a Senior PM creating Jira tickets for a development project.
 
 PROJECT: {project_name}
@@ -415,14 +421,14 @@ Return as JSON with keys:
                 lambda: client.chat.completions.create(
                     model=deployment,
                     messages=[{"role": "user", "content": prompt}],
-                    response_format={"type": "json_object"}
+                    response_format={"type": "json_object"},
                 )
             )
             result = json.loads(response.choices[0].message.content)
-            
+
             # Map assignee names to developer IDs
             dev_name_to_id = {dev["name"].lower(): dev["id"] for dev in developers}
-            
+
             for ticket in result.get("tickets", []):
                 assignee_name = ticket.get("assignee_name", "").lower().strip()
                 # If unassigned or no match, keep as unassigned
@@ -431,7 +437,7 @@ Return as JSON with keys:
                     ticket["assignee_id"] = None
                 else:
                     ticket["assignee_id"] = dev_name_to_id.get(assignee_name)
-            
+
             return result
         except Exception as e:
             return {
@@ -440,35 +446,33 @@ Return as JSON with keys:
                 "sprints": [],
                 "total_story_points": 0,
                 "total_estimated_hours": 0,
-                "sprint_recommendation": "Unable to generate tickets"
+                "sprint_recommendation": "Unable to generate tickets",
             }
-    
+
     def match_developer_to_ticket(
-        self, 
-        ticket: Dict[str, Any], 
-        developers: List[Dict[str, Any]]
-    ) -> Optional[Dict[str, Any]]:
+        self, ticket: dict[str, Any], developers: list[dict[str, Any]]
+    ) -> dict[str, Any] | None:
         """
         Match a ticket to the most suitable developer based on skills
         """
         if not developers:
             return None
-        
+
         ticket_title = ticket.get("title", "").lower()
         ticket_desc = ticket.get("description", "").lower()
         ticket_tags = [t.lower() for t in ticket.get("tags", [])]
-        
+
         best_match = None
         best_score = 0
-        
+
         for dev in developers:
             score = 0
             role = dev.get("role", "").lower()
             responsibilities = dev.get("responsibilities", "").lower()
-            
+
             # Check for keyword matches
             keywords = role.split() + responsibilities.split()
-            
+
             for keyword in keywords:
                 if len(keyword) > 3:  # Ignore short words
                     if keyword in ticket_title:
@@ -477,31 +481,38 @@ Return as JSON with keys:
                         score += 1
                     if keyword in ticket_tags:
                         score += 2
-            
+
             # Role-based matching
-            if "frontend" in role and any(k in ticket_title for k in ["ui", "frontend", "react", "css", "component"]):
+            if "frontend" in role and any(
+                k in ticket_title for k in ["ui", "frontend", "react", "css", "component"]
+            ):
                 score += 5
-            if "backend" in role and any(k in ticket_title for k in ["api", "backend", "database", "server"]):
+            if "backend" in role and any(
+                k in ticket_title for k in ["api", "backend", "database", "server"]
+            ):
                 score += 5
-            if "devops" in role and any(k in ticket_title for k in ["deploy", "ci/cd", "infrastructure", "docker"]):
+            if "devops" in role and any(
+                k in ticket_title for k in ["deploy", "ci/cd", "infrastructure", "docker"]
+            ):
                 score += 5
-            if "ai" in role or "ml" in role:
-                if any(k in ticket_title for k in ["ai", "ml", "model", "llm"]):
-                    score += 5
-            
+            if ("ai" in role or "ml" in role) and any(
+                k in ticket_title for k in ["ai", "ml", "model", "llm"]
+            ):
+                score += 5
+
             if score > best_score:
                 best_score = score
                 best_match = dev
-        
+
         return best_match
-    
+
     async def refine_architecture(
         self,
         current_mermaid_code: str,
         change_instructions: str,
         architecture_name: str,
-        project_name: str
-    ) -> Dict[str, Any]:
+        project_name: str,
+    ) -> dict[str, Any]:
         """
         Refine an architecture based on user's plain English instructions.
         Takes the current Mermaid code and change description, returns updated architecture.
@@ -550,17 +561,17 @@ Return as JSON with keys:
                 lambda: client.chat.completions.create(
                     model=deployment,
                     messages=[{"role": "user", "content": prompt}],
-                    response_format={"type": "json_object"}
+                    response_format={"type": "json_object"},
                 )
             )
             result = json.loads(response.choices[0].message.content)
-            
+
             # Validate mermaid code
             code = result.get("mermaid_code", "")
             if code and not code.strip().startswith("graph"):
                 code = "graph TB\n" + code
             result["mermaid_code"] = code
-            
+
             return result
         except Exception as e:
             return {
@@ -570,7 +581,7 @@ Return as JSON with keys:
                 "changes_applied": ["Unable to process changes"],
                 "pros": [],
                 "cons": [],
-                "ai_notes": f"AI processing failed: {str(e)}"
+                "ai_notes": f"AI processing failed: {str(e)}",
             }
 
 
