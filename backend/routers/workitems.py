@@ -6,7 +6,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 from datetime import datetime
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 from sqlalchemy import func, text
 from sqlalchemy.exc import IntegrityError
 
@@ -179,8 +179,11 @@ def list_work_items(
     current_user: User = Depends(get_current_user)
 ):
     """List all work items with optional filters (requires auth)"""
-    query = db.query(WorkItem)
-    
+    query = db.query(WorkItem).options(
+        selectinload(WorkItem.assignee),
+        selectinload(WorkItem.sprint),
+    )
+
     if project_id:
         query = query.filter(WorkItem.project_id == project_id)
     if status:
@@ -270,13 +273,32 @@ def get_my_tasks(
     if not developer:
         return []
     
-    # Get all work items assigned to this developer
-    items = db.query(WorkItem).filter(WorkItem.assignee_id == developer.id).all()
-    
+    # Get all work items assigned to this developer (eager-load relations
+    # we need in the response to avoid per-item lazy loads).
+    items = (
+        db.query(WorkItem)
+        .options(
+            selectinload(WorkItem.parent),
+            selectinload(WorkItem.epic),
+            selectinload(WorkItem.sprint),
+        )
+        .filter(WorkItem.assignee_id == developer.id)
+        .all()
+    )
+
+    # Batch-fetch the projects referenced by these items in one query.
+    project_ids = {item.project_id for item in items if item.project_id}
+    projects_by_id = {}
+    if project_ids:
+        projects_by_id = {
+            p.id: p
+            for p in db.query(Project).filter(Project.id.in_(project_ids)).all()
+        }
+
     result = []
     for item in items:
-        project = db.query(Project).filter(Project.id == item.project_id).first()
-        
+        project = projects_by_id.get(item.project_id)
+
         result.append({
             "id": str(item.id),
             "key": item.key,
@@ -304,7 +326,7 @@ def get_my_tasks(
             "sprint_id": item.sprint_id,
             "sprint": item.sprint.name if item.sprint else "Backlog",
         })
-    
+
     return result
 
 
