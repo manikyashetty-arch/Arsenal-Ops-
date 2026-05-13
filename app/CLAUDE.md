@@ -1,0 +1,264 @@
+# Frontend conventions
+
+This file documents the patterns the `perf/request-timing-middleware` branch
+established (or relies on) across the React 19 + TypeScript + Vite frontend.
+**Read this before adding pages, mutations, or queries.** New code that
+silently drops these patterns will introduce bugs we've already fixed once.
+
+Pair this with `src/pages/CONVENTIONS.md`, which covers page-folder layout
+specifically.
+
+---
+
+## Stack
+
+- React 19.2 (concurrent rendering, react-hooks v6 ESLint rules active)
+- TypeScript 5.9, `strict: true`
+- Vite 7.2
+- TanStack Query v5 (`@tanstack/react-query`)
+- react-router-dom 7.13
+- Tailwind + shadcn/ui + sonner
+- ESLint flat config (`eslint.config.js`) + Prettier
+
+CI runs `tsc --noEmit`, `npm run lint`, `npm run format:check` on every PR
+via `.github/workflows/lint.yml`. Loud but not blocking — failures show red
+but don't gate merge unless added to branch protection.
+
+---
+
+## React Query — the source of truth for server state
+
+All pages were migrated to react-query in this branch. The provider is set
+up in `App.tsx`; the client is configured in `src/lib/queryClient.ts`.
+
+### Query keys
+
+Use arrays, not strings. Conventions in use across the codebase:
+
+| Key | Owner | Notes |
+|---|---|---|
+| `['projects']` | ProjectsPage | All projects (list view) |
+| `['project', id]` | ProjectDetail, ProjectBoard | Single project + dependents |
+| `['workItems', filters]` | ProjectBoard | Filtered work-item list. **`filters` must be `useMemo`-stable** — see "Pitfalls" below |
+| `['workItem', id, 'comments']` | ProjectBoard | Lazy comments per item |
+| `['developers']` | Many | Project developers list |
+| `['sprints', projectId]` | ProjectBoard | Project sprints |
+| `['personalTasks']` | PersonalTasksPage | User's personal tasks |
+| `['myTasks']` | ProjectsPage home widget | User's assigned work items across all projects |
+| `['hubData', projectId, sub]` | ProjectDetail | ProjectHub sub-view data |
+| `['admin', resource]` | AdminDashboard | One entry per admin tab |
+
+If you add a new query key, pick a convention that's prefix-compatible with
+`invalidateQueries({ queryKey: [<prefix>] })` for cross-cutting invalidation.
+
+### Mutation pattern (current default: optimistic)
+
+```ts
+const mutation = useMutation({
+  mutationFn: (vars) => apiFetch(`/api/...`, { method: 'PUT', body: ... }),
+  onMutate: async (vars) => {
+    await queryClient.cancelQueries({ queryKey: ['workItems'] }); // PREFIX, not exact
+    const snapshot = queryClient.getQueryData(['workItems']);
+    queryClient.setQueryData(['workItems'], (old) => /* optimistic write */);
+    return { snapshot };
+  },
+  onError: (_err, _vars, ctx) => {
+    if (ctx?.snapshot) queryClient.setQueryData(['workItems'], ctx.snapshot);
+    toast.error('Failed to ...');
+  },
+  onSettled: () => {
+    queryClient.invalidateQueries({ queryKey: ['workItems'] });
+    queryClient.invalidateQueries({ queryKey: ['myTasks'] }); // see below
+  },
+});
+```
+
+### Cross-cutting invalidation rule
+
+Work-item mutations **must invalidate both `['workItems']` and `['myTasks']`**.
+The home page's "My Tasks" widget reads from `['myTasks']`, while the Board
+reads from `['workItems']` — they share the same underlying data via
+different endpoints. F12 in our audit fixed this for 5 sites; don't undo it.
+
+For convenience the board defines a helper:
+
+```ts
+const invalidateWorkItems = () => {
+  queryClient.invalidateQueries({ queryKey: ['workItems'] });
+  queryClient.invalidateQueries({ queryKey: ['myTasks'] });
+};
+```
+
+### Direct cache writes (not state mirrors)
+
+When you need to optimistically update a list, **write to the react-query
+cache, do not mirror it with `useState`**:
+
+```ts
+// GOOD — single source of truth
+const myTasks = myTasksQuery.data ?? [];
+const patchMyTasksCache = (updater: (old: MyTask[]) => MyTask[]) =>
+  queryClient.setQueryData<MyTask[]>(['myTasks'], (old) => updater(old ?? []));
+
+// BAD — creates a parallel source of truth that drifts from the cache
+const [myTasksLocal, setMyTasksLocal] = useState<MyTask[]>([]);
+useEffect(() => setMyTasksLocal(myTasksQuery.data ?? []), [myTasksQuery.data]);
+```
+
+---
+
+## TypeScript patterns
+
+### Stabilize empty-default arrays
+
+`data ?? []` in a query consumer creates a **new empty array every render**,
+which busts downstream `useMemo`/`useEffect` dependencies:
+
+```ts
+// BAD: new [] reference each render
+const items = query.data ?? [];
+
+// GOOD: stable reference
+const items = useMemo(() => query.data ?? [], [query.data]);
+```
+
+We applied this pattern in AdminDashboard for `employees`, `users`, and
+`developerCapacities`. Cluster 4 F10 in the audit flagged the remaining
+inconsistent applications.
+
+### `ApiError instanceof` for status checks
+
+`apiFetch` (in `src/lib/api.ts`) throws an `ApiError` with a `.status`
+field on any non-2xx response. Inspect the type before reading status:
+
+```ts
+// GOOD
+if (error instanceof ApiError && error.status === 403) { ... }
+
+// BAD — the audit flagged this elsewhere
+if ((error as any).status === 403) { ... }
+```
+
+Currently only `ProjectDetail.tsx` uses this pattern correctly. New code
+should follow the same shape.
+
+### Catch bindings
+
+ES2019 optional catch binding is on. Prefer the shortest form:
+
+```ts
+try { ... } catch { ... }          // err unused — no binding
+try { ... } catch (_err) { ... }    // err captured but intentionally unused
+try { ... } catch (err) { ... }     // err actually used
+```
+
+The ESLint rule `@typescript-eslint/no-unused-vars` is configured to allow
+`_`-prefixed identifiers and to ignore caught-error params entirely.
+
+### `any` is a warning, not an error
+
+`@typescript-eslint/no-explicit-any` is downgraded to **warn** in
+`eslint.config.js`. Existing code uses `any` heavily for response payloads,
+recharts callbacks, and drag-drop event types. Don't add new `any`s —
+prefer `unknown` and narrow — but don't be forced into refactoring to
+land a feature.
+
+---
+
+## React 19 / react-hooks v6 rules
+
+The `react-hooks/set-state-in-effect` and `react-hooks/purity` rules are
+active. They forbid:
+
+- Calling `setX(...)` synchronously inside `useEffect` (causes cascading
+  renders). When you legitimately need this (e.g., URL→state sync), add a
+  per-line `// eslint-disable-next-line react-hooks/set-state-in-effect`
+  with a one-sentence reason.
+- Calling impure functions during render (`new Date()`, `Math.random()`,
+  `Date.now()`). Wrap in `useMemo(..., [])` for once-per-mount, or use
+  `useState(() => ({...}))` lazy initializer when the value seeds state.
+
+Examples that exist:
+- `TimelineView.tsx` uses `useState(() => ({...new Date()...}))` lazy init.
+- `App.tsx` has one eslint-disable on a deliberate `setCountdown(300)`
+  reset inside an effect.
+- `ui/sidebar.tsx` has one eslint-disable on `Math.random()` in `useMemo`
+  for non-deterministic skeleton widths.
+
+### `useEffect` dependency arrays
+
+ESLint enforces `react-hooks/exhaustive-deps`. Don't omit deps to "stop a
+loop" — fix the root cause. Common patterns:
+
+- React-query's `mutate` is stable across renders; safe to omit from deps.
+- `setSearchParams` from react-router-dom is stable; safe to omit.
+- `queryClient` is stable; safe to omit.
+
+---
+
+## Code splitting
+
+`React.lazy` + `Suspense` is in use for route-level chunks (`App.tsx`) and
+for heavy non-route components (`MermaidRenderer`, `ArchitectureEditor` in
+`ProjectDetail.tsx`). When extracting a heavy sub-component (>500 LOC) that
+isn't always rendered, consider lazy-loading it — but ONLY when the audit
+or plan specifies so. Lazy-loading a small modal that opens on user click
+adds chunk-load latency for no benefit.
+
+---
+
+## Dev login bypass
+
+`POST /api/auth/dev-login` issues a JWT for `dev@local` (admin role) when
+`DEV_AUTH_BYPASS=1` is set on the backend. The frontend probes
+`/api/auth/dev-login/available` and conditionally renders a "Dev login"
+button on the Login page.
+
+Use this for local smoke testing when you don't have Google SSO env vars.
+**Do not enable `DEV_AUTH_BYPASS` in any deployed environment.** The
+endpoint returns 404 without the flag set, but defence in depth: also gate
+the frontend probe with `import.meta.env.DEV` if you find time (audit I9).
+
+---
+
+## Things the audit flagged that we have NOT fixed yet
+
+See `.branch-review/frontend-audit-20260513-1726.md` for the full list and
+`.plans/split-monolithic-frontend-*.md` for the split plan. Highlights:
+
+| Issue | Where | Status |
+|---|---|---|
+| `/admin` has no client-side role guard | `App.tsx:159` | Open |
+| JWT stored in localStorage (XSS-readable) | `AuthContext.tsx`, `lib/api.ts` | Open |
+| No global 401 handler — expired sessions fail silently | `lib/api.ts`, queryClient | Open |
+| `WorkItem` declared 6×, `PersonalTask` 3× — no shared types module | many files | Open (F-T1 slice) |
+| `new Date('YYYY-MM-DD')` UTC-parses to local-previous-day | 6 files | Open — fix exists (`parseLocalDate`) in 3 files, not shared |
+| 4 fire-and-forget `apiFetch` mutations bypassing `useMutation` | `ProjectsPage`, `ProjectBoard` | Open — preserve current behaviour when extracting |
+| No error boundaries anywhere | entire tree | Open |
+| Kanban board + 4 modals are keyboard-inaccessible | `ProjectBoard.tsx` | Open |
+| `console.log` left in 3 files (ProjectDetail, CalendarView, MermaidRenderer) | various | Open — add `'no-console': 'warn'` to ESLint when fixing |
+
+When you touch files affected by these, **don't silently make them worse**.
+If you can fix them in the same PR cheaply, do so and call it out. If
+fixing them would expand scope, leave a `// TODO(audit-Fxx)` and move on.
+
+---
+
+## CI
+
+`.github/workflows/lint.yml` runs:
+
+- **Python (Ruff):** `setup-python` + pip-installs `backend/requirements.txt`
+  (which pins `ruff==0.15.12`), then `ruff check backend/` and
+  `ruff format --check backend/`.
+- **Frontend (ESLint + Prettier):** `npm ci` + `npm run lint` + `npm run format:check`.
+
+Both jobs are "loud but not blocking" — failures show red but don't gate
+merge unless "Lint" is added to required-status-checks for `main`.
+
+Pre-flight before pushing:
+
+```bash
+cd app && npx tsc --noEmit && npm run lint && npm run format:check && npm run build
+cd ../ && uv tool run ruff check backend/ && uv tool run ruff format --check backend/
+```
