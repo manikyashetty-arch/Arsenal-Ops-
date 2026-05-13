@@ -27,19 +27,36 @@ router = APIRouter(prefix="/api/workitems", tags=["Work Items"])
 # Counter for generating work item keys
 def get_next_item_number(db: Session, key_prefix: str) -> int:
     """Get the next work item number for a key prefix — queries GLOBALLY.
-    Caller MUST hold the advisory lock before calling this.
+    Caller MUST hold the advisory lock before calling this (Postgres only).
     """
-    row = db.execute(
-        text("""
-            SELECT COALESCE(MAX(
-                CAST(REGEXP_REPLACE(key, '^.*-', '') AS INTEGER)
-            ), 0) + 1
-            FROM work_items
-            WHERE key LIKE :prefix
-              AND key ~ :pattern
-        """),
-        {"prefix": f"{key_prefix}-%", "pattern": f"^{key_prefix}-[0-9]+$"},
-    ).scalar()
+    dialect = db.bind.dialect.name
+    if dialect == "postgresql":
+        # Postgres: strict regex filter rules out non-numeric suffixes.
+        row = db.execute(
+            text("""
+                SELECT COALESCE(MAX(
+                    CAST(REGEXP_REPLACE(key, '^.*-', '') AS INTEGER)
+                ), 0) + 1
+                FROM work_items
+                WHERE key LIKE :prefix
+                  AND key ~ :pattern
+            """),
+            {"prefix": f"{key_prefix}-%", "pattern": f"^{key_prefix}-[0-9]+$"},
+        ).scalar()
+    else:
+        # SQLite (local dev): no REGEXP_REPLACE. Strip the known prefix via
+        # SUBSTR; CAST to INTEGER returns 0 for non-numeric suffixes, which
+        # MAX correctly ignores.
+        row = db.execute(
+            text("""
+                SELECT COALESCE(MAX(
+                    CAST(SUBSTR(key, :prefix_len) AS INTEGER)
+                ), 0) + 1
+                FROM work_items
+                WHERE key LIKE :prefix
+            """),
+            {"prefix": f"{key_prefix}-%", "prefix_len": len(key_prefix) + 2},
+        ).scalar()
     return row or 1
 
 
@@ -373,9 +390,11 @@ def create_work_item(
 
     # Acquire a PostgreSQL transaction-level advisory lock scoped to this key_prefix.
     # This serializes concurrent inserts for the same prefix across all Gunicorn workers,
-    # making key collisions impossible without any retry logic.
-    lock_id = abs(hash(key_prefix)) % 2_147_483_647
-    db.execute(text("SELECT pg_advisory_xact_lock(:lock_id)"), {"lock_id": lock_id})
+    # making key collisions impossible without any retry logic. No-op on SQLite (local
+    # dev), which is single-writer anyway so there's nothing to serialize.
+    if db.bind.dialect.name == "postgresql":
+        lock_id = abs(hash(key_prefix)) % 2_147_483_647
+        db.execute(text("SELECT pg_advisory_xact_lock(:lock_id)"), {"lock_id": lock_id})
 
     # Now we're the only transaction touching this prefix — get next number safely
     item_number = get_next_item_number(db, key_prefix)

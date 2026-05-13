@@ -59,18 +59,12 @@ class RoadmapCommitRequest(BaseModel):
 
 
 def get_next_work_item_number(db: Session, key_prefix: str) -> int:
-    """Get the next work item number for a key prefix"""
-    row = db.execute(
-        text(f"""
-            SELECT COALESCE(MAX(
-                CAST(REGEXP_REPLACE(key, '^{key_prefix}-', '') AS INTEGER)
-            ), 0) + 1
-            FROM work_items
-            WHERE key LIKE :prefix
-        """),
-        {"prefix": f"{key_prefix}-%"},
-    ).scalar()
-    return row or 1
+    """Get the next work item number for a key prefix. Delegates to the shared
+    routers.workitems helper so the Postgres-vs-SQLite split stays in one place.
+    """
+    from routers.workitems import get_next_item_number
+
+    return get_next_item_number(db, key_prefix)
 
 
 def create_work_item(

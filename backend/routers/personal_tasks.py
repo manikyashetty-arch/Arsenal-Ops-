@@ -16,6 +16,7 @@ from models.project import Project
 from models.user import User
 from models.work_item import WorkItem, WorkItemStatus
 from routers.auth import get_current_user
+from routers.workitems import get_next_item_number
 
 router = APIRouter(prefix="/api/personal-tasks", tags=["Personal Tasks"])
 
@@ -202,18 +203,19 @@ def convert_to_ticket(
     else:
         assignee = db.query(Developer).filter(Developer.email == current_user.email).first()
 
-    # Generate key BEFORE inserting (key is NOT NULL)
-    from sqlalchemy import text
-
+    # Generate key BEFORE inserting (key is NOT NULL). Use the shared helper
+    # so the Postgres-vs-SQLite split lives in one place.
     key_prefix = project.key_prefix or "TASK"
-    result = db.execute(
-        text("""
-        SELECT COALESCE(MAX(CAST(REGEXP_REPLACE(key, '^.*-', '') AS INTEGER)), 0) + 1
-        FROM work_items WHERE key LIKE :prefix
-    """),
-        {"prefix": f"{key_prefix}-%"},
-    )
-    next_number = result.scalar() or 1
+
+    # Acquire the same advisory lock as create_work_item so concurrent
+    # converters don't race on key numbering. No-op on SQLite.
+    if db.bind.dialect.name == "postgresql":
+        from sqlalchemy import text
+
+        lock_id = abs(hash(key_prefix)) % 2_147_483_647
+        db.execute(text("SELECT pg_advisory_xact_lock(:lock_id)"), {"lock_id": lock_id})
+
+    next_number = get_next_item_number(db, key_prefix)
     generated_key = f"{key_prefix}-{next_number}"
 
     # Create work item with key already set

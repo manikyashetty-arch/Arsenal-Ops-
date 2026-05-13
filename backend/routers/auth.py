@@ -466,6 +466,63 @@ def get_google_config():
     return {"client_id": google_oauth_service.google_client_id}
 
 
+@router.get("/dev-login/available")
+def dev_login_available():
+    """Lets the frontend decide whether to render the dev-login button."""
+    return {"available": os.getenv("DEV_AUTH_BYPASS") == "1"}
+
+
+@router.post("/dev-login", response_model=Token)
+def dev_login(db: Session = Depends(get_db)):
+    """Issue a JWT for a local admin user without going through Google SSO.
+
+    Only enabled when DEV_AUTH_BYPASS=1 is set on the backend process. Idempotent:
+    on first call, creates a `dev@local` admin (and the matching Developer record
+    so the user shows up on boards); on subsequent calls, reuses it.
+    """
+    if os.getenv("DEV_AUTH_BYPASS") != "1":
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+
+    from models.developer import Developer
+
+    user = db.query(User).filter(User.email == "dev@local").first()
+    if not user:
+        user = User(
+            email="dev@local",
+            name="Dev User",
+            hashed_password=get_password_hash("dev"),  # unused, but column is non-null
+            role=UserRole.ADMIN.value,
+            is_active=True,
+            is_first_login=False,
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+
+    if not db.query(Developer).filter(Developer.email == user.email).first():
+        db.add(Developer(name=user.name, email=user.email))
+        db.commit()
+
+    user.last_login_at = datetime.utcnow()
+    db.commit()
+
+    access_token = create_access_token(
+        data={"sub": str(user.id)},
+        expires_delta=timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES),
+    )
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "user": {
+            "id": user.id,
+            "email": user.email,
+            "name": user.name,
+            "role": user.role,
+            "is_first_login": user.is_first_login,
+        },
+    }
+
+
 # ============= Custom Restrictions Management =============
 
 

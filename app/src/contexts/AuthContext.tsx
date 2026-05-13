@@ -43,6 +43,7 @@ interface AuthContextType {
   isAuthenticated: boolean;
   login: (email: string, password: string) => Promise<void>;
   loginWithGoogle: (idToken: string) => Promise<void>;
+  loginDev: () => Promise<void>;
   logout: () => void;
   changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
   checkAuth: () => Promise<void>;
@@ -224,6 +225,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     lastActivityRef.current = Date.now();
   }, []);
 
+  const loginDev = useCallback(async () => {
+    const response = await fetch(`${API_BASE_URL}/api/auth/dev-login`, { method: 'POST' });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.detail || 'Dev login unavailable (set DEV_AUTH_BYPASS=1 on backend)');
+    }
+    const data = await response.json();
+    setToken(data.access_token);
+    setUser(data.user);
+    localStorage.setItem('token', data.access_token);
+    localStorage.setItem('user', JSON.stringify(data.user));
+    lastActivityRef.current = Date.now();
+  }, []);
+
   const changePassword = useCallback(
     async (currentPassword: string, newPassword: string) => {
       const response = await fetch(`${API_BASE_URL}/api/auth/change-password`, {
@@ -254,6 +269,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isAuthenticated,
       login,
       loginWithGoogle,
+      loginDev,
       logout,
       changePassword,
       checkAuth,
@@ -268,6 +284,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       showWarning,
       login,
       loginWithGoogle,
+      loginDev,
       logout,
       changePassword,
       checkAuth,

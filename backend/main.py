@@ -51,8 +51,14 @@ cors_origins = [
     "https://arsenal-ops.vercel.app",
     "https://www.arsenal-ops.vercel.app",
     "https://arsenal-ops-git-main-manikyashetty-archs-projects.vercel.app",
+    # Vite's default port plus its auto-fallback ports when 5173 is in use
+    # (common when running multiple frontend projects locally).
     "http://localhost:5173",
     "http://127.0.0.1:5173",
+    "http://localhost:5174",
+    "http://127.0.0.1:5174",
+    "http://localhost:5175",
+    "http://127.0.0.1:5175",
 ]
 
 # Add any additional origins from environment variable

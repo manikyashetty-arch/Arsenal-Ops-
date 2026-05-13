@@ -15,7 +15,16 @@ export function Login() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [googleReady, setGoogleReady] = useState(false);
-  const { loginWithGoogle } = useAuth();
+  const [devLoginAvailable, setDevLoginAvailable] = useState(false);
+  const { loginWithGoogle, loginDev } = useAuth();
+
+  // Probe whether the backend has DEV_AUTH_BYPASS=1 set. Hidden in prod.
+  useEffect(() => {
+    fetch(`${API_BASE_URL}/api/auth/dev-login/available`)
+      .then((r) => (r.ok ? r.json() : { available: false }))
+      .then((d) => setDevLoginAvailable(!!d.available))
+      .catch(() => setDevLoginAvailable(false));
+  }, []);
 
   // Load Google Sign-In SDK and wait for it to be ready
   useEffect(() => {
@@ -128,6 +137,29 @@ export function Login() {
               'Sign in with Google'
             )}
           </button>
+
+          {devLoginAvailable && (
+            <button
+              onClick={async () => {
+                setIsLoading(true);
+                setError(null);
+                try {
+                  await loginDev();
+                  toast.success('Dev login successful');
+                } catch (err) {
+                  const msg = err instanceof Error ? err.message : 'Dev login failed';
+                  setError(msg);
+                  toast.error(msg);
+                } finally {
+                  setIsLoading(false);
+                }
+              }}
+              disabled={isLoading}
+              className="mt-3 w-full py-2 px-4 bg-[rgba(255,255,255,0.05)] hover:bg-[rgba(255,255,255,0.1)] border border-[rgba(255,255,255,0.1)] text-[#a3a3a3] text-sm rounded-lg transition-all"
+            >
+              Dev login (skip Google SSO)
+            </button>
+          )}
 
           <div className="mt-6 p-4 bg-[rgba(224,185,84,0.1)] border border-[rgba(224,185,84,0.2)] rounded-lg">
             <div className="flex items-start gap-2">
