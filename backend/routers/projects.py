@@ -131,89 +131,153 @@ class ProjectResponse(BaseModel):
     developers: List[ProjectDeveloperResponse]
 
 
-def get_project_work_item_stats(project_id: int, db: Session) -> dict:
-    """Get work item statistics for a project"""
-    from models.work_item import WorkItem
-    
-    items = db.query(WorkItem).filter(WorkItem.project_id == project_id).all()
-    total = len(items)
-    by_status = {}
-    for item in items:
-        s = item.status or "todo"
-        by_status[s] = by_status.get(s, 0) + 1
-    total_points = sum(item.story_points or 0 for item in items)
-    completed = by_status.get("done", 0)
+def _empty_stats() -> dict:
     return {
-        "total": total,
-        "by_status": by_status,
-        "total_points": total_points,
-        "completed": completed,
-        "completion_pct": round((completed / total * 100) if total > 0 else 0, 1)
+        "total": 0,
+        "by_status": {},
+        "total_points": 0,
+        "completed": 0,
+        "completion_pct": 0,
     }
 
 
-def format_project(project: Project, db: Session) -> dict:
-    stats = get_project_work_item_stats(project.id, db)
-    
-    # Get developers with their roles from the association table
-    developers = []
-    result = db.execute(
+def get_work_item_stats_batch(project_ids: List[int], db: Session) -> dict:
+    """Return ``{project_id: stats_dict}`` for the given project ids.
+
+    Runs a single GROUP BY query instead of one-pass-per-project. Items with a
+    NULL status are bucketed as ``"todo"`` to match the legacy behavior of
+    ``get_project_work_item_stats``.
+    """
+    from models.work_item import WorkItem
+    from sqlalchemy import func, case
+
+    if not project_ids:
+        return {}
+
+    status_expr = func.coalesce(WorkItem.status, "todo").label("status")
+    rows = (
+        db.query(
+            WorkItem.project_id,
+            status_expr,
+            func.count().label("n"),
+            func.coalesce(func.sum(WorkItem.story_points), 0).label("points"),
+        )
+        .filter(WorkItem.project_id.in_(project_ids))
+        .group_by(WorkItem.project_id, status_expr)
+        .all()
+    )
+
+    stats: dict = {pid: _empty_stats() for pid in project_ids}
+    for row in rows:
+        bucket = stats[row.project_id]
+        bucket["by_status"][row.status] = row.n
+        bucket["total"] += row.n
+        bucket["total_points"] += int(row.points or 0)
+
+    for bucket in stats.values():
+        completed = bucket["by_status"].get("done", 0)
+        total = bucket["total"]
+        bucket["completed"] = completed
+        bucket["completion_pct"] = round((completed / total * 100) if total > 0 else 0, 1)
+
+    return stats
+
+
+def _developers_by_project(project_ids: List[int], db: Session) -> dict:
+    """Return ``{project_id: [developer_dict, ...]}`` in one query."""
+    if not project_ids:
+        return {}
+
+    rows = db.execute(
         select(
+            project_developers.c.project_id,
             Developer.id,
             Developer.name,
             Developer.email,
             Developer.github_username,
             project_developers.c.role,
             project_developers.c.responsibilities,
-            project_developers.c.is_admin
+            project_developers.c.is_admin,
         )
         .join(project_developers, Developer.id == project_developers.c.developer_id)
-        .where(project_developers.c.project_id == project.id)
+        .where(project_developers.c.project_id.in_(project_ids))
     ).all()
-    
-    for row in result:
-        developers.append({
+
+    by_project: dict = {pid: [] for pid in project_ids}
+    for row in rows:
+        by_project[row.project_id].append({
             "id": row.id,
             "name": row.name,
             "email": row.email,
             "github_username": row.github_username,
             "role": row.role,
             "responsibilities": row.responsibilities,
-            "is_admin": row.is_admin
+            "is_admin": row.is_admin,
         })
-    
-    # Parse GitHub repo name if URL exists
-    github_repo_name = None
-    if project.github_repo_url:
-        github_repo_name = github_service.parse_repo_name(project.github_repo_url)
-    
-    # Get selected architecture
-    selected_architecture = db.query(Architecture).filter(
-        Architecture.project_id == project.id,
-        Architecture.is_selected == True
-    ).first()
-    
-    # Get all architectures for this project
-    all_architectures = db.query(Architecture).filter(
-        Architecture.project_id == project.id
-    ).order_by(Architecture.created_at.desc()).all()
-    
-    return {
-        "id": project.id,
-        "name": project.name,
-        "description": project.description,
-        "key_prefix": project.status or "PROJ",
-        "status": project.status or "active",
-        "github_repo_url": project.github_repo_url,
-        "github_repo_urls": project.github_repo_urls if isinstance(project.github_repo_urls, list) else (project.github_repo_urls or []),
-        "github_repo_name": github_repo_name,
-        "created_at": project.created_at.isoformat() if project.created_at else datetime.utcnow().isoformat(),
-        "end_date": project.end_date.isoformat() if project.end_date else None,
-        "work_item_stats": stats,
-        "developers": developers,
-        "selected_architecture": selected_architecture.to_dict() if selected_architecture else None,
-        "architectures": [arch.to_dict() for arch in all_architectures]
-    }
+    return by_project
+
+
+def _architectures_by_project(project_ids: List[int], db: Session) -> dict:
+    """Return ``{project_id: [Architecture, ...]}`` ordered by created_at desc."""
+    if not project_ids:
+        return {}
+
+    rows = (
+        db.query(Architecture)
+        .filter(Architecture.project_id.in_(project_ids))
+        .order_by(Architecture.created_at.desc())
+        .all()
+    )
+
+    by_project: dict = {pid: [] for pid in project_ids}
+    for arch in rows:
+        by_project[arch.project_id].append(arch)
+    return by_project
+
+
+def format_projects_batch(projects: List[Project], db: Session) -> List[dict]:
+    """Serialize a list of projects using batched DB lookups.
+
+    Total query count: 3 (stats, developers, architectures) regardless of how
+    many projects are passed in. Output is identical to calling
+    ``format_project`` on each project individually.
+    """
+    project_ids = [p.id for p in projects]
+    stats_by_id = get_work_item_stats_batch(project_ids, db)
+    devs_by_id = _developers_by_project(project_ids, db)
+    archs_by_id = _architectures_by_project(project_ids, db)
+
+    out: List[dict] = []
+    for project in projects:
+        archs = archs_by_id.get(project.id, [])
+        selected = next((a for a in archs if a.is_selected), None)
+
+        github_repo_name = None
+        if project.github_repo_url:
+            github_repo_name = github_service.parse_repo_name(project.github_repo_url)
+
+        out.append({
+            "id": project.id,
+            "name": project.name,
+            "description": project.description,
+            "key_prefix": project.status or "PROJ",
+            "status": project.status or "active",
+            "github_repo_url": project.github_repo_url,
+            "github_repo_urls": project.github_repo_urls if isinstance(project.github_repo_urls, list) else (project.github_repo_urls or []),
+            "github_repo_name": github_repo_name,
+            "created_at": project.created_at.isoformat() if project.created_at else datetime.utcnow().isoformat(),
+            "end_date": project.end_date.isoformat() if project.end_date else None,
+            "work_item_stats": stats_by_id.get(project.id, _empty_stats()),
+            "developers": devs_by_id.get(project.id, []),
+            "selected_architecture": selected.to_dict() if selected else None,
+            "architectures": [arch.to_dict() for arch in archs],
+        })
+    return out
+
+
+def format_project(project: Project, db: Session) -> dict:
+    """Single-project wrapper around ``format_projects_batch`` for backward compat."""
+    return format_projects_batch([project], db)[0]
 
 
 @router.post("/")
@@ -321,8 +385,8 @@ def list_projects(
         projects = db.query(Project).join(project_developers).join(Developer).filter(
             Developer.email == current_user.email
         ).all()
-    
-    return [format_project(p, db) for p in projects]
+
+    return format_projects_batch(projects, db)
 
 
 @router.get("/{project_id}")
