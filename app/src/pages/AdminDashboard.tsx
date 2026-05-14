@@ -741,6 +741,9 @@ const AdminDashboard = () => {
       toast.success('User created successfully!');
       setGeneratedPassword(data.temporary_password);
       queryClient.invalidateQueries({ queryKey: ['admin', 'users'] });
+      // Developer-role users also surface in the Employees tab — keep both
+      // tabs consistent on role mutations.
+      queryClient.invalidateQueries({ queryKey: ['admin', 'employees'] });
       queryClient.invalidateQueries({ queryKey: ['admin', 'stats'] });
     },
     onError: (err: any) => toast.error(err?.message || 'Failed to create user'),
@@ -763,6 +766,7 @@ const AdminDashboard = () => {
     onSuccess: () => {
       toast.success('User roles updated');
       queryClient.invalidateQueries({ queryKey: ['admin', 'users'] });
+      queryClient.invalidateQueries({ queryKey: ['admin', 'employees'] });
     },
     onError: () => toast.error('Failed to update role'),
   });
