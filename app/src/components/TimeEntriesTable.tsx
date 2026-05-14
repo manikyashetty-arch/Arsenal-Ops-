@@ -22,12 +22,15 @@ export default function TimeEntriesTable({ workItemId, token }: TimeEntriesTable
   const [thisWeekTotal, setThisWeekTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [expanded, setExpanded] = useState(false);
+  // Need at least one fetch before we can decide whether to render the
+  // toggle — otherwise the (thisWeekTotal === 0 && !expanded) guard fires
+  // immediately on mount and the toggle button never appears (audit F-C13).
+  const [hasFetched, setHasFetched] = useState(false);
 
   useEffect(() => {
-    if (expanded) {
-      fetchTimeEntries();
-    }
-  }, [expanded, workItemId]);
+    fetchTimeEntries();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fetchTimeEntries is component-scoped and stable
+  }, [workItemId]);
 
   const fetchTimeEntries = async () => {
     setLoading(true);
@@ -45,11 +48,14 @@ export default function TimeEntriesTable({ workItemId, token }: TimeEntriesTable
       console.error('Failed to fetch time entries:', err);
     } finally {
       setLoading(false);
+      setHasFetched(true);
     }
   };
 
-  if (thisWeekTotal === 0 && !expanded) {
-    return null; // Don't show if no hours logged this week
+  // Hide entirely until the first fetch settles, then hide if there's
+  // nothing to show this week.
+  if (!hasFetched || (thisWeekTotal === 0 && !expanded)) {
+    return null;
   }
 
   return (
