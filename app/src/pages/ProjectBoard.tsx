@@ -61,13 +61,7 @@ import {
 } from '@/lib/hierarchy/validateReparent';
 import { buildEpicGroups } from '@/lib/hierarchy/buildEpicGroups';
 import { apiFetch } from '@/lib/api';
-
-// Helper function to parse YYYY-MM-DD string to local Date object (avoids UTC timezone issues)
-const parseLocalDate = (dateString: string | undefined): Date | undefined => {
-  if (!dateString) return undefined;
-  const [year, month, day] = dateString.split('-');
-  return new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
-};
+import { parseLocalDateOptional as parseLocalDate } from '@/lib/dates';
 
 interface WorkItem {
   id: string;
@@ -993,11 +987,14 @@ const ProjectBoard = () => {
   const handleSubmitComment = (
     commentType: 'comment' | 'blocker' | 'business_review' = 'comment',
   ) => {
-    if (!selectedItem || !newComment.trim()) return;
+    if (!selectedItem || !newComment.trim() || !user?.id) return;
     submitCommentMutation.mutate({
       workItemId: selectedItem.id,
       content: newComment,
-      authorId: project?.developers?.[0]?.id || 1,
+      // The logged-in author is the comment author, not the first developer on
+      // the project. Previously every comment was attributed to project.devs[0]
+      // (or user id 1 if none) — a real data-integrity bug.
+      authorId: user.id,
       commentType,
     });
   };
