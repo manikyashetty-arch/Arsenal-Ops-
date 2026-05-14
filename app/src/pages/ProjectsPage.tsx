@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
@@ -227,11 +227,9 @@ const ProjectsPage = () => {
     mentions: number[];
     created_at: string;
   };
-  const [comments, setComments] = useState<Comment[]>([]);
   const [newComment, setNewComment] = useState('');
   const [showMentions, setShowMentions] = useState(false);
   const [mentionFilter, setMentionFilter] = useState('');
-  const commentCache = useRef<Map<string, Comment[]>>(new Map());
 
   // Private Notepad
   const [notepadContent, setNotepadContent] = useState('');
@@ -413,6 +411,10 @@ const ProjectsPage = () => {
       setConvertEstimatedHours('');
       setMemberLookupProjectId('');
       invalidatePersonalTasks();
+      // The conversion creates a new work item, so the My Tasks widget and
+      // any board view need to refetch — see CLAUDE.md cross-cutting rule.
+      queryClient.invalidateQueries({ queryKey: ['myTasks'] });
+      queryClient.invalidateQueries({ queryKey: ['workItems'] });
     },
     onError: () => toast.error('Failed to convert'),
   });
@@ -622,11 +624,14 @@ const ProjectsPage = () => {
     setIsEditingTask(true);
   };
 
-  // When the project query resolves (after edit opens), sync developers into form state
-  const editTaskDevs = editTaskProjectQuery.data?.developers;
-  if (isEditingTask && editTaskDevs && editTaskDevs !== editTaskProjectDevelopers) {
-    // Use a timeout-0 to avoid setting state during render
-  }
+  // When the project query resolves (after edit opens), sync developers into
+  // local form state so the assignee dropdown isn't empty. The query may not
+  // have been cached at startEditTask time.
+  useEffect(() => {
+    if (isEditingTask && editTaskProjectQuery.data?.developers) {
+      setEditTaskProjectDevelopers(editTaskProjectQuery.data.developers);
+    }
+  }, [isEditingTask, editTaskProjectQuery.data]);
 
   // Log hours for a task
   const handleLogHours = (task: MyTask, hoursToLog: number) => {
@@ -793,34 +798,53 @@ const ProjectsPage = () => {
     setMentionFilter('');
   };
 
-  // Submit comment
+  // Submit comment — writes the new comment into the comments cache for the
+  // captured workItemId so it survives drawer-close races, then invalidates.
+  const submitCommentMutation = useMutation({
+    mutationFn: ({
+      workItemId,
+      content,
+      commentType,
+    }: {
+      workItemId: string;
+      content: string;
+      commentType: 'comment' | 'blocker' | 'business_review';
+    }) =>
+      apiFetch<Comment>('/api/comments/', {
+        method: 'POST',
+        body: JSON.stringify({
+          work_item_id: parseInt(workItemId),
+          content,
+          author_id: user?.id || 1,
+          comment_type: commentType,
+        }),
+      }),
+    onSuccess: (newCommentData, { workItemId, commentType }) => {
+      queryClient.setQueryData<Comment[]>(['workItem', workItemId, 'comments'], (old) => [
+        newCommentData,
+        ...(old ?? []),
+      ]);
+      queryClient.invalidateQueries({ queryKey: ['workItem', workItemId, 'comments'] });
+      setNewComment('');
+      const messages = {
+        blocker: 'Blocker reported!',
+        business_review: 'Business Review comment added!',
+        comment: 'Comment added!',
+      };
+      toast.success(messages[commentType]);
+    },
+    onError: () => toast.error('Failed to add comment'),
+  });
+
   const handleSubmitComment = (
     commentType: 'comment' | 'blocker' | 'business_review' = 'comment',
   ) => {
     if (!selectedTask || !newComment.trim()) return;
-    apiFetch<Comment>('/api/comments/', {
-      method: 'POST',
-      body: JSON.stringify({
-        work_item_id: parseInt(selectedTask.id),
-        content: newComment,
-        author_id: user?.id || 1,
-        comment_type: commentType,
-      }),
-    })
-      .then((newCommentData: Comment) => {
-        setComments((prev) => [newCommentData, ...prev]);
-        if (selectedTask) commentCache.current.delete(selectedTask.id);
-        setNewComment('');
-        const messages = {
-          blocker: 'Blocker reported!',
-          business_review: 'Business Review comment added!',
-          comment: 'Comment added!',
-        };
-        toast.success(messages[commentType]);
-      })
-      .catch(() => {
-        toast.error('Failed to add comment');
-      });
+    submitCommentMutation.mutate({
+      workItemId: selectedTask.id,
+      content: newComment,
+      commentType,
+    });
   };
 
   // Render comment with mentions highlighted and links as clickable
@@ -923,21 +947,15 @@ const ProjectsPage = () => {
   };
 
   // ── comments: fetched via useQuery, gated on selectedTask ─────────────────
+  // react-query is the single source of truth — react-query's own staleTime
+  // gives the "instant feel" the previous in-memory cache was simulating.
   const commentsQuery = useQuery<Comment[]>({
     queryKey: ['workItem', selectedTask?.id, 'comments'],
-    queryFn: async () => {
-      // Use local cache first for instant feel, then use react-query's result
-      const cached = commentCache.current.get(selectedTask!.id);
-      if (cached !== undefined) return cached;
-      const data = await apiFetch<Comment[]>(`/api/comments/workitem/${selectedTask!.id}`);
-      commentCache.current.set(selectedTask!.id, data ?? []);
-      return data ?? [];
-    },
+    queryFn: () => apiFetch<Comment[]>(`/api/comments/workitem/${selectedTask!.id}`),
     enabled: !!selectedTask && !selectedTask.is_personal,
   });
 
-  // Use query data as the source of truth for the comments list shown in JSX
-  const displayComments = commentsQuery.data ?? comments;
+  const displayComments = commentsQuery.data ?? [];
 
   // Notepad: load from localStorage per user
   useEffect(() => {
