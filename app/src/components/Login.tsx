@@ -18,8 +18,11 @@ export function Login() {
   const [devLoginAvailable, setDevLoginAvailable] = useState(false);
   const { loginWithGoogle, loginDev } = useAuth();
 
-  // Probe whether the backend has DEV_AUTH_BYPASS=1 set. Hidden in prod.
+  // Probe whether the backend has DEV_AUTH_BYPASS=1 set. Skipped entirely in
+  // production builds so the endpoint isn't even hit from deployed clients
+  // (defence-in-depth — the backend also returns 404 without the flag).
   useEffect(() => {
+    if (!import.meta.env.DEV) return;
     fetch(`${API_BASE_URL}/api/auth/dev-login/available`)
       .then((r) => (r.ok ? r.json() : { available: false }))
       .then((d) => setDevLoginAvailable(!!d.available))
