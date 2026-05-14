@@ -58,9 +58,11 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// 24 hours in milliseconds
-const IDLE_TIMEOUT = 24 * 60 * 60 * 1000;
-const WARNING_TIME = 23 * 60 * 60 * 1000;
+// 30-minute idle auto-logout. Warning modal shows at 25 minutes and counts
+// down 5 minutes before the actual logout. Copy in App.tsx ("inactive for
+// 25 minutes") must stay in sync — change all three constants together.
+const IDLE_TIMEOUT = 30 * 60 * 1000;
+const WARNING_TIME = 25 * 60 * 1000;
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(() => {
