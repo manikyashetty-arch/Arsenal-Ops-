@@ -567,7 +567,34 @@ const ProjectBoard = () => {
   };
 
   // Create sprint
-  const handleCreateSprint = async () => {
+  const createSprintMutation = useMutation({
+    mutationFn: (vars: {
+      name: string;
+      goal: string;
+      start_date: string | null;
+      end_date: string | null;
+    }) =>
+      apiFetch('/api/workitems/sprints/', {
+        method: 'POST',
+        body: JSON.stringify({
+          project_id: parseInt(id!),
+          name: vars.name,
+          goal: vars.goal,
+          start_date: vars.start_date,
+          end_date: vars.end_date,
+        }),
+      }),
+    onSuccess: () => {
+      toast.success('Sprint created!');
+      setShowCreateSprintModal(false);
+      setNewSprint({ name: '', goal: '', start_date: '', end_date: '' });
+      queryClient.invalidateQueries({ queryKey: ['sprints', id] });
+    },
+    onError: () => toast.error('Failed to create sprint'),
+  });
+
+  const handleCreateSprint = () => {
+    if (createSprintMutation.isPending) return;
     if (!newSprint.name.trim()) {
       toast.error('Sprint name is required');
       return;
@@ -612,24 +639,12 @@ const ProjectBoard = () => {
         return;
       }
     }
-    try {
-      await apiFetch('/api/workitems/sprints/', {
-        method: 'POST',
-        body: JSON.stringify({
-          project_id: parseInt(id!),
-          name: newSprint.name,
-          goal: newSprint.goal,
-          start_date: newSprint.start_date || null,
-          end_date: newSprint.end_date || null,
-        }),
-      });
-      toast.success('Sprint created!');
-      setShowCreateSprintModal(false);
-      setNewSprint({ name: '', goal: '', start_date: '', end_date: '' });
-      queryClient.invalidateQueries({ queryKey: ['sprints', id] });
-    } catch {
-      toast.error('Failed to create sprint');
-    }
+    createSprintMutation.mutate({
+      name: newSprint.name,
+      goal: newSprint.goal,
+      start_date: newSprint.start_date || null,
+      end_date: newSprint.end_date || null,
+    });
   };
 
   // Handle comment input with @mention detection
@@ -4216,7 +4231,12 @@ const ProjectBoard = () => {
               </Button>
               <Button
                 onClick={handleCreateSprint}
-                disabled={!newSprint.name.trim() || !newSprint.start_date || !newSprint.end_date}
+                disabled={
+                  createSprintMutation.isPending ||
+                  !newSprint.name.trim() ||
+                  !newSprint.start_date ||
+                  !newSprint.end_date
+                }
                 className="bg-gradient-to-r from-[#E0B954] to-[#B8872A] text-white rounded-xl px-6 font-medium shadow-lg shadow-[#B8872A]/20 disabled:opacity-50"
                 title={
                   !newSprint.start_date || !newSprint.end_date
@@ -4225,7 +4245,7 @@ const ProjectBoard = () => {
                 }
               >
                 <Plus className="w-4 h-4 mr-2" />
-                Create Sprint
+                {createSprintMutation.isPending ? 'Creating…' : 'Create Sprint'}
               </Button>
             </div>
           </div>
