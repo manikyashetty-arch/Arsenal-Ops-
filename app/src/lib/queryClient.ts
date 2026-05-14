@@ -40,6 +40,44 @@
  *     queryClient.invalidateQueries({ queryKey: ['workItems'] })   // all lists
  *     queryClient.invalidateQueries({ queryKey: ['workItem', id] })  // one item
  *     queryClient.invalidateQueries({ queryKey: ['project', id] })  // a project
+ *
+ * Mutation convention (use this shape — no raw apiFetch + .then/.catch):
+ *
+ *   const fooMutation = useMutation({
+ *     mutationFn: (vars) => apiFetch('/api/...', { method: 'PUT', body: ... }),
+ *     onMutate: async (vars) => {
+ *       // Cancel by PREFIX so sibling queries with different filters can't
+ *       // overwrite the optimistic state mid-flight.
+ *       await queryClient.cancelQueries({ queryKey: ['workItems'] });
+ *       const snapshot = queryClient.getQueryData(['workItems', filters]);
+ *       queryClient.setQueryData(['workItems', filters], (old) => ...);
+ *       return { snapshot };
+ *     },
+ *     onError: (_err, _vars, ctx) => {
+ *       if (ctx?.snapshot) queryClient.setQueryData(['workItems', filters], ctx.snapshot);
+ *       toast.error('Failed to ...');
+ *     },
+ *     onSettled: () => {
+ *       queryClient.invalidateQueries({ queryKey: ['workItems'] });
+ *       queryClient.invalidateQueries({ queryKey: ['myTasks'] }); // cross-cutting
+ *     },
+ *   });
+ *
+ * Rules:
+ *  1. **No fire-and-forget** — every server write goes through useMutation so
+ *     callers get isPending and rollback on failure.
+ *  2. **Snapshot in onMutate, restore in onError** — if you write the cache
+ *     optimistically, you must hold the previous value for rollback.
+ *  3. **Capture identifiers in vars, not in closures** — pass workItemId etc.
+ *     into mutate({...}) so onSuccess/onSettled can't read a stale or
+ *     undefined value after the UI has changed (e.g. drawer closed).
+ *  4. **Cross-cutting invalidation** — work-item writes invalidate both
+ *     `['workItems']` and `['myTasks']`; user-role writes invalidate both
+ *     `['admin','users']` and `['admin','employees']`.
+ *  5. **Cancel by prefix, not exact key** — `cancelQueries({ queryKey: ['workItems'] })`
+ *     covers all sibling filter combos.
+ *  6. **Stabilize filter objects with useMemo** — query keys are compared by
+ *     deep equality but closure stability still matters for callbacks.
  */
 import { QueryClient } from '@tanstack/react-query';
 
