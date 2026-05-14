@@ -633,77 +633,117 @@ const ProjectsPage = () => {
     logHoursMutation.mutate({ taskId: task.id, hours: hoursToLog });
   };
 
-  // Quick status change (optimistic)
+  // Quick status change (optimistic) — snapshot/rollback via useMutation
+  const statusMutation = useMutation({
+    mutationFn: ({ taskId, newStatus }: { taskId: string; newStatus: string }) =>
+      apiFetch(`/api/workitems/${taskId}`, {
+        method: 'PUT',
+        body: JSON.stringify({ status: newStatus }),
+      }),
+    onMutate: async ({ taskId, newStatus }) => {
+      await queryClient.cancelQueries({ queryKey: ['myTasks'] });
+      const snapshot = queryClient.getQueryData<MyTask[]>(['myTasks']);
+      patchMyTasksCache((old) =>
+        old.map((t) => (t.id === taskId ? ({ ...t, status: newStatus } as MyTask) : t)),
+      );
+      return { snapshot };
+    },
+    onError: (_err, _vars, ctx) => {
+      if (ctx?.snapshot) queryClient.setQueryData(['myTasks'], ctx.snapshot);
+      toast.error('Failed to update status');
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['myTasks'] });
+      queryClient.invalidateQueries({ queryKey: ['workItems'] });
+    },
+  });
+
   const handleStatusChange = (task: MyTask, newStatus: string) => {
-    const updated = { ...task, status: newStatus } as MyTask;
-    patchMyTasksCache((old) => old.map((t) => (t.id === task.id ? updated : t)));
-    if (selectedTask?.id === task.id) setSelectedTask(updated);
-    apiFetch(`/api/workitems/${task.id}`, {
-      method: 'PUT',
-      body: JSON.stringify({ status: newStatus }),
-    })
-      .then(() => {
-        queryClient.invalidateQueries({ queryKey: ['workItems'] });
-      })
-      .catch(() => {
-        toast.error('Failed to update status');
-        queryClient.invalidateQueries({ queryKey: ['myTasks'] });
-      });
+    if (selectedTask?.id === task.id) {
+      setSelectedTask({ ...task, status: newStatus } as MyTask);
+    }
+    statusMutation.mutate({ taskId: task.id, newStatus });
   };
 
-  // Quick due-date change from the inline calendar popover on each task row.
-  // Pass an empty string to clear the due date. Routes to the right endpoint
-  // based on whether it's a project work item or a personal task.
-  const handleQuickDueDateChange = (task: MyTask & { is_personal?: boolean }, isoDate: string) => {
-    const cleared = !isoDate;
-    const dueValue = cleared ? null : isoDate;
-
-    if (task.is_personal) {
-      const realId = String(task.id).replace(/^personal-/, '');
-      // Optimistic update to personalTasks via cache
+  // Quick due-date change — separate mutations per cache (personal vs work-item)
+  // so each gets its own snapshot/rollback against the right key.
+  const personalTaskDueDateMutation = useMutation({
+    mutationFn: ({ realId, dueValue }: { realId: string; dueValue: string | null }) =>
+      apiFetch(`/api/personal-tasks/${realId}`, {
+        method: 'PUT',
+        body: JSON.stringify({ due_date: dueValue }),
+      }),
+    onMutate: async ({ realId, dueValue }) => {
+      await queryClient.cancelQueries({ queryKey: ['personalTasks'] });
+      const snapshot = queryClient.getQueryData<PersonalTask[]>(['personalTasks']);
       queryClient.setQueryData<PersonalTask[]>(['personalTasks'], (old) =>
         (old ?? []).map((p) =>
           String(p.id) === realId ? { ...p, due_date: dueValue || undefined } : p,
         ),
       );
-      apiFetch(`/api/personal-tasks/${realId}`, {
+      return { snapshot, cleared: !dueValue };
+    },
+    onError: (_err, _vars, ctx) => {
+      if (ctx?.snapshot) queryClient.setQueryData(['personalTasks'], ctx.snapshot);
+      toast.error('Failed to update due date');
+    },
+    onSuccess: (_data, _vars, ctx) => {
+      toast.success(ctx?.cleared ? 'Due date cleared' : 'Due date updated');
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['personalTasks'] });
+    },
+  });
+
+  const workItemDueDateMutation = useMutation({
+    mutationFn: ({ taskId, dueValue }: { taskId: string; dueValue: string | null }) =>
+      apiFetch(`/api/workitems/${taskId}`, {
         method: 'PUT',
         body: JSON.stringify({ due_date: dueValue }),
-      })
-        .then(() => {
-          toast.success(cleared ? 'Due date cleared' : 'Due date updated');
-        })
-        .catch(() => {
-          toast.error('Failed to update due date');
-          queryClient.invalidateQueries({ queryKey: ['personalTasks'] });
-        });
-    } else {
-      // Project work item — also recompute is_overdue locally so it moves
-      // between Upcoming / Overdue tabs correctly without a refetch.
-      let isOverdue = false;
-      if (dueValue) {
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        const due = new Date(dueValue + 'T00:00:00');
-        isOverdue = due < today && task.status !== 'done';
-      }
+      }),
+    onMutate: async ({ taskId, dueValue }) => {
+      await queryClient.cancelQueries({ queryKey: ['myTasks'] });
+      const snapshot = queryClient.getQueryData<MyTask[]>(['myTasks']);
       patchMyTasksCache((old) =>
-        old.map((t) =>
-          t.id === task.id ? { ...t, due_date: dueValue, is_overdue: isOverdue } : t,
-        ),
+        old.map((t) => {
+          if (t.id !== taskId) return t;
+          // Recompute is_overdue locally so the row moves between Upcoming/
+          // Overdue tabs without waiting for a refetch.
+          let isOverdue = false;
+          if (dueValue) {
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            const due = new Date(dueValue + 'T00:00:00');
+            isOverdue = due < today && t.status !== 'done';
+          }
+          return { ...t, due_date: dueValue, is_overdue: isOverdue };
+        }),
       );
-      apiFetch(`/api/workitems/${task.id}`, {
-        method: 'PUT',
-        body: JSON.stringify({ due_date: dueValue }),
-      })
-        .then(() => {
-          toast.success(cleared ? 'Due date cleared' : 'Due date updated');
-          queryClient.invalidateQueries({ queryKey: ['workItems'] });
-        })
-        .catch(() => {
-          toast.error('Failed to update due date');
-          queryClient.invalidateQueries({ queryKey: ['myTasks'] });
-        });
+      return { snapshot, cleared: !dueValue };
+    },
+    onError: (_err, _vars, ctx) => {
+      if (ctx?.snapshot) queryClient.setQueryData(['myTasks'], ctx.snapshot);
+      toast.error('Failed to update due date');
+    },
+    onSuccess: (_data, _vars, ctx) => {
+      toast.success(ctx?.cleared ? 'Due date cleared' : 'Due date updated');
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['myTasks'] });
+      queryClient.invalidateQueries({ queryKey: ['workItems'] });
+    },
+  });
+
+  // Quick due-date change from the inline calendar popover on each task row.
+  // Pass an empty string to clear the due date. Routes to the right endpoint
+  // based on whether it's a project work item or a personal task.
+  const handleQuickDueDateChange = (task: MyTask & { is_personal?: boolean }, isoDate: string) => {
+    const dueValue = isoDate ? isoDate : null;
+    if (task.is_personal) {
+      const realId = String(task.id).replace(/^personal-/, '');
+      personalTaskDueDateMutation.mutate({ realId, dueValue });
+    } else {
+      workItemDueDateMutation.mutate({ taskId: task.id, dueValue });
     }
   };
 
