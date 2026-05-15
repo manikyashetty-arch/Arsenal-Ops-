@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, Dispatch, SetStateAction } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef, Dispatch, SetStateAction } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import TimeEntriesTable from '@/components/TimeEntriesTable';
 import {
@@ -49,6 +49,15 @@ import ArchitectureEditor from '@/components/ArchitectureEditor';
 import { ReviewerView } from '@/components/ProjectHub';
 import StatusDotMenu from '@/components/ProjectsPage/StatusDotMenu';
 import { useAuth, isProjectManager } from '@/contexts/AuthContext';
+import { EpicChip } from '@/components/board/EpicChip';
+import { ParentChip } from '@/components/board/ParentChip';
+import { WorkItemCombobox } from '@/components/WorkItemCombobox';
+import {
+    validateReparent,
+    getAllowedTargetTypes,
+    fieldSupportsType,
+} from '@/lib/hierarchy/validateReparent';
+import { buildEpicGroups } from '@/lib/hierarchy/buildEpicGroups';
 
 import { API_BASE_URL } from '@/config/api';
 
@@ -213,6 +222,23 @@ const ProjectBoard = () => {
     const [isCreatingItem, setIsCreatingItem] = useState(false);
     const [showCreateForm, setShowCreateForm] = useState(false);
     const [viewMode, setViewMode] = useState<'board' | 'list'>('board');
+    const [listGroupBy, setListGroupBy] = useState<'sprint' | 'epic'>(() => {
+        if (typeof window === 'undefined') return 'sprint';
+        try {
+            const stored = window.localStorage.getItem(`projectBoard.listGroupBy.${id ?? ''}`);
+            return stored === 'epic' ? 'epic' : 'sprint';
+        } catch {
+            return 'sprint';
+        }
+    });
+    useEffect(() => {
+        if (typeof window === 'undefined' || !id) return;
+        try {
+            window.localStorage.setItem(`projectBoard.listGroupBy.${id}`, listGroupBy);
+        } catch {
+            /* ignore quota errors */
+        }
+    }, [listGroupBy, id]);
     const [searchQuery, setSearchQuery] = useState('');
     const [filterTypes, setFilterTypes] = useState<string[]>([]);
     const [filterPriorities, setFilterPriorities] = useState<string[]>([]);
@@ -483,6 +509,8 @@ const ProjectBoard = () => {
             items: filteredItems.filter(item => !item.sprint_id),
         },
     ].filter(g => g.items.length > 0);
+
+    const listViewEpicGroups = buildEpicGroups(filteredItems, workItems).groups;
 
     const toggleSprintCollapse = (key: string) => {
         setCollapsedSprints(prev => {
@@ -1002,6 +1030,59 @@ const ProjectBoard = () => {
             <span key={`line-${index}`}>{line}</span>,
             index < text.split('\n').length - 1 ? <br key={`br-${index}`} /> : null
         ]).flat().filter(Boolean);
+    };
+
+    // Exclude IDs for the parent_id picker: subject + all descendants via parent_id chain.
+    // Selecting any of these as the new parent would create a cycle.
+    const parentExcludeIds = useMemo(() => {
+        const excluded = new Set<number>();
+        if (!selectedItem) return excluded;
+        const subjectId = Number(selectedItem.id);
+        if (Number.isNaN(subjectId)) return excluded;
+        excluded.add(subjectId);
+        const childrenByParent = new Map<number, string[]>();
+        for (const wi of workItems) {
+            if (wi.parent_id != null) {
+                const arr = childrenByParent.get(wi.parent_id) ?? [];
+                arr.push(wi.id);
+                childrenByParent.set(wi.parent_id, arr);
+            }
+        }
+        const queue: number[] = [subjectId];
+        while (queue.length) {
+            const cur = queue.shift()!;
+            const kids = childrenByParent.get(cur) ?? [];
+            for (const cid of kids) {
+                const cn = Number(cid);
+                if (!Number.isNaN(cn) && !excluded.has(cn)) {
+                    excluded.add(cn);
+                    queue.push(cn);
+                }
+            }
+        }
+        return excluded;
+    }, [selectedItem, workItems]);
+
+    // For the epic_id picker: epics can't have epics, so only self-exclusion is needed.
+    const epicExcludeIds = useMemo(() => {
+        const excluded = new Set<number>();
+        if (!selectedItem) return excluded;
+        const n = Number(selectedItem.id);
+        if (!Number.isNaN(n)) excluded.add(n);
+        return excluded;
+    }, [selectedItem]);
+
+    // Open another item in the detail panel by its numeric id (used by hierarchy chips)
+    const openItemByNumericId = (numericId: number | null | undefined) => {
+        if (numericId == null) return;
+        const target = workItems.find(wi => wi.id === String(numericId));
+        if (!target) {
+            toast.error('Referenced item not found');
+            return;
+        }
+        navigate(`/project/${id}/board/${target.id}`);
+        setIsEditing(false);
+        setEditForm({});
     };
 
     // Save edited item
@@ -1921,6 +2002,26 @@ const ProjectBoard = () => {
                                                         <span className="text-[10px] text-[#E0B954] font-mono font-medium">{item.key}</span>
                                                     </div>
 
+                                                    {/* Hierarchy chips */}
+                                                    {item.type !== 'epic' && (item.epic_key || item.parent_key) && (
+                                                        <div className="flex items-center gap-1.5 mb-2 flex-wrap min-w-0">
+                                                            {item.epic_key && (
+                                                                <EpicChip
+                                                                    epicKey={item.epic_key}
+                                                                    epicTitle={workItems.find(wi => wi.id === String(item.epic_id))?.title}
+                                                                    onOpen={() => openItemByNumericId(item.epic_id)}
+                                                                />
+                                                            )}
+                                                            {item.parent_key && (
+                                                                <ParentChip
+                                                                    parentKey={item.parent_key}
+                                                                    parentTitle={workItems.find(wi => wi.id === String(item.parent_id))?.title}
+                                                                    onOpen={() => openItemByNumericId(item.parent_id)}
+                                                                />
+                                                            )}
+                                                        </div>
+                                                    )}
+
                                                     {/* Title */}
                                                     <h4 className="text-sm font-medium text-[#f5f5f5] mb-3 line-clamp-2 leading-snug">
                                                         {item.title}
@@ -2006,18 +2107,153 @@ const ProjectBoard = () => {
                 ) : (
                     /* LIST VIEW */
                     <div className="p-6 space-y-3">
-                        {/* Toggle completed sprints */}
-                        <div className="flex justify-end">
-                            <button
-                                onClick={() => setShowCompletedSprints(v => !v)}
-                                className="flex items-center gap-1.5 px-3 h-7 text-xs border border-[rgba(255,255,255,0.1)] rounded-lg text-[#737373] hover:text-white hover:border-[rgba(255,255,255,0.2)] transition-colors"
+                        {/* List view header: Group by toggle + completed-sprints toggle */}
+                        <div className="flex items-center justify-between gap-3">
+                            <div
+                                role="radiogroup"
+                                aria-label="Group list by"
+                                className="flex items-center bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.05)] rounded-lg p-0.5"
                             >
-                                {showCompletedSprints ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
-                                {showCompletedSprints ? 'Hide Completed Sprints' : 'Show Completed Sprints'}
-                            </button>
+                                <button
+                                    type="button"
+                                    role="radio"
+                                    aria-checked={listGroupBy === 'sprint'}
+                                    onClick={() => setListGroupBy('sprint')}
+                                    className={`px-2.5 h-6 text-[11px] rounded-md transition-colors ${listGroupBy === 'sprint' ? 'bg-[#E0B954] text-[#080808] font-medium' : 'text-[#737373] hover:text-white'}`}
+                                >
+                                    By Sprint
+                                </button>
+                                <button
+                                    type="button"
+                                    role="radio"
+                                    aria-checked={listGroupBy === 'epic'}
+                                    onClick={() => setListGroupBy('epic')}
+                                    className={`px-2.5 h-6 text-[11px] rounded-md transition-colors ${listGroupBy === 'epic' ? 'bg-[#E0B954] text-[#080808] font-medium' : 'text-[#737373] hover:text-white'}`}
+                                >
+                                    By Epic
+                                </button>
+                            </div>
+                            {listGroupBy === 'sprint' && (
+                                <button
+                                    onClick={() => setShowCompletedSprints(v => !v)}
+                                    className="flex items-center gap-1.5 px-3 h-7 text-xs border border-[rgba(255,255,255,0.1)] rounded-lg text-[#737373] hover:text-white hover:border-[rgba(255,255,255,0.2)] transition-colors"
+                                >
+                                    {showCompletedSprints ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                                    {showCompletedSprints ? 'Hide Completed Sprints' : 'Show Completed Sprints'}
+                                </button>
+                            )}
                         </div>
 
-                        {listViewGroups.length === 0 ? (
+                        {listGroupBy === 'epic' ? (
+                            listViewEpicGroups.length === 0 ? (
+                                <div className="py-16 text-center text-[#737373] text-sm">No items found</div>
+                            ) : (
+                                listViewEpicGroups.map(group => {
+                                    const isCollapsed = collapsedSprints.has(group.key);
+                                    const isUnparented = group.key === 'unparented';
+                                    const epicKey = group.epic?.key as string | undefined;
+                                    return (
+                                        <div key={group.key} className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-2xl overflow-hidden">
+                                            {/* Epic group header */}
+                                            <div className="flex items-center gap-2.5 px-5 py-3.5 hover:bg-[rgba(255,255,255,0.02)] transition-colors">
+                                                <button
+                                                    onClick={() => toggleSprintCollapse(group.key)}
+                                                    className="flex items-center gap-2.5 flex-1 text-left min-w-0"
+                                                >
+                                                    {isCollapsed
+                                                        ? <ChevronRight className="w-3.5 h-3.5 text-[#737373] shrink-0" />
+                                                        : <ChevronDown className="w-3.5 h-3.5 text-[#737373] shrink-0" />
+                                                    }
+                                                    {isUnparented ? (
+                                                        <span className="text-sm font-semibold text-[#737373] italic">No epic</span>
+                                                    ) : (
+                                                        <>
+                                                            <Target className="w-3.5 h-3.5 text-[#A78BFA] shrink-0" />
+                                                            {epicKey && (
+                                                                <span className="text-[11px] font-mono text-[#A78BFA] shrink-0">{epicKey}</span>
+                                                            )}
+                                                            <span className="text-sm font-semibold text-[#f5f5f5] truncate">{group.label}</span>
+                                                        </>
+                                                    )}
+                                                    <span className="text-xs text-[#737373] shrink-0">{group.count} item{group.count !== 1 ? 's' : ''}</span>
+                                                </button>
+                                                {!isUnparented && group.epic && (
+                                                    <button
+                                                        onClick={(e) => { e.stopPropagation(); navigate(`/project/${id}/board/${group.epic!.id}`); setIsEditing(false); setEditForm({}); }}
+                                                        className="text-[10px] text-[#737373] hover:text-[#A78BFA] transition-colors shrink-0"
+                                                        title="Open epic"
+                                                    >
+                                                        Open epic →
+                                                    </button>
+                                                )}
+                                            </div>
+
+                                            {!isCollapsed && (
+                                                <>
+                                                    {/* Table header */}
+                                                    <div className="grid grid-cols-[1fr_120px_100px_100px_100px_120px] gap-4 px-5 py-3 border-t border-[rgba(255,255,255,0.05)] text-xs text-[#737373] font-semibold uppercase tracking-wider">
+                                                        <span>Title</span>
+                                                        <span>Type</span>
+                                                        <span>Status</span>
+                                                        <span>Priority</span>
+                                                        <span>Points</span>
+                                                        <span>Assignee</span>
+                                                    </div>
+                                                    {/* Table rows with subtask indent */}
+                                                    {group.rows.map(({ item, depth }) => {
+                                                        const typeInfo = TYPE_CONFIG[item.type] || TYPE_CONFIG.task;
+                                                        const TypeIcon = typeInfo.icon;
+                                                        const priorityStyle = PRIORITY_COLORS[item.priority] || PRIORITY_COLORS.medium;
+                                                        return (
+                                                            <div
+                                                                key={item.id}
+                                                                onMouseEnter={() => prefetchComments(item.id)}
+                                                                onClick={() => { navigate(`/project/${id}/board/${item.id}`); setIsEditing(false); setEditForm({}); }}
+                                                                className="grid grid-cols-[1fr_120px_100px_100px_100px_120px] gap-4 px-5 py-3.5 border-t border-[rgba(255,255,255,0.03)] hover:bg-[rgba(255,255,255,0.025)] cursor-pointer transition-colors group"
+                                                            >
+                                                                <div className="flex items-center gap-3 min-w-0" style={{ paddingLeft: depth === 1 ? 24 : 0 }}>
+                                                                    {depth === 1 && (
+                                                                        <span className="text-[#444] font-mono text-xs shrink-0" aria-hidden>└─</span>
+                                                                    )}
+                                                                    <span className="text-[10px] text-[#E0B954] font-mono font-medium shrink-0">{item.key}</span>
+                                                                    <span className="text-sm text-[#f5f5f5] truncate group-hover:text-white transition-colors">{item.title}</span>
+                                                                </div>
+                                                                <div className="flex items-center">
+                                                                    <div className="flex items-center gap-1.5 px-2 py-1 rounded-md text-xs" style={{ backgroundColor: typeInfo.bg, color: typeInfo.color }}>
+                                                                        <TypeIcon className="w-3 h-3" />
+                                                                        {typeInfo.label}
+                                                                    </div>
+                                                                </div>
+                                                                <div className="flex items-center">
+                                                                    <StatusDotMenu
+                                                                        status={item.status}
+                                                                        onChange={(newStatus) => handleStatusChange(item, newStatus)}
+                                                                    />
+                                                                </div>
+                                                                <div className="flex items-center">
+                                                                    <span
+                                                                        className="text-[10px] px-1.5 py-0.5 rounded font-medium"
+                                                                        style={{ backgroundColor: priorityStyle.hex + '33', color: priorityStyle.hex }}
+                                                                    >
+                                                                        {item.priority.charAt(0).toUpperCase() + item.priority.slice(1)}
+                                                                    </span>
+                                                                </div>
+                                                                <div className="flex items-center">
+                                                                    <span className="text-sm font-semibold text-[#E0B954]">{item.story_points}</span>
+                                                                </div>
+                                                                <div className="flex items-center">
+                                                                    <span className="text-xs text-[#737373] truncate">{item.assignee}</span>
+                                                                </div>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </>
+                                            )}
+                                        </div>
+                                    );
+                                })
+                            )
+                        ) : listViewGroups.length === 0 ? (
                             <div className="py-16 text-center text-[#737373] text-sm">No items found</div>
                         ) : (
                             listViewGroups.map(group => {
@@ -2190,7 +2426,15 @@ onClick={() => { navigate(`/project/${id}/board/${item.id}`); setIsEditing(false
                                     <div className="grid grid-cols-2 gap-3">
                                         <div>
                                             <label className="text-xs font-medium text-[#737373] block mb-1.5">Type</label>
-                                            <select defaultValue={selectedItem.type} onChange={e => setEditForm(f => ({ ...f, type: e.target.value as WorkItem['type'] }))}
+                                            <select defaultValue={selectedItem.type} onChange={e => {
+                                                const newType = e.target.value as WorkItem['type'];
+                                                setEditForm(f => {
+                                                    const next: Partial<WorkItem> = { ...f, type: newType };
+                                                    if (!fieldSupportsType(newType, 'epic_id')) { next.epic_id = null; next.epic_key = null; }
+                                                    if (!fieldSupportsType(newType, 'parent_id')) { next.parent_id = null; next.parent_key = null; }
+                                                    return next;
+                                                });
+                                            }}
                                                 className="w-full h-10 bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.07)] text-[#f5f5f5] rounded-xl px-3 text-sm">
                                                 <option value="user_story">Story</option>
                                                 <option value="task">Task</option>
@@ -2248,6 +2492,46 @@ onClick={() => { navigate(`/project/${id}/board/${item.id}`); setIsEditing(false
                                             ))}
                                         </select>
                                     </div>
+                                    {fieldSupportsType(((editForm.type ?? selectedItem.type) as WorkItem['type']), 'epic_id') && (
+                                        <div>
+                                            <label className="text-xs font-medium text-[#737373] block mb-1.5">Epic</label>
+                                            <WorkItemCombobox
+                                                value={(editForm.epic_id ?? selectedItem.epic_id) ?? null}
+                                                valueKey={(editForm.epic_key ?? selectedItem.epic_key) ?? null}
+                                                items={workItems}
+                                                allowedTypes={getAllowedTargetTypes(((editForm.type ?? selectedItem.type) as WorkItem['type']), 'epic_id')}
+                                                excludeIds={epicExcludeIds}
+                                                onChange={(newId, newKey) => {
+                                                    const target = newId != null ? (workItems.find(wi => wi.id === String(newId)) ?? null) : null;
+                                                    const subjectForValidation = { ...selectedItem, ...editForm, type: (editForm.type ?? selectedItem.type) as WorkItem['type'] };
+                                                    const v = validateReparent(subjectForValidation, target, 'epic_id', workItems);
+                                                    if (!v.ok) { toast.error(v.reason ?? 'Invalid epic'); return; }
+                                                    setEditForm(f => ({ ...f, epic_id: newId, epic_key: newKey }));
+                                                }}
+                                                placeholder="No epic"
+                                            />
+                                        </div>
+                                    )}
+                                    {fieldSupportsType(((editForm.type ?? selectedItem.type) as WorkItem['type']), 'parent_id') && (
+                                        <div>
+                                            <label className="text-xs font-medium text-[#737373] block mb-1.5">Parent</label>
+                                            <WorkItemCombobox
+                                                value={(editForm.parent_id ?? selectedItem.parent_id) ?? null}
+                                                valueKey={(editForm.parent_key ?? selectedItem.parent_key) ?? null}
+                                                items={workItems}
+                                                allowedTypes={getAllowedTargetTypes(((editForm.type ?? selectedItem.type) as WorkItem['type']), 'parent_id')}
+                                                excludeIds={parentExcludeIds}
+                                                onChange={(newId, newKey) => {
+                                                    const target = newId != null ? (workItems.find(wi => wi.id === String(newId)) ?? null) : null;
+                                                    const subjectForValidation = { ...selectedItem, ...editForm, type: (editForm.type ?? selectedItem.type) as WorkItem['type'] };
+                                                    const v = validateReparent(subjectForValidation, target, 'parent_id', workItems);
+                                                    if (!v.ok) { toast.error(v.reason ?? 'Invalid parent'); return; }
+                                                    setEditForm(f => ({ ...f, parent_id: newId, parent_key: newKey }));
+                                                }}
+                                                placeholder="No parent"
+                                            />
+                                        </div>
+                                    )}
                                     <div>
                                         <label className="text-xs font-medium text-[#737373] block mb-1.5">Sprint</label>
                                         <Input defaultValue={selectedItem.sprint} onChange={e => setEditForm(f => ({ ...f, sprint: e.target.value }))}
