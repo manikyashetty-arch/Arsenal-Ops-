@@ -373,6 +373,11 @@ async def create_work_item(
     db.add(work_item)
     db.flush()  # assigns work_item.id without committing
 
+    # Open initial assignment span for capacity attribution (if assignee provided)
+    if work_item.assignee_id:
+        from services.assignment_history_service import record_assignment_change
+        record_assignment_change(db, work_item.id, work_item.assignee_id, at=work_item.last_assigned_at)
+
     # Log activity (now work_item.id is available)
     from models.activity_log import ActivityLog
     activity = ActivityLog(
@@ -511,6 +516,9 @@ async def update_work_item(
         if new_assignee_id != old_assignee_id:
             # Stamp the transfer time so the new assignee's capacity uses remaining (not estimated)
             item.last_assigned_at = datetime.utcnow()
+            # Record the assignment change in the audit trail
+            from services.assignment_history_service import record_assignment_change
+            record_assignment_change(db, item.id, new_assignee_id, at=item.last_assigned_at)
             from models.developer import Developer
             new_assignee_name = "Unassigned"
             if new_assignee_id:
@@ -1522,14 +1530,22 @@ async def get_hours_analytics(
         ]
         logged = sum(te.hours for te in dev_time_entries)
         
-        # Allocated = total estimated hours on all assigned tickets
+        # Allocated = total estimated hours on all currently-assigned tickets
         allocated = sum(
             item.estimated_hours or 0
             for item in dev_items
         )
-        
-        # Remaining = allocated - logged (hours still to work)
-        remaining = max(0, allocated - logged)
+
+        # Remaining = pending work on currently-assigned non-done tickets.
+        # Use per-ticket (estimate - cumulative-logged), so:
+        #   • hours this dev logged on OTHER tickets don't reduce their remaining
+        #   • transferred-away tickets drop off (they're no longer in dev_items)
+        # Matches the sprint-level calculation above.
+        remaining = sum(
+            max(0, (item.estimated_hours or 0) - (item.logged_hours or 0))
+            for item in dev_items
+            if item.status != WorkItemStatus.DONE.value
+        )
         
         # Hours remaining on in_progress tickets (for capacity calculation at start of week)
         in_progress_remaining = sum(
@@ -1538,6 +1554,7 @@ async def get_hours_analytics(
         )
         
         completed_items = [item for item in dev_items if item.status == WorkItemStatus.DONE.value]
+        done_logged_hours = sum(item.logged_hours or 0 for item in completed_items)
         
         # Current week boundaries (Saturday → Friday, UTC) — shared with admin capacity.
         from services.capacity_service import week_boundaries, compute_capacity_breakdown
@@ -1550,7 +1567,10 @@ async def get_hours_analytics(
 
         # Status-based weekly capacity breakdown for THIS developer scoped to THIS project.
         # Mirrors /api/admin/developers/capacity but filtered to the current project.
-        capacity_breakdown = compute_capacity_breakdown(dev_items, current_week_start)
+        capacity_breakdown = compute_capacity_breakdown(
+            dev_items, current_week_start, db=db, developer_id=dev.id,
+            restrict_to_project_ids={project_id},
+        )
         
         # Build detailed ticket breakdown for this developer
         ticket_breakdown = []
@@ -1605,6 +1625,7 @@ async def get_hours_analytics(
             "in_progress_remaining": in_progress_remaining,
             "total_items": len(dev_items),
             "completed_items": len(completed_items),
+            "done_logged_hours": done_logged_hours,
             "my_tickets": ticket_breakdown,
             "hours_logged_on_others_tickets": hours_on_others_tickets,
             "attribution_note": "Hours attributed to the person who logged them, not the ticket assignee",

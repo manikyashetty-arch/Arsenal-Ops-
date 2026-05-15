@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef, Dispatch, SetStateAction } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import TimeEntriesTable from '@/components/TimeEntriesTable';
+import TicketContributors from '@/components/TicketContributors';
 import {
     ArrowLeft,
     Plus,
@@ -2736,6 +2737,9 @@ onClick={() => { navigate(`/project/${id}/board/${item.id}`); setIsEditing(false
                                             Current: {selectedItem.logged_hours || 0}h logged · {selectedItem.remaining_hours}h remaining
                                         </p>
                                     </div>
+
+                                    {/* Contributors (only renders when 2+ people have logged hours) */}
+                                    <TicketContributors workItemId={selectedItem.id} token={token || ''} />
 
                                     {/* Status Buttons */}
                                     <div className="pt-4 border-t border-[rgba(255,255,255,0.05)]">

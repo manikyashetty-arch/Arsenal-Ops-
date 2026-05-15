@@ -1128,7 +1128,10 @@ async def get_project_workload(
                 "this_week_tickets": [],
             })
         else:
-            breakdown = compute_capacity_breakdown(bucket["_items"], week_start)
+            breakdown = compute_capacity_breakdown(
+                bucket["_items"], week_start, db=db, developer_id=dev_id,
+                restrict_to_project_ids={project_id},
+            )
             bucket.update({
                 "this_week_in_progress_hours": breakdown["this_week_in_progress_hours"],
                 "this_week_in_review_hours": breakdown["this_week_in_review_hours"],
