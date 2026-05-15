@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef, Dispatch, SetStateAction } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import TimeEntriesTable from '@/components/TimeEntriesTable';
 import TicketContributors from '@/components/TicketContributors';
@@ -31,6 +31,11 @@ import {
     Inbox,
     Calendar,
     Eye,
+    EyeOff,
+    ChevronDown,
+    ChevronRight,
+    ListFilter,
+    Check,
     Loader2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -43,7 +48,17 @@ import { toast, Toaster } from 'sonner';
 import ArchitectureCard from '@/components/ArchitectureCard';
 import ArchitectureEditor from '@/components/ArchitectureEditor';
 import { ReviewerView } from '@/components/ProjectHub';
-import { useAuth } from '@/contexts/AuthContext';
+import StatusDotMenu from '@/components/ProjectsPage/StatusDotMenu';
+import { useAuth, isProjectManager } from '@/contexts/AuthContext';
+import { EpicChip } from '@/components/board/EpicChip';
+import { ParentChip } from '@/components/board/ParentChip';
+import { WorkItemCombobox } from '@/components/WorkItemCombobox';
+import {
+    validateReparent,
+    getAllowedTargetTypes,
+    fieldSupportsType,
+} from '@/lib/hierarchy/validateReparent';
+import { buildEpicGroups } from '@/lib/hierarchy/buildEpicGroups';
 
 import { API_BASE_URL } from '@/config/api';
 
@@ -90,6 +105,7 @@ interface Developer {
     github_username?: string;
     role: string;
     responsibilities?: string;
+    is_admin?: boolean;
 }
 
 interface Project {
@@ -170,31 +186,31 @@ interface Sprint {
 type AIStep = 'upload' | 'analyzing' | 'architectures' | 'preview' | 'committing' | 'done';
 
 const STATUS_CONFIG = {
-    backlog: { label: 'Backlog', color: '#737373', icon: Inbox, gradient: 'from-[#737373]/10' },
-    todo: { label: 'To Do', color: '#E0B954', icon: Plus, gradient: 'from-[#E0B954]/10' },
-    in_progress: { label: 'In Progress', color: '#F59E0B', icon: Clock, gradient: 'from-[#F59E0B]/10' },
-    in_review: { label: 'In Review', color: '#C79E3B', icon: AlertCircle, gradient: 'from-[#C79E3B]/10' },
-    done: { label: 'Done', color: '#E0B954', icon: CheckCircle2, gradient: 'from-[#E0B954]/10' },
+    backlog:     { label: 'Backlog',      color: '#555555', icon: Inbox,        gradient: 'from-[#555555]/10' },
+    todo:        { label: 'To Do',        color: '#60A5FA', icon: Plus,         gradient: 'from-[#60A5FA]/10' },
+    in_progress: { label: 'In Progress',  color: '#E0B954', icon: Clock,        gradient: 'from-[#E0B954]/10' },
+    in_review:   { label: 'In Review',    color: '#A78BFA', icon: AlertCircle,  gradient: 'from-[#A78BFA]/10' },
+    done:        { label: 'Done',         color: '#34D399', icon: CheckCircle2, gradient: 'from-[#34D399]/10' },
 } as const;
 
 const TYPE_CONFIG = {
-    user_story: { icon: BookOpen, color: '#E0B954', label: 'Story', bg: 'rgba(224,185,84,0.15)' },
-    task: { icon: ClipboardList, color: '#F59E0B', label: 'Task', bg: 'rgba(245,158,11,0.15)' },
-    bug: { icon: Bug, color: '#EF4444', label: 'Bug', bg: 'rgba(239,68,68,0.15)' },
-    epic: { icon: Target, color: '#C79E3B', label: 'Epic', bg: 'rgba(199,158,59,0.15)' },
+    user_story: { icon: BookOpen,      color: '#E0B954', label: 'Story', bg: 'rgba(224,185,84,0.15)' },
+    task:       { icon: ClipboardList, color: '#F59E0B', label: 'Task',  bg: 'rgba(245,158,11,0.15)' },
+    bug:        { icon: Bug,           color: '#EF4444', label: 'Bug',   bg: 'rgba(239,68,68,0.15)'  },
+    epic:       { icon: Target,        color: '#A78BFA', label: 'Epic',  bg: 'rgba(167,139,250,0.15)' },
 };
 
 const PRIORITY_COLORS = {
-    critical: { border: 'border-red-500/60', text: 'text-red-400', bg: 'bg-red-500/10' },
-    high: { border: 'border-orange-500/60', text: 'text-orange-400', bg: 'bg-orange-500/10' },
-    medium: { border: 'border-yellow-500/50', text: 'text-yellow-400', bg: 'bg-yellow-500/10' },
-    low: { border: 'border-emerald-500/50', text: 'text-emerald-400', bg: 'bg-emerald-500/10' },
+    critical: { border: 'border-[#EF4444]/60', text: 'text-[#EF4444]', bg: 'bg-[#EF4444]/10', hex: '#EF4444' },
+    high:     { border: 'border-[#F97316]/60', text: 'text-[#F97316]', bg: 'bg-[#F97316]/10', hex: '#F97316' },
+    medium:   { border: 'border-[#F59E0B]/50', text: 'text-[#F59E0B]', bg: 'bg-[#F59E0B]/10', hex: '#F59E0B' },
+    low:      { border: 'border-[#737373]/50', text: 'text-[#737373]', bg: 'bg-[#737373]/10', hex: '#737373' },
 };
 
 const ProjectBoard = () => {
     const { id, ticketId } = useParams<{ id: string; ticketId?: string }>();
     const navigate = useNavigate();
-    const { token } = useAuth();
+    const { token, user } = useAuth();
     const [project, setProject] = useState<Project | null>(null);
     const [workItems, setWorkItems] = useState<WorkItem[]>([]);
     const [showReviewer, setShowReviewer] = useState(false);
@@ -207,14 +223,33 @@ const ProjectBoard = () => {
     const [isCreatingItem, setIsCreatingItem] = useState(false);
     const [showCreateForm, setShowCreateForm] = useState(false);
     const [viewMode, setViewMode] = useState<'board' | 'list'>('board');
+    const [listGroupBy, setListGroupBy] = useState<'sprint' | 'epic'>(() => {
+        if (typeof window === 'undefined') return 'sprint';
+        try {
+            const stored = window.localStorage.getItem(`projectBoard.listGroupBy.${id ?? ''}`);
+            return stored === 'epic' ? 'epic' : 'sprint';
+        } catch {
+            return 'sprint';
+        }
+    });
+    useEffect(() => {
+        if (typeof window === 'undefined' || !id) return;
+        try {
+            window.localStorage.setItem(`projectBoard.listGroupBy.${id}`, listGroupBy);
+        } catch {
+            /* ignore quota errors */
+        }
+    }, [listGroupBy, id]);
     const [searchQuery, setSearchQuery] = useState('');
-    const [filterType, setFilterType] = useState<string>('all');
-    const [filterPriority, setFilterPriority] = useState<string>('all');
-    const [filterAssignee, setFilterAssignee] = useState<string>('all');
+    const [filterTypes, setFilterTypes] = useState<string[]>([]);
+    const [filterPriorities, setFilterPriorities] = useState<string[]>([]);
+    const [filterAssignees, setFilterAssignees] = useState<string[]>([]);
     const [filterTags, setFilterTags] = useState<string[]>([]);
     const [showFilterMenu, setShowFilterMenu] = useState(false);
+    const [showSprintMenu, setShowSprintMenu] = useState(false);
     const [assigneeSearchFilter, setAssigneeSearchFilter] = useState('');
     const filterMenuRef = useRef<HTMLDivElement>(null);
+    const sprintMenuRef = useRef<HTMLDivElement>(null);
     const [draggedItem, setDraggedItem] = useState<string | null>(null);
     const [dragOverColumn, setDragOverColumn] = useState<string | null>(null);
     
@@ -242,15 +277,24 @@ const ProjectBoard = () => {
     const [startDate, setStartDate] = useState('');
     const [endDate, setEndDate] = useState('');
     const [sprints, setSprints] = useState<Sprint[]>([]);
-    const [selectedSprintId, setSelectedSprintId] = useState<number | 'all' | 'backlog'>('all');
+    const [selectedSprintId, setSelectedSprintId] = useState<number | 'all' | 'unassigned'>('all');
     const [showCreateSprintModal, setShowCreateSprintModal] = useState(false);
+    const [showAddMenu, setShowAddMenu] = useState(false);
+    const [showCompletedSprints, setShowCompletedSprints] = useState(false);
+    const [collapsedSprints, setCollapsedSprints] = useState<Set<string>>(new Set());
     const [newSprint, setNewSprint] = useState({ name: '', goal: '', start_date: '', end_date: '' });
+    const [editingSprint, setEditingSprint] = useState<Sprint | null>(null);
+    const [editSprintForm, setEditSprintForm] = useState({ name: '', goal: '', start_date: '', end_date: '' });
+    const [deletingSprintId, setDeletingSprintId] = useState<number | null>(null);
+    const [completingSprintId, setCompletingSprintId] = useState<number | null>(null);
 
     // Calendar popover states
     const [showCalendarCreateForm, setShowCalendarCreateForm] = useState(false);
     const [showCalendarEditForm, setShowCalendarEditForm] = useState(false);
     const [showCalendarSprintStart, setShowCalendarSprintStart] = useState(false);
     const [showCalendarSprintEnd, setShowCalendarSprintEnd] = useState(false);
+    const [showCalendarEditSprintStart, setShowCalendarEditSprintStart] = useState(false);
+    const [showCalendarEditSprintEnd, setShowCalendarEditSprintEnd] = useState(false);
 
     // Comments state
     const [comments, setComments] = useState<Array<{
@@ -375,6 +419,19 @@ const ProjectBoard = () => {
         }
     }, [showFilterMenu]);
 
+    // Close sprint menu when clicking outside
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (sprintMenuRef.current && !sprintMenuRef.current.contains(event.target as Node)) {
+                setShowSprintMenu(false);
+            }
+        };
+        if (showSprintMenu) {
+            document.addEventListener('mousedown', handleClickOutside);
+            return () => document.removeEventListener('mousedown', handleClickOutside);
+        }
+    }, [showSprintMenu]);
+
     // Refresh project stats
     const refreshProjectStats = useCallback(async () => {
         if (!id) return;
@@ -394,14 +451,13 @@ const ProjectBoard = () => {
             const keyMatch = item.key.toLowerCase().includes(searchLower);
             if (!titleMatch && !keyMatch) return false;
         }
-        if (filterType !== 'all' && item.type !== filterType) return false;
-        if (filterPriority !== 'all' && item.priority !== filterPriority) return false;
-        if (filterAssignee !== 'all') {
-            if (filterAssignee === 'unassigned') {
-                if (item.assignee_id !== null && item.assignee_id !== undefined) return false;
-            } else {
-                if (String(item.assignee_id) !== filterAssignee) return false;
-            }
+        if (filterTypes.length > 0 && !filterTypes.includes(item.type)) return false;
+        if (filterPriorities.length > 0 && !filterPriorities.includes(item.priority)) return false;
+        if (filterAssignees.length > 0) {
+            const isUnassigned = item.assignee_id === null || item.assignee_id === undefined;
+            const matchesUnassigned = filterAssignees.includes('unassigned') && isUnassigned;
+            const matchesAssignee = filterAssignees.some(id => id !== 'unassigned' && String(item.assignee_id) === id);
+            if (!matchesUnassigned && !matchesAssignee) return false;
         }
         // Tags filter - if any tags are selected, item must have at least one of them
         if (filterTags.length > 0) {
@@ -409,10 +465,62 @@ const ProjectBoard = () => {
             if (!hasMatchingTag) return false;
         }
         // Sprint filter
-        if (selectedSprintId === 'backlog' && item.sprint_id !== null) return false;
+        if (selectedSprintId === 'unassigned' && item.sprint_id !== null) return false;
         if (typeof selectedSprintId === 'number' && item.sprint_id !== selectedSprintId) return false;
         return true;
     });
+
+    const activeFilterCount = filterTypes.length + filterPriorities.length + filterAssignees.length + filterTags.length;
+    const hasActiveFilters = activeFilterCount > 0;
+    const clearAllFilters = () => { setFilterTypes([]); setFilterPriorities([]); setFilterAssignees([]); setFilterTags([]); };
+    const toggleArrayFilter = (setter: Dispatch<SetStateAction<string[]>>, value: string) => {
+        setter(prev => prev.includes(value) ? prev.filter(v => v !== value) : [...prev, value]);
+    };
+
+    // Sprint grouping for list view
+    const listViewToday = new Date().toISOString().split('T')[0];
+    const isSprintCompleted = (s: Sprint) =>
+        s.status === 'completed' || (s.end_date != null && s.end_date < listViewToday);
+    const isSprintActive = (s: Sprint) =>
+        s.status === 'active' ||
+        (s.start_date != null && s.start_date <= listViewToday && s.end_date != null && s.end_date >= listViewToday);
+
+    const orderedListSprints = [
+        ...sprints.filter(s => !isSprintCompleted(s) && isSprintActive(s))
+            .sort((a, b) => new Date(b.start_date ?? 0).getTime() - new Date(a.start_date ?? 0).getTime()),
+        ...sprints.filter(s => !isSprintCompleted(s) && !isSprintActive(s))
+            .sort((a, b) => new Date(a.start_date ?? 0).getTime() - new Date(b.start_date ?? 0).getTime()),
+        ...(showCompletedSprints
+            ? sprints.filter(isSprintCompleted)
+                .sort((a, b) => new Date(b.end_date ?? 0).getTime() - new Date(a.end_date ?? 0).getTime())
+            : []),
+    ];
+
+    const listViewGroups = [
+        ...orderedListSprints.map(sprint => ({
+            key: String(sprint.id),
+            label: sprint.name,
+            isCompleted: isSprintCompleted(sprint),
+            items: filteredItems.filter(item => item.sprint_id === sprint.id),
+        })),
+        {
+            key: 'backlog',
+            label: 'Backlog',
+            isCompleted: false,
+            items: filteredItems.filter(item => !item.sprint_id),
+        },
+    ].filter(g => g.items.length > 0);
+
+    const listViewEpicGroups = buildEpicGroups(filteredItems, workItems).groups;
+
+    const toggleSprintCollapse = (key: string) => {
+        setCollapsedSprints(prev => {
+            const next = new Set(prev);
+            if (next.has(key)) next.delete(key);
+            else next.add(key);
+            return next;
+        });
+    };
 
     // Drag and drop handlers
     const handleDragStart = (itemId: string) => {
@@ -641,6 +749,109 @@ const ProjectBoard = () => {
         }
     };
 
+    const openEditSprintModal = (sprintKey: string) => {
+        const sprint = sprints.find(s => String(s.id) === sprintKey);
+        if (!sprint) return;
+        setEditingSprint(sprint);
+        setEditSprintForm({
+            name: sprint.name,
+            goal: sprint.goal || '',
+            start_date: sprint.start_date ? sprint.start_date.split('T')[0] : '',
+            end_date: sprint.end_date ? sprint.end_date.split('T')[0] : '',
+        });
+    };
+
+    const handleEditSprint = async () => {
+        if (!editingSprint || !editSprintForm.name.trim()) {
+            toast.error('Sprint name is required');
+            return;
+        }
+        const duplicateName = sprints.some(
+            s => s.id !== editingSprint.id && s.name.trim().toLowerCase() === editSprintForm.name.trim().toLowerCase()
+        );
+        if (duplicateName) { toast.error('A sprint with this name already exists'); return; }
+        if (!editSprintForm.start_date) { toast.error('Start date is required'); return; }
+        if (!editSprintForm.end_date) { toast.error('End date is required'); return; }
+        const startDate = parseLocalDate(editSprintForm.start_date);
+        const endDate = parseLocalDate(editSprintForm.end_date);
+        if (startDate && endDate && endDate < startDate) {
+            toast.error('End date must be equal to or after start date');
+            return;
+        }
+        if (startDate && endDate) {
+            const hasOverlap = sprints.some(s => {
+                if (s.id === editingSprint.id || !s.start_date || !s.end_date) return false;
+                return startDate <= new Date(s.end_date) && endDate >= new Date(s.start_date);
+            });
+            if (hasOverlap) { toast.error('Sprint dates overlap with an existing sprint.'); return; }
+        }
+        try {
+            const res = await fetch(`${API_BASE_URL}/api/workitems/sprints/${editingSprint.id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({
+                    name: editSprintForm.name,
+                    goal: editSprintForm.goal,
+                    start_date: editSprintForm.start_date || null,
+                    end_date: editSprintForm.end_date || null,
+                }),
+            });
+            if (res.ok) {
+                toast.success('Sprint updated!');
+                setEditingSprint(null);
+                const sprintsRes = await fetch(`${API_BASE_URL}/api/workitems/projects/${id}/sprints`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (sprintsRes.ok) setSprints(await sprintsRes.json());
+            } else {
+                toast.error('Failed to update sprint');
+            }
+        } catch { toast.error('Failed to update sprint'); }
+    };
+
+    const handleCompleteSprint = async () => {
+        if (!completingSprintId) return;
+        try {
+            const res = await fetch(`${API_BASE_URL}/api/workitems/sprints/${completingSprintId}/complete`, {
+                method: 'PUT',
+                headers: { 'Authorization': `Bearer ${token}` },
+            });
+            if (res.ok) {
+                const sprint = sprints.find(s => s.id === completingSprintId);
+                toast.success(`"${sprint?.name}" has been completed.`);
+                setCompletingSprintId(null);
+                const sprintsRes = await fetch(`${API_BASE_URL}/api/workitems/projects/${id}/sprints`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (sprintsRes.ok) setSprints(await sprintsRes.json());
+            } else {
+                toast.error('Failed to complete sprint');
+            }
+        } catch { toast.error('Failed to complete sprint'); }
+    };
+
+    const handleDeleteSprint = async () => {
+        if (!deletingSprintId) return;
+        try {
+            const res = await fetch(`${API_BASE_URL}/api/workitems/sprints/${deletingSprintId}`, {
+                method: 'DELETE',
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (res.ok) {
+                toast.success('Sprint deleted');
+                setDeletingSprintId(null);
+                const [itemsRes, sprintsRes] = await Promise.all([
+                    fetch(`${API_BASE_URL}/api/workitems/?project_id=${id}`, { headers: { 'Authorization': `Bearer ${token}` } }),
+                    fetch(`${API_BASE_URL}/api/workitems/projects/${id}/sprints`, { headers: { 'Authorization': `Bearer ${token}` } }),
+                ]);
+                if (itemsRes.ok) setWorkItems(await itemsRes.json());
+                if (sprintsRes.ok) setSprints(await sprintsRes.json());
+            } else {
+                toast.error('Failed to delete sprint');
+            }
+        } catch { toast.error('Failed to delete sprint'); }
+    };
+
     // Fetch all developers for @mentions
     useEffect(() => {
         const fetchAllDevelopers = async () => {
@@ -820,6 +1031,59 @@ const ProjectBoard = () => {
             <span key={`line-${index}`}>{line}</span>,
             index < text.split('\n').length - 1 ? <br key={`br-${index}`} /> : null
         ]).flat().filter(Boolean);
+    };
+
+    // Exclude IDs for the parent_id picker: subject + all descendants via parent_id chain.
+    // Selecting any of these as the new parent would create a cycle.
+    const parentExcludeIds = useMemo(() => {
+        const excluded = new Set<number>();
+        if (!selectedItem) return excluded;
+        const subjectId = Number(selectedItem.id);
+        if (Number.isNaN(subjectId)) return excluded;
+        excluded.add(subjectId);
+        const childrenByParent = new Map<number, string[]>();
+        for (const wi of workItems) {
+            if (wi.parent_id != null) {
+                const arr = childrenByParent.get(wi.parent_id) ?? [];
+                arr.push(wi.id);
+                childrenByParent.set(wi.parent_id, arr);
+            }
+        }
+        const queue: number[] = [subjectId];
+        while (queue.length) {
+            const cur = queue.shift()!;
+            const kids = childrenByParent.get(cur) ?? [];
+            for (const cid of kids) {
+                const cn = Number(cid);
+                if (!Number.isNaN(cn) && !excluded.has(cn)) {
+                    excluded.add(cn);
+                    queue.push(cn);
+                }
+            }
+        }
+        return excluded;
+    }, [selectedItem, workItems]);
+
+    // For the epic_id picker: epics can't have epics, so only self-exclusion is needed.
+    const epicExcludeIds = useMemo(() => {
+        const excluded = new Set<number>();
+        if (!selectedItem) return excluded;
+        const n = Number(selectedItem.id);
+        if (!Number.isNaN(n)) excluded.add(n);
+        return excluded;
+    }, [selectedItem]);
+
+    // Open another item in the detail panel by its numeric id (used by hierarchy chips)
+    const openItemByNumericId = (numericId: number | null | undefined) => {
+        if (numericId == null) return;
+        const target = workItems.find(wi => wi.id === String(numericId));
+        if (!target) {
+            toast.error('Referenced item not found');
+            return;
+        }
+        navigate(`/project/${id}/board/${target.id}`);
+        setIsEditing(false);
+        setEditForm({});
     };
 
     // Save edited item
@@ -1302,7 +1566,7 @@ const ProjectBoard = () => {
                 <h2 className="text-xl font-bold text-white mb-2">Project not found</h2>
                 <Button onClick={() => navigate('/')} variant="ghost" className="text-[#E0B954]">
                     <ArrowLeft className="w-4 h-4 mr-2" />
-                    Back to Projects
+                    Back to Dashboard
                 </Button>
             </div>
         );
@@ -1328,29 +1592,20 @@ const ProjectBoard = () => {
                             className="text-[#737373] hover:text-white hover:bg-[rgba(244,246,255,0.05)] rounded-lg gap-2"
                         >
                             <ArrowLeft className="w-4 h-4" />
-                            Projects
+                            Dashboard
                         </Button>
-                        <div className="w-px h-6 bg-[rgba(255,255,255,0.07)]" />
+                        <div className="w-px h-6 bg-[rgba(255,255,255,0.18)]" />
                         <div className="flex items-center gap-3">
-                            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#E0B954] to-[#B8872A] flex items-center justify-center text-xs font-bold text-white">
+                            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#E0B954] to-[#C79E3B] flex items-center justify-center text-sm font-bold text-[#080808] shadow-lg shadow-[#E0B954]/25">
                                 {project.key_prefix.substring(0, 2)}
                             </div>
                             <div>
-                                <h1 className="text-base font-semibold text-white">{project.name}</h1>
+                                <h1 className="text-lg font-semibold text-white">{project.name}</h1>
                                 <p className="text-xs text-[#737373] font-mono">{project.key_prefix}</p>
                             </div>
                         </div>
                     </div>
                     <div className="flex items-center gap-3">
-                        <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => navigate(`/project/${id}`)}
-                            className="text-[#737373] hover:text-white hover:bg-[rgba(244,246,255,0.05)] rounded-lg"
-                            title="Back to Project Overview"
-                        >
-                            <X className="w-4 h-4" />
-                        </Button>
                         <Button
                             variant="ghost"
                             size="sm"
@@ -1365,11 +1620,11 @@ const ProjectBoard = () => {
                             onClick={handleAIGenerate}
                             disabled={isGenerating}
                             size="sm"
-                            className="bg-gradient-to-r from-[#E0B954] to-[#B8872A] hover:from-[#C79E3B] hover:to-[#B8872A] text-white rounded-lg font-medium shadow-lg shadow-[#B8872A]/20 h-9"
+                            className="bg-gradient-to-r from-[#E0B954] to-[#C79E3B] hover:opacity-90 text-[#080808] rounded-lg font-medium h-9 transition-opacity"
                         >
                             {isGenerating ? (
                                 <>
-                                    <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin mr-2" />
+                                    <div className="w-3.5 h-3.5 border-2 border-[#080808]/30 border-t-[#080808] rounded-full animate-spin mr-2" />
                                     Generating...
                                 </>
                             ) : (
@@ -1380,19 +1635,20 @@ const ProjectBoard = () => {
                             )}
                         </Button>
                         <Button
-                            onClick={() => setShowCreateForm(true)}
+                            onClick={() => navigate(`/project/${id}`)}
                             size="sm"
-                            className="bg-gradient-to-r from-[#E0B954] to-[#B8872A] hover:from-[#C79E3B] hover:to-[#B8872A] text-white rounded-lg font-medium shadow-lg shadow-[#B8872A]/20 h-9"
+                            className="bg-gradient-to-r from-[#E0B954] to-[#C79E3B] hover:opacity-90 text-[#080808] rounded-lg font-medium h-9 px-4 transition-opacity"
                         >
-                            <Plus className="w-3.5 h-3.5 mr-2" />
-                            New Item
+                            <LayoutGrid className="w-4 h-4 mr-2" />
+                            Project Overview
                         </Button>
                     </div>
                 </div>
 
                 {/* Stats + Filters Bar */}
-                <div className="px-6 py-2.5 flex items-center justify-between border-t border-[rgba(255,255,255,0.03)]">
-                    <div className="flex items-center gap-6">
+                <div className="px-6 py-2.5 flex items-center justify-between gap-4 border-t border-[rgba(255,255,255,0.03)]">
+                    {/* Left: Stats + Sprint + Filter */}
+                    <div className="flex items-center gap-3 flex-shrink-0">
                         {[
                             { label: 'Items', value: workItems.length, icon: Layers },
                             { label: 'Points', value: totalPoints, icon: BarChart3 },
@@ -1405,99 +1661,69 @@ const ProjectBoard = () => {
                                 <span className="text-white font-semibold">{s.value}</span>
                             </div>
                         ))}
-                    </div>
-                    {/* Advanced Filter Bar */}
-                    <div className="flex flex-col gap-3">
-                        {/* Search & Active Filters & Add Filter & View Toggle */}
-                        <div className="flex items-center gap-2">
-                            <div className="relative flex-1 max-w-xs">
-                                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#737373]" />
-                                <Input
-                                    placeholder="Search items..."
-                                    value={searchQuery}
-                                    onChange={(e) => setSearchQuery(e.target.value)}
-                                    className="pl-8 h-8 text-xs bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.05)] text-[#F4F6FF] rounded-lg focus:border-[#E0B954]/50 placeholder:text-[#334155]"
-                                />
-                            </div>
 
-                            {/* Active Filter Pills */}
-                            <div className="flex items-center gap-2 flex-wrap">
-                                {filterType !== 'all' && (
-                                    <div className="flex items-center gap-1.5 px-2.5 py-1 bg-[#E0B954]/15 border border-[#E0B954]/30 rounded-full text-xs text-[#E0B954] font-medium">
-                                        {TYPE_CONFIG[filterType as keyof typeof TYPE_CONFIG]?.label || filterType}
-                                        <button
-                                            onClick={() => setFilterType('all')}
-                                            className="hover:bg-[#E0B954]/20 rounded-full p-0.5 ml-1"
-                                        >
-                                            <X className="w-3 h-3" />
-                                        </button>
-                                    </div>
-                                )}
-                                {filterPriority !== 'all' && (
-                                    <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${PRIORITY_COLORS[filterPriority as keyof typeof PRIORITY_COLORS]?.bg} ${PRIORITY_COLORS[filterPriority as keyof typeof PRIORITY_COLORS]?.text}`}>
-                                        {filterPriority.charAt(0).toUpperCase() + filterPriority.slice(1)}
-                                        <button
-                                            onClick={() => setFilterPriority('all')}
-                                            className="hover:opacity-75 ml-1"
-                                        >
-                                            <X className="w-3 h-3" />
-                                        </button>
-                                    </div>
-                                )}
-                                {filterAssignee !== 'all' && (
-                                    <div className="flex items-center gap-1.5 px-2.5 py-1 bg-[#60A5FA]/15 border border-[#60A5FA]/30 rounded-full text-xs text-[#60A5FA] font-medium">
-                                        {filterAssignee === 'unassigned' ? 'Unassigned' : project?.developers?.find(d => String(d.id) === filterAssignee)?.name || filterAssignee}
-                                        <button
-                                            onClick={() => setFilterAssignee('all')}
-                                            className="hover:bg-[#60A5FA]/20 rounded-full p-0.5 ml-1"
-                                        >
-                                            <X className="w-3 h-3" />
-                                        </button>
-                                    </div>
-                                )}
-                                {filterTags.map(tag => (
-                                    <div key={tag} className="flex items-center gap-1.5 px-2.5 py-1 bg-[#E0B954]/15 border border-[#E0B954]/30 rounded-full text-xs text-[#E0B954] font-medium">
-                                        {tag}
-                                        <button
-                                            onClick={() => setFilterTags(filterTags.filter(t => t !== tag))}
-                                            className="hover:bg-[#E0B954]/20 rounded-full p-0.5 ml-1"
-                                        >
-                                            <X className="w-3 h-3" />
-                                        </button>
-                                    </div>
-                                ))}
-                            </div>
+                        <div className="w-px h-4 bg-[rgba(255,255,255,0.07)]" />
 
-                            {/* Clear All Filters */}
-                            {(filterType !== 'all' || filterPriority !== 'all' || filterAssignee !== 'all' || filterTags.length > 0) && (
-                                <button
-                                    onClick={() => {
-                                        setFilterType('all');
-                                        setFilterPriority('all');
-                                        setFilterAssignee('all');
-                                        setFilterTags([]);
-                                    }}
-                                    className="text-xs text-[#737373] hover:text-red-400 underline hover:no-underline transition-colors"
-                                >
-                                    Clear all
-                                </button>
+                        {/* Sprint Selector */}
+                        <div className="flex items-center gap-1.5 relative" ref={sprintMenuRef}>
+                            <span className="text-xs text-[#737373]">Sprint</span>
+                            <button
+                                onClick={() => setShowSprintMenu(v => !v)}
+                                className={`flex items-center gap-1.5 px-2.5 h-8 text-xs border rounded-lg font-medium transition-colors ${
+                                    selectedSprintId !== 'all'
+                                        ? 'border-[#E0B954]/50 text-[#E0B954] bg-[#E0B954]/5'
+                                        : 'border-[rgba(255,255,255,0.1)] text-[#737373] bg-transparent hover:border-[rgba(255,255,255,0.2)] hover:text-white'
+                                }`}
+                            >
+                                {selectedSprintId === 'all' ? 'All Sprints' : selectedSprintId === 'unassigned' ? 'Backlog' : sprints.find(s => s.id === selectedSprintId)?.name ?? 'Sprint'}
+                                <svg className="w-3 h-3 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                            </button>
+                            {showSprintMenu && (
+                                <div className="absolute top-full mt-2 left-9 bg-[#0d0d0d] border border-[rgba(255,255,255,0.07)] rounded-xl shadow-2xl shadow-black/50 z-50 min-w-[160px]">
+                                    <div className="p-1.5">
+                                        {([{ id: 'all', label: 'All Sprints' }, { id: 'unassigned', label: 'Backlog' }, ...sprints.map(s => ({ id: s.id, label: s.name }))] as { id: string | number; label: string }[]).map(opt => (
+                                            <button
+                                                key={opt.id}
+                                                onClick={() => { setSelectedSprintId(opt.id as typeof selectedSprintId); setShowSprintMenu(false); }}
+                                                className={`w-full flex items-center gap-2 px-2.5 py-1.5 text-xs rounded-lg transition-colors ${
+                                                    selectedSprintId === opt.id
+                                                        ? 'bg-[#E0B954]/10 text-[#E0B954]'
+                                                        : 'text-[#a3a3a3] hover:text-white hover:bg-[rgba(255,255,255,0.05)]'
+                                                }`}
+                                            >
+                                                {selectedSprintId === opt.id && <div className="w-1.5 h-1.5 rounded-full bg-[#E0B954]" />}
+                                                {opt.label}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
                             )}
+                        </div>
 
-                            {/* Add Filter Button */}
+                        {/* Filter */}
+                        <div className="flex items-center gap-2">
                             <div className="relative" ref={filterMenuRef}>
                                 <button
                                     onClick={() => setShowFilterMenu(!showFilterMenu)}
-                                    className="flex items-center gap-1.5 px-2.5 py-1 h-8 text-xs bg-gradient-to-r from-[#E0B954] to-[#B8872A] hover:from-[#C79E3B] hover:to-[#B8872A] text-white rounded-lg font-medium shadow-lg shadow-[#B8872A]/20 transition-colors"
+                                    className={`flex items-center gap-1.5 px-2.5 h-8 text-xs border rounded-lg font-medium transition-colors ${
+                                        showFilterMenu || hasActiveFilters
+                                            ? 'border-[#E0B954]/50 text-[#E0B954] bg-[#E0B954]/5'
+                                            : 'border-[rgba(255,255,255,0.1)] text-[#737373] bg-transparent hover:border-[rgba(255,255,255,0.2)] hover:text-white'
+                                    }`}
                                 >
-                                    <Plus className="w-3.5 h-3.5" />
-                                    Add filter
+                                    <ListFilter className="w-3.5 h-3.5" />
+                                    Filter
+                                    {hasActiveFilters && (
+                                        <span className="ml-0.5 min-w-[18px] h-[18px] px-1 rounded text-[10px] font-bold bg-[#E0B954] text-[#080808] flex items-center justify-center">
+                                            {activeFilterCount}
+                                        </span>
+                                    )}
                                 </button>
 
-                                {/* Filter Menu Popover */}
                                 {showFilterMenu && (
-                                    <div className="absolute top-full mt-2 left-0 bg-[#0d0d0d] border border-[rgba(255,255,255,0.07)] rounded-xl shadow-2xl shadow-black/50 z-50 min-w-max">
-                                        <div className="flex items-center justify-between px-3 py-2 border-b border-[rgba(255,255,255,0.05)]">
-                                            <p className="text-xs font-semibold text-[#737373]">Add Filters</p>
+                                    <div className="absolute top-full mt-2 left-0 bg-[#0d0d0d] border border-[rgba(255,255,255,0.07)] rounded-xl shadow-2xl shadow-black/50 z-50 w-60">
+                                        <div className="flex items-center justify-between px-3 py-2.5 border-b border-[rgba(255,255,255,0.05)]">
+                                            <p className="text-xs font-semibold text-[#a3a3a3]">Filters</p>
                                             <button
                                                 onClick={() => setShowFilterMenu(false)}
                                                 className="p-1 rounded hover:bg-[rgba(255,255,255,0.05)] text-[#737373] hover:text-white"
@@ -1505,189 +1731,210 @@ const ProjectBoard = () => {
                                                 <X className="w-3 h-3" />
                                             </button>
                                         </div>
-                                        <div className="p-2">
-                                            {/* Type Filter */}
-                                            {filterType === 'all' && (
-                                                <div className="px-3 py-2">
-                                                    <p className="text-xs font-semibold text-[#737373] mb-2">Type</p>
-                                                    <div className="space-y-1">
-                                                        {Object.entries(TYPE_CONFIG).map(([key, config]) => (
-                                                            <button
-                                                                key={key}
-                                                                onClick={() => {
-                                                                    setFilterType(key);
-                                                                }}
-                                                                className="w-full flex items-center gap-2 px-2.5 py-1.5 text-xs text-[#a3a3a3] hover:text-white hover:bg-[rgba(255,255,255,0.05)] rounded-lg transition-colors"
-                                                            >
-                                                                <config.icon className="w-3.5 h-3.5" style={{ color: config.color }} />
-                                                                {config.label}
-                                                            </button>
-                                                        ))}
-                                                    </div>
-                                                </div>
-                                            )}
+                                        <div className="p-1.5">
+                                            {/* Type */}
+                                            <div className="px-1.5 pt-2 pb-1">
+                                                <p className="text-[10px] font-semibold text-[#555] uppercase tracking-wider px-1 mb-1">Type</p>
+                                                {Object.entries(TYPE_CONFIG).map(([key, config]) => {
+                                                    const checked = filterTypes.includes(key);
+                                                    return (
+                                                        <button
+                                                            key={key}
+                                                            onClick={() => toggleArrayFilter(setFilterTypes, key)}
+                                                            className="w-full flex items-center gap-2.5 px-1.5 py-1.5 rounded-lg hover:bg-[rgba(255,255,255,0.04)] transition-colors"
+                                                        >
+                                                            <div className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 transition-colors ${checked ? 'bg-[#E0B954] border-[#E0B954]' : 'border-[rgba(255,255,255,0.2)]'}`}>
+                                                                {checked && <Check className="w-2.5 h-2.5 text-[#080808]" />}
+                                                            </div>
+                                                            <config.icon className="w-3.5 h-3.5 flex-shrink-0" style={{ color: config.color }} />
+                                                            <span className="text-xs text-[#d4d4d4]">{config.label}</span>
+                                                        </button>
+                                                    );
+                                                })}
+                                            </div>
 
-                                            {/* Priority Filter */}
-                                            {filterPriority === 'all' && (
-                                                <>
-                                                    {filterType !== 'all' && <div className="h-px bg-[rgba(255,255,255,0.05)] my-1" />}
-                                                    <div className="px-3 py-2">
-                                                        <p className="text-xs font-semibold text-[#737373] mb-2">Priority</p>
-                                                        <div className="space-y-1">
-                                                            {Object.entries(PRIORITY_COLORS).map(([key, colors]) => (
-                                                                <button
-                                                                    key={key}
-                                                                    onClick={() => {
-                                                                        setFilterPriority(key);
-                                                                    }}
-                                                                    className={`w-full flex items-center gap-2 px-2.5 py-1.5 text-xs rounded-lg hover:bg-[rgba(255,255,255,0.05)] transition-colors ${colors.text}`}
-                                                                >
-                                                                    <div className={`w-2.5 h-2.5 rounded-full ${colors.bg}`} />
-                                                                    {key.charAt(0).toUpperCase() + key.slice(1)}
-                                                                </button>
-                                                            ))}
-                                                        </div>
-                                                    </div>
-                                                </>
-                                            )}
+                                            <div className="h-px bg-[rgba(255,255,255,0.05)] mx-1.5 my-1" />
 
-                                            {/* Assignee Filter */}
-                                            {filterAssignee === 'all' && (project?.developers && project.developers.length > 0) && (
+                                            {/* Priority */}
+                                            <div className="px-1.5 pt-1 pb-1">
+                                                <p className="text-[10px] font-semibold text-[#555] uppercase tracking-wider px-1 mb-1">Priority</p>
+                                                {Object.entries(PRIORITY_COLORS).map(([key, colors]) => {
+                                                    const checked = filterPriorities.includes(key);
+                                                    return (
+                                                        <button
+                                                            key={key}
+                                                            onClick={() => toggleArrayFilter(setFilterPriorities, key)}
+                                                            className="w-full flex items-center gap-2.5 px-1.5 py-1.5 rounded-lg hover:bg-[rgba(255,255,255,0.04)] transition-colors"
+                                                        >
+                                                            <div className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 transition-colors ${checked ? 'bg-[#E0B954] border-[#E0B954]' : 'border-[rgba(255,255,255,0.2)]'}`}>
+                                                                {checked && <Check className="w-2.5 h-2.5 text-[#080808]" />}
+                                                            </div>
+                                                            <div className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${colors.bg}`} />
+                                                            <span className="text-xs text-[#d4d4d4]">{key.charAt(0).toUpperCase() + key.slice(1)}</span>
+                                                        </button>
+                                                    );
+                                                })}
+                                            </div>
+
+                                            {/* Assignee */}
+                                            {project?.developers && project.developers.length > 0 && (
                                                 <>
-                                                    {(filterType !== 'all' || filterPriority !== 'all') && <div className="h-px bg-[rgba(255,255,255,0.05)] my-1" />}
-                                                    <div className="px-3 py-2">
-                                                        <p className="text-xs font-semibold text-[#737373] mb-2">Assignee</p>
-                                                        {/* Search Input for Assignees */}
-                                                        <div className="relative mb-2">
-                                                            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#737373]" />
+                                                    <div className="h-px bg-[rgba(255,255,255,0.05)] mx-1.5 my-1" />
+                                                    <div className="px-1.5 pt-1 pb-1">
+                                                        <p className="text-[10px] font-semibold text-[#555] uppercase tracking-wider px-1 mb-1">Assignee</p>
+                                                        <div className="relative mb-1.5">
+                                                            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-[#737373]" />
                                                             <input
                                                                 type="text"
-                                                                placeholder="Search assignees..."
+                                                                placeholder="Search..."
                                                                 value={assigneeSearchFilter}
                                                                 onChange={(e) => setAssigneeSearchFilter(e.target.value)}
-                                                                className="w-full pl-8 pr-2.5 py-1.5 text-xs bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.05)] text-[#F4F6FF] rounded-lg focus:border-[#E0B954]/50 placeholder:text-[#334155]"
+                                                                className="w-full pl-7 pr-2.5 py-1.5 text-xs bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.05)] text-[#F4F6FF] rounded-lg focus:border-[#E0B954]/50 placeholder:text-[#555]"
                                                             />
                                                         </div>
-                                                        <div className="space-y-1 max-h-56 overflow-y-auto">
-                                                            <button
-                                                                onClick={() => {
-                                                                    setFilterAssignee('unassigned');
-                                                                    setAssigneeSearchFilter('');
-                                                                }}
-                                                                className="w-full flex items-center gap-2 px-2.5 py-1.5 text-xs text-[#a3a3a3] hover:text-white hover:bg-[rgba(255,255,255,0.05)] rounded-lg transition-colors"
-                                                            >
-                                                                <div className="w-5 h-5 rounded-full bg-[rgba(255,255,255,0.1)] flex items-center justify-center text-[10px]" />
-                                                                Unassigned
-                                                            </button>
-                                                            {project.developers
-                                                                .filter(dev => dev.name.toLowerCase().includes(assigneeSearchFilter.toLowerCase()) || dev.email.toLowerCase().includes(assigneeSearchFilter.toLowerCase()))
-                                                                .map(dev => (
+                                                        <div className="space-y-0.5 max-h-48 overflow-y-auto">
+                                                            {(!assigneeSearchFilter || 'unassigned'.includes(assigneeSearchFilter.toLowerCase())) && (() => {
+                                                                const checked = filterAssignees.includes('unassigned');
+                                                                return (
                                                                     <button
-                                                                        key={dev.id}
-                                                                        onClick={() => {
-                                                                            setFilterAssignee(String(dev.id));
-                                                                            setAssigneeSearchFilter('');
-                                                                        }}
-                                                                        className="w-full flex items-center gap-2 px-2.5 py-1.5 text-xs text-[#a3a3a3] hover:text-white hover:bg-[rgba(255,255,255,0.05)] rounded-lg transition-colors"
+                                                                        onClick={() => toggleArrayFilter(setFilterAssignees, 'unassigned')}
+                                                                        className="w-full flex items-center gap-2.5 px-1.5 py-1.5 rounded-lg hover:bg-[rgba(255,255,255,0.04)] transition-colors"
                                                                     >
-                                                                        <div className="w-5 h-5 rounded-full bg-gradient-to-br from-[#E0B954] to-[#B8872A] flex items-center justify-center text-white text-[10px] font-semibold">
-                                                                            {dev.name.charAt(0).toUpperCase()}
+                                                                        <div className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 transition-colors ${checked ? 'bg-[#E0B954] border-[#E0B954]' : 'border-[rgba(255,255,255,0.2)]'}`}>
+                                                                            {checked && <Check className="w-2.5 h-2.5 text-[#080808]" />}
                                                                         </div>
-                                                                        <div className="flex-1 text-left">
-                                                                            <div className="text-xs font-medium">{dev.name}</div>
-                                                                            <div className="text-[10px] text-[#737373]">{dev.email}</div>
-                                                                        </div>
+                                                                        <div className="w-5 h-5 rounded-full bg-[rgba(255,255,255,0.08)] flex-shrink-0" />
+                                                                        <span className="text-xs text-[#d4d4d4]">Unassigned</span>
                                                                     </button>
-                                                                ))}
-                                                            {project.developers.filter(dev => dev.name.toLowerCase().includes(assigneeSearchFilter.toLowerCase()) || dev.email.toLowerCase().includes(assigneeSearchFilter.toLowerCase())).length === 0 && assigneeSearchFilter && (
-                                                                <div className="px-2.5 py-2 text-xs text-[#737373] text-center">No assignees found</div>
-                                                            )}
+                                                                );
+                                                            })()}
+                                                            {project.developers
+                                                                .filter(dev =>
+                                                                    dev.name.toLowerCase().includes(assigneeSearchFilter.toLowerCase()) ||
+                                                                    dev.email.toLowerCase().includes(assigneeSearchFilter.toLowerCase())
+                                                                )
+                                                                .map(dev => {
+                                                                    const checked = filterAssignees.includes(String(dev.id));
+                                                                    return (
+                                                                        <button
+                                                                            key={dev.id}
+                                                                            onClick={() => toggleArrayFilter(setFilterAssignees, String(dev.id))}
+                                                                            className="w-full flex items-center gap-2.5 px-1.5 py-1.5 rounded-lg hover:bg-[rgba(255,255,255,0.04)] transition-colors"
+                                                                        >
+                                                                            <div className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 transition-colors ${checked ? 'bg-[#E0B954] border-[#E0B954]' : 'border-[rgba(255,255,255,0.2)]'}`}>
+                                                                                {checked && <Check className="w-2.5 h-2.5 text-[#080808]" />}
+                                                                            </div>
+                                                                            <div className="w-5 h-5 rounded-full bg-gradient-to-br from-[#E0B954] to-[#B8872A] flex items-center justify-center text-white text-[10px] font-semibold flex-shrink-0">
+                                                                                {dev.name.charAt(0).toUpperCase()}
+                                                                            </div>
+                                                                            <span className="text-xs text-[#d4d4d4] truncate">{dev.name}</span>
+                                                                        </button>
+                                                                    );
+                                                                })}
                                                         </div>
                                                     </div>
                                                 </>
                                             )}
 
-                                            {/* Tags Filter */}
-                                            <div className="px-3 py-2">
-                                                <p className="text-xs font-semibold text-[#737373] mb-2">Tags</p>
-                                                <div className="space-y-1 max-h-40 overflow-y-auto">
-                                                    {existingTags.map(tag => (
-                                                        <button
-                                                            key={tag}
-                                                            onClick={() => {
-                                                                setFilterTags(prev => 
-                                                                    prev.includes(tag) 
-                                                                        ? prev.filter(t => t !== tag)
-                                                                        : [...prev, tag]
+                                            {/* Tags */}
+                                            {existingTags.length > 0 && (
+                                                <>
+                                                    <div className="h-px bg-[rgba(255,255,255,0.05)] mx-1.5 my-1" />
+                                                    <div className="px-1.5 pt-1 pb-1">
+                                                        <p className="text-[10px] font-semibold text-[#555] uppercase tracking-wider px-1 mb-1">Tags</p>
+                                                        <div className="space-y-0.5 max-h-40 overflow-y-auto">
+                                                            {existingTags.map(tag => {
+                                                                const checked = filterTags.includes(tag);
+                                                                return (
+                                                                    <button
+                                                                        key={tag}
+                                                                        onClick={() => toggleArrayFilter(setFilterTags, tag)}
+                                                                        className="w-full flex items-center gap-2.5 px-1.5 py-1.5 rounded-lg hover:bg-[rgba(255,255,255,0.04)] transition-colors"
+                                                                    >
+                                                                        <div className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 transition-colors ${checked ? 'bg-[#E0B954] border-[#E0B954]' : 'border-[rgba(255,255,255,0.2)]'}`}>
+                                                                            {checked && <Check className="w-2.5 h-2.5 text-[#080808]" />}
+                                                                        </div>
+                                                                        <span className="text-xs text-[#d4d4d4]">{tag}</span>
+                                                                    </button>
                                                                 );
-                                                            }}
-                                                            className={`w-full flex items-center gap-2 px-2.5 py-1.5 text-xs rounded-lg transition-colors ${
-                                                                filterTags.includes(tag)
-                                                                    ? 'bg-[#E0B954]/20 text-[#E0B954] border border-[#E0B954]/40'
-                                                                    : 'text-[#a3a3a3] hover:text-white hover:bg-[rgba(255,255,255,0.05)]'
-                                                            }`}
-                                                        >
-                                                            <div className={`w-4 h-4 rounded border flex items-center justify-center text-[10px] font-bold ${
-                                                                filterTags.includes(tag)
-                                                                    ? 'bg-[#E0B954] border-[#E0B954] text-black'
-                                                                    : 'border-[rgba(255,255,255,0.2)]'
-                                                            }`}>
-                                                                {filterTags.includes(tag) && '✓'}
-                                                            </div>
-                                                            {tag}
-                                                        </button>
-                                                    ))}
-                                                    {existingTags.length === 0 && (
-                                                        <div className="px-2.5 py-2 text-xs text-[#737373] text-center">No tags available</div>
-                                                    )}
-                                                </div>
-                                            </div>
+                                                            })}
+                                                        </div>
+                                                    </div>
+                                                </>
+                                            )}
                                         </div>
                                     </div>
                                 )}
                             </div>
-
-                            {/* View Toggle */}
-                            <div className="flex bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.05)] rounded-lg p-0.5">
+                            {hasActiveFilters && (
                                 <button
-                                    onClick={() => setViewMode('board')}
-                                    className={`p-1.5 rounded-md transition-colors ${viewMode === 'board' ? 'bg-[#E0B954] text-white' : 'text-[#737373] hover:text-white'}`}
+                                    onClick={clearAllFilters}
+                                    className="text-xs text-[#737373] hover:text-red-400 transition-colors whitespace-nowrap"
                                 >
-                                    <LayoutGrid className="w-3.5 h-3.5" />
+                                    Clear filters
                                 </button>
-                                <button
-                                    onClick={() => setViewMode('list')}
-                                className={`p-1.5 rounded-md transition-colors ${viewMode === 'list' ? 'bg-[#E0B954] text-white' : 'text-[#737373] hover:text-white'}`}
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Right: Search + view toggle + new sprint */}
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                        <div className="relative">
+                            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#737373]" />
+                            <Input
+                                placeholder="Search items..."
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                                className="pl-8 h-8 w-48 text-xs bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.05)] text-[#F4F6FF] rounded-lg focus:border-[#E0B954]/50 placeholder:text-[#334155]"
+                            />
+                        </div>
+
+                        {/* View Toggle */}
+                        <div className="flex bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.05)] rounded-lg p-0.5">
+                            <button
+                                onClick={() => setViewMode('board')}
+                                className={`p-1.5 rounded-md transition-colors ${viewMode === 'board' ? 'bg-[#E0B954] text-[#080808]' : 'text-[#737373] hover:text-white'}`}
+                            >
+                                <LayoutGrid className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                                onClick={() => setViewMode('list')}
+                                className={`p-1.5 rounded-md transition-colors ${viewMode === 'list' ? 'bg-[#E0B954] text-[#080808]' : 'text-[#737373] hover:text-white'}`}
                             >
                                 <List className="w-3.5 h-3.5" />
                             </button>
                         </div>
 
-                        {/* Sprint Selector */}
-                        <div className="flex items-center gap-2">
-                            <select
-                                value={selectedSprintId}
-                                onChange={(e) => setSelectedSprintId(e.target.value === 'all' ? 'all' : e.target.value === 'backlog' ? 'backlog' : parseInt(e.target.value))}
-                                className={`h-8 text-xs rounded-lg px-2.5 appearance-none cursor-pointer font-medium transition-colors ${selectedSprintId === 'all' ? 'bg-gradient-to-r from-[#E0B954] to-[#B8872A] hover:from-[#C79E3B] hover:to-[#B8872A] text-white shadow-lg shadow-[#B8872A]/20' : 'bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.05)] text-[#a3a3a3] hover:border-[rgba(244,246,255,0.12)]'}`}
-                            >
-                                <option value="all">All Items</option>
-                                <option value="backlog">📋 Backlog</option>
-                                {sprints.map(sprint => (
-                                    <option key={sprint.id} value={sprint.id}>
-                                        🏃 {sprint.name}
-                                    </option>
-                                ))}
-                            </select>
+                        <div className="relative">
                             <Button
-                                onClick={() => setShowCreateSprintModal(true)}
+                                onClick={() => setShowAddMenu(prev => !prev)}
                                 size="sm"
-                                className="bg-gradient-to-r from-[#E0B954] to-[#B8872A] hover:from-[#C79E3B] hover:to-[#B8872A] text-white rounded-lg font-medium shadow-lg shadow-[#B8872A]/20 h-8 px-3 text-xs"
+                                className="bg-gradient-to-r from-[#E0B954] to-[#C79E3B] hover:opacity-90 text-[#080808] rounded-lg font-medium h-8 px-3 text-xs transition-opacity"
                             >
-                                <Plus className="w-3 h-3 mr-1" />
-                                New Sprint
+                                <Plus className="w-3 h-3" />
                             </Button>
+                            {showAddMenu && (
+                                <>
+                                    <div className="fixed inset-0 z-10" onClick={() => setShowAddMenu(false)} />
+                                    <div className="absolute right-0 top-full mt-1 z-20 bg-[#1a1a1a] border border-[rgba(255,255,255,0.08)] rounded-lg shadow-xl overflow-hidden min-w-[130px]">
+                                        <button
+                                            onClick={() => { setShowCreateForm(true); setShowAddMenu(false); }}
+                                            className="w-full flex items-center gap-2 px-3 py-2 text-xs text-[#F4F6FF] hover:bg-[rgba(255,255,255,0.06)] transition-colors"
+                                        >
+                                            <Plus className="w-3.5 h-3.5 text-[#E0B954]" />
+                                            New Item
+                                        </button>
+                                        <button
+                                            onClick={() => { setShowCreateSprintModal(true); setShowAddMenu(false); }}
+                                            className="w-full flex items-center gap-2 px-3 py-2 text-xs text-[#F4F6FF] hover:bg-[rgba(255,255,255,0.06)] transition-colors"
+                                        >
+                                            <Plus className="w-3.5 h-3.5 text-[#E0B954]" />
+                                            New Sprint
+                                        </button>
+                                    </div>
+                                </>
+                            )}
                         </div>
-                    </div>
                     </div>
                 </div>
             </header>
@@ -1756,6 +2003,26 @@ const ProjectBoard = () => {
                                                         <span className="text-[10px] text-[#E0B954] font-mono font-medium">{item.key}</span>
                                                     </div>
 
+                                                    {/* Hierarchy chips */}
+                                                    {item.type !== 'epic' && (item.epic_key || item.parent_key) && (
+                                                        <div className="flex items-center gap-1.5 mb-2 flex-wrap min-w-0">
+                                                            {item.epic_key && (
+                                                                <EpicChip
+                                                                    epicKey={item.epic_key}
+                                                                    epicTitle={workItems.find(wi => wi.id === String(item.epic_id))?.title}
+                                                                    onOpen={() => openItemByNumericId(item.epic_id)}
+                                                                />
+                                                            )}
+                                                            {item.parent_key && (
+                                                                <ParentChip
+                                                                    parentKey={item.parent_key}
+                                                                    parentTitle={workItems.find(wi => wi.id === String(item.parent_id))?.title}
+                                                                    onOpen={() => openItemByNumericId(item.parent_id)}
+                                                                />
+                                                            )}
+                                                        </div>
+                                                    )}
+
                                                     {/* Title */}
                                                     <h4 className="text-sm font-medium text-[#f5f5f5] mb-3 line-clamp-2 leading-snug">
                                                         {item.title}
@@ -1790,12 +2057,12 @@ const ProjectBoard = () => {
                                                             <div className="w-6 h-6 rounded-md bg-[#E0B954]/15 flex items-center justify-center">
                                                                 <span className="text-[10px] font-bold text-[#E0B954]">{item.story_points}</span>
                                                             </div>
-                                                            <Badge
-                                                                variant="outline"
-                                                                className={`text-[10px] px-1.5 py-0 h-5 ${priorityStyle.border} ${priorityStyle.text}`}
+                                                            <span
+                                                                className="text-[10px] px-1.5 py-0.5 rounded font-medium"
+                                                                style={{ backgroundColor: priorityStyle.hex + '33', color: priorityStyle.hex }}
                                                             >
-                                                                {item.priority}
-                                                            </Badge>
+                                                                {item.priority.charAt(0).toUpperCase() + item.priority.slice(1)}
+                                                            </span>
                                                         </div>
                                                         {item.assignee && item.assignee !== 'Unassigned' && (
                                                             <div className="w-6 h-6 rounded-full bg-gradient-to-br from-[#E0B954] to-[#B8872A] flex items-center justify-center" title={item.assignee}>
@@ -1840,34 +2107,228 @@ const ProjectBoard = () => {
                     </div>
                 ) : (
                     /* LIST VIEW */
-                    <div className="p-6">
-                        <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-2xl overflow-hidden">
-                            {/* Table Header */}
-                            <div className="grid grid-cols-[1fr_120px_100px_100px_100px_120px] gap-4 px-5 py-3 border-b border-[rgba(255,255,255,0.05)] text-xs text-[#737373] font-semibold uppercase tracking-wider">
-                                <span>Title</span>
-                                <span>Type</span>
-                                <span>Status</span>
-                                <span>Priority</span>
-                                <span>Points</span>
-                                <span>Assignee</span>
+                    <div className="p-6 space-y-3">
+                        {/* List view header: Group by toggle + completed-sprints toggle */}
+                        <div className="flex items-center justify-between gap-3">
+                            <div
+                                role="radiogroup"
+                                aria-label="Group list by"
+                                className="flex items-center bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.05)] rounded-lg p-0.5"
+                            >
+                                <button
+                                    type="button"
+                                    role="radio"
+                                    aria-checked={listGroupBy === 'sprint'}
+                                    onClick={() => setListGroupBy('sprint')}
+                                    className={`px-2.5 h-6 text-[11px] rounded-md transition-colors ${listGroupBy === 'sprint' ? 'bg-[#E0B954] text-[#080808] font-medium' : 'text-[#737373] hover:text-white'}`}
+                                >
+                                    By Sprint
+                                </button>
+                                <button
+                                    type="button"
+                                    role="radio"
+                                    aria-checked={listGroupBy === 'epic'}
+                                    onClick={() => setListGroupBy('epic')}
+                                    className={`px-2.5 h-6 text-[11px] rounded-md transition-colors ${listGroupBy === 'epic' ? 'bg-[#E0B954] text-[#080808] font-medium' : 'text-[#737373] hover:text-white'}`}
+                                >
+                                    By Epic
+                                </button>
                             </div>
-                            {/* Table Rows */}
-                            {filteredItems.length === 0 ? (
+                            {listGroupBy === 'sprint' && (
+                                <button
+                                    onClick={() => setShowCompletedSprints(v => !v)}
+                                    className="flex items-center gap-1.5 px-3 h-7 text-xs border border-[rgba(255,255,255,0.1)] rounded-lg text-[#737373] hover:text-white hover:border-[rgba(255,255,255,0.2)] transition-colors"
+                                >
+                                    {showCompletedSprints ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                                    {showCompletedSprints ? 'Hide Completed Sprints' : 'Show Completed Sprints'}
+                                </button>
+                            )}
+                        </div>
+
+                        {listGroupBy === 'epic' ? (
+                            listViewEpicGroups.length === 0 ? (
                                 <div className="py-16 text-center text-[#737373] text-sm">No items found</div>
                             ) : (
-                                filteredItems.map(item => {
-                                    const typeInfo = TYPE_CONFIG[item.type] || TYPE_CONFIG.task;
-                                    const TypeIcon = typeInfo.icon;
-                                    const statusConf = STATUS_CONFIG[item.status] || STATUS_CONFIG.todo;
-                                    const priorityStyle = PRIORITY_COLORS[item.priority] || PRIORITY_COLORS.medium;
-
+                                listViewEpicGroups.map(group => {
+                                    const isCollapsed = collapsedSprints.has(group.key);
+                                    const isUnparented = group.key === 'unparented';
+                                    const epicKey = group.epic?.key as string | undefined;
                                     return (
-                                        <div
-                                            key={item.id}
-                                            onMouseEnter={() => prefetchComments(item.id)}
+                                        <div key={group.key} className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-2xl overflow-hidden">
+                                            {/* Epic group header */}
+                                            <div className="flex items-center gap-2.5 px-5 py-3.5 hover:bg-[rgba(255,255,255,0.02)] transition-colors">
+                                                <button
+                                                    onClick={() => toggleSprintCollapse(group.key)}
+                                                    className="flex items-center gap-2.5 flex-1 text-left min-w-0"
+                                                >
+                                                    {isCollapsed
+                                                        ? <ChevronRight className="w-3.5 h-3.5 text-[#737373] shrink-0" />
+                                                        : <ChevronDown className="w-3.5 h-3.5 text-[#737373] shrink-0" />
+                                                    }
+                                                    {isUnparented ? (
+                                                        <span className="text-sm font-semibold text-[#737373] italic">No epic</span>
+                                                    ) : (
+                                                        <>
+                                                            <Target className="w-3.5 h-3.5 text-[#A78BFA] shrink-0" />
+                                                            {epicKey && (
+                                                                <span className="text-[11px] font-mono text-[#A78BFA] shrink-0">{epicKey}</span>
+                                                            )}
+                                                            <span className="text-sm font-semibold text-[#f5f5f5] truncate">{group.label}</span>
+                                                        </>
+                                                    )}
+                                                    <span className="text-xs text-[#737373] shrink-0">{group.count} item{group.count !== 1 ? 's' : ''}</span>
+                                                </button>
+                                                {!isUnparented && group.epic && (
+                                                    <button
+                                                        onClick={(e) => { e.stopPropagation(); navigate(`/project/${id}/board/${group.epic!.id}`); setIsEditing(false); setEditForm({}); }}
+                                                        className="text-[10px] text-[#737373] hover:text-[#A78BFA] transition-colors shrink-0"
+                                                        title="Open epic"
+                                                    >
+                                                        Open epic →
+                                                    </button>
+                                                )}
+                                            </div>
+
+                                            {!isCollapsed && (
+                                                <>
+                                                    {/* Table header */}
+                                                    <div className="grid grid-cols-[1fr_120px_100px_100px_100px_120px] gap-4 px-5 py-3 border-t border-[rgba(255,255,255,0.05)] text-xs text-[#737373] font-semibold uppercase tracking-wider">
+                                                        <span>Title</span>
+                                                        <span>Type</span>
+                                                        <span>Status</span>
+                                                        <span>Priority</span>
+                                                        <span>Points</span>
+                                                        <span>Assignee</span>
+                                                    </div>
+                                                    {/* Table rows with subtask indent */}
+                                                    {group.rows.map(({ item, depth }) => {
+                                                        const typeInfo = TYPE_CONFIG[item.type] || TYPE_CONFIG.task;
+                                                        const TypeIcon = typeInfo.icon;
+                                                        const priorityStyle = PRIORITY_COLORS[item.priority] || PRIORITY_COLORS.medium;
+                                                        return (
+                                                            <div
+                                                                key={item.id}
+                                                                onMouseEnter={() => prefetchComments(item.id)}
+                                                                onClick={() => { navigate(`/project/${id}/board/${item.id}`); setIsEditing(false); setEditForm({}); }}
+                                                                className="grid grid-cols-[1fr_120px_100px_100px_100px_120px] gap-4 px-5 py-3.5 border-t border-[rgba(255,255,255,0.03)] hover:bg-[rgba(255,255,255,0.025)] cursor-pointer transition-colors group"
+                                                            >
+                                                                <div className="flex items-center gap-3 min-w-0" style={{ paddingLeft: depth === 1 ? 24 : 0 }}>
+                                                                    {depth === 1 && (
+                                                                        <span className="text-[#444] font-mono text-xs shrink-0" aria-hidden>└─</span>
+                                                                    )}
+                                                                    <span className="text-[10px] text-[#E0B954] font-mono font-medium shrink-0">{item.key}</span>
+                                                                    <span className="text-sm text-[#f5f5f5] truncate group-hover:text-white transition-colors">{item.title}</span>
+                                                                </div>
+                                                                <div className="flex items-center">
+                                                                    <div className="flex items-center gap-1.5 px-2 py-1 rounded-md text-xs" style={{ backgroundColor: typeInfo.bg, color: typeInfo.color }}>
+                                                                        <TypeIcon className="w-3 h-3" />
+                                                                        {typeInfo.label}
+                                                                    </div>
+                                                                </div>
+                                                                <div className="flex items-center">
+                                                                    <StatusDotMenu
+                                                                        status={item.status}
+                                                                        onChange={(newStatus) => handleStatusChange(item, newStatus)}
+                                                                    />
+                                                                </div>
+                                                                <div className="flex items-center">
+                                                                    <span
+                                                                        className="text-[10px] px-1.5 py-0.5 rounded font-medium"
+                                                                        style={{ backgroundColor: priorityStyle.hex + '33', color: priorityStyle.hex }}
+                                                                    >
+                                                                        {item.priority.charAt(0).toUpperCase() + item.priority.slice(1)}
+                                                                    </span>
+                                                                </div>
+                                                                <div className="flex items-center">
+                                                                    <span className="text-sm font-semibold text-[#E0B954]">{item.story_points}</span>
+                                                                </div>
+                                                                <div className="flex items-center">
+                                                                    <span className="text-xs text-[#737373] truncate">{item.assignee}</span>
+                                                                </div>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </>
+                                            )}
+                                        </div>
+                                    );
+                                })
+                            )
+                        ) : listViewGroups.length === 0 ? (
+                            <div className="py-16 text-center text-[#737373] text-sm">No items found</div>
+                        ) : (
+                            listViewGroups.map(group => {
+                                const isCollapsed = collapsedSprints.has(group.key);
+                                return (
+                                    <div key={group.key} className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-2xl overflow-hidden">
+                                        {/* Sprint group header */}
+                                        <div className="flex items-center gap-2.5 px-5 py-3.5 hover:bg-[rgba(255,255,255,0.02)] transition-colors group/sprint-hdr">
+                                            <button
+                                                onClick={() => toggleSprintCollapse(group.key)}
+                                                className="flex items-center gap-2.5 flex-1 text-left min-w-0"
+                                            >
+                                                {isCollapsed
+                                                    ? <ChevronRight className="w-3.5 h-3.5 text-[#737373] shrink-0" />
+                                                    : <ChevronDown className="w-3.5 h-3.5 text-[#737373] shrink-0" />
+                                                }
+                                                <span className="text-sm font-semibold text-[#f5f5f5]">{group.label}</span>
+                                                {group.isCompleted && (
+                                                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-[rgba(255,255,255,0.05)] text-[#555555]">Completed</span>
+                                                )}
+                                                <span className="text-xs text-[#737373]">{group.items.length} item{group.items.length !== 1 ? 's' : ''}</span>
+                                            </button>
+                                            {group.key !== 'backlog' && (isProjectManager(user) || project?.developers?.some(d => d.email === user?.email && (d.is_admin || d.role === 'Project Creator'))) && (
+                                                <div className="flex items-center gap-0.5 shrink-0">
+                                                    {!group.isCompleted && (
+                                                        <button
+                                                            onClick={(e) => { e.stopPropagation(); setCompletingSprintId(parseInt(group.key)); }}
+                                                            className="p-1.5 rounded-md hover:bg-[rgba(224,185,84,0.1)] text-[#737373] hover:text-[#E0B954] transition-colors"
+                                                            title="Complete sprint"
+                                                        >
+                                                            <CheckCircle2 className="w-4 h-4" />
+                                                        </button>
+                                                    )}
+                                                    <button
+                                                        onClick={(e) => { e.stopPropagation(); openEditSprintModal(group.key); }}
+                                                        className="p-1.5 rounded-md hover:bg-[rgba(255,255,255,0.06)] text-[#737373] hover:text-white transition-colors"
+                                                        title="Edit sprint"
+                                                    >
+                                                        <Pencil className="w-4 h-4" />
+                                                    </button>
+                                                    <button
+                                                        onClick={(e) => { e.stopPropagation(); setDeletingSprintId(parseInt(group.key)); }}
+                                                        className="p-1.5 rounded-md hover:bg-[rgba(239,68,68,0.08)] text-[#737373] hover:text-[#EF4444] transition-colors"
+                                                        title="Delete sprint"
+                                                    >
+                                                        <Trash2 className="w-4 h-4" />
+                                                    </button>
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {!isCollapsed && (
+                                            <>
+                                                {/* Table header */}
+                                                <div className="grid grid-cols-[1fr_120px_100px_100px_100px_120px] gap-4 px-5 py-3 border-t border-[rgba(255,255,255,0.05)] text-xs text-[#737373] font-semibold uppercase tracking-wider">
+                                                    <span>Title</span>
+                                                    <span>Type</span>
+                                                    <span>Status</span>
+                                                    <span>Priority</span>
+                                                    <span>Points</span>
+                                                    <span>Assignee</span>
+                                                </div>
+                                                {/* Table rows */}
+                                                {group.items.map(item => {
+                                                    const typeInfo = TYPE_CONFIG[item.type] || TYPE_CONFIG.task;
+                                                    const TypeIcon = typeInfo.icon;
+                                                    const priorityStyle = PRIORITY_COLORS[item.priority] || PRIORITY_COLORS.medium;
+                                                    return (
+                                                        <div
+                                                            key={item.id}
+                                                            onMouseEnter={() => prefetchComments(item.id)}
 onClick={() => { navigate(`/project/${id}/board/${item.id}`); setIsEditing(false); setEditForm({}); }}
-                                            className="grid grid-cols-[1fr_120px_100px_100px_100px_120px] gap-4 px-5 py-3.5 border-b border-[rgba(255,255,255,0.03)] hover:bg-[rgba(255,255,255,0.025)] cursor-pointer transition-colors group"
-                                        >
+                                                            className="grid grid-cols-[1fr_120px_100px_100px_100px_120px] gap-4 px-5 py-3.5 border-t border-[rgba(255,255,255,0.03)] hover:bg-[rgba(255,255,255,0.025)] cursor-pointer transition-colors group"
+                                                        >
                                             <div className="flex items-center gap-3 min-w-0">
                                                 <span className="text-[10px] text-[#E0B954] font-mono font-medium shrink-0">{item.key}</span>
                                                 <span className="text-sm text-[#f5f5f5] truncate group-hover:text-white transition-colors">{item.title}</span>
@@ -1879,15 +2340,18 @@ onClick={() => { navigate(`/project/${id}/board/${item.id}`); setIsEditing(false
                                                 </div>
                                             </div>
                                             <div className="flex items-center">
-                                                <div className="flex items-center gap-1.5">
-                                                    <div className="w-2 h-2 rounded-full" style={{ backgroundColor: statusConf.color }} />
-                                                    <span className="text-xs text-[#a3a3a3]">{statusConf.label}</span>
-                                                </div>
+                                                <StatusDotMenu
+                                                    status={item.status}
+                                                    onChange={(newStatus) => handleStatusChange(item, newStatus)}
+                                                />
                                             </div>
                                             <div className="flex items-center">
-                                                <Badge variant="outline" className={`text-[10px] ${priorityStyle.border} ${priorityStyle.text}`}>
-                                                    {item.priority}
-                                                </Badge>
+                                                <span
+                                                    className="text-[10px] px-1.5 py-0.5 rounded font-medium"
+                                                    style={{ backgroundColor: priorityStyle.hex + '33', color: priorityStyle.hex }}
+                                                >
+                                                    {item.priority.charAt(0).toUpperCase() + item.priority.slice(1)}
+                                                </span>
                                             </div>
                                             <div className="flex items-center">
                                                 <span className="text-sm font-semibold text-[#E0B954]">{item.story_points}</span>
@@ -1895,11 +2359,15 @@ onClick={() => { navigate(`/project/${id}/board/${item.id}`); setIsEditing(false
                                             <div className="flex items-center">
                                                 <span className="text-xs text-[#737373] truncate">{item.assignee}</span>
                                             </div>
-                                        </div>
-                                    );
-                                })
-                            )}
-                        </div>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </>
+                                        )}
+                                    </div>
+                                );
+                            })
+                        )}
                     </div>
                 )}
             </div>
@@ -1958,7 +2426,15 @@ onClick={() => { navigate(`/project/${id}/board/${item.id}`); setIsEditing(false
                                     <div className="grid grid-cols-2 gap-3">
                                         <div>
                                             <label className="text-xs font-medium text-[#737373] block mb-1.5">Type</label>
-                                            <select defaultValue={selectedItem.type} onChange={e => setEditForm(f => ({ ...f, type: e.target.value as WorkItem['type'] }))}
+                                            <select defaultValue={selectedItem.type} onChange={e => {
+                                                const newType = e.target.value as WorkItem['type'];
+                                                setEditForm(f => {
+                                                    const next: Partial<WorkItem> = { ...f, type: newType };
+                                                    if (!fieldSupportsType(newType, 'epic_id')) { next.epic_id = null; next.epic_key = null; }
+                                                    if (!fieldSupportsType(newType, 'parent_id')) { next.parent_id = null; next.parent_key = null; }
+                                                    return next;
+                                                });
+                                            }}
                                                 className="w-full h-10 bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.07)] text-[#f5f5f5] rounded-xl px-3 text-sm">
                                                 <option value="user_story">Story</option>
                                                 <option value="task">Task</option>
@@ -2016,6 +2492,46 @@ onClick={() => { navigate(`/project/${id}/board/${item.id}`); setIsEditing(false
                                             ))}
                                         </select>
                                     </div>
+                                    {fieldSupportsType(((editForm.type ?? selectedItem.type) as WorkItem['type']), 'epic_id') && (
+                                        <div>
+                                            <label className="text-xs font-medium text-[#737373] block mb-1.5">Epic</label>
+                                            <WorkItemCombobox
+                                                value={(editForm.epic_id ?? selectedItem.epic_id) ?? null}
+                                                valueKey={(editForm.epic_key ?? selectedItem.epic_key) ?? null}
+                                                items={workItems}
+                                                allowedTypes={getAllowedTargetTypes(((editForm.type ?? selectedItem.type) as WorkItem['type']), 'epic_id')}
+                                                excludeIds={epicExcludeIds}
+                                                onChange={(newId, newKey) => {
+                                                    const target = newId != null ? (workItems.find(wi => wi.id === String(newId)) ?? null) : null;
+                                                    const subjectForValidation = { ...selectedItem, ...editForm, type: (editForm.type ?? selectedItem.type) as WorkItem['type'] };
+                                                    const v = validateReparent(subjectForValidation, target, 'epic_id', workItems);
+                                                    if (!v.ok) { toast.error(v.reason ?? 'Invalid epic'); return; }
+                                                    setEditForm(f => ({ ...f, epic_id: newId, epic_key: newKey }));
+                                                }}
+                                                placeholder="No epic"
+                                            />
+                                        </div>
+                                    )}
+                                    {fieldSupportsType(((editForm.type ?? selectedItem.type) as WorkItem['type']), 'parent_id') && (
+                                        <div>
+                                            <label className="text-xs font-medium text-[#737373] block mb-1.5">Parent</label>
+                                            <WorkItemCombobox
+                                                value={(editForm.parent_id ?? selectedItem.parent_id) ?? null}
+                                                valueKey={(editForm.parent_key ?? selectedItem.parent_key) ?? null}
+                                                items={workItems}
+                                                allowedTypes={getAllowedTargetTypes(((editForm.type ?? selectedItem.type) as WorkItem['type']), 'parent_id')}
+                                                excludeIds={parentExcludeIds}
+                                                onChange={(newId, newKey) => {
+                                                    const target = newId != null ? (workItems.find(wi => wi.id === String(newId)) ?? null) : null;
+                                                    const subjectForValidation = { ...selectedItem, ...editForm, type: (editForm.type ?? selectedItem.type) as WorkItem['type'] };
+                                                    const v = validateReparent(subjectForValidation, target, 'parent_id', workItems);
+                                                    if (!v.ok) { toast.error(v.reason ?? 'Invalid parent'); return; }
+                                                    setEditForm(f => ({ ...f, parent_id: newId, parent_key: newKey }));
+                                                }}
+                                                placeholder="No parent"
+                                            />
+                                        </div>
+                                    )}
                                     <div>
                                         <label className="text-xs font-medium text-[#737373] block mb-1.5">Sprint</label>
                                         <Input defaultValue={selectedItem.sprint} onChange={e => setEditForm(f => ({ ...f, sprint: e.target.value }))}
@@ -2108,7 +2624,7 @@ onClick={() => { navigate(`/project/${id}/board/${item.id}`); setIsEditing(false
                                             { label: 'Remaining Hours', value: `${selectedItem.remaining_hours}h`, color: '#F59E0B' },
                                             { label: 'Due Date', value: selectedItem.due_date ? (parseLocalDate(selectedItem.due_date)?.toLocaleDateString() ?? 'Not set') : 'Not set', color: selectedItem.due_date ? '#E0B954' : '#737373' },
                                             { label: 'Status', value: (STATUS_CONFIG[selectedItem.status] || STATUS_CONFIG.todo).label, color: (STATUS_CONFIG[selectedItem.status] || STATUS_CONFIG.todo).color },
-                                            { label: 'Priority', value: selectedItem.priority.charAt(0).toUpperCase() + selectedItem.priority.slice(1), color: (PRIORITY_COLORS[selectedItem.priority] || PRIORITY_COLORS.medium).text.replace('text-', '').includes('red') ? '#EF4444' : (PRIORITY_COLORS[selectedItem.priority] || PRIORITY_COLORS.medium).text.includes('orange') ? '#F97316' : (PRIORITY_COLORS[selectedItem.priority] || PRIORITY_COLORS.medium).text.includes('yellow') ? '#F59E0B' : '#E0B954' },
+                                            { label: 'Priority', value: selectedItem.priority.charAt(0).toUpperCase() + selectedItem.priority.slice(1), color: selectedItem.priority === 'critical' ? '#EF4444' : selectedItem.priority === 'high' ? '#F97316' : selectedItem.priority === 'medium' ? '#F59E0B' : '#737373' },
                                         ].map(d => (
                                             <div key={d.label} className="bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.05)] rounded-xl p-3.5">
                                                 <div className="text-[10px] text-[#737373] font-medium uppercase tracking-wider mb-1">{d.label}</div>
@@ -2324,12 +2840,12 @@ onClick={() => { navigate(`/project/${id}/board/${item.id}`); setIsEditing(false
                                                                         </div>
                                                                         <span className="text-[9px] text-[#E0B954] font-mono">{child.key}</span>
                                                                     </div>
-                                                                    <Badge
-                                                                        variant="outline"
-                                                                        className={`text-[9px] px-1 py-0 h-5 flex-shrink-0 ${childPriorityStyle.border} ${childPriorityStyle.text}`}
+                                                                    <span
+                                                                        className="text-[9px] px-1.5 py-0.5 rounded font-medium flex-shrink-0"
+                                                                        style={{ backgroundColor: childPriorityStyle.hex + '33', color: childPriorityStyle.hex }}
                                                                     >
-                                                                        {child.priority}
-                                                                    </Badge>
+                                                                        {child.priority.charAt(0).toUpperCase() + child.priority.slice(1)}
+                                                                    </span>
                                                                 </div>
                                                                 <p className="text-xs text-[#a3a3a3] line-clamp-1 mb-1.5">{child.title}</p>
                                                                 <div className="flex items-center justify-between text-[9px] text-[#737373]">
@@ -3231,14 +3747,12 @@ onClick={() => { navigate(`/project/${id}/board/${item.id}`); setIsEditing(false
                                                                                 <TypeIcon className="w-3 h-3" />
                                                                                 {typeInfo.label}
                                                                             </div>
-                                                                            <Badge variant="outline" className={`text-[10px] ${
-                                                                                ticket.priority === 'critical' ? 'border-red-500/60 text-red-400' :
-                                                                                ticket.priority === 'high' ? 'border-orange-500/60 text-orange-400' :
-                                                                                ticket.priority === 'medium' ? 'border-yellow-500/50 text-yellow-400' :
-                                                                                'border-emerald-500/50 text-emerald-400'
-                                                                            }`}>
-                                                                                {ticket.priority}
-                                                                            </Badge>
+                                                                            <span
+                                                                                className="text-[10px] px-1.5 py-0.5 rounded font-medium"
+                                                                                style={{ backgroundColor: (PRIORITY_COLORS[ticket.priority as keyof typeof PRIORITY_COLORS] || PRIORITY_COLORS.low).hex + '33', color: (PRIORITY_COLORS[ticket.priority as keyof typeof PRIORITY_COLORS] || PRIORITY_COLORS.low).hex }}
+                                                                            >
+                                                                                {(ticket.priority.charAt(0).toUpperCase() + ticket.priority.slice(1))}
+                                                                            </span>
                                                                         </div>
                                                                         <h4 className="text-sm font-medium text-white mb-1">{ticket.title}</h4>
                                                                         <p className="text-xs text-[#737373] line-clamp-2">{ticket.description}</p>
@@ -3604,6 +4118,189 @@ onClick={() => { navigate(`/project/${id}/board/${item.id}`); setIsEditing(false
                     </div>
                 </div>
             )}
+
+            {/* Edit Sprint Modal */}
+            {editingSprint && (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setEditingSprint(null)}>
+                    <div className="bg-[#0d0d0d] border border-[rgba(255,255,255,0.07)] rounded-2xl w-full max-w-md shadow-2xl" onClick={e => e.stopPropagation()}>
+                        <div className="flex items-center justify-between p-5 border-b border-[rgba(255,255,255,0.05)]">
+                            <h2 className="text-lg font-bold text-white">Edit Sprint</h2>
+                            <button onClick={() => setEditingSprint(null)} className="p-2 rounded-lg hover:bg-[rgba(244,246,255,0.05)] text-[#737373] hover:text-white">
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+                        <div className="p-5 space-y-4">
+                            <div>
+                                <label className="text-xs font-medium text-[#737373] block mb-1.5">Sprint Name *</label>
+                                <Input
+                                    value={editSprintForm.name}
+                                    onChange={(e) => setEditSprintForm(f => ({ ...f, name: e.target.value }))}
+                                    placeholder="e.g., Sprint 1: Foundation"
+                                    className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl h-10 placeholder:text-[#334155]"
+                                />
+                            </div>
+                            <div>
+                                <label className="text-xs font-medium text-[#737373] block mb-1.5">Sprint Goal</label>
+                                <Textarea
+                                    value={editSprintForm.goal}
+                                    onChange={(e) => setEditSprintForm(f => ({ ...f, goal: e.target.value }))}
+                                    placeholder="What do we want to achieve in this sprint?"
+                                    className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl min-h-[80px] placeholder:text-[#334155] resize-none"
+                                />
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="text-xs font-medium text-[#737373] block mb-1.5">Start Date *</label>
+                                    <Popover open={showCalendarEditSprintStart} onOpenChange={setShowCalendarEditSprintStart}>
+                                        <PopoverTrigger asChild>
+                                            <Button variant="outline" className={`w-full bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl h-10 justify-start font-normal ${!editSprintForm.start_date ? 'text-[#737373]' : ''}`}>
+                                                <Calendar className="mr-2 h-4 w-4" />
+                                                {editSprintForm.start_date ? parseLocalDate(editSprintForm.start_date)?.toLocaleDateString() : 'Pick a date'}
+                                            </Button>
+                                        </PopoverTrigger>
+                                        <PopoverContent side="bottom" align="start" className="w-auto p-3 bg-[#0d0d0d] border border-[rgba(224,185,84,0.2)]">
+                                            <CalendarIcon
+                                                mode="single"
+                                                selected={parseLocalDate(editSprintForm.start_date)}
+                                                onSelect={(date) => {
+                                                    if (date) {
+                                                        const localDate = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+                                                        setEditSprintForm(f => ({ ...f, start_date: localDate }));
+                                                        setShowCalendarEditSprintStart(false);
+                                                    }
+                                                }}
+                                                classNames={{ months: "flex flex-col", month: "space-y-4", caption: "flex justify-between items-center px-0 pb-4 relative h-7 mb-2", caption_label: "text-sm font-medium text-white", nav: "space-x-1 flex items-center", nav_button: "text-white hover:bg-[rgba(224,185,84,0.1)] rounded p-1", nav_button_previous: "absolute left-0", nav_button_next: "absolute right-0", table: "w-full border-collapse space-y-1", head_row: "flex", head_cell: "text-xs font-medium text-[#737373] w-8 h-8 flex items-center justify-center rounded", row: "flex w-full gap-1", cell: "relative p-0 text-center text-sm focus-within:relative focus-within:z-20 [&:has([aria-selected])]:bg-transparent", day: "h-8 w-8 p-0 font-normal", day_button: "text-white hover:bg-[rgba(224,185,84,0.1)] rounded-lg h-8 w-8 transition-colors", day_selected: "bg-[#E0B954] text-[#0d0d0d] hover:bg-[#E0B954] font-semibold", day_today: "bg-[rgba(224,185,84,0.2)] text-[#E0B954] font-semibold", day_outside: "text-[#444]", day_disabled: "text-[#333] opacity-50 cursor-not-allowed", day_range_middle: "aria-selected:bg-[rgba(224,185,84,0.1)] aria-selected:text-white", day_hidden: "invisible" }}
+                                            />
+                                        </PopoverContent>
+                                    </Popover>
+                                </div>
+                                <div>
+                                    <label className="text-xs font-medium text-[#737373] block mb-1.5">End Date *</label>
+                                    <Popover open={showCalendarEditSprintEnd && !!editSprintForm.start_date} onOpenChange={(open) => editSprintForm.start_date && setShowCalendarEditSprintEnd(open)}>
+                                        <PopoverTrigger asChild>
+                                            <Button variant="outline" disabled={!editSprintForm.start_date} className={`w-full bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl h-10 justify-start font-normal ${!editSprintForm.end_date ? 'text-[#737373]' : ''} ${!editSprintForm.start_date ? 'opacity-50 cursor-not-allowed' : ''}`}>
+                                                <Calendar className="mr-2 h-4 w-4" />
+                                                {editSprintForm.end_date ? parseLocalDate(editSprintForm.end_date)?.toLocaleDateString() : 'Pick a date'}
+                                            </Button>
+                                        </PopoverTrigger>
+                                        <PopoverContent side="bottom" align="start" className="w-auto p-3 bg-[#0d0d0d] border border-[rgba(224,185,84,0.2)]">
+                                            <CalendarIcon
+                                                mode="single"
+                                                month={parseLocalDate(editSprintForm.start_date) || new Date()}
+                                                selected={parseLocalDate(editSprintForm.end_date)}
+                                                onSelect={(date) => {
+                                                    if (date) {
+                                                        const localDate = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+                                                        setEditSprintForm(f => ({ ...f, end_date: localDate }));
+                                                        setShowCalendarEditSprintEnd(false);
+                                                    }
+                                                }}
+                                                disabled={(date) => editSprintForm.start_date ? date < parseLocalDate(editSprintForm.start_date)! : false}
+                                                classNames={{ months: "flex flex-col", month: "space-y-4", caption: "flex justify-between items-center px-0 pb-4 relative h-7 mb-2", caption_label: "text-sm font-medium text-white", nav: "space-x-1 flex items-center", nav_button: "text-white hover:bg-[rgba(224,185,84,0.1)] rounded p-1", nav_button_previous: "absolute left-0", nav_button_next: "absolute right-0", table: "w-full border-collapse space-y-1", head_row: "flex", head_cell: "text-xs font-medium text-[#737373] w-8 h-8 flex items-center justify-center rounded", row: "flex w-full gap-1", cell: "relative p-0 text-center text-sm focus-within:relative focus-within:z-20 [&:has([aria-selected])]:bg-transparent", day: "h-8 w-8 p-0 font-normal", day_button: "text-white hover:bg-[rgba(224,185,84,0.1)] rounded-lg h-8 w-8 transition-colors", day_selected: "bg-[#E0B954] text-[#0d0d0d] hover:bg-[#E0B954] font-semibold", day_today: "bg-[rgba(224,185,84,0.2)] text-[#E0B954] font-semibold", day_outside: "text-[#444]", day_disabled: "text-[#333] opacity-50 cursor-not-allowed", day_range_middle: "aria-selected:bg-[rgba(224,185,84,0.1)] aria-selected:text-white", day_hidden: "invisible" }}
+                                            />
+                                        </PopoverContent>
+                                    </Popover>
+                                </div>
+                            </div>
+                        </div>
+                        <div className="flex justify-end gap-3 p-5 border-t border-[rgba(255,255,255,0.05)]">
+                            <Button variant="ghost" onClick={() => setEditingSprint(null)} className="text-[#737373] rounded-xl px-5">Cancel</Button>
+                            <Button
+                                onClick={handleEditSprint}
+                                disabled={!editSprintForm.name.trim() || !editSprintForm.start_date || !editSprintForm.end_date}
+                                className="bg-gradient-to-r from-[#E0B954] to-[#B8872A] text-white rounded-xl px-6 font-medium shadow-lg shadow-[#B8872A]/20 disabled:opacity-50"
+                            >
+                                Save Changes
+                            </Button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Complete Sprint Confirmation */}
+            {completingSprintId !== null && (() => {
+                const sprint = sprints.find(s => s.id === completingSprintId);
+                const sprintItems = workItems.filter(w => w.sprint_id === completingSprintId);
+                const doneCount = sprintItems.filter(w => w.status === 'done').length;
+                const incompleteCount = sprintItems.length - doneCount;
+                return (
+                    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setCompletingSprintId(null)}>
+                        <div className="bg-[#0d0d0d] border border-[rgba(255,255,255,0.07)] rounded-2xl w-full max-w-sm shadow-2xl p-6" onClick={e => e.stopPropagation()}>
+                            <div className="flex items-center gap-3 mb-5">
+                                <div className="w-10 h-10 rounded-xl bg-[rgba(224,185,84,0.1)] flex items-center justify-center shrink-0">
+                                    <CheckCircle2 className="w-5 h-5 text-[#E0B954]" />
+                                </div>
+                                <div>
+                                    <h3 className="text-base font-semibold text-white">Complete Sprint</h3>
+                                    <p className="text-xs text-[#737373] mt-0.5">{sprint?.name}</p>
+                                </div>
+                            </div>
+                            <div className="grid grid-cols-2 gap-3 mb-5">
+                                <div className="bg-[rgba(224,185,84,0.05)] border border-[rgba(224,185,84,0.15)] rounded-xl p-3 text-center">
+                                    <p className="text-2xl font-bold text-[#E0B954]">{doneCount}</p>
+                                    <p className="text-xs text-[#737373] mt-0.5">Completed</p>
+                                </div>
+                                <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.06)] rounded-xl p-3 text-center">
+                                    <p className="text-2xl font-bold text-[#f5f5f5]">{incompleteCount}</p>
+                                    <p className="text-xs text-[#737373] mt-0.5">Incomplete</p>
+                                </div>
+                            </div>
+                            {incompleteCount > 0 && (
+                                <p className="text-sm text-[#a3a3a3] mb-5">
+                                    <span className="text-white font-medium">{incompleteCount} incomplete {incompleteCount === 1 ? 'item' : 'items'}</span> will be moved to the backlog.
+                                </p>
+                            )}
+                            <div className="flex justify-end gap-3">
+                                <Button variant="ghost" onClick={() => setCompletingSprintId(null)} className="text-[#737373] rounded-xl px-5">Cancel</Button>
+                                <Button
+                                    onClick={handleCompleteSprint}
+                                    className="bg-gradient-to-r from-[#E0B954] to-[#B8872A] text-white rounded-xl px-5 font-medium shadow-lg shadow-[#B8872A]/20"
+                                >
+                                    Complete Sprint
+                                </Button>
+                            </div>
+                        </div>
+                    </div>
+                );
+            })()}
+
+            {/* Delete Sprint Confirmation */}
+            {deletingSprintId !== null && (() => {
+                const sprint = sprints.find(s => s.id === deletingSprintId);
+                const itemCount = workItems.filter(w => w.sprint_id === deletingSprintId).length;
+                return (
+                    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setDeletingSprintId(null)}>
+                        <div className="bg-[#0d0d0d] border border-[rgba(255,255,255,0.07)] rounded-2xl w-full max-w-sm shadow-2xl p-6" onClick={e => e.stopPropagation()}>
+                            <div className="flex items-center gap-3 mb-5">
+                                <div className="w-10 h-10 rounded-xl bg-[rgba(239,68,68,0.1)] flex items-center justify-center shrink-0">
+                                    <Trash2 className="w-5 h-5 text-[#EF4444]" />
+                                </div>
+                                <div>
+                                    <h3 className="text-base font-semibold text-white">Delete Sprint</h3>
+                                    <p className="text-xs text-[#737373] mt-0.5">{sprint?.name}</p>
+                                </div>
+                            </div>
+                            {itemCount > 0 && (
+                                <div className="bg-[rgba(239,68,68,0.05)] border border-[rgba(239,68,68,0.15)] rounded-xl p-3 mb-5">
+                                    <p className="text-sm text-[#f5f5f5]">
+                                        <span className="font-semibold text-[#EF4444]">{itemCount} {itemCount === 1 ? 'ticket' : 'tickets'}</span> will be moved to the backlog.
+                                    </p>
+                                </div>
+                            )}
+                            <p className="text-sm text-[#737373] mb-5">This permanently deletes the sprint and cannot be undone.</p>
+                            <div className="flex justify-end gap-3">
+                                <Button variant="ghost" onClick={() => setDeletingSprintId(null)} className="text-[#737373] rounded-xl px-5">Cancel</Button>
+                                <Button
+                                    onClick={handleDeleteSprint}
+                                    className="bg-[#EF4444] hover:bg-[#DC2626] text-white rounded-xl px-5 font-medium"
+                                >
+                                    Delete Sprint
+                                </Button>
+                            </div>
+                        </div>
+                    </div>
+                );
+            })()}
 
             {/* Reviewer Panel - slide in from right */}
             {showReviewer && (
