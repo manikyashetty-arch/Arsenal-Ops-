@@ -1,5 +1,6 @@
 import { Plus, X, Search, FolderKanban, ArrowRight } from 'lucide-react';
 import { Input } from '@/components/ui/input';
+import { useAuth } from '@/contexts/AuthContext';
 import type { Project } from './types';
 
 const ACCENT_COLORS = ['#E0B954', '#F59E0B', '#C79E3B', '#B8872A', '#EC4899', '#06B6D4'];
@@ -9,7 +10,6 @@ interface ProjectsBoxProps {
     isLoading: boolean;
     searchQuery: string;
     setSearchQuery: (value: string) => void;
-    isAdmin: boolean;
     onCreateProjectClick: () => void;
     onProjectClick: (projectId: number) => void;
     onDeleteProject: (e: React.MouseEvent, projectId: number) => void;
@@ -20,11 +20,11 @@ const ProjectsBox = ({
     isLoading,
     searchQuery,
     setSearchQuery,
-    isAdmin,
     onCreateProjectClick,
     onProjectClick,
     onDeleteProject,
 }: ProjectsBoxProps) => {
+    const { can } = useAuth();
     const filteredProjects = projects.filter(p =>
         p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         p.description.toLowerCase().includes(searchQuery.toLowerCase())
@@ -95,7 +95,7 @@ const ProjectsBox = ({
                                         </div>
                                     </div>
                                     <div className="flex items-center gap-1 flex-shrink-0">
-                                        {isAdmin && (
+                                        {can('admin.projects') && (
                                             <button
                                                 onClick={(e) => onDeleteProject(e, project.id)}
                                                 className="p-1 rounded-lg opacity-0 group-hover:opacity-100 hover:bg-red-500/10 text-[#737373] hover:text-red-400 transition-all"

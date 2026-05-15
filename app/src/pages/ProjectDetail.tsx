@@ -724,14 +724,15 @@ const ProjectDetail = () => {
         }
     };
 
-    // Check if current user is a system admin or project admin
+    // Check if current user can manage this project's team (system admin OR project-level admin).
+    // Global RBAC capability covers system admins; project-membership flag handles per-project
+    // admins who don't have the global cap.
     const isCurrentUserAdmin = () => {
         if (!user || !project) return false;
-        const isSystemAdmin = user.role.includes('admin');
-        const isProjectAdmin = project.developers.some(
+        if (can('admin.dashboard')) return true;
+        return project.developers.some(
             dev => dev.email === user.email && dev.is_admin
         );
-        return isSystemAdmin || isProjectAdmin;
     };
 
     // Save architecture changes

@@ -1,5 +1,6 @@
 import { Settings, LogOut } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { useAuth } from '@/contexts/AuthContext';
 import arsenalOpsLogo from '@/assets/images/arsenal-ops-logo.png';
 
 interface AppHeaderProps {
@@ -9,6 +10,7 @@ interface AppHeaderProps {
 }
 
 const AppHeader = ({ user, onAdminClick, onLogout }: AppHeaderProps) => {
+    const { can } = useAuth();
     return (
         <header className="border-b border-[rgba(255,255,255,0.05)] bg-[#080808]/90 backdrop-blur-xl sticky top-0 z-50">
             <div className="max-w-[1400px] mx-auto px-8 py-5 flex items-center justify-between">
@@ -22,7 +24,7 @@ const AppHeader = ({ user, onAdminClick, onLogout }: AppHeaderProps) => {
                             <span className="text-sm text-[#a3a3a3] hidden md:block">{user.name}</span>
                         </div>
                     )}
-                    {user?.role.includes('admin') && (
+                    {can('admin.dashboard') && (
                         <Button
                             variant="ghost"
                             onClick={onAdminClick}
