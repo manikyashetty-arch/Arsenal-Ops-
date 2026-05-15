@@ -2320,7 +2320,6 @@ const ProjectBoard = () => {
                                                 {group.items.map(item => {
                                                     const typeInfo = TYPE_CONFIG[item.type] || TYPE_CONFIG.task;
                                                     const TypeIcon = typeInfo.icon;
-                                                    const statusConf = STATUS_CONFIG[item.status] || STATUS_CONFIG.todo;
                                                     const priorityStyle = PRIORITY_COLORS[item.priority] || PRIORITY_COLORS.medium;
                                                     return (
                                                         <div
