@@ -501,7 +501,6 @@ const ProjectsPage = () => {
                             isLoading={isLoading}
                             searchQuery={searchQuery}
                             setSearchQuery={setSearchQuery}
-                            isAdmin={!!user?.role.includes('admin')}
                             onCreateProjectClick={() => setShowCreateModal(true)}
                             onProjectClick={(projectId) => navigate(`/project/${projectId}`)}
                             onDeleteProject={handleDeleteProject}
