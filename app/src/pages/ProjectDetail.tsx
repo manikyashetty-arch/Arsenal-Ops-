@@ -2602,7 +2602,6 @@ const ProjectDetail = () => {
                 <PMView
                   projectId={id!}
                   token={localStorage.getItem('token')!}
-                  userRestrictions={userRestrictions}
                   sprints={sprints}
                 />
               )}

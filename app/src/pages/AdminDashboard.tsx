@@ -134,15 +134,13 @@ type AdminTab =
   | 'employees'
   | 'projects'
   | 'users'
-  | 'developers-capacity'
-  | 'custom-restrictions';
+  | 'developers-capacity';
 const VALID_ADMIN_TABS: AdminTab[] = [
   'dashboard',
   'employees',
   'projects',
   'users',
   'developers-capacity',
-  'custom-restrictions',
 ];
 
 const PROJECT_COLOR_PALETTE = [
@@ -241,19 +239,12 @@ const AdminDashboard = () => {
   });
   const users = useMemo(() => usersQuery.data ?? [], [usersQuery.data]);
 
-  const restrictionsQuery = useQuery<any[]>({
-    queryKey: ['admin', 'custom-restrictions'],
-    queryFn: () => apiFetch<any[]>('/api/auth/admin/custom-restrictions'),
-  });
-  const customRestrictions = restrictionsQuery.data ?? [];
-
   const loading =
     statsQuery.isLoading ||
     employeesQuery.isLoading ||
     capacityQuery.isLoading ||
     projectsQuery.isLoading ||
-    usersQuery.isLoading ||
-    restrictionsQuery.isLoading;
+    usersQuery.isLoading;
 
   const [expandedCapacityDevId, setExpandedCapacityDevId] = useState<number | null>(null);
 
@@ -469,19 +460,6 @@ const AdminDashboard = () => {
       return 0;
     });
   }, [users, usersRoleFilter, usersSort]);
-
-  // Custom restrictions state
-  const [showRestrictionModal, setShowRestrictionModal] = useState(false);
-  const [editingRestriction, setEditingRestriction] = useState<any | null>(null);
-  const [restrictionForm, setRestrictionForm] = useState({
-    name: '',
-    tab_name: '',
-    subsection: '',
-  });
-
-  // User restrictions management state
-  const [showUserRestrictionsModal, setShowUserRestrictionsModal] = useState(false);
-  const [selectedUserForRestrictions, setSelectedUserForRestrictions] = useState<User | null>(null);
 
   // Role dropdown state
   const [openRoleDropdown, setOpenRoleDropdown] = useState<number | null>(null);
@@ -783,101 +761,6 @@ const AdminDashboard = () => {
     toggleUserRoleMutation.mutate({ userId: user.id, newRole: newRoles.join(',') });
   };
 
-  // Custom Restrictions Handlers
-  const handleCreateRestriction = () => {
-    setEditingRestriction(null);
-    setRestrictionForm({ name: '', tab_name: '', subsection: '' });
-    setShowRestrictionModal(true);
-  };
-
-  const handleEditRestriction = (restriction: any) => {
-    setEditingRestriction(restriction);
-    setRestrictionForm({
-      name: restriction.name,
-      tab_name: restriction.tab_name,
-      subsection: restriction.subsection,
-    });
-    setShowRestrictionModal(true);
-  };
-
-  const saveRestrictionMutation = useMutation({
-    mutationFn: () => {
-      const url = editingRestriction
-        ? `/api/auth/admin/custom-restrictions/${editingRestriction.id}`
-        : `/api/auth/admin/custom-restrictions`;
-      const method = editingRestriction ? 'PUT' : 'POST';
-      return apiFetch<any>(url, { method, body: JSON.stringify(restrictionForm) });
-    },
-    onSuccess: () => {
-      toast.success(editingRestriction ? 'Restriction updated!' : 'Restriction created!');
-      setShowRestrictionModal(false);
-      queryClient.invalidateQueries({ queryKey: ['admin', 'custom-restrictions'] });
-    },
-    onError: (err: any) => toast.error(err?.message || 'Failed to save restriction'),
-  });
-
-  const handleSaveRestriction = () => {
-    if (!restrictionForm.name.trim() || !restrictionForm.tab_name || !restrictionForm.subsection) {
-      toast.error('All fields are required');
-      return;
-    }
-    saveRestrictionMutation.mutate();
-  };
-
-  const deleteRestrictionMutation = useMutation({
-    mutationFn: (restrictionId: number) =>
-      apiFetch<void>(`/api/auth/admin/custom-restrictions/${restrictionId}`, { method: 'DELETE' }),
-    onSuccess: () => {
-      toast.success('Restriction deleted!');
-      queryClient.invalidateQueries({ queryKey: ['admin', 'custom-restrictions'] });
-    },
-    onError: () => toast.error('Failed to delete restriction'),
-  });
-
-  const handleDeleteRestriction = (restrictionId: number) => {
-    if (!confirm('Are you sure you want to delete this custom restriction?')) return;
-    deleteRestrictionMutation.mutate(restrictionId);
-  };
-
-  // User Restrictions Management Handlers
-  const userRestrictionsQuery = useQuery<any[]>({
-    queryKey: ['admin', 'user-restrictions', selectedUserForRestrictions?.id],
-    queryFn: () =>
-      apiFetch<any[]>(
-        `/api/auth/admin/users/${selectedUserForRestrictions!.id}/custom-restrictions`,
-      ),
-    enabled: !!selectedUserForRestrictions,
-  });
-  const userRestrictionsList: number[] = (userRestrictionsQuery.data ?? []).map((r: any) => r.id);
-  const userRestrictionsLoading = userRestrictionsQuery.isLoading;
-
-  const handleOpenUserRestrictionsModal = (user: User) => {
-    setSelectedUserForRestrictions(user);
-    setShowUserRestrictionsModal(true);
-  };
-
-  const toggleUserRestrictionMutation = useMutation({
-    mutationFn: ({ restrictionId, isChecked }: { restrictionId: number; isChecked: boolean }) => {
-      if (!selectedUserForRestrictions) throw new Error('No user selected');
-      const method = isChecked ? 'POST' : 'DELETE';
-      return apiFetch<void>(
-        `/api/auth/admin/users/${selectedUserForRestrictions.id}/custom-restrictions/${restrictionId}`,
-        { method },
-      );
-    },
-    onSuccess: (_data, { isChecked }) => {
-      toast.success(isChecked ? 'Restriction assigned!' : 'Restriction removed!');
-      queryClient.invalidateQueries({
-        queryKey: ['admin', 'user-restrictions', selectedUserForRestrictions?.id],
-      });
-    },
-    onError: (err: any) => toast.error(err?.message || 'Failed to update restriction'),
-  });
-
-  const handleToggleUserRestriction = (restrictionId: number, isChecked: boolean) => {
-    toggleUserRestrictionMutation.mutate({ restrictionId, isChecked });
-  };
-
   return (
     <div className="min-h-screen bg-[#080808] text-white">
       <Toaster position="top-right" theme="dark" />
@@ -911,7 +794,6 @@ const AdminDashboard = () => {
               { id: 'employees', label: 'Employees', icon: Users },
               { id: 'projects', label: 'Projects', icon: FolderKanban },
               { id: 'users', label: 'Users', icon: Shield },
-              { id: 'custom-restrictions', label: 'Restrictions', icon: Settings },
             ].map((tab) => (
               <button
                 key={tab.id}
@@ -2003,7 +1885,6 @@ const AdminDashboard = () => {
                             { key: null, label: 'Roles', sortable: false },
                             { key: 'status' as const, label: 'Status', sortable: true },
                             { key: 'last_login' as const, label: 'Last Login', sortable: true },
-                            { key: null, label: 'Restrictions', sortable: false },
                           ] as const
                         ).map((col, i) => {
                           const isActive = col.sortable && col.key && usersSort.key === col.key;
@@ -2112,17 +1993,6 @@ const AdminDashboard = () => {
                               ? new Date(user.last_login_at).toLocaleDateString()
                               : 'Never'}
                           </td>
-                          <td className="py-3 px-4">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleOpenUserRestrictionsModal(user)}
-                              className="text-[#737373] hover:text-[#E0B954] hover:bg-[#E0B954]/10 h-8"
-                            >
-                              <Shield className="w-3.5 h-3.5 mr-1" />
-                              Restrictions
-                            </Button>
-                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -2135,94 +2005,6 @@ const AdminDashboard = () => {
                   {users.length > 0 && visibleUsers.length === 0 && (
                     <div className="text-center py-12 text-sm text-[#737373]">
                       No users match the current filter.
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-            {/* Custom Restrictions Tab */}
-            {activeTab === 'custom-restrictions' && (
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <h2 className="text-lg font-semibold text-white">
-                    Custom Restrictions Management
-                  </h2>
-                  <Button
-                    onClick={handleCreateRestriction}
-                    className="bg-gradient-to-r from-[#E0B954] to-[#B8872A] hover:from-[#C79E3B] hover:to-[#B8872A] text-white rounded-xl h-10 px-4"
-                  >
-                    <Plus className="w-4 h-4 mr-2" />
-                    Add Restriction
-                  </Button>
-                </div>
-                <div className="bg-[#0d0d0d] border border-[rgba(255,255,255,0.05)] rounded-xl overflow-visible">
-                  <table className="w-full">
-                    <thead className="bg-[rgba(255,255,255,0.02)]">
-                      <tr>
-                        <th className="text-left text-xs font-medium text-[#737373] py-3 px-4">
-                          Name
-                        </th>
-                        <th className="text-left text-xs font-medium text-[#737373] py-3 px-4">
-                          Tab
-                        </th>
-                        <th className="text-left text-xs font-medium text-[#737373] py-3 px-4">
-                          Subsection
-                        </th>
-                        <th className="text-left text-xs font-medium text-[#737373] py-3 px-4">
-                          Created
-                        </th>
-                        <th className="text-right text-xs font-medium text-[#737373] py-3 px-4">
-                          Actions
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-[rgba(255,255,255,0.03)]">
-                      {customRestrictions.map((restriction) => (
-                        <tr key={restriction.id} className="hover:bg-[rgba(255,255,255,0.02)]">
-                          <td className="py-3 px-4">
-                            <span className="inline-flex items-center gap-2 px-2 py-1 rounded text-xs bg-[#E0B954]/20 text-[#E0B954]">
-                              <Shield className="w-3 h-3" />
-                              {restriction.name}
-                            </span>
-                          </td>
-                          <td className="py-3 px-4 text-sm text-[#a3a3a3]">
-                            {toPascalCase(restriction.tab_name)}
-                          </td>
-                          <td className="py-3 px-4 text-sm text-[#a3a3a3]">
-                            {restriction.subsection}
-                          </td>
-                          <td className="py-3 px-4 text-sm text-[#737373]">
-                            {new Date(restriction.created_at).toLocaleDateString()}
-                          </td>
-                          <td className="py-3 px-4 text-right">
-                            <div className="flex items-center justify-end gap-2">
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handleEditRestriction(restriction)}
-                                className="text-[#737373] hover:text-red-400 h-8"
-                              >
-                                <Pencil className="w-3.5 h-3.5 mr-1" />
-                                Edit
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handleDeleteRestriction(restriction.id)}
-                                className="text-[#737373] hover:text-red-400 h-8"
-                              >
-                                <Trash2 className="w-3.5 h-3.5 mr-1" />
-                                Delete
-                              </Button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  {customRestrictions.length === 0 && (
-                    <div className="text-center py-12 text-[#737373]">
-                      No custom restrictions yet. Click "Add Restriction" to create one.
                     </div>
                   )}
                 </div>
@@ -2287,89 +2069,6 @@ const AdminDashboard = () => {
               >
                 Done
               </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Custom Restriction Modal */}
-      {showRestrictionModal && (
-        <div
-          className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4"
-          onClick={() => setShowRestrictionModal(false)}
-        >
-          <div
-            className="bg-[#0d0d0d] border border-[rgba(255,255,255,0.07)] rounded-2xl w-full max-w-md shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between p-5 border-b border-[rgba(255,255,255,0.05)]">
-              <h2 className="text-lg font-bold text-white">
-                {editingRestriction ? 'Edit Restriction' : 'Add Custom Restriction'}
-              </h2>
-              <button
-                onClick={() => setShowRestrictionModal(false)}
-                className="p-2 rounded-lg hover:bg-[rgba(244,246,255,0.05)] text-[#737373] hover:text-white"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <div className="p-5 space-y-4">
-              <div>
-                <label className="text-xs font-medium text-[#737373] block mb-1.5">
-                  Restriction Name *
-                </label>
-                <Input
-                  value={restrictionForm.name}
-                  onChange={(e) => setRestrictionForm((f) => ({ ...f, name: e.target.value }))}
-                  placeholder="e.g., NoWorkload, NoAnalytics"
-                  className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl h-10"
-                />
-              </div>
-              <div>
-                <label className="text-xs font-medium text-[#737373] block mb-1.5">
-                  Tab Name *
-                </label>
-                <select
-                  value={restrictionForm.tab_name}
-                  onChange={(e) => setRestrictionForm((f) => ({ ...f, tab_name: e.target.value }))}
-                  className="w-full bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl h-10 px-3 text-sm"
-                >
-                  <option value="">Select a tab...</option>
-                  <option value="project_manager">Project Manager</option>
-                </select>
-              </div>
-              <div>
-                <label className="text-xs font-medium text-[#737373] block mb-1.5">
-                  Subsection *
-                </label>
-                <Input
-                  value={restrictionForm.subsection}
-                  onChange={(e) =>
-                    setRestrictionForm((f) => ({ ...f, subsection: e.target.value }))
-                  }
-                  placeholder="e.g., workload, analytics, timeline"
-                  className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl h-10"
-                />
-                <p className="text-[10px] text-[#737373] mt-1">
-                  The subsection within the tab that will be hidden from users with this
-                  restriction.
-                </p>
-              </div>
-            </div>
-            <div className="flex justify-end gap-2 p-5 border-t border-[rgba(255,255,255,0.05)]">
-              <button
-                onClick={() => setShowRestrictionModal(false)}
-                className="px-4 py-2 rounded-lg text-[#737373] hover:bg-[rgba(255,255,255,0.05)] transition"
-              >
-                Cancel
-              </button>
-              <Button
-                onClick={handleSaveRestriction}
-                className="bg-gradient-to-r from-[#E0B954] to-[#B8872A] text-white rounded-xl px-6 font-medium shadow-lg shadow-[#B8872A]/20"
-              >
-                <Save className="w-4 h-4 mr-2" />
-                {editingRestriction ? 'Update' : 'Create'}
-              </Button>
             </div>
           </div>
         </div>
@@ -2607,76 +2306,6 @@ const AdminDashboard = () => {
                   Create User
                 </Button>
               )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* User Restrictions Modal */}
-      {showUserRestrictionsModal && selectedUserForRestrictions && (
-        <div
-          className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4"
-          onClick={() => setShowUserRestrictionsModal(false)}
-        >
-          <div
-            className="bg-[#0d0d0d] border border-[rgba(255,255,255,0.07)] rounded-2xl w-full max-w-md shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between p-5 border-b border-[rgba(255,255,255,0.05)]">
-              <div>
-                <h2 className="text-lg font-bold text-white">Manage Restrictions</h2>
-                <p className="text-xs text-[#737373] mt-0.5">{selectedUserForRestrictions.name}</p>
-              </div>
-              <button
-                onClick={() => setShowUserRestrictionsModal(false)}
-                className="p-2 rounded-lg hover:bg-[rgba(244,246,255,0.05)] text-[#737373] hover:text-white"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <div className="p-5 space-y-2 max-h-96 overflow-y-auto">
-              {userRestrictionsLoading ? (
-                <div className="flex items-center justify-center py-8">
-                  <div className="animate-spin w-6 h-6 border-2 border-[#E0B954] border-t-transparent rounded-full" />
-                </div>
-              ) : customRestrictions.length === 0 ? (
-                <p className="text-sm text-[#737373] text-center py-8">
-                  No custom restrictions available
-                </p>
-              ) : (
-                customRestrictions.map((restriction) => (
-                  <label
-                    key={restriction.id}
-                    className="flex items-center gap-3 p-3 rounded-lg hover:bg-[rgba(255,255,255,0.02)] cursor-pointer transition"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={userRestrictionsList.includes(restriction.id)}
-                      onChange={(e) =>
-                        handleToggleUserRestriction(restriction.id, e.target.checked)
-                      }
-                      className="w-5 h-5 rounded cursor-pointer"
-                    />
-                    <div className="flex-1 min-w-0">
-                      <span className="text-sm text-white font-medium block">
-                        {restriction.name}
-                      </span>
-                      <p className="text-xs text-[#737373] mt-0.5">
-                        {toPascalCase(restriction.tab_name)} →{' '}
-                        {toPascalCase(restriction.subsection)}
-                      </p>
-                    </div>
-                  </label>
-                ))
-              )}
-            </div>
-            <div className="flex justify-end gap-2 p-5 border-t border-[rgba(255,255,255,0.05)]">
-              <button
-                onClick={() => setShowUserRestrictionsModal(false)}
-                className="px-4 py-2 rounded-lg text-[#737373] hover:bg-[rgba(255,255,255,0.05)] transition"
-              >
-                Done
-              </button>
             </div>
           </div>
         </div>

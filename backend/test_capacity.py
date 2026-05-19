@@ -22,7 +22,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 import contextlib
 
 with contextlib.suppress(ImportError):
-    from models import custom_restriction, personal_task  # noqa: F401
+    from models import personal_task  # noqa: F401
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker

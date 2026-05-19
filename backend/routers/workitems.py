@@ -325,6 +325,8 @@ def get_my_tasks(db: Session = Depends(get_db), current_user: User = Depends(get
 
     result = []
     for item in items:
+        # Use the prebuilt projects_by_id lookup (perf branch N+1 fix) and
+        # include completed_at from main.
         project = projects_by_id.get(item.project_id)
 
         result.append(
@@ -344,6 +346,7 @@ def get_my_tasks(db: Session = Depends(get_db), current_user: User = Depends(get
                 "is_overdue": bool(
                     item.due_date and item.due_date < datetime.utcnow() and item.status != "done"
                 ),
+                "completed_at": item.completed_at.isoformat() if item.completed_at else None,
                 "story_points": item.story_points or 0,
                 "assigned_hours": item.estimated_hours or 0,
                 "assignee": developer.name,
@@ -358,6 +361,7 @@ def get_my_tasks(db: Session = Depends(get_db), current_user: User = Depends(get
                 "sprint": item.sprint.name if item.sprint else "Backlog",
             }
         )
+
 
     return result
 
@@ -1216,6 +1220,59 @@ def complete_sprint(
     return sprint
 
 
+class SprintUpdate(BaseModel):
+    name: Optional[str] = None
+    goal: Optional[str] = None
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
+    capacity_hours: Optional[int] = None
+
+
+@router.put("/sprints/{sprint_id}")
+async def update_sprint(
+    sprint_id: int,
+    data: SprintUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Update sprint fields (requires auth)"""
+    sprint = db.query(Sprint).filter(Sprint.id == sprint_id).first()
+    if not sprint:
+        raise HTTPException(status_code=404, detail="Sprint not found")
+
+    if data.name is not None:
+        sprint.name = data.name
+    if data.goal is not None:
+        sprint.goal = data.goal
+    if data.start_date is not None:
+        sprint.start_date = datetime.fromisoformat(data.start_date) if data.start_date else None
+    if data.end_date is not None:
+        sprint.end_date = datetime.fromisoformat(data.end_date) if data.end_date else None
+    if data.capacity_hours is not None:
+        sprint.capacity_hours = data.capacity_hours
+
+    sprint.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(sprint)
+    return sprint
+
+
+@router.delete("/sprints/{sprint_id}")
+async def delete_sprint(
+    sprint_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Delete a sprint; work items are unassigned (sprint_id → NULL) (requires auth)"""
+    sprint = db.query(Sprint).filter(Sprint.id == sprint_id).first()
+    if not sprint:
+        raise HTTPException(status_code=404, detail="Sprint not found")
+
+    db.delete(sprint)
+    db.commit()
+    return {"ok": True}
+
+
 class MoveTicketRequest(BaseModel):
     target_sprint_id: int | None = None  # null means move to backlog
 
@@ -1507,7 +1564,24 @@ def get_project_analytics(
 def get_hours_analytics(
     project_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
 ):
-    """Get hours analytics for project manager view (requires auth)"""
+    """
+    Get hours analytics for project manager view.
+    Authorized for users with the project.pm capability OR project-level admin
+    membership on this specific project (matches frontend canSeePMTab logic).
+    """
+    if not current_user.has_capability("project.pm"):
+        project = db.query(Project).filter(Project.id == project_id).first()
+        is_project_admin = bool(
+            project and any(
+                d.email == current_user.email and d.is_admin
+                for d in project.developers
+            )
+        )
+        if not is_project_admin:
+            raise HTTPException(
+                status_code=403,
+                detail="Missing required capability: project.pm or project-level admin",
+            )
     from models.developer import Developer
 
     # Verify project exists

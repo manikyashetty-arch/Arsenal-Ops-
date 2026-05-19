@@ -27,7 +27,6 @@ from database import Base  # noqa: E402
 from models import (  # noqa: E402, F401
     activity_log,
     architecture,
-    custom_restriction,
     developer,
     market_insight,
     persona,

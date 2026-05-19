@@ -9,6 +9,7 @@ import {
   ReactNode,
 } from 'react';
 import { API_BASE_URL } from '@/config/api';
+import { matchesCapability } from '@/lib/capabilities';
 
 interface User {
   id: number;
@@ -49,6 +50,10 @@ interface AuthContextType {
   checkAuth: () => Promise<void>;
   showWarning: boolean;
   dismissWarning: () => void;
+  // RBAC capabilities
+  capabilities: string[];
+  can: (cap: string) => boolean;
+  refreshCapabilities: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -73,6 +78,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [token, setToken] = useState<string | null>(localStorage.getItem('token'));
   const [isLoading, setIsLoading] = useState(!!token); // Only loading if we have a token
   const [showWarning, setShowWarning] = useState(false);
+  const [capabilities, setCapabilities] = useState<string[]>(() => {
+    // Restore from localStorage so UI doesn't flash unauthorized on reload.
+    const saved = localStorage.getItem('capabilities');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        return Array.isArray(parsed) ? parsed : [];
+      } catch {
+        return [];
+      }
+    }
+    return [];
+  });
 
   const lastActivityRef = useRef(Date.now());
   // Mirrors `showWarning` so `updateActivity` can read it in O(1) without
@@ -80,13 +98,43 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const showWarningRef = useRef(false);
   const isAuthenticated = !!user && !!token;
 
+  // Fetch + cache the user's effective capabilities. Keeps stale cache on
+  // failure so a transient backend hiccup doesn't wipe every gated UI.
+  const fetchCapabilitiesWith = useCallback(async (currentToken: string) => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/auth/me/capabilities`, {
+        headers: { Authorization: `Bearer ${currentToken}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const caps: string[] = Array.isArray(data?.capabilities) ? data.capabilities : [];
+        setCapabilities(caps);
+        localStorage.setItem('capabilities', JSON.stringify(caps));
+      }
+    } catch {
+      // keep stale cache on network error
+    }
+  }, []);
+
+  const refreshCapabilities = useCallback(async () => {
+    const currentToken = token || localStorage.getItem('token');
+    if (currentToken) await fetchCapabilitiesWith(currentToken);
+  }, [token, fetchCapabilitiesWith]);
+
+  const can = useCallback(
+    (cap: string) => matchesCapability(cap, capabilities),
+    [capabilities],
+  );
+
   const logout = useCallback(() => {
     setUser(null);
     setToken(null);
     showWarningRef.current = false;
     setShowWarning(false);
+    setCapabilities([]);
     localStorage.removeItem('token');
     localStorage.removeItem('user');
+    localStorage.removeItem('capabilities');
   }, []);
 
   const checkAuth = useCallback(async () => {
@@ -109,6 +157,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (!token) {
           setToken(currentToken);
         }
+        // Refresh capabilities alongside user so the two stay in sync.
+        fetchCapabilitiesWith(currentToken);
       } else {
         // Token invalid, clear it
         logout();
@@ -119,7 +169,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } finally {
       setIsLoading(false);
     }
-  }, [token, logout]);
+  }, [token, logout, fetchCapabilitiesWith]);
 
   // Check authentication on mount only. checkAuth is intentionally excluded
   // from deps — we re-validate on token change via the regular login flow,
@@ -183,49 +233,57 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     lastActivityRef.current = Date.now();
   }, []);
 
-  const login = useCallback(async (email: string, password: string) => {
-    const formData = new URLSearchParams();
-    formData.append('username', email);
-    formData.append('password', password);
+  const login = useCallback(
+    async (email: string, password: string) => {
+      const formData = new URLSearchParams();
+      formData.append('username', email);
+      formData.append('password', password);
 
-    const response = await fetch(`${API_BASE_URL}/api/auth/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: formData,
-    });
+      const response = await fetch(`${API_BASE_URL}/api/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: formData,
+      });
 
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.detail || 'Login failed');
-    }
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.detail || 'Login failed');
+      }
 
-    const data = await response.json();
-    setToken(data.access_token);
-    setUser(data.user);
-    localStorage.setItem('token', data.access_token);
-    localStorage.setItem('user', JSON.stringify(data.user));
-    lastActivityRef.current = Date.now();
-  }, []);
+      const data = await response.json();
+      setToken(data.access_token);
+      setUser(data.user);
+      localStorage.setItem('token', data.access_token);
+      localStorage.setItem('user', JSON.stringify(data.user));
+      lastActivityRef.current = Date.now();
+      fetchCapabilitiesWith(data.access_token);
+    },
+    [fetchCapabilitiesWith],
+  );
 
-  const loginWithGoogle = useCallback(async (idToken: string) => {
-    const response = await fetch(`${API_BASE_URL}/api/auth/google-login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token: idToken }),
-    });
+  const loginWithGoogle = useCallback(
+    async (idToken: string) => {
+      const response = await fetch(`${API_BASE_URL}/api/auth/google-login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: idToken }),
+      });
 
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.detail || 'Google login failed');
-    }
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.detail || 'Google login failed');
+      }
 
-    const data = await response.json();
-    setToken(data.access_token);
-    setUser(data.user);
-    localStorage.setItem('token', data.access_token);
-    localStorage.setItem('user', JSON.stringify(data.user));
-    lastActivityRef.current = Date.now();
-  }, []);
+      const data = await response.json();
+      setToken(data.access_token);
+      setUser(data.user);
+      localStorage.setItem('token', data.access_token);
+      localStorage.setItem('user', JSON.stringify(data.user));
+      lastActivityRef.current = Date.now();
+      fetchCapabilitiesWith(data.access_token);
+    },
+    [fetchCapabilitiesWith],
+  );
 
   const loginDev = useCallback(async () => {
     const response = await fetch(`${API_BASE_URL}/api/auth/dev-login`, { method: 'POST' });
@@ -239,7 +297,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.setItem('token', data.access_token);
     localStorage.setItem('user', JSON.stringify(data.user));
     lastActivityRef.current = Date.now();
-  }, []);
+    fetchCapabilitiesWith(data.access_token);
+  }, [fetchCapabilitiesWith]);
 
   const changePassword = useCallback(
     async (currentPassword: string, newPassword: string) => {
@@ -277,6 +336,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       checkAuth,
       showWarning,
       dismissWarning,
+      capabilities,
+      can,
+      refreshCapabilities,
     }),
     [
       user,
@@ -291,6 +353,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       changePassword,
       checkAuth,
       dismissWarning,
+      capabilities,
+      can,
+      refreshCapabilities,
     ],
   );
 

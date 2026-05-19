@@ -47,7 +47,7 @@ from models import (  # noqa: F401
 )
 
 with contextlib.suppress(ImportError):
-    from models import custom_restriction, personal_task  # noqa: F401
+    from models import personal_task  # noqa: F401
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker

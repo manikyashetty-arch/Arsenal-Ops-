@@ -2,6 +2,7 @@
 
 import sys
 from datetime import datetime
+from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -12,6 +13,7 @@ from database import get_db
 from models.developer import Developer
 from models.project import Project
 from models.work_item import WorkItem
+from routers.auth import require_capability
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -72,7 +74,11 @@ SPECIALIZATIONS = [
 ]
 
 
-@router.get("/stats", response_model=DashboardStats)
+@router.get(
+    "/stats",
+    response_model=DashboardStats,
+    dependencies=[Depends(require_capability("admin.dashboard"))],
+)
 def get_dashboard_stats(db: Session = Depends(get_db)):
     """Get admin dashboard statistics"""
     from models.developer import Developer
@@ -119,7 +125,11 @@ def get_dashboard_stats(db: Session = Depends(get_db)):
     )
 
 
-@router.get("/employees", response_model=list[EmployeeResponse])
+@router.get(
+    "/employees",
+    response_model=List[EmployeeResponse],
+    dependencies=[Depends(require_capability("admin.employees"))],
+)
 def list_employees(db: Session = Depends(get_db)):
     """Get all employees/developers"""
     developers = db.query(Developer).all()
@@ -147,7 +157,10 @@ def list_employees(db: Session = Depends(get_db)):
     return result
 
 
-@router.get("/developers/capacity")
+@router.get(
+    "/developers/capacity",
+    dependencies=[Depends(require_capability("admin.developers_capacity"))],
+)
 def get_developers_capacity(db: Session = Depends(get_db)):
     """Get weekly capacity for all developers across all projects.
 
@@ -215,7 +228,9 @@ class EmployeeTicketResponse(BaseModel):
 
 
 @router.get(
-    "/employees/{employee_id}/in-progress-tickets", response_model=list[EmployeeTicketResponse]
+    "/employees/{employee_id}/in-progress-tickets",
+    response_model=List[EmployeeTicketResponse],
+    dependencies=[Depends(require_capability("admin.employees"))],
 )
 def get_employee_in_progress_tickets(employee_id: int, db: Session = Depends(get_db)):
     """Get all active tickets assigned to an employee across all projects, sorted by priority"""
@@ -269,7 +284,11 @@ def get_employee_in_progress_tickets(employee_id: int, db: Session = Depends(get
     return result
 
 
-@router.post("/employees", response_model=EmployeeResponse)
+@router.post(
+    "/employees",
+    response_model=EmployeeResponse,
+    dependencies=[Depends(require_capability("admin.employees"))],
+)
 def create_employee(employee: EmployeeCreate, db: Session = Depends(get_db)):
     """Create a new employee/developer"""
     from models.user import User, UserRole
@@ -331,8 +350,16 @@ def create_employee(employee: EmployeeCreate, db: Session = Depends(get_db)):
     )
 
 
-@router.put("/employees/{employee_id}", response_model=EmployeeResponse)
-def update_employee(employee_id: int, update: EmployeeUpdate, db: Session = Depends(get_db)):
+@router.put(
+    "/employees/{employee_id}",
+    response_model=EmployeeResponse,
+    dependencies=[Depends(require_capability("admin.employees"))],
+)
+def update_employee(
+    employee_id: int,
+    update: EmployeeUpdate,
+    db: Session = Depends(get_db)
+):
     """Update an employee/developer"""
     employee = db.query(Developer).filter(Developer.id == employee_id).first()
     if not employee:
@@ -384,7 +411,10 @@ def update_employee(employee_id: int, update: EmployeeUpdate, db: Session = Depe
     )
 
 
-@router.delete("/employees/{employee_id}")
+@router.delete(
+    "/employees/{employee_id}",
+    dependencies=[Depends(require_capability("admin.employees"))],
+)
 def delete_employee(employee_id: int, db: Session = Depends(get_db)):
     """Delete an employee/developer and their user account"""
     from models.user import User
@@ -438,7 +468,11 @@ class ProjectResponse(BaseModel):
         from_attributes = True
 
 
-@router.get("/projects", response_model=list[ProjectResponse])
+@router.get(
+    "/projects",
+    response_model=List[ProjectResponse],
+    dependencies=[Depends(require_capability("admin.projects"))],
+)
 def list_all_projects(db: Session = Depends(get_db)):
     """Get all projects with stats for admin"""
     projects = db.query(Project).all()
@@ -468,9 +502,14 @@ def list_all_projects(db: Session = Depends(get_db)):
     return result
 
 
-@router.put("/projects/{project_id}/github")
+@router.put(
+    "/projects/{project_id}/github",
+    dependencies=[Depends(require_capability("admin.projects"))],
+)
 def update_project_github(
-    project_id: int, update: ProjectGitHubUpdate, db: Session = Depends(get_db)
+    project_id: int,
+    update: ProjectGitHubUpdate,
+    db: Session = Depends(get_db)
 ):
     """Update project GitHub settings"""
     project = db.query(Project).filter(Project.id == project_id).first()

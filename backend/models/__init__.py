@@ -2,7 +2,6 @@
 
 from models.activity_log import ActivityLog
 from models.comment import Comment
-from models.custom_restriction import CustomRestriction
 from models.developer import Developer, project_developers
 from models.market_insight import MarketInsight
 from models.milestone import Milestone
@@ -13,6 +12,7 @@ from models.project_file import ProjectFile
 from models.project_goal import ProjectGoal
 from models.project_link import ProjectLink
 from models.project_milestone import ProjectMilestone
+from models.role import Role, RoleCapability, user_roles
 from models.sprint import Sprint
 from models.task import Task
 from models.task_dependency import TaskDependency
@@ -43,7 +43,9 @@ __all__ = [
     "ActivityLog",
     "ProjectFile",
     "ProjectLink",
-    "CustomRestriction",
     "PersonalTask",
     "WorkItemAssignmentHistory",
+    "Role",
+    "RoleCapability",
+    "user_roles",
 ]
