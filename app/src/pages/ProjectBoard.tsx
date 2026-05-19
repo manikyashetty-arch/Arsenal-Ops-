@@ -2644,10 +2644,14 @@ const ProjectBoard = () => {
               {isEditing ? (
                 /* Edit Form */
                 <div className="space-y-4">
+                  {/* All fields below are controlled (value + onChange) — see audit F-M6.
+                      defaultValue was previously used on 9 fields, which meant a
+                      background ['workItems'] refetch could leave the cache and the
+                      displayed input value silently divergent. */}
                   <div>
                     <label className="text-xs font-medium text-[#737373] block mb-1.5">Title</label>
                     <Input
-                      defaultValue={selectedItem.title}
+                      value={editForm.title ?? ''}
                       onChange={(e) => setEditForm((f) => ({ ...f, title: e.target.value }))}
                       className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl"
                     />
@@ -2657,7 +2661,7 @@ const ProjectBoard = () => {
                       Description
                     </label>
                     <Textarea
-                      defaultValue={selectedItem.description}
+                      value={editForm.description ?? ''}
                       onChange={(e) => setEditForm((f) => ({ ...f, description: e.target.value }))}
                       className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl min-h-[120px] resize-none whitespace-pre-wrap"
                     />
@@ -2668,7 +2672,7 @@ const ProjectBoard = () => {
                         Type
                       </label>
                       <select
-                        defaultValue={selectedItem.type}
+                        value={editForm.type ?? 'task'}
                         onChange={(e) => {
                           const newType = e.target.value as WorkItem['type'];
                           setEditForm((f) => {
@@ -2697,7 +2701,7 @@ const ProjectBoard = () => {
                         Priority
                       </label>
                       <select
-                        defaultValue={selectedItem.priority}
+                        value={editForm.priority ?? 'medium'}
                         onChange={(e) =>
                           setEditForm((f) => ({
                             ...f,
@@ -2720,7 +2724,7 @@ const ProjectBoard = () => {
                       </label>
                       <Input
                         type="number"
-                        defaultValue={selectedItem.story_points}
+                        value={editForm.story_points ?? 0}
                         onChange={(e) =>
                           setEditForm((f) => ({
                             ...f,
@@ -2736,7 +2740,7 @@ const ProjectBoard = () => {
                       </label>
                       <Input
                         type="number"
-                        defaultValue={selectedItem.assigned_hours}
+                        value={editForm.assigned_hours ?? 0}
                         onChange={(e) =>
                           setEditForm((f) => ({
                             ...f,
@@ -2754,7 +2758,7 @@ const ProjectBoard = () => {
                       </label>
                       <Input
                         type="number"
-                        defaultValue={selectedItem.logged_hours || 0}
+                        value={editForm.logged_hours ?? 0}
                         onChange={(e) =>
                           setEditForm((f) => ({
                             ...f,
@@ -2770,7 +2774,7 @@ const ProjectBoard = () => {
                       </label>
                       <Input
                         type="number"
-                        defaultValue={selectedItem.remaining_hours}
+                        value={editForm.remaining_hours ?? 0}
                         onChange={(e) =>
                           setEditForm((f) => ({
                             ...f,
@@ -2894,7 +2898,7 @@ const ProjectBoard = () => {
                       Sprint
                     </label>
                     <Input
-                      defaultValue={selectedItem.sprint}
+                      value={editForm.sprint ?? ''}
                       onChange={(e) => setEditForm((f) => ({ ...f, sprint: e.target.value }))}
                       className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl"
                     />
