@@ -173,8 +173,7 @@ const BusinessReviewView: React.FC<BusinessReviewViewProps> = ({
   const overdueItemsList = useMemo(
     () =>
       workItems.filter(
-        (item) =>
-          item.due_date && parseLocalDate(item.due_date) < today && item.status !== 'done',
+        (item) => item.due_date && parseLocalDate(item.due_date) < today && item.status !== 'done',
       ),
     [workItems, today],
   );

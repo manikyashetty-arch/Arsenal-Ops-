@@ -196,9 +196,7 @@ const WorkloadView: React.FC<WorkloadViewProps> = ({ workloadData, onDeveloperCl
                           <div>
                             <span className="text-[#737373] text-xs">Remaining</span>
                             <p className="text-white font-medium">
-                              {developer.this_week_remaining_capacity ??
-                                developer.remaining_hours}
-                              h
+                              {developer.this_week_remaining_capacity ?? developer.remaining_hours}h
                             </p>
                           </div>
                         </TooltipTrigger>
