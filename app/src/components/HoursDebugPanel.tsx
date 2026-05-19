@@ -14,7 +14,6 @@ import {
 
 interface HoursDebugPanelProps {
   projectId: string;
-  token: string;
   isAdmin: boolean;
 }
 
@@ -57,7 +56,7 @@ interface RepairResult {
   message: string;
 }
 
-export default function HoursDebugPanel({ projectId, token, isAdmin }: HoursDebugPanelProps) {
+export default function HoursDebugPanel({ projectId, isAdmin }: HoursDebugPanelProps) {
   const [debugData, setDebugData] = useState<DebugData | null>(null);
   const [repairResult, setRepairResult] = useState<RepairResult | null>(null);
   const [loading, setLoading] = useState(false);
@@ -67,7 +66,7 @@ export default function HoursDebugPanel({ projectId, token, isAdmin }: HoursDebu
     setLoading(true);
     try {
       const res = await fetch(`${API_BASE_URL}/api/workitems/projects/${projectId}/hours-debug`, {
-        headers: { Authorization: `Bearer ${token}` },
+        credentials: 'include',
       });
       if (res.ok) {
         setDebugData(await res.json());
@@ -87,7 +86,7 @@ export default function HoursDebugPanel({ projectId, token, isAdmin }: HoursDebu
         `${API_BASE_URL}/api/workitems/projects/${projectId}/repair-hours?dry_run=${dryRun}`,
         {
           method: 'POST',
-          headers: { Authorization: `Bearer ${token}` },
+          credentials: 'include',
         },
       );
       if (res.ok) {

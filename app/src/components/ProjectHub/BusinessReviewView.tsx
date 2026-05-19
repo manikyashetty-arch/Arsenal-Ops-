@@ -17,7 +17,6 @@ import {
   X,
 } from 'lucide-react';
 import { API_BASE_URL } from '@/config/api';
-import { useAuth } from '@/contexts/AuthContext';
 
 interface WorkItem {
   id: string;
@@ -98,7 +97,6 @@ const BusinessReviewView: React.FC<BusinessReviewViewProps> = ({
   workItems,
 }) => {
   const navigate = useNavigate();
-  const { token } = useAuth();
   const [businessReviewComments, setBusinessReviewComments] = useState<BusinessReviewComment[]>([]);
   const [expandedComments, setExpandedComments] = useState<Set<number>>(new Set());
   const [isBusinessReviewExpanded, setIsBusinessReviewExpanded] = useState(true);
@@ -118,7 +116,7 @@ const BusinessReviewView: React.FC<BusinessReviewViewProps> = ({
       try {
         const response = await fetch(
           `${API_BASE_URL}/api/comments/project/${project.id}/business-review`,
-          { headers: { Authorization: `Bearer ${token}` }, signal: controller.signal },
+          { credentials: 'include', signal: controller.signal },
         );
         if (response.ok) {
           const comments = await response.json();
@@ -132,7 +130,7 @@ const BusinessReviewView: React.FC<BusinessReviewViewProps> = ({
 
     fetchBusinessReviewComments();
     return () => controller.abort();
-  }, [project?.id, token]);
+  }, [project?.id]);
 
   const toggleCommentExpanded = (commentId: number) => {
     const newExpanded = new Set(expandedComments);
@@ -150,7 +148,7 @@ const BusinessReviewView: React.FC<BusinessReviewViewProps> = ({
         `${API_BASE_URL}/api/comments/${commentId}/resolve?is_resolved=${!currentStatus}`,
         {
           method: 'PATCH',
-          headers: { Authorization: `Bearer ${token}` },
+          credentials: 'include',
         },
       );
       if (response.ok) {

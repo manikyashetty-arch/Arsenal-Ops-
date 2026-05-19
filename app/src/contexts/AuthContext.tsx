@@ -9,6 +9,7 @@ import {
   ReactNode,
 } from 'react';
 import { API_BASE_URL } from '@/config/api';
+import { setAuthFailureHandler, resetAuthFailureLatch } from '@/lib/api';
 import { matchesCapability } from '@/lib/capabilities';
 
 interface User {
@@ -39,7 +40,6 @@ export const isDeveloper = (user: User | null): boolean => hasRole(user?.role, '
 
 interface AuthContextType {
   user: User | null;
-  token: string | null;
   isLoading: boolean;
   isAuthenticated: boolean;
   login: (email: string, password: string) => Promise<void>;
@@ -65,8 +65,11 @@ const IDLE_TIMEOUT = 30 * 60 * 1000;
 const WARNING_TIME = 25 * 60 * 1000;
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+  // We no longer store the JWT in localStorage — it lives in an httpOnly
+  // cookie set by the backend. We do cache the user profile so the shell
+  // can render instantly on reload; the cached value is validated against
+  // /api/auth/me on mount and discarded if the session is no longer valid.
   const [user, setUser] = useState<User | null>(() => {
-    // Try to restore user from localStorage on mount
     const savedUser = localStorage.getItem('user');
     if (savedUser) {
       try {
@@ -77,8 +80,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     return null;
   });
-  const [token, setToken] = useState<string | null>(localStorage.getItem('token'));
-  const [isLoading, setIsLoading] = useState(!!token); // Only loading if we have a token
+  // Start in loading mode if we have a cached user — the session may have
+  // expired and we don't know until /me responds.
+  const [isLoading, setIsLoading] = useState(() => !!localStorage.getItem('user'));
   const [showWarning, setShowWarning] = useState(false);
   const [capabilities, setCapabilities] = useState<string[]>(() => {
     // Restore from localStorage so UI doesn't flash unauthorized on reload.
@@ -95,17 +99,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   });
 
   const lastActivityRef = useRef(Date.now());
-  // Mirrors `showWarning` so `updateActivity` can read it in O(1) without
-  // re-subscribing the event listeners every time the state changes.
   const showWarningRef = useRef(false);
-  const isAuthenticated = !!user && !!token;
+  const isAuthenticated = !!user;
 
   // Fetch + cache the user's effective capabilities. Keeps stale cache on
   // failure so a transient backend hiccup doesn't wipe every gated UI.
-  const fetchCapabilitiesWith = useCallback(async (currentToken: string) => {
+  const fetchCapabilities = useCallback(async () => {
     try {
       const res = await fetch(`${API_BASE_URL}/api/auth/me/capabilities`, {
-        headers: { Authorization: `Bearer ${currentToken}` },
+        credentials: 'include',
       });
       if (res.ok) {
         const data = await res.json();
@@ -119,68 +121,76 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const refreshCapabilities = useCallback(async () => {
-    const currentToken = token || localStorage.getItem('token');
-    if (currentToken) await fetchCapabilitiesWith(currentToken);
-  }, [token, fetchCapabilitiesWith]);
+    await fetchCapabilities();
+  }, [fetchCapabilities]);
 
   const can = useCallback((cap: string) => matchesCapability(cap, capabilities), [capabilities]);
 
-  const logout = useCallback(() => {
+  const logout = useCallback(async () => {
+    // Tell the backend to clear the cookie. Best-effort: if the request
+    // fails the cookie will still be cleared on the next load via its
+    // max-age, and we always clear local state.
+    try {
+      await fetch(`${API_BASE_URL}/api/auth/logout`, {
+        method: 'POST',
+        credentials: 'include',
+      });
+    } catch {
+      // ignore
+    }
     setUser(null);
-    setToken(null);
     showWarningRef.current = false;
     setShowWarning(false);
     setCapabilities([]);
-    localStorage.removeItem('token');
     localStorage.removeItem('user');
     localStorage.removeItem('capabilities');
+    resetAuthFailureLatch();
   }, []);
 
   const checkAuth = useCallback(async () => {
     try {
-      const currentToken = token || localStorage.getItem('token');
-      if (!currentToken) {
-        setIsLoading(false);
-        return;
-      }
-
       const response = await fetch(`${API_BASE_URL}/api/auth/me`, {
-        headers: {
-          Authorization: `Bearer ${currentToken}`,
-        },
+        credentials: 'include',
       });
 
       if (response.ok) {
         const userData = await response.json();
         setUser(userData);
-        if (!token) {
-          setToken(currentToken);
-        }
+        localStorage.setItem('user', JSON.stringify(userData));
         // Refresh capabilities alongside user so the two stay in sync.
-        fetchCapabilitiesWith(currentToken);
+        fetchCapabilities();
       } else {
-        // Token invalid, clear it
-        logout();
+        // Cookie missing or expired — clear local user.
+        setUser(null);
+        setCapabilities([]);
+        localStorage.removeItem('user');
+        localStorage.removeItem('capabilities');
       }
-    } catch (error) {
-      console.error('Auth check failed:', error);
-      logout();
+    } catch {
+      // Network error — keep cached user so the shell still renders; the
+      // first real request to a protected endpoint will trigger the global
+      // 401 handler if the session is actually gone.
     } finally {
       setIsLoading(false);
     }
-  }, [token, logout, fetchCapabilitiesWith]);
+  }, [fetchCapabilities]);
 
-  // Check authentication on mount only. checkAuth is intentionally excluded
-  // from deps — we re-validate on token change via the regular login flow,
-  // not by re-running this effect.
+  // Validate the session on mount. checkAuth is intentionally excluded from
+  // deps — we re-validate via the regular login flow, not by re-running.
   useEffect(() => {
-    if (token) {
-      checkAuth();
-    } else {
-      setIsLoading(false);
-    }
+    checkAuth();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Wire the global 401 handler so any apiFetch landing on an expired
+  // session triggers a single logout instead of leaving the UI staring at
+  // silent failures.
+  useEffect(() => {
+    setAuthFailureHandler(() => {
+      logout();
+    });
+    return () => setAuthFailureHandler(null);
+  }, [logout]);
 
   // Activity tracking
   useEffect(() => {
@@ -232,6 +242,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     lastActivityRef.current = Date.now();
   }, []);
 
+  // All login endpoints set the auth cookie server-side; the response JSON
+  // still carries the user profile so we can rehydrate state instantly.
+  const finalizeLogin = useCallback(
+    (profile: User) => {
+      setUser(profile);
+      localStorage.setItem('user', JSON.stringify(profile));
+      lastActivityRef.current = Date.now();
+      resetAuthFailureLatch();
+      fetchCapabilities();
+    },
+    [fetchCapabilities],
+  );
+
   const login = useCallback(
     async (email: string, password: string) => {
       const formData = new URLSearchParams();
@@ -242,6 +265,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: formData,
+        credentials: 'include',
       });
 
       if (!response.ok) {
@@ -250,14 +274,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       const data = await response.json();
-      setToken(data.access_token);
-      setUser(data.user);
-      localStorage.setItem('token', data.access_token);
-      localStorage.setItem('user', JSON.stringify(data.user));
-      lastActivityRef.current = Date.now();
-      fetchCapabilitiesWith(data.access_token);
+      finalizeLogin(data.user);
     },
-    [fetchCapabilitiesWith],
+    [finalizeLogin],
   );
 
   const loginWithGoogle = useCallback(
@@ -266,6 +285,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token: idToken }),
+        credentials: 'include',
       });
 
       if (!response.ok) {
@@ -274,57 +294,48 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       const data = await response.json();
-      setToken(data.access_token);
-      setUser(data.user);
-      localStorage.setItem('token', data.access_token);
-      localStorage.setItem('user', JSON.stringify(data.user));
-      lastActivityRef.current = Date.now();
-      fetchCapabilitiesWith(data.access_token);
+      finalizeLogin(data.user);
     },
-    [fetchCapabilitiesWith],
+    [finalizeLogin],
   );
 
   const loginDev = useCallback(async () => {
-    const response = await fetch(`${API_BASE_URL}/api/auth/dev-login`, { method: 'POST' });
+    const response = await fetch(`${API_BASE_URL}/api/auth/dev-login`, {
+      method: 'POST',
+      credentials: 'include',
+    });
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
       throw new Error(error.detail || 'Dev login unavailable (set DEV_AUTH_BYPASS=1 on backend)');
     }
     const data = await response.json();
-    setToken(data.access_token);
-    setUser(data.user);
-    localStorage.setItem('token', data.access_token);
-    localStorage.setItem('user', JSON.stringify(data.user));
-    lastActivityRef.current = Date.now();
-    fetchCapabilitiesWith(data.access_token);
-  }, [fetchCapabilitiesWith]);
+    finalizeLogin(data.user);
+  }, [finalizeLogin]);
 
-  const changePassword = useCallback(
-    async (currentPassword: string, newPassword: string) => {
-      const response = await fetch(`${API_BASE_URL}/api/auth/change-password`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
-      });
+  const changePassword = useCallback(async (currentPassword: string, newPassword: string) => {
+    const response = await fetch(`${API_BASE_URL}/api/auth/change-password`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+    });
 
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.detail || 'Failed to change password');
-      }
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || 'Failed to change password');
+    }
 
-      // Update user state to reflect password changed
-      setUser((prev) => (prev ? { ...prev, is_first_login: false } : null));
-    },
-    [token],
-  );
+    setUser((prev) => {
+      if (!prev) return null;
+      const updated = { ...prev, is_first_login: false };
+      localStorage.setItem('user', JSON.stringify(updated));
+      return updated;
+    });
+  }, []);
 
   const value = useMemo<AuthContextType>(
     () => ({
       user,
-      token,
       isLoading,
       isAuthenticated,
       login,
@@ -341,7 +352,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }),
     [
       user,
-      token,
       isLoading,
       isAuthenticated,
       showWarning,

@@ -41,7 +41,6 @@ interface Comment {
 interface ReviewerViewProps {
   workItems: WorkItem[];
   projectId: string;
-  token: string;
   onTaskUpdate?: (itemId: string, updates: any) => void;
 }
 
@@ -57,7 +56,6 @@ const PRIORITY_COLOR: Record<string, string> = {
 const ReviewerView: React.FC<ReviewerViewProps> = ({
   workItems,
   projectId: _projectId,
-  token,
   onTaskUpdate,
 }) => {
   const [comments, setComments] = useState<Record<string, Comment[]>>({});
@@ -83,7 +81,7 @@ const ReviewerView: React.FC<ReviewerViewProps> = ({
   const fetchComments = async (itemId: string) => {
     try {
       const res = await fetch(`${API_BASE_URL}/api/comments/workitem/${itemId}`, {
-        headers: { Authorization: `Bearer ${token}` },
+        credentials: 'include',
       });
       if (res.ok) {
         const data = await res.json();
@@ -102,10 +100,8 @@ const ReviewerView: React.FC<ReviewerViewProps> = ({
     try {
       const res = await fetch(`${API_BASE_URL}/api/comments/`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({
           work_item_id: parseInt(itemId),
           content,
@@ -137,10 +133,8 @@ const ReviewerView: React.FC<ReviewerViewProps> = ({
     try {
       const res = await fetch(`${API_BASE_URL}/api/workitems/${itemId}/log-hours`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({ hours, description: 'Reviewed and logged' }),
       });
 
@@ -165,10 +159,8 @@ const ReviewerView: React.FC<ReviewerViewProps> = ({
     try {
       const res = await fetch(`${API_BASE_URL}/api/workitems/${itemId}`, {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({ status: 'done' }),
       });
 

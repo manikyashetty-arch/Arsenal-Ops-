@@ -20,7 +20,6 @@ interface ContributorRow {
 
 interface Props {
   workItemId: string | number;
-  token: string;
 }
 
 // Saturday 00:00 → Friday 23:59:59 UTC for the week containing `now`.
@@ -35,7 +34,7 @@ const getWeekBoundaries = (): [Date, Date] => {
   return [start, end];
 };
 
-export default function TicketContributors({ workItemId, token }: Props) {
+export default function TicketContributors({ workItemId }: Props) {
   const [contributors, setContributors] = useState<ContributorRow[]>([]);
   const [totalHours, setTotalHours] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -46,7 +45,7 @@ export default function TicketContributors({ workItemId, token }: Props) {
       setLoading(true);
       try {
         const res = await fetch(`${API_BASE_URL}/api/workitems/${workItemId}/time-entries`, {
-          headers: { Authorization: `Bearer ${token}` },
+          credentials: 'include',
         });
         if (!res.ok) return;
         const data = await res.json();
@@ -88,7 +87,7 @@ export default function TicketContributors({ workItemId, token }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [workItemId, token]);
+  }, [workItemId]);
 
   if (loading) return null;
   // Only surface when multiple people have contributed.

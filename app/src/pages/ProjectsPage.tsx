@@ -31,7 +31,7 @@ import { parseLocalDateOptional as parseLocalDate } from '@/lib/dates';
 
 const ProjectsPage = () => {
   const navigate = useNavigate();
-  const { user, token, logout } = useAuth();
+  const { user, logout } = useAuth();
   const queryClient = useQueryClient();
 
   // Projects state
@@ -623,7 +623,6 @@ const ProjectsPage = () => {
       {selectedTask && (
         <TicketDetailPanel
           task={selectedTask}
-          token={token}
           currentUserId={user?.id ?? null}
           onClose={() => setSelectedTask(null)}
           onTaskChanged={handleTaskChanged}

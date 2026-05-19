@@ -14,30 +14,26 @@ interface TimeEntry {
 
 interface TimeEntriesTableProps {
   workItemId: string;
-  token: string;
 }
 
-export default function TimeEntriesTable({ workItemId, token }: TimeEntriesTableProps) {
+export default function TimeEntriesTable({ workItemId }: TimeEntriesTableProps) {
   const [timeEntries, setTimeEntries] = useState<TimeEntry[]>([]);
   const [thisWeekTotal, setThisWeekTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [expanded, setExpanded] = useState(false);
-  // Need at least one fetch before we can decide whether to render the
-  // toggle — otherwise the (thisWeekTotal === 0 && !expanded) guard fires
-  // immediately on mount and the toggle button never appears (audit F-C13).
-  const [hasFetched, setHasFetched] = useState(false);
 
   useEffect(() => {
-    fetchTimeEntries();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- fetchTimeEntries is component-scoped and stable
-  }, [workItemId]);
+    if (expanded) {
+      fetchTimeEntries();
+    }
+  }, [expanded, workItemId]);
 
   const fetchTimeEntries = async () => {
     setLoading(true);
     try {
       const res = await fetch(
         `${API_BASE_URL}/api/workitems/${workItemId}/time-entries?this_week_only=true`,
-        { headers: { Authorization: `Bearer ${token}` } },
+        { credentials: 'include' },
       );
       if (res.ok) {
         const data = await res.json();
@@ -48,14 +44,11 @@ export default function TimeEntriesTable({ workItemId, token }: TimeEntriesTable
       console.error('Failed to fetch time entries:', err);
     } finally {
       setLoading(false);
-      setHasFetched(true);
     }
   };
 
-  // Hide entirely until the first fetch settles, then hide if there's
-  // nothing to show this week.
-  if (!hasFetched || (thisWeekTotal === 0 && !expanded)) {
-    return null;
+  if (thisWeekTotal === 0 && !expanded) {
+    return null; // Don't show if no hours logged this week
   }
 
   return (

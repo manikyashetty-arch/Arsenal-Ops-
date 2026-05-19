@@ -2514,7 +2514,9 @@ const ProjectDetail = () => {
           (canAccessPulseSettings && id && pulseData ? (
             <PulseSettingsView projectId={id} initial={pulseData} onChange={setPulseData} />
           ) : (
-            <div className="text-center py-12 text-[#737373]">This section is restricted.</div>
+            <div className="text-center py-12 text-[#737373]">
+              This section is restricted.
+            </div>
           ))}
 
         {/* Activity Tab */}
@@ -2595,7 +2597,10 @@ const ProjectDetail = () => {
           ) : (
             <div className="space-y-4">
               {!isSubsectionRestricted('project_manager', 'pmview') && (
-                <PMView projectId={id!} token={localStorage.getItem('token')!} sprints={sprints} />
+                <PMView
+                  projectId={id!}
+                  sprints={sprints}
+                />
               )}
             </div>
           ))}
