@@ -2356,9 +2356,9 @@ const ProjectBoard = () => {
                       {!isCollapsed && (
                         <>
                           {/* Table header */}
-                          <div className="grid grid-cols-[1fr_120px_100px_100px_100px_120px] gap-4 px-5 py-3 border-t border-[rgba(255,255,255,0.05)] text-xs text-[#737373] font-semibold uppercase tracking-wider">
-                            <span>Title</span>
+                          <div className="grid grid-cols-[120px_1fr_100px_100px_100px_120px] gap-4 px-5 py-3 border-t border-[rgba(255,255,255,0.05)] text-xs text-[#737373] font-semibold uppercase tracking-wider">
                             <span>Type</span>
+                            <span>Title</span>
                             <span>Status</span>
                             <span>Priority</span>
                             <span>Points</span>
@@ -2379,8 +2379,17 @@ const ProjectBoard = () => {
                                   setIsEditing(false);
                                   setEditForm({});
                                 }}
-                                className="grid grid-cols-[1fr_120px_100px_100px_100px_120px] gap-4 px-5 py-3.5 border-t border-[rgba(255,255,255,0.03)] hover:bg-[rgba(255,255,255,0.025)] cursor-pointer transition-colors group"
+                                className="grid grid-cols-[120px_1fr_100px_100px_100px_120px] gap-4 px-5 py-3.5 border-t border-[rgba(255,255,255,0.03)] hover:bg-[rgba(255,255,255,0.025)] cursor-pointer transition-colors group"
                               >
+                                <div className="flex items-center">
+                                  <div
+                                    className="flex items-center gap-1.5 px-2 py-1 rounded-md text-xs"
+                                    style={{ backgroundColor: typeInfo.bg, color: typeInfo.color }}
+                                  >
+                                    <TypeIcon className="w-3 h-3" />
+                                    {typeInfo.label}
+                                  </div>
+                                </div>
                                 <div
                                   className="flex items-center gap-3 min-w-0"
                                   style={{ paddingLeft: depth === 1 ? 24 : 0 }}
@@ -2399,15 +2408,6 @@ const ProjectBoard = () => {
                                   <span className="text-sm text-[#f5f5f5] truncate group-hover:text-white transition-colors">
                                     {item.title}
                                   </span>
-                                </div>
-                                <div className="flex items-center">
-                                  <div
-                                    className="flex items-center gap-1.5 px-2 py-1 rounded-md text-xs"
-                                    style={{ backgroundColor: typeInfo.bg, color: typeInfo.color }}
-                                  >
-                                    <TypeIcon className="w-3 h-3" />
-                                    {typeInfo.label}
-                                  </div>
                                 </div>
                                 <div className="flex items-center">
                                   <StatusDotMenu
@@ -2523,9 +2523,9 @@ const ProjectBoard = () => {
                     {!isCollapsed && (
                       <>
                         {/* Table header */}
-                        <div className="grid grid-cols-[1fr_120px_100px_100px_100px_120px] gap-4 px-5 py-3 border-t border-[rgba(255,255,255,0.05)] text-xs text-[#737373] font-semibold uppercase tracking-wider">
-                          <span>Title</span>
+                        <div className="grid grid-cols-[120px_1fr_100px_100px_100px_120px] gap-4 px-5 py-3 border-t border-[rgba(255,255,255,0.05)] text-xs text-[#737373] font-semibold uppercase tracking-wider">
                           <span>Type</span>
+                          <span>Title</span>
                           <span>Status</span>
                           <span>Priority</span>
                           <span>Points</span>
@@ -2546,16 +2546,8 @@ const ProjectBoard = () => {
                                 setIsEditing(false);
                                 setEditForm({});
                               }}
-                              className="grid grid-cols-[1fr_120px_100px_100px_100px_120px] gap-4 px-5 py-3.5 border-t border-[rgba(255,255,255,0.03)] hover:bg-[rgba(255,255,255,0.025)] cursor-pointer transition-colors group"
+                              className="grid grid-cols-[120px_1fr_100px_100px_100px_120px] gap-4 px-5 py-3.5 border-t border-[rgba(255,255,255,0.03)] hover:bg-[rgba(255,255,255,0.025)] cursor-pointer transition-colors group"
                             >
-                              <div className="flex items-center gap-3 min-w-0">
-                                <span className="text-[10px] text-[#E0B954] font-mono font-medium shrink-0">
-                                  {item.key}
-                                </span>
-                                <span className="text-sm text-[#f5f5f5] truncate group-hover:text-white transition-colors">
-                                  {item.title}
-                                </span>
-                              </div>
                               <div className="flex items-center">
                                 <div
                                   className="flex items-center gap-1.5 px-2 py-1 rounded-md text-xs"
@@ -2564,6 +2556,14 @@ const ProjectBoard = () => {
                                   <TypeIcon className="w-3 h-3" />
                                   {typeInfo.label}
                                 </div>
+                              </div>
+                              <div className="flex items-center gap-3 min-w-0">
+                                <span className="text-[10px] text-[#E0B954] font-mono font-medium shrink-0">
+                                  {item.key}
+                                </span>
+                                <span className="text-sm text-[#f5f5f5] truncate group-hover:text-white transition-colors">
+                                  {item.title}
+                                </span>
                               </div>
                               <div className="flex items-center">
                                 <StatusDotMenu
