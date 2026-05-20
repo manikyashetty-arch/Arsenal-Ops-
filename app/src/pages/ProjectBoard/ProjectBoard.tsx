@@ -57,6 +57,12 @@ import {
 import { buildEpicGroups } from '@/lib/hierarchy/buildEpicGroups';
 import { apiFetch } from '@/lib/api';
 import AIPlanningModal from './modals/AIPlanningModal';
+import CreateItemModal, { CreateItemFormValues } from './modals/CreateItemModal';
+import CreateSprintModal from './modals/CreateSprintModal';
+import EditSprintModal, {
+  CompleteSprintConfirm,
+  DeleteSprintConfirm,
+} from './modals/EditSprintModal';
 
 // Helper function to parse YYYY-MM-DD string to local Date object (avoids UTC timezone issues)
 const parseLocalDate = (dateString: string | undefined): Date | undefined => {
@@ -261,45 +267,23 @@ const ProjectBoard = () => {
   const [showAddMenu, setShowAddMenu] = useState(false);
   const [showCompletedSprints, setShowCompletedSprints] = useState(false);
   const [collapsedSprints, setCollapsedSprints] = useState<Set<string>>(new Set());
-  const [newSprint, setNewSprint] = useState({ name: '', goal: '', start_date: '', end_date: '' });
   const [editingSprint, setEditingSprint] = useState<Sprint | null>(null);
-  const [editSprintForm, setEditSprintForm] = useState({
-    name: '',
-    goal: '',
-    start_date: '',
-    end_date: '',
-  });
   const [deletingSprintId, setDeletingSprintId] = useState<number | null>(null);
   const [completingSprintId, setCompletingSprintId] = useState<number | null>(null);
 
-  // Calendar popover states
-  const [showCalendarCreateForm, setShowCalendarCreateForm] = useState(false);
+  // Calendar popover states — only the ones still used by the orchestrator
+  // remain here. Create-item + sprint-related calendar opens are now owned
+  // by their respective modals.
   const [showCalendarEditForm, setShowCalendarEditForm] = useState(false);
-  const [showCalendarSprintStart, setShowCalendarSprintStart] = useState(false);
-  const [showCalendarSprintEnd, setShowCalendarSprintEnd] = useState(false);
-  const [showCalendarEditSprintStart, setShowCalendarEditSprintStart] = useState(false);
-  const [showCalendarEditSprintEnd, setShowCalendarEditSprintEnd] = useState(false);
 
   // Comments UI state only — actual comment data lives in react-query cache
   const [newComment, setNewComment] = useState('');
   const [showMentions, setShowMentions] = useState(false);
   const [mentionFilter, setMentionFilter] = useState('');
 
-  const [createForm, setCreateForm] = useState({
-    type: 'user_story',
-    title: '',
-    description: '',
-    priority: 'medium',
-    story_points: 3,
-    assignee_id: null as number | null,
-    sprint: 'Backlog',
-    epic_id: null as number | null,
-    parent_id: null as number | null,
-    due_date: '' as string,
-    estimated_hours: '' as string | number,
-    tags: [] as string[],
-  });
-  const [tagInput, setTagInput] = useState('');
+  // createForm / tagInput / showCalendarCreateForm moved into CreateItemModal
+  // (PR 7) — form state is local to the modal; parent owns only visibility
+  // + the create-item mutation.
 
   // ── react-query: project, workItems, sprints, developers, comments ────────
 
@@ -576,48 +560,30 @@ const ProjectBoard = () => {
     setDraggedItem(null);
   };
 
-  const handleCloseCreateForm = () => {
-    setShowCreateForm(false);
-    setCreateForm({
-      type: 'user_story',
-      title: '',
-      description: '',
-      priority: 'medium',
-      story_points: 3,
-      assignee_id: null,
-      sprint: 'Backlog',
-      epic_id: null,
-      parent_id: null,
-      due_date: '',
-      estimated_hours: '',
-      tags: [],
-    });
-    setTagInput('');
-  };
-
-  // Create work item mutation
+  // Create work item mutation. Form values are supplied by the
+  // CreateItemModal (which owns the form state).
   const createItemMutation = useMutation({
-    mutationFn: () => {
+    mutationFn: (form: CreateItemFormValues) => {
       const payload: any = {
-        type: createForm.type,
-        title: createForm.title,
-        description: createForm.description,
-        priority: createForm.priority,
-        story_points: createForm.type !== 'task' ? createForm.story_points : 0,
-        assignee_id: createForm.assignee_id,
+        type: form.type,
+        title: form.title,
+        description: form.description,
+        priority: form.priority,
+        story_points: form.type !== 'task' ? form.story_points : 0,
+        assignee_id: form.assignee_id,
         project_id: id,
         status: 'todo',
-        tags: Array.isArray(createForm.tags) ? createForm.tags : [],
-        epic_id: createForm.epic_id || null,
-        parent_id: createForm.parent_id || null,
-        due_date: createForm.due_date || null,
-        estimated_hours: createForm.estimated_hours
-          ? parseInt(createForm.estimated_hours as string)
+        tags: Array.isArray(form.tags) ? form.tags : [],
+        epic_id: form.epic_id || null,
+        parent_id: form.parent_id || null,
+        due_date: form.due_date || null,
+        estimated_hours: form.estimated_hours
+          ? parseInt(form.estimated_hours as string)
           : 0,
       };
-      if (createForm.type !== 'task') {
-        payload.assigned_hours = createForm.story_points * 4;
-        payload.remaining_hours = createForm.story_points * 4;
+      if (form.type !== 'task') {
+        payload.assigned_hours = form.story_points * 4;
+        payload.remaining_hours = form.story_points * 4;
       } else {
         payload.assigned_hours = payload.estimated_hours || 0;
         payload.remaining_hours = payload.estimated_hours || 0;
@@ -628,7 +594,7 @@ const ProjectBoard = () => {
       });
     },
     onSuccess: () => {
-      handleCloseCreateForm();
+      setShowCreateForm(false);
       toast.success('Work item created!', { duration: 1000 });
       invalidateWorkItems();
       invalidateProject();
@@ -639,14 +605,6 @@ const ProjectBoard = () => {
     },
   });
   const isCreatingItem = createItemMutation.isPending;
-
-  const handleCreateItem = () => {
-    if (!createForm.title.trim()) {
-      toast.error('Title is required');
-      return;
-    }
-    createItemMutation.mutate();
-  };
 
   // Move ticket to sprint mutation
   const moveSprintMutation = useMutation({
@@ -699,36 +657,40 @@ const ProjectBoard = () => {
     onSuccess: () => {
       toast.success('Sprint created!');
       setShowCreateSprintModal(false);
-      setNewSprint({ name: '', goal: '', start_date: '', end_date: '' });
       queryClient.invalidateQueries({ queryKey: ['sprints', id] });
     },
     onError: () => toast.error('Failed to create sprint'),
   });
 
-  const handleCreateSprint = () => {
+  const handleCreateSprint = (form: {
+    name: string;
+    goal: string;
+    start_date: string;
+    end_date: string;
+  }) => {
     if (createSprintMutation.isPending) return;
-    if (!newSprint.name.trim()) {
+    if (!form.name.trim()) {
       toast.error('Sprint name is required');
       return;
     }
     // Check for duplicate sprint names
     const duplicateName = sprints.some(
-      (s) => s.name.trim().toLowerCase() === newSprint.name.trim().toLowerCase(),
+      (s) => s.name.trim().toLowerCase() === form.name.trim().toLowerCase(),
     );
     if (duplicateName) {
       toast.error('A sprint with this name already exists');
       return;
     }
-    if (!newSprint.start_date) {
+    if (!form.start_date) {
       toast.error('Start date is required');
       return;
     }
-    if (!newSprint.end_date) {
+    if (!form.end_date) {
       toast.error('End date is required');
       return;
     }
-    const startDate = parseLocalDate(newSprint.start_date);
-    const endDate = parseLocalDate(newSprint.end_date);
+    const startDate = parseLocalDate(form.start_date);
+    const endDate = parseLocalDate(form.end_date);
     if (startDate && endDate && endDate < startDate) {
       toast.error('End date must be equal to or after start date');
       return;
@@ -747,10 +709,10 @@ const ProjectBoard = () => {
       }
     }
     createSprintMutation.mutate({
-      name: newSprint.name,
-      goal: newSprint.goal,
-      start_date: newSprint.start_date || null,
-      end_date: newSprint.end_date || null,
+      name: form.name,
+      goal: form.goal,
+      start_date: form.start_date || null,
+      end_date: form.end_date || null,
     });
   };
 
@@ -758,12 +720,6 @@ const ProjectBoard = () => {
     const sprint = sprints.find((s) => String(s.id) === sprintKey);
     if (!sprint) return;
     setEditingSprint(sprint);
-    setEditSprintForm({
-      name: sprint.name,
-      goal: sprint.goal || '',
-      start_date: sprint.start_date ? sprint.start_date.split('T')[0] : '',
-      end_date: sprint.end_date ? sprint.end_date.split('T')[0] : '',
-    });
   };
 
   // Edit sprint mutation
@@ -792,30 +748,35 @@ const ProjectBoard = () => {
     onError: () => toast.error('Failed to update sprint'),
   });
 
-  const handleEditSprint = () => {
-    if (!editingSprint || !editSprintForm.name.trim()) {
+  const handleEditSprint = (form: {
+    name: string;
+    goal: string;
+    start_date: string;
+    end_date: string;
+  }) => {
+    if (!editingSprint || !form.name.trim()) {
       toast.error('Sprint name is required');
       return;
     }
     const duplicateName = sprints.some(
       (s) =>
         s.id !== editingSprint.id &&
-        s.name.trim().toLowerCase() === editSprintForm.name.trim().toLowerCase(),
+        s.name.trim().toLowerCase() === form.name.trim().toLowerCase(),
     );
     if (duplicateName) {
       toast.error('A sprint with this name already exists');
       return;
     }
-    if (!editSprintForm.start_date) {
+    if (!form.start_date) {
       toast.error('Start date is required');
       return;
     }
-    if (!editSprintForm.end_date) {
+    if (!form.end_date) {
       toast.error('End date is required');
       return;
     }
-    const startDate = parseLocalDate(editSprintForm.start_date);
-    const endDate = parseLocalDate(editSprintForm.end_date);
+    const startDate = parseLocalDate(form.start_date);
+    const endDate = parseLocalDate(form.end_date);
     if (startDate && endDate && endDate < startDate) {
       toast.error('End date must be equal to or after start date');
       return;
@@ -832,10 +793,10 @@ const ProjectBoard = () => {
     }
     editSprintMutation.mutate({
       sprintId: editingSprint.id,
-      name: editSprintForm.name,
-      goal: editSprintForm.goal,
-      start_date: editSprintForm.start_date || null,
-      end_date: editSprintForm.end_date || null,
+      name: form.name,
+      goal: form.goal,
+      start_date: form.start_date || null,
+      end_date: form.end_date || null,
     });
   };
 
@@ -3228,382 +3189,15 @@ const ProjectBoard = () => {
 
       {/* Create Item Modal */}
       {showCreateForm && (
-        <div
-          className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4"
-          onClick={() => handleCloseCreateForm()}
-        >
-          <div
-            className="bg-[#0d0d0d] border border-[rgba(255,255,255,0.07)] rounded-2xl w-full max-w-lg shadow-2xl flex flex-col max-h-[90vh]"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between p-5 border-b border-[rgba(255,255,255,0.05)] flex-shrink-0">
-              <h2 className="text-lg font-bold text-white">Create Work Item</h2>
-              <button
-                onClick={() => handleCloseCreateForm()}
-                className="p-2 rounded-lg hover:bg-[rgba(244,246,255,0.05)] text-[#737373] hover:text-white"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <div className="p-5 space-y-4 flex-1 overflow-y-auto">
-              <div>
-                <label className="text-xs font-medium text-[#737373] block mb-1.5">Type</label>
-                <select
-                  value={createForm.type}
-                  onChange={(e) => setCreateForm((f) => ({ ...f, type: e.target.value }))}
-                  className="w-full h-10 bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.07)] text-[#f5f5f5] rounded-xl px-3 text-sm"
-                >
-                  <option value="user_story">User Story</option>
-                  <option value="task">Task</option>
-                  <option value="bug">Bug</option>
-                  <option value="epic">Epic</option>
-                </select>
-              </div>
-              <div>
-                <label className="text-xs font-medium text-[#737373] block mb-1.5">Title *</label>
-                <Input
-                  value={createForm.title}
-                  onChange={(e) => setCreateForm((f) => ({ ...f, title: e.target.value }))}
-                  placeholder="Enter a concise title..."
-                  className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl h-10 placeholder:text-[#334155]"
-                />
-              </div>
-              <div>
-                <label className="text-xs font-medium text-[#737373] block mb-1.5">
-                  Description
-                </label>
-                <Textarea
-                  value={createForm.description}
-                  onChange={(e) => setCreateForm((f) => ({ ...f, description: e.target.value }))}
-                  placeholder="Describe the requirements..."
-                  className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl min-h-[100px] placeholder:text-[#334155] resize-none whitespace-pre-wrap"
-                />
-              </div>
-              <div
-                className={
-                  createForm.type === 'task' ? 'grid grid-cols-2 gap-3' : 'grid grid-cols-3 gap-3'
-                }
-              >
-                <div>
-                  <label className="text-xs font-medium text-[#737373] block mb-1.5">
-                    Priority
-                  </label>
-                  <select
-                    value={createForm.priority}
-                    onChange={(e) => setCreateForm((f) => ({ ...f, priority: e.target.value }))}
-                    className="w-full h-10 bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.07)] text-[#f5f5f5] rounded-xl px-3 text-sm"
-                  >
-                    <option value="critical">Critical</option>
-                    <option value="high">High</option>
-                    <option value="medium">Medium</option>
-                    <option value="low">Low</option>
-                  </select>
-                </div>
-                {createForm.type !== 'task' && (
-                  <div>
-                    <label className="text-xs font-medium text-[#737373] block mb-1.5">
-                      Points
-                    </label>
-                    <Input
-                      type="number"
-                      value={createForm.story_points}
-                      onChange={(e) =>
-                        setCreateForm((f) => ({
-                          ...f,
-                          story_points: parseInt(e.target.value) || 0,
-                        }))
-                      }
-                      className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl h-10"
-                    />
-                  </div>
-                )}
-                <div>
-                  <label className="text-xs font-medium text-[#737373] block mb-1.5">
-                    Assignee
-                  </label>
-                  <select
-                    value={createForm.assignee_id || ''}
-                    onChange={(e) =>
-                      setCreateForm((f) => ({
-                        ...f,
-                        assignee_id: e.target.value ? parseInt(e.target.value) : null,
-                      }))
-                    }
-                    className="w-full h-10 bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl px-3 text-sm"
-                  >
-                    <option value="">Unassigned</option>
-                    {project?.developers?.map((dev) => (
-                      <option key={dev.id} value={dev.id}>
-                        {dev.name} ({dev.role})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-              {createForm.type !== 'task' && (
-                /* Hierarchy - Hidden for Tasks */
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-xs font-medium text-[#737373] block mb-1.5">
-                      Epic (optional)
-                    </label>
-                    <select
-                      value={createForm.epic_id || ''}
-                      onChange={(e) =>
-                        setCreateForm((f) => ({
-                          ...f,
-                          epic_id: e.target.value ? parseInt(e.target.value) : null,
-                        }))
-                      }
-                      className="w-full h-10 bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.07)] text-[#f5f5f5] rounded-xl px-3 text-sm"
-                    >
-                      <option value="">No Epic</option>
-                      {workItems
-                        .filter((wi) => wi.type === 'epic')
-                        .map((wi) => (
-                          <option key={wi.id} value={wi.id}>
-                            {wi.key} — {wi.title}
-                          </option>
-                        ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="text-xs font-medium text-[#737373] block mb-1.5">
-                      Parent Story (optional)
-                    </label>
-                    <select
-                      value={createForm.parent_id || ''}
-                      onChange={(e) =>
-                        setCreateForm((f) => ({
-                          ...f,
-                          parent_id: e.target.value ? parseInt(e.target.value) : null,
-                        }))
-                      }
-                      className="w-full h-10 bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.07)] text-[#f5f5f5] rounded-xl px-3 text-sm"
-                    >
-                      <option value="">No Parent</option>
-                      {workItems
-                        .filter((wi) => wi.type === 'user_story')
-                        .map((wi) => (
-                          <option key={wi.id} value={wi.id}>
-                            {wi.key} — {wi.title}
-                          </option>
-                        ))}
-                    </select>
-                  </div>
-                </div>
-              )}
-              {createForm.type === 'task' && (
-                /* Tags section for Tasks */
-                <div className="p-3 rounded-lg bg-[rgba(224,185,84,0.08)] border border-[rgba(224,185,84,0.2)]">
-                  <label className="text-xs font-medium text-[#E0B954] block mb-1.5">
-                    Tags (Optional)
-                  </label>
-                  <p className="text-[10px] text-[#737373] mb-2">
-                    Organize tasks with tags. Type a new tag or select from existing ones.
-                  </p>
-                  <div className="flex gap-2 mb-2">
-                    <input
-                      type="text"
-                      value={tagInput}
-                      onChange={(e) => {
-                        setTagInput(e.target.value);
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' && tagInput.trim()) {
-                          e.preventDefault();
-                          const newTag = tagInput.trim().toLowerCase();
-                          if (!createForm.tags?.includes(newTag)) {
-                            setCreateForm((f) => {
-                              const updatedTags = [...(f.tags || []), newTag];
-                              return { ...f, tags: updatedTags };
-                            });
-                          }
-                          setTagInput('');
-                        }
-                      }}
-                      placeholder="Type tag and press Enter"
-                      className="flex-1 bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl h-10 px-3 placeholder:text-[#334155] focus:outline-none focus:border-[#E0B954]/50"
-                    />
-                  </div>
-                  {/* Suggested existing tags */}
-                  {existingTags.length > 0 && (
-                    <div className="mb-2">
-                      <p className="text-[10px] text-[#E0B954] font-medium mb-1.5">
-                        Available Tags ({existingTags.length}):
-                      </p>
-                      <div className="flex flex-wrap gap-2">
-                        {existingTags
-                          .filter((t) => !createForm.tags?.includes(t))
-                          .map((tag) => (
-                            <button
-                              key={tag}
-                              onClick={() => {
-                                setCreateForm((f) => {
-                                  const updated = [...(f.tags || []), tag];
-                                  return { ...f, tags: updated };
-                                });
-                              }}
-                              className="px-3 py-1 rounded-lg bg-[rgba(224,185,84,0.15)] border border-[rgba(224,185,84,0.4)] text-[#E0B954] text-xs hover:bg-[rgba(224,185,84,0.25)] transition-colors cursor-pointer font-medium"
-                            >
-                              + {tag}
-                            </button>
-                          ))}
-                      </div>
-                    </div>
-                  )}
-                  {existingTags.length === 0 && (
-                    <div className="mb-2 p-2 rounded bg-[rgba(224,185,84,0.05)] border border-[rgba(224,185,84,0.15)]">
-                      <p className="text-[10px] text-[#737373]">
-                        No existing tags yet. Create new ones by typing and pressing Enter!
-                      </p>
-                    </div>
-                  )}
-                  {/* Selected tags */}
-                  {createForm.tags && createForm.tags.length > 0 && (
-                    <div>
-                      <p className="text-[10px] text-[#737373] mb-1.5 font-medium">
-                        Selected Tags ({createForm.tags.length}):
-                      </p>
-                      <div className="flex flex-wrap gap-2">
-                        {createForm.tags.map((tag) => (
-                          <div
-                            key={tag}
-                            className="px-2.5 py-1 rounded-lg bg-[rgba(224,185,84,0.2)] border border-[rgba(224,185,84,0.4)] text-[#E0B954] text-xs flex items-center gap-1.5 font-medium"
-                          >
-                            {tag}
-                            <button
-                              onClick={() => {
-                                setCreateForm((f) => {
-                                  const updated = f.tags?.filter((t) => t !== tag) || [];
-                                  return { ...f, tags: updated };
-                                });
-                              }}
-                              className="text-[#E0B954] hover:text-white ml-0.5"
-                            >
-                              ×
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-              {/* Due Date and Estimated Hours */}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs font-medium text-[#737373] block mb-1.5">
-                    Due Date (optional)
-                  </label>
-                  <Popover open={showCalendarCreateForm} onOpenChange={setShowCalendarCreateForm}>
-                    <PopoverTrigger asChild>
-                      <Button className="w-full justify-start text-left font-normal bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.07)] text-[#F4F6FF] hover:bg-[rgba(255,255,255,0.04)] hover:text-[#F4F6FF] rounded-xl h-10">
-                        <Calendar className="w-4 h-4 mr-2" />
-                        {createForm.due_date
-                          ? parseLocalDate(createForm.due_date as string)?.toLocaleDateString(
-                              'en-US',
-                              { month: 'short', day: 'numeric', year: 'numeric' },
-                            )
-                          : 'Pick a date'}
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent
-                      className="w-auto p-0 bg-[#0d0d0d] border-[rgba(255,255,255,0.07)]"
-                      align="start"
-                    >
-                      <CalendarIcon
-                        mode="single"
-                        selected={parseLocalDate(
-                          createForm.due_date === '' ? undefined : (createForm.due_date as string),
-                        )}
-                        onSelect={(date) => {
-                          if (date) {
-                            const year = date.getFullYear();
-                            const month = String(date.getMonth() + 1).padStart(2, '0');
-                            const day = String(date.getDate()).padStart(2, '0');
-                            setCreateForm({ ...createForm, due_date: `${year}-${month}-${day}` });
-                            setShowCalendarCreateForm(false);
-                          }
-                        }}
-                        disabled={(date) => date < new Date(new Date().setHours(0, 0, 0, 0))}
-                        classNames={{
-                          months: 'flex flex-col',
-                          month: 'space-y-4',
-                          caption: 'flex justify-between items-center px-0 pb-4 relative h-7 mb-2',
-                          caption_label: 'text-sm font-medium text-white',
-                          nav: 'space-x-1 flex items-center',
-                          nav_button: 'text-white hover:bg-[rgba(224,185,84,0.1)] rounded p-1',
-                          nav_button_previous: 'absolute left-0',
-                          nav_button_next: 'absolute right-0',
-                          table: 'w-full border-collapse space-y-1',
-                          head_row: 'flex',
-                          head_cell:
-                            'text-xs font-medium text-[#737373] w-8 h-8 flex items-center justify-center rounded',
-                          row: 'flex w-full gap-1',
-                          cell: 'relative p-0 text-center text-sm focus-within:relative focus-within:z-20 [&:has([aria-selected])]:bg-transparent',
-                          day: 'h-8 w-8 p-0 font-normal',
-                          day_button:
-                            'text-white hover:bg-[rgba(224,185,84,0.1)] rounded-lg h-8 w-8 transition-colors',
-                          day_selected:
-                            'bg-[#E0B954] text-[#0d0d0d] hover:bg-[#E0B954] font-semibold',
-                          day_today: 'bg-[rgba(224,185,84,0.2)] text-[#E0B954] font-semibold',
-                          day_outside: 'text-[#444]',
-                          day_disabled: 'text-[#333] opacity-50 cursor-not-allowed',
-                          day_range_middle:
-                            'aria-selected:bg-[rgba(224,185,84,0.1)] aria-selected:text-white',
-                          day_hidden: 'invisible',
-                        }}
-                      />
-                    </PopoverContent>
-                  </Popover>
-                </div>
-                <div>
-                  <label className="text-xs font-medium text-[#737373] block mb-1.5">
-                    Est. Hours
-                  </label>
-                  <Input
-                    type="number"
-                    min="1"
-                    value={createForm.estimated_hours}
-                    onChange={(e) =>
-                      setCreateForm((f) => ({ ...f, estimated_hours: e.target.value }))
-                    }
-                    placeholder="Hours"
-                    className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl h-10"
-                  />
-                </div>
-              </div>
-            </div>
-            <div className="flex justify-end gap-3 p-5 border-t border-[rgba(255,255,255,0.05)] flex-shrink-0">
-              <Button
-                variant="ghost"
-                onClick={() => handleCloseCreateForm()}
-                className="text-[#737373] rounded-xl px-5"
-                disabled={isCreatingItem}
-              >
-                Cancel
-              </Button>
-              <Button
-                onClick={handleCreateItem}
-                disabled={!createForm.title.trim() || isCreatingItem}
-                className="bg-gradient-to-r from-[#E0B954] to-[#B8872A] text-white rounded-xl px-6 font-medium shadow-lg shadow-[#B8872A]/20 disabled:opacity-50"
-                title={!createForm.title.trim() ? 'Title is required' : ''}
-              >
-                {isCreatingItem ? (
-                  <>
-                    <div className="w-4 h-4 mr-2 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    Creating...
-                  </>
-                ) : (
-                  <>
-                    <Plus className="w-4 h-4 mr-2" /> Create Item
-                  </>
-                )}
-              </Button>
-            </div>
-          </div>
-        </div>
+        <CreateItemModal
+          project={project}
+          workItems={workItems}
+          existingTags={existingTags}
+          parseLocalDate={parseLocalDate}
+          isCreatingItem={isCreatingItem}
+          onClose={() => setShowCreateForm(false)}
+          onSubmit={(form) => createItemMutation.mutate(form)}
+        />
       )}
 
       {/* AI Planning Modal */}
@@ -3625,575 +3219,46 @@ const ProjectBoard = () => {
 
       {/* Create Sprint Modal */}
       {showCreateSprintModal && (
-        <div
-          className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4"
-          onClick={() => {
-            setShowCreateSprintModal(false);
-            setNewSprint({ name: '', goal: '', start_date: '', end_date: '' });
-          }}
-        >
-          <div
-            className="bg-[#0d0d0d] border border-[rgba(255,255,255,0.07)] rounded-2xl w-full max-w-md shadow-2xl flex flex-col max-h-[90vh]"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between p-5 border-b border-[rgba(255,255,255,0.05)] flex-shrink-0">
-              <h2 className="text-lg font-bold text-white">Create New Sprint</h2>
-              <button
-                onClick={() => {
-                  setShowCreateSprintModal(false);
-                  setNewSprint({ name: '', goal: '', start_date: '', end_date: '' });
-                }}
-                className="p-2 rounded-lg hover:bg-[rgba(244,246,255,0.05)] text-[#737373] hover:text-white"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <div className="p-5 space-y-4 flex-1 overflow-y-auto">
-              <div>
-                <label className="text-xs font-medium text-[#737373] block mb-1.5">
-                  Sprint Name *
-                </label>
-                <Input
-                  value={newSprint.name}
-                  onChange={(e) => setNewSprint((f) => ({ ...f, name: e.target.value }))}
-                  placeholder="e.g., Sprint 1: Foundation"
-                  className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl h-10 placeholder:text-[#334155]"
-                />
-              </div>
-              <div>
-                <label className="text-xs font-medium text-[#737373] block mb-1.5">
-                  Sprint Goal
-                </label>
-                <Textarea
-                  value={newSprint.goal}
-                  onChange={(e) => setNewSprint((f) => ({ ...f, goal: e.target.value }))}
-                  placeholder="What do we want to achieve in this sprint?"
-                  className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl min-h-[80px] placeholder:text-[#334155] resize-none"
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="text-xs font-medium text-[#737373] block mb-1.5">
-                    Start Date *
-                  </label>
-                  <Popover open={showCalendarSprintStart} onOpenChange={setShowCalendarSprintStart}>
-                    <PopoverTrigger asChild>
-                      <Button
-                        variant="outline"
-                        className={`w-full bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl h-10 justify-start font-normal ${
-                          !newSprint.start_date ? 'text-[#737373]' : ''
-                        }`}
-                      >
-                        <Calendar className="mr-2 h-4 w-4" />
-                        {newSprint.start_date
-                          ? parseLocalDate(newSprint.start_date)?.toLocaleDateString()
-                          : 'Pick a date'}
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent
-                      side="bottom"
-                      align="start"
-                      className="w-auto p-3 bg-[#0d0d0d] border border-[rgba(224,185,84,0.2)]"
-                    >
-                      <CalendarIcon
-                        mode="single"
-                        selected={parseLocalDate(newSprint.start_date)}
-                        onSelect={(date) => {
-                          if (date) {
-                            const year = date.getFullYear();
-                            const month = String(date.getMonth() + 1).padStart(2, '0');
-                            const day = String(date.getDate()).padStart(2, '0');
-                            const localDate = `${year}-${month}-${day}`;
-                            setNewSprint((f) => ({ ...f, start_date: localDate }));
-                            setShowCalendarSprintStart(false);
-                          }
-                        }}
-                        classNames={{
-                          months: 'flex flex-col',
-                          month: 'space-y-4',
-                          caption: 'flex justify-between items-center px-0 pb-4 relative h-7 mb-2',
-                          caption_label: 'text-sm font-medium text-white',
-                          nav: 'space-x-1 flex items-center',
-                          nav_button: 'text-white hover:bg-[rgba(224,185,84,0.1)] rounded p-1',
-                          nav_button_previous: 'absolute left-0',
-                          nav_button_next: 'absolute right-0',
-                          table: 'w-full border-collapse space-y-1',
-                          head_row: 'flex',
-                          head_cell:
-                            'text-xs font-medium text-[#737373] w-8 h-8 flex items-center justify-center rounded',
-                          row: 'flex w-full gap-1',
-                          cell: 'relative p-0 text-center text-sm focus-within:relative focus-within:z-20 [&:has([aria-selected])]:bg-transparent',
-                          day: 'h-8 w-8 p-0 font-normal',
-                          day_button:
-                            'text-white hover:bg-[rgba(224,185,84,0.1)] rounded-lg h-8 w-8 transition-colors',
-                          day_selected:
-                            'bg-[#E0B954] text-[#0d0d0d] hover:bg-[#E0B954] font-semibold',
-                          day_today: 'bg-[rgba(224,185,84,0.2)] text-[#E0B954] font-semibold',
-                          day_outside: 'text-[#444]',
-                          day_disabled: 'text-[#333] opacity-50 cursor-not-allowed',
-                          day_range_middle:
-                            'aria-selected:bg-[rgba(224,185,84,0.1)] aria-selected:text-white',
-                          day_hidden: 'invisible',
-                        }}
-                      />
-                    </PopoverContent>
-                  </Popover>
-                </div>
-                <div>
-                  <label className="text-xs font-medium text-[#737373] block mb-1.5">
-                    End Date *
-                  </label>
-                  <Popover
-                    open={showCalendarSprintEnd && !!newSprint.start_date}
-                    onOpenChange={(open) => newSprint.start_date && setShowCalendarSprintEnd(open)}
-                  >
-                    <PopoverTrigger asChild>
-                      <Button
-                        variant="outline"
-                        disabled={!newSprint.start_date}
-                        className={`w-full bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl h-10 justify-start font-normal ${
-                          !newSprint.end_date ? 'text-[#737373]' : ''
-                        } ${!newSprint.start_date ? 'opacity-50 cursor-not-allowed' : ''}`}
-                        title={!newSprint.start_date ? 'Set start date first' : ''}
-                      >
-                        <Calendar className="mr-2 h-4 w-4" />
-                        {newSprint.end_date
-                          ? parseLocalDate(newSprint.end_date)?.toLocaleDateString()
-                          : 'Pick a date'}
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent
-                      side="bottom"
-                      align="start"
-                      className="w-auto p-3 bg-[#0d0d0d] border border-[rgba(224,185,84,0.2)]"
-                    >
-                      <div className="mb-3 pb-3 border-b border-[rgba(255,255,255,0.05)]">
-                        <p className="text-[10px] text-[#737373] font-medium uppercase mb-1.5">
-                          Sprint Duration
-                        </p>
-                        <div className="space-y-1">
-                          <p className="text-xs text-[#737373]">
-                            Start:{' '}
-                            <span className="text-[#E0B954] font-medium">
-                              {parseLocalDate(newSprint.start_date)?.toLocaleDateString(undefined, {
-                                month: 'short',
-                                day: 'numeric',
-                                year: 'numeric',
-                              })}
-                            </span>
-                          </p>
-                          <p className="text-xs text-[#737373]">
-                            End: <span className="text-white font-medium">Pick a date</span>
-                          </p>
-                        </div>
-                      </div>
-                      <CalendarIcon
-                        mode="single"
-                        month={parseLocalDate(newSprint.start_date) || new Date()}
-                        selected={parseLocalDate(newSprint.end_date)}
-                        onSelect={(date) => {
-                          if (date) {
-                            const year = date.getFullYear();
-                            const month = String(date.getMonth() + 1).padStart(2, '0');
-                            const day = String(date.getDate()).padStart(2, '0');
-                            const localDate = `${year}-${month}-${day}`;
-                            setNewSprint((f) => ({ ...f, end_date: localDate }));
-                            setShowCalendarSprintEnd(false);
-                          }
-                        }}
-                        disabled={(date) =>
-                          newSprint.start_date
-                            ? date < parseLocalDate(newSprint.start_date)!
-                            : false
-                        }
-                        classNames={{
-                          months: 'flex flex-col',
-                          month: 'space-y-4',
-                          caption: 'flex justify-between items-center px-0 pb-4 relative h-7 mb-2',
-                          caption_label: 'text-sm font-medium text-white',
-                          nav: 'space-x-1 flex items-center',
-                          nav_button: 'text-white hover:bg-[rgba(224,185,84,0.1)] rounded p-1',
-                          nav_button_previous: 'absolute left-0',
-                          nav_button_next: 'absolute right-0',
-                          table: 'w-full border-collapse space-y-1',
-                          head_row: 'flex',
-                          head_cell:
-                            'text-xs font-medium text-[#737373] w-8 h-8 flex items-center justify-center rounded',
-                          row: 'flex w-full gap-1',
-                          cell: 'relative p-0 text-center text-sm focus-within:relative focus-within:z-20 [&:has([aria-selected])]:bg-transparent',
-                          day: 'h-8 w-8 p-0 font-normal',
-                          day_button:
-                            'text-white hover:bg-[rgba(224,185,84,0.1)] rounded-lg h-8 w-8 transition-colors',
-                          day_selected:
-                            'bg-[#E0B954] text-[#0d0d0d] hover:bg-[#E0B954] font-semibold',
-                          day_today: 'bg-[rgba(224,185,84,0.2)] text-[#E0B954] font-semibold',
-                          day_outside: 'text-[#444]',
-                          day_disabled: 'text-[#333] opacity-50 cursor-not-allowed',
-                          day_range_middle:
-                            'aria-selected:bg-[rgba(224,185,84,0.1)] aria-selected:text-white',
-                          day_hidden: 'invisible',
-                        }}
-                      />
-                    </PopoverContent>
-                  </Popover>
-                </div>
-              </div>
-            </div>
-            <div className="flex justify-end gap-3 p-5 border-t border-[rgba(255,255,255,0.05)]">
-              <Button
-                variant="ghost"
-                onClick={() => {
-                  setShowCreateSprintModal(false);
-                  setNewSprint({ name: '', goal: '', start_date: '', end_date: '' });
-                }}
-                className="text-[#737373] rounded-xl px-5"
-              >
-                Cancel
-              </Button>
-              <Button
-                onClick={handleCreateSprint}
-                disabled={!newSprint.name.trim() || !newSprint.start_date || !newSprint.end_date}
-                className="bg-gradient-to-r from-[#E0B954] to-[#B8872A] text-white rounded-xl px-6 font-medium shadow-lg shadow-[#B8872A]/20 disabled:opacity-50"
-                title={
-                  !newSprint.start_date || !newSprint.end_date
-                    ? 'Start and End dates are required'
-                    : ''
-                }
-              >
-                <Plus className="w-4 h-4 mr-2" />
-                Create Sprint
-              </Button>
-            </div>
-          </div>
-        </div>
+        <CreateSprintModal
+          parseLocalDate={parseLocalDate}
+          onClose={() => setShowCreateSprintModal(false)}
+          onSubmit={handleCreateSprint}
+          disabled={createSprintMutation.isPending}
+        />
       )}
 
       {/* Edit Sprint Modal */}
       {editingSprint && (
-        <div
-          className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4"
-          onClick={() => setEditingSprint(null)}
-        >
-          <div
-            className="bg-[#0d0d0d] border border-[rgba(255,255,255,0.07)] rounded-2xl w-full max-w-md shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between p-5 border-b border-[rgba(255,255,255,0.05)]">
-              <h2 className="text-lg font-bold text-white">Edit Sprint</h2>
-              <button
-                onClick={() => setEditingSprint(null)}
-                className="p-2 rounded-lg hover:bg-[rgba(244,246,255,0.05)] text-[#737373] hover:text-white"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <div className="p-5 space-y-4">
-              <div>
-                <label className="text-xs font-medium text-[#737373] block mb-1.5">
-                  Sprint Name *
-                </label>
-                <Input
-                  value={editSprintForm.name}
-                  onChange={(e) => setEditSprintForm((f) => ({ ...f, name: e.target.value }))}
-                  placeholder="e.g., Sprint 1: Foundation"
-                  className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl h-10 placeholder:text-[#334155]"
-                />
-              </div>
-              <div>
-                <label className="text-xs font-medium text-[#737373] block mb-1.5">
-                  Sprint Goal
-                </label>
-                <Textarea
-                  value={editSprintForm.goal}
-                  onChange={(e) => setEditSprintForm((f) => ({ ...f, goal: e.target.value }))}
-                  placeholder="What do we want to achieve in this sprint?"
-                  className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl min-h-[80px] placeholder:text-[#334155] resize-none"
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="text-xs font-medium text-[#737373] block mb-1.5">
-                    Start Date *
-                  </label>
-                  <Popover
-                    open={showCalendarEditSprintStart}
-                    onOpenChange={setShowCalendarEditSprintStart}
-                  >
-                    <PopoverTrigger asChild>
-                      <Button
-                        variant="outline"
-                        className={`w-full bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl h-10 justify-start font-normal ${!editSprintForm.start_date ? 'text-[#737373]' : ''}`}
-                      >
-                        <Calendar className="mr-2 h-4 w-4" />
-                        {editSprintForm.start_date
-                          ? parseLocalDate(editSprintForm.start_date)?.toLocaleDateString()
-                          : 'Pick a date'}
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent
-                      side="bottom"
-                      align="start"
-                      className="w-auto p-3 bg-[#0d0d0d] border border-[rgba(224,185,84,0.2)]"
-                    >
-                      <CalendarIcon
-                        mode="single"
-                        selected={parseLocalDate(editSprintForm.start_date)}
-                        onSelect={(date) => {
-                          if (date) {
-                            const localDate = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-                            setEditSprintForm((f) => ({ ...f, start_date: localDate }));
-                            setShowCalendarEditSprintStart(false);
-                          }
-                        }}
-                        classNames={{
-                          months: 'flex flex-col',
-                          month: 'space-y-4',
-                          caption: 'flex justify-between items-center px-0 pb-4 relative h-7 mb-2',
-                          caption_label: 'text-sm font-medium text-white',
-                          nav: 'space-x-1 flex items-center',
-                          nav_button: 'text-white hover:bg-[rgba(224,185,84,0.1)] rounded p-1',
-                          nav_button_previous: 'absolute left-0',
-                          nav_button_next: 'absolute right-0',
-                          table: 'w-full border-collapse space-y-1',
-                          head_row: 'flex',
-                          head_cell:
-                            'text-xs font-medium text-[#737373] w-8 h-8 flex items-center justify-center rounded',
-                          row: 'flex w-full gap-1',
-                          cell: 'relative p-0 text-center text-sm focus-within:relative focus-within:z-20 [&:has([aria-selected])]:bg-transparent',
-                          day: 'h-8 w-8 p-0 font-normal',
-                          day_button:
-                            'text-white hover:bg-[rgba(224,185,84,0.1)] rounded-lg h-8 w-8 transition-colors',
-                          day_selected:
-                            'bg-[#E0B954] text-[#0d0d0d] hover:bg-[#E0B954] font-semibold',
-                          day_today: 'bg-[rgba(224,185,84,0.2)] text-[#E0B954] font-semibold',
-                          day_outside: 'text-[#444]',
-                          day_disabled: 'text-[#333] opacity-50 cursor-not-allowed',
-                          day_range_middle:
-                            'aria-selected:bg-[rgba(224,185,84,0.1)] aria-selected:text-white',
-                          day_hidden: 'invisible',
-                        }}
-                      />
-                    </PopoverContent>
-                  </Popover>
-                </div>
-                <div>
-                  <label className="text-xs font-medium text-[#737373] block mb-1.5">
-                    End Date *
-                  </label>
-                  <Popover
-                    open={showCalendarEditSprintEnd && !!editSprintForm.start_date}
-                    onOpenChange={(open) =>
-                      editSprintForm.start_date && setShowCalendarEditSprintEnd(open)
-                    }
-                  >
-                    <PopoverTrigger asChild>
-                      <Button
-                        variant="outline"
-                        disabled={!editSprintForm.start_date}
-                        className={`w-full bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl h-10 justify-start font-normal ${!editSprintForm.end_date ? 'text-[#737373]' : ''} ${!editSprintForm.start_date ? 'opacity-50 cursor-not-allowed' : ''}`}
-                      >
-                        <Calendar className="mr-2 h-4 w-4" />
-                        {editSprintForm.end_date
-                          ? parseLocalDate(editSprintForm.end_date)?.toLocaleDateString()
-                          : 'Pick a date'}
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent
-                      side="bottom"
-                      align="start"
-                      className="w-auto p-3 bg-[#0d0d0d] border border-[rgba(224,185,84,0.2)]"
-                    >
-                      <CalendarIcon
-                        mode="single"
-                        month={parseLocalDate(editSprintForm.start_date) || new Date()}
-                        selected={parseLocalDate(editSprintForm.end_date)}
-                        onSelect={(date) => {
-                          if (date) {
-                            const localDate = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-                            setEditSprintForm((f) => ({ ...f, end_date: localDate }));
-                            setShowCalendarEditSprintEnd(false);
-                          }
-                        }}
-                        disabled={(date) =>
-                          editSprintForm.start_date
-                            ? date < parseLocalDate(editSprintForm.start_date)!
-                            : false
-                        }
-                        classNames={{
-                          months: 'flex flex-col',
-                          month: 'space-y-4',
-                          caption: 'flex justify-between items-center px-0 pb-4 relative h-7 mb-2',
-                          caption_label: 'text-sm font-medium text-white',
-                          nav: 'space-x-1 flex items-center',
-                          nav_button: 'text-white hover:bg-[rgba(224,185,84,0.1)] rounded p-1',
-                          nav_button_previous: 'absolute left-0',
-                          nav_button_next: 'absolute right-0',
-                          table: 'w-full border-collapse space-y-1',
-                          head_row: 'flex',
-                          head_cell:
-                            'text-xs font-medium text-[#737373] w-8 h-8 flex items-center justify-center rounded',
-                          row: 'flex w-full gap-1',
-                          cell: 'relative p-0 text-center text-sm focus-within:relative focus-within:z-20 [&:has([aria-selected])]:bg-transparent',
-                          day: 'h-8 w-8 p-0 font-normal',
-                          day_button:
-                            'text-white hover:bg-[rgba(224,185,84,0.1)] rounded-lg h-8 w-8 transition-colors',
-                          day_selected:
-                            'bg-[#E0B954] text-[#0d0d0d] hover:bg-[#E0B954] font-semibold',
-                          day_today: 'bg-[rgba(224,185,84,0.2)] text-[#E0B954] font-semibold',
-                          day_outside: 'text-[#444]',
-                          day_disabled: 'text-[#333] opacity-50 cursor-not-allowed',
-                          day_range_middle:
-                            'aria-selected:bg-[rgba(224,185,84,0.1)] aria-selected:text-white',
-                          day_hidden: 'invisible',
-                        }}
-                      />
-                    </PopoverContent>
-                  </Popover>
-                </div>
-              </div>
-            </div>
-            <div className="flex justify-end gap-3 p-5 border-t border-[rgba(255,255,255,0.05)]">
-              <Button
-                variant="ghost"
-                onClick={() => setEditingSprint(null)}
-                className="text-[#737373] rounded-xl px-5"
-              >
-                Cancel
-              </Button>
-              <Button
-                onClick={handleEditSprint}
-                disabled={
-                  !editSprintForm.name.trim() ||
-                  !editSprintForm.start_date ||
-                  !editSprintForm.end_date
-                }
-                className="bg-gradient-to-r from-[#E0B954] to-[#B8872A] text-white rounded-xl px-6 font-medium shadow-lg shadow-[#B8872A]/20 disabled:opacity-50"
-              >
-                Save Changes
-              </Button>
-            </div>
-          </div>
-        </div>
+        <EditSprintModal
+          key={editingSprint.id}
+          editingSprint={editingSprint}
+          parseLocalDate={parseLocalDate}
+          onClose={() => setEditingSprint(null)}
+          onSubmit={handleEditSprint}
+        />
       )}
 
       {/* Complete Sprint Confirmation */}
-      {completingSprintId !== null &&
-        (() => {
-          const sprint = sprints.find((s) => s.id === completingSprintId);
-          const sprintItems = workItems.filter((w) => w.sprint_id === completingSprintId);
-          const doneCount = sprintItems.filter((w) => w.status === 'done').length;
-          const incompleteCount = sprintItems.length - doneCount;
-          return (
-            <div
-              className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4"
-              onClick={() => setCompletingSprintId(null)}
-            >
-              <div
-                className="bg-[#0d0d0d] border border-[rgba(255,255,255,0.07)] rounded-2xl w-full max-w-sm shadow-2xl p-6"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <div className="flex items-center gap-3 mb-5">
-                  <div className="w-10 h-10 rounded-xl bg-[rgba(224,185,84,0.1)] flex items-center justify-center shrink-0">
-                    <CheckCircle2 className="w-5 h-5 text-[#E0B954]" />
-                  </div>
-                  <div>
-                    <h3 className="text-base font-semibold text-white">Complete Sprint</h3>
-                    <p className="text-xs text-[#737373] mt-0.5">{sprint?.name}</p>
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-3 mb-5">
-                  <div className="bg-[rgba(224,185,84,0.05)] border border-[rgba(224,185,84,0.15)] rounded-xl p-3 text-center">
-                    <p className="text-2xl font-bold text-[#E0B954]">{doneCount}</p>
-                    <p className="text-xs text-[#737373] mt-0.5">Completed</p>
-                  </div>
-                  <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.06)] rounded-xl p-3 text-center">
-                    <p className="text-2xl font-bold text-[#f5f5f5]">{incompleteCount}</p>
-                    <p className="text-xs text-[#737373] mt-0.5">Incomplete</p>
-                  </div>
-                </div>
-                {incompleteCount > 0 && (
-                  <p className="text-sm text-[#a3a3a3] mb-5">
-                    <span className="text-white font-medium">
-                      {incompleteCount} incomplete {incompleteCount === 1 ? 'item' : 'items'}
-                    </span>{' '}
-                    will be moved to the backlog.
-                  </p>
-                )}
-                <div className="flex justify-end gap-3">
-                  <Button
-                    variant="ghost"
-                    onClick={() => setCompletingSprintId(null)}
-                    className="text-[#737373] rounded-xl px-5"
-                  >
-                    Cancel
-                  </Button>
-                  <Button
-                    onClick={handleCompleteSprint}
-                    className="bg-gradient-to-r from-[#E0B954] to-[#B8872A] text-white rounded-xl px-5 font-medium shadow-lg shadow-[#B8872A]/20"
-                  >
-                    Complete Sprint
-                  </Button>
-                </div>
-              </div>
-            </div>
-          );
-        })()}
+      {completingSprintId !== null && (
+        <CompleteSprintConfirm
+          sprintId={completingSprintId}
+          sprints={sprints}
+          workItems={workItems}
+          onClose={() => setCompletingSprintId(null)}
+          onConfirm={handleCompleteSprint}
+        />
+      )}
 
       {/* Delete Sprint Confirmation */}
-      {deletingSprintId !== null &&
-        (() => {
-          const sprint = sprints.find((s) => s.id === deletingSprintId);
-          const itemCount = workItems.filter((w) => w.sprint_id === deletingSprintId).length;
-          return (
-            <div
-              className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4"
-              onClick={() => setDeletingSprintId(null)}
-            >
-              <div
-                className="bg-[#0d0d0d] border border-[rgba(255,255,255,0.07)] rounded-2xl w-full max-w-sm shadow-2xl p-6"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <div className="flex items-center gap-3 mb-5">
-                  <div className="w-10 h-10 rounded-xl bg-[rgba(239,68,68,0.1)] flex items-center justify-center shrink-0">
-                    <Trash2 className="w-5 h-5 text-[#EF4444]" />
-                  </div>
-                  <div>
-                    <h3 className="text-base font-semibold text-white">Delete Sprint</h3>
-                    <p className="text-xs text-[#737373] mt-0.5">{sprint?.name}</p>
-                  </div>
-                </div>
-                {itemCount > 0 && (
-                  <div className="bg-[rgba(239,68,68,0.05)] border border-[rgba(239,68,68,0.15)] rounded-xl p-3 mb-5">
-                    <p className="text-sm text-[#f5f5f5]">
-                      <span className="font-semibold text-[#EF4444]">
-                        {itemCount} {itemCount === 1 ? 'ticket' : 'tickets'}
-                      </span>{' '}
-                      will be moved to the backlog.
-                    </p>
-                  </div>
-                )}
-                <p className="text-sm text-[#737373] mb-5">
-                  This permanently deletes the sprint and cannot be undone.
-                </p>
-                <div className="flex justify-end gap-3">
-                  <Button
-                    variant="ghost"
-                    onClick={() => setDeletingSprintId(null)}
-                    className="text-[#737373] rounded-xl px-5"
-                  >
-                    Cancel
-                  </Button>
-                  <Button
-                    onClick={handleDeleteSprint}
-                    className="bg-[#EF4444] hover:bg-[#DC2626] text-white rounded-xl px-5 font-medium"
-                  >
-                    Delete Sprint
-                  </Button>
-                </div>
-              </div>
-            </div>
-          );
-        })()}
+      {deletingSprintId !== null && (
+        <DeleteSprintConfirm
+          sprintId={deletingSprintId}
+          sprints={sprints}
+          workItems={workItems}
+          onClose={() => setDeletingSprintId(null)}
+          onConfirm={handleDeleteSprint}
+        />
+      )}
 
       {/* Reviewer Panel - slide in from right */}
       {showReviewer && (
