@@ -2850,8 +2850,11 @@ const ProjectBoard = () => {
                     'parent_id',
                   ) && (
                     <div>
-                      <label className="text-xs font-medium text-[#737373] block mb-1.5">
-                        Parent
+                      <label
+                        className="text-xs font-medium text-[#737373] block mb-1.5"
+                        title="This task is part of a larger story or task."
+                      >
+                        Belongs to
                       </label>
                       <WorkItemCombobox
                         value={editForm.parent_id ?? selectedItem.parent_id ?? null}
@@ -3528,7 +3531,15 @@ const ProjectBoard = () => {
                 <label className="text-xs font-medium text-[#737373] block mb-1.5">Type</label>
                 <select
                   value={createForm.type}
-                  onChange={(e) => setCreateForm((f) => ({ ...f, type: e.target.value }))}
+                  onChange={(e) => {
+                    const newType = e.target.value as WorkItem['type'];
+                    setCreateForm((f) => ({
+                      ...f,
+                      type: newType,
+                      epic_id: fieldSupportsType(newType, 'epic_id') ? f.epic_id : null,
+                      parent_id: fieldSupportsType(newType, 'parent_id') ? f.parent_id : null,
+                    }));
+                  }}
                   className="w-full h-10 bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.07)] text-[#f5f5f5] rounded-xl px-3 text-sm"
                 >
                   <option value="user_story">User Story</option>
@@ -3618,57 +3629,48 @@ const ProjectBoard = () => {
                   </select>
                 </div>
               </div>
-              {createForm.type !== 'task' && (
-                /* Hierarchy - Hidden for Tasks */
+              {(fieldSupportsType(createForm.type as WorkItem['type'], 'epic_id') ||
+                fieldSupportsType(createForm.type as WorkItem['type'], 'parent_id')) && (
                 <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-xs font-medium text-[#737373] block mb-1.5">
-                      Epic (optional)
-                    </label>
-                    <select
-                      value={createForm.epic_id || ''}
-                      onChange={(e) =>
-                        setCreateForm((f) => ({
-                          ...f,
-                          epic_id: e.target.value ? parseInt(e.target.value) : null,
-                        }))
-                      }
-                      className="w-full h-10 bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.07)] text-[#f5f5f5] rounded-xl px-3 text-sm"
-                    >
-                      <option value="">No Epic</option>
-                      {workItems
-                        .filter((wi) => wi.type === 'epic')
-                        .map((wi) => (
-                          <option key={wi.id} value={wi.id}>
-                            {wi.key} — {wi.title}
-                          </option>
-                        ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="text-xs font-medium text-[#737373] block mb-1.5">
-                      Parent Story (optional)
-                    </label>
-                    <select
-                      value={createForm.parent_id || ''}
-                      onChange={(e) =>
-                        setCreateForm((f) => ({
-                          ...f,
-                          parent_id: e.target.value ? parseInt(e.target.value) : null,
-                        }))
-                      }
-                      className="w-full h-10 bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.07)] text-[#f5f5f5] rounded-xl px-3 text-sm"
-                    >
-                      <option value="">No Parent</option>
-                      {workItems
-                        .filter((wi) => wi.type === 'user_story')
-                        .map((wi) => (
-                          <option key={wi.id} value={wi.id}>
-                            {wi.key} — {wi.title}
-                          </option>
-                        ))}
-                    </select>
-                  </div>
+                  {fieldSupportsType(createForm.type as WorkItem['type'], 'epic_id') && (
+                    <div>
+                      <label className="text-xs font-medium text-[#737373] block mb-1.5">
+                        Epic (optional)
+                      </label>
+                      <WorkItemCombobox
+                        value={createForm.epic_id}
+                        valueKey={null}
+                        items={workItems}
+                        allowedTypes={getAllowedTargetTypes(
+                          createForm.type as WorkItem['type'],
+                          'epic_id',
+                        )}
+                        onChange={(newId) => setCreateForm((f) => ({ ...f, epic_id: newId }))}
+                        placeholder="No epic"
+                      />
+                    </div>
+                  )}
+                  {fieldSupportsType(createForm.type as WorkItem['type'], 'parent_id') && (
+                    <div>
+                      <label
+                        className="text-xs font-medium text-[#737373] block mb-1.5"
+                        title="This task is part of a larger story or task."
+                      >
+                        Belongs to (optional)
+                      </label>
+                      <WorkItemCombobox
+                        value={createForm.parent_id}
+                        valueKey={null}
+                        items={workItems}
+                        allowedTypes={getAllowedTargetTypes(
+                          createForm.type as WorkItem['type'],
+                          'parent_id',
+                        )}
+                        onChange={(newId) => setCreateForm((f) => ({ ...f, parent_id: newId }))}
+                        placeholder="No parent"
+                      />
+                    </div>
+                  )}
                 </div>
               )}
               {createForm.type === 'task' && (
