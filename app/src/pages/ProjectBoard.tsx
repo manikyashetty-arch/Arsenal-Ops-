@@ -35,6 +35,8 @@ import {
   EyeOff,
   ChevronDown,
   ChevronRight,
+  ChevronUp,
+  ChevronsUpDown,
   ListFilter,
   Check,
   Loader2,
@@ -237,6 +239,29 @@ const PRIORITY_COLORS = {
   },
 };
 
+// Canonical orderings for the sortable list-view columns.
+const LIST_SORT_TYPE_ORDER: Record<string, number> = {
+  epic: 0,
+  user_story: 1,
+  task: 2,
+  bug: 3,
+};
+const LIST_SORT_STATUS_ORDER: Record<string, number> = {
+  backlog: 0,
+  todo: 1,
+  in_progress: 2,
+  in_review: 3,
+  done: 4,
+};
+const LIST_SORT_PRIORITY_ORDER: Record<string, number> = {
+  critical: 0,
+  high: 1,
+  medium: 2,
+  low: 3,
+};
+
+type ListSortKey = 'type' | 'status' | 'priority' | 'assignee';
+
 const ProjectBoard = () => {
   const { id, ticketId } = useParams<{ id: string; ticketId?: string }>();
   const navigate = useNavigate();
@@ -277,6 +302,67 @@ const ProjectBoard = () => {
   const sprintMenuRef = useRef<HTMLDivElement>(null);
   const [draggedItem, setDraggedItem] = useState<string | null>(null);
   const [dragOverColumn, setDragOverColumn] = useState<string | null>(null);
+
+  // Shared sort state for the By Sprint / By Epic list views. Applies within
+  // each group; doesn't reorder groups themselves. Null = group's natural
+  // order (preserves the parent→child clustering in the By Epic view).
+  const [listSortKey, setListSortKey] = useState<ListSortKey | null>(null);
+  const [listSortDir, setListSortDir] = useState<'asc' | 'desc'>('asc');
+  const handleListSort = (key: ListSortKey) => {
+    if (listSortKey === key) {
+      // Same column: asc → desc → off
+      if (listSortDir === 'asc') setListSortDir('desc');
+      else setListSortKey(null);
+    } else {
+      setListSortKey(key);
+      setListSortDir('asc');
+    }
+  };
+  const listItemComparator = useMemo(() => {
+    if (!listSortKey) return null;
+    const dir = listSortDir === 'asc' ? 1 : -1;
+    return (a: WorkItem, b: WorkItem) => {
+      let cmp = 0;
+      switch (listSortKey) {
+        case 'type':
+          cmp = (LIST_SORT_TYPE_ORDER[a.type] ?? 99) - (LIST_SORT_TYPE_ORDER[b.type] ?? 99);
+          break;
+        case 'status':
+          cmp = (LIST_SORT_STATUS_ORDER[a.status] ?? 99) - (LIST_SORT_STATUS_ORDER[b.status] ?? 99);
+          break;
+        case 'priority':
+          cmp =
+            (LIST_SORT_PRIORITY_ORDER[a.priority] ?? 99) -
+            (LIST_SORT_PRIORITY_ORDER[b.priority] ?? 99);
+          break;
+        case 'assignee': {
+          // Unassigned sorts last in asc, first in desc.
+          const aa = a.assignee_id ? (a.assignee || '').toLowerCase() : '￿';
+          const bb = b.assignee_id ? (b.assignee || '').toLowerCase() : '￿';
+          cmp = aa.localeCompare(bb);
+          break;
+        }
+      }
+      return cmp * dir;
+    };
+  }, [listSortKey, listSortDir]);
+  const renderListSortHeader = (label: string, key: ListSortKey) => {
+    const active = listSortKey === key;
+    const Icon = active ? (listSortDir === 'asc' ? ChevronUp : ChevronDown) : ChevronsUpDown;
+    return (
+      <button
+        type="button"
+        onClick={() => handleListSort(key)}
+        className={`flex items-center gap-1 text-left uppercase tracking-wider hover:text-white transition-colors ${
+          active ? 'text-[#E0B954]' : ''
+        }`}
+        aria-sort={active ? (listSortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
+      >
+        {label}
+        <Icon className="w-3 h-3 shrink-0" aria-hidden />
+      </button>
+    );
+  };
 
   // AI Planning flow states
   const [showAIModal, setShowAIModal] = useState(false);
@@ -1091,10 +1177,25 @@ const ProjectBoard = () => {
       .filter(Boolean);
   };
 
-  // Exclude IDs for the parent_id picker: subject + all descendants via parent_id chain.
-  // Selecting any of these as the new parent would create a cycle.
-  const parentExcludeIds = useMemo(() => {
+  // Depth-1 cap (matches backend services/hierarchy.py): an item that already
+  // has a parent cannot itself be picked as a parent — that would create a
+  // depth-2 chain. Shared by create form and edit form parent pickers.
+  const depth1ParentExclusions = useMemo(() => {
     const excluded = new Set<number>();
+    for (const wi of workItems) {
+      if (wi.parent_id != null) {
+        const n = Number(wi.id);
+        if (!Number.isNaN(n)) excluded.add(n);
+      }
+    }
+    return excluded;
+  }, [workItems]);
+
+  // Exclude IDs for the edit form's parent_id picker: subject + all
+  // descendants (cycle prevention) PLUS any item that's already a child of
+  // something else (depth-1 cap).
+  const parentExcludeIds = useMemo(() => {
+    const excluded = new Set<number>(depth1ParentExclusions);
     if (!selectedItem) return excluded;
     const subjectId = Number(selectedItem.id);
     if (Number.isNaN(subjectId)) return excluded;
@@ -1120,6 +1221,15 @@ const ProjectBoard = () => {
       }
     }
     return excluded;
+  }, [depth1ParentExclusions, selectedItem, workItems]);
+
+  // Edit form: if the subject already has children, giving it a parent would
+  // push them to depth-2. Lock the picker in that case.
+  const selectedItemHasChildren = useMemo(() => {
+    if (!selectedItem) return false;
+    const n = Number(selectedItem.id);
+    if (Number.isNaN(n)) return false;
+    return workItems.some((wi) => wi.parent_id === n);
   }, [selectedItem, workItems]);
 
   // For the epic_id picker: epics can't have epics, so only self-exclusion is needed.
@@ -2332,16 +2442,23 @@ const ProjectBoard = () => {
                       {!isCollapsed && (
                         <>
                           {/* Table header */}
-                          <div className="grid grid-cols-[1fr_120px_100px_100px_100px_120px] gap-4 px-5 py-3 border-t border-[rgba(255,255,255,0.05)] text-xs text-[#737373] font-semibold uppercase tracking-wider">
+                          <div className="grid grid-cols-[120px_1fr_100px_100px_100px_120px] gap-4 px-5 py-3 border-t border-[rgba(255,255,255,0.05)] text-xs text-[#737373] font-semibold uppercase tracking-wider">
+                            {renderListSortHeader('Type', 'type')}
                             <span>Title</span>
-                            <span>Type</span>
-                            <span>Status</span>
-                            <span>Priority</span>
+                            {renderListSortHeader('Status', 'status')}
+                            {renderListSortHeader('Priority', 'priority')}
                             <span>Points</span>
-                            <span>Assignee</span>
+                            {renderListSortHeader('Assignee', 'assignee')}
                           </div>
-                          {/* Table rows with subtask indent */}
-                          {group.rows.map(({ item, depth }) => {
+                          {/* Table rows. Default: hierarchy-aware (parent → child with
+                              indent). When sorted, render flat at depth=0 since
+                              cross-hierarchy ordering breaks the parent/child grouping. */}
+                          {(listItemComparator
+                            ? [...group.rows]
+                                .sort((a, b) => listItemComparator(a.item, b.item))
+                                .map((r) => ({ item: r.item, depth: 0 }))
+                            : group.rows
+                          ).map(({ item, depth }) => {
                             const typeInfo = TYPE_CONFIG[item.type] || TYPE_CONFIG.task;
                             const TypeIcon = typeInfo.icon;
                             const priorityStyle =
@@ -2355,8 +2472,17 @@ const ProjectBoard = () => {
                                   setIsEditing(false);
                                   setEditForm({});
                                 }}
-                                className="grid grid-cols-[1fr_120px_100px_100px_100px_120px] gap-4 px-5 py-3.5 border-t border-[rgba(255,255,255,0.03)] hover:bg-[rgba(255,255,255,0.025)] cursor-pointer transition-colors group"
+                                className="grid grid-cols-[120px_1fr_100px_100px_100px_120px] gap-4 px-5 py-3.5 border-t border-[rgba(255,255,255,0.03)] hover:bg-[rgba(255,255,255,0.025)] cursor-pointer transition-colors group"
                               >
+                                <div className="flex items-center">
+                                  <div
+                                    className="flex items-center gap-1.5 px-2 py-1 rounded-md text-xs"
+                                    style={{ backgroundColor: typeInfo.bg, color: typeInfo.color }}
+                                  >
+                                    <TypeIcon className="w-3 h-3" />
+                                    {typeInfo.label}
+                                  </div>
+                                </div>
                                 <div
                                   className="flex items-center gap-3 min-w-0"
                                   style={{ paddingLeft: depth === 1 ? 24 : 0 }}
@@ -2375,15 +2501,6 @@ const ProjectBoard = () => {
                                   <span className="text-sm text-[#f5f5f5] truncate group-hover:text-white transition-colors">
                                     {item.title}
                                   </span>
-                                </div>
-                                <div className="flex items-center">
-                                  <div
-                                    className="flex items-center gap-1.5 px-2 py-1 rounded-md text-xs"
-                                    style={{ backgroundColor: typeInfo.bg, color: typeInfo.color }}
-                                  >
-                                    <TypeIcon className="w-3 h-3" />
-                                    {typeInfo.label}
-                                  </div>
                                 </div>
                                 <div className="flex items-center">
                                   <StatusDotMenu
@@ -2499,16 +2616,19 @@ const ProjectBoard = () => {
                     {!isCollapsed && (
                       <>
                         {/* Table header */}
-                        <div className="grid grid-cols-[1fr_120px_100px_100px_100px_120px] gap-4 px-5 py-3 border-t border-[rgba(255,255,255,0.05)] text-xs text-[#737373] font-semibold uppercase tracking-wider">
+                        <div className="grid grid-cols-[120px_1fr_100px_100px_100px_120px] gap-4 px-5 py-3 border-t border-[rgba(255,255,255,0.05)] text-xs text-[#737373] font-semibold uppercase tracking-wider">
+                          {renderListSortHeader('Type', 'type')}
                           <span>Title</span>
-                          <span>Type</span>
-                          <span>Status</span>
-                          <span>Priority</span>
+                          {renderListSortHeader('Status', 'status')}
+                          {renderListSortHeader('Priority', 'priority')}
                           <span>Points</span>
-                          <span>Assignee</span>
+                          {renderListSortHeader('Assignee', 'assignee')}
                         </div>
                         {/* Table rows */}
-                        {group.items.map((item) => {
+                        {(listItemComparator
+                          ? [...group.items].sort(listItemComparator)
+                          : group.items
+                        ).map((item) => {
                           const typeInfo = TYPE_CONFIG[item.type] || TYPE_CONFIG.task;
                           const TypeIcon = typeInfo.icon;
                           const priorityStyle =
@@ -2522,16 +2642,8 @@ const ProjectBoard = () => {
                                 setIsEditing(false);
                                 setEditForm({});
                               }}
-                              className="grid grid-cols-[1fr_120px_100px_100px_100px_120px] gap-4 px-5 py-3.5 border-t border-[rgba(255,255,255,0.03)] hover:bg-[rgba(255,255,255,0.025)] cursor-pointer transition-colors group"
+                              className="grid grid-cols-[120px_1fr_100px_100px_100px_120px] gap-4 px-5 py-3.5 border-t border-[rgba(255,255,255,0.03)] hover:bg-[rgba(255,255,255,0.025)] cursor-pointer transition-colors group"
                             >
-                              <div className="flex items-center gap-3 min-w-0">
-                                <span className="text-[10px] text-[#E0B954] font-mono font-medium shrink-0">
-                                  {item.key}
-                                </span>
-                                <span className="text-sm text-[#f5f5f5] truncate group-hover:text-white transition-colors">
-                                  {item.title}
-                                </span>
-                              </div>
                               <div className="flex items-center">
                                 <div
                                   className="flex items-center gap-1.5 px-2 py-1 rounded-md text-xs"
@@ -2540,6 +2652,14 @@ const ProjectBoard = () => {
                                   <TypeIcon className="w-3 h-3" />
                                   {typeInfo.label}
                                 </div>
+                              </div>
+                              <div className="flex items-center gap-3 min-w-0">
+                                <span className="text-[10px] text-[#E0B954] font-mono font-medium shrink-0">
+                                  {item.key}
+                                </span>
+                                <span className="text-sm text-[#f5f5f5] truncate group-hover:text-white transition-colors">
+                                  {item.title}
+                                </span>
                               </div>
                               <div className="flex items-center">
                                 <StatusDotMenu
@@ -2850,8 +2970,11 @@ const ProjectBoard = () => {
                     'parent_id',
                   ) && (
                     <div>
-                      <label className="text-xs font-medium text-[#737373] block mb-1.5">
-                        Parent
+                      <label
+                        className="text-xs font-medium text-[#737373] block mb-1.5"
+                        title="This task is part of a larger story or task."
+                      >
+                        Belongs to
                       </label>
                       <WorkItemCombobox
                         value={editForm.parent_id ?? selectedItem.parent_id ?? null}
@@ -2862,6 +2985,7 @@ const ProjectBoard = () => {
                           'parent_id',
                         )}
                         excludeIds={parentExcludeIds}
+                        disabled={selectedItemHasChildren}
                         onChange={(newId, newKey) => {
                           const target =
                             newId != null
@@ -2886,6 +3010,12 @@ const ProjectBoard = () => {
                         }}
                         placeholder="No parent"
                       />
+                      {selectedItemHasChildren && (
+                        <p className="text-[10px] text-[#737373] mt-1.5 leading-snug">
+                          This task already has child tasks, so it can’t be nested under another
+                          item.
+                        </p>
+                      )}
                     </div>
                   )}
                   <div>
@@ -3074,78 +3204,85 @@ const ProjectBoard = () => {
                     ))}
                   </div>
 
-                  {/* Hierarchy breadcrumb */}
-                  {(selectedItem.epic_key || selectedItem.parent_key) &&
-                    (() => {
-                      const parentItem = selectedItem.parent_id
-                        ? workItems.find((wi) => wi.id === selectedItem.parent_id?.toString())
-                        : null;
-                      const epicItem = selectedItem.epic_id
-                        ? workItems.find((wi) => wi.id === selectedItem.epic_id?.toString())
-                        : null;
-                      return (
-                        <div>
-                          <div className="text-xs text-[#737373] mb-2 font-medium">Hierarchy</div>
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            {selectedItem.epic_key && epicItem && (
-                              <a
-                                href={`/project/${id}/board/${epicItem.id}`}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="flex items-center gap-1 px-2 py-1 rounded-md bg-[rgba(167,139,250,0.12)] text-[#A78BFA] text-xs hover:bg-[rgba(167,139,250,0.2)] transition-colors cursor-pointer"
-                              >
-                                Epic: {selectedItem.epic_key} ({epicItem.title})
-                              </a>
-                            )}
-                            {selectedItem.epic_key && selectedItem.parent_key && (
-                              <span className="text-[#555] text-xs">›</span>
-                            )}
-                            {selectedItem.parent_key && parentItem && (
-                              <a
-                                href={`/project/${id}/board/${parentItem.id}`}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="flex items-center gap-1 px-2 py-1 rounded-md bg-[rgba(224,185,84,0.10)] text-[#E0B954] text-xs hover:bg-[rgba(224,185,84,0.2)] transition-colors cursor-pointer"
-                              >
-                                Parent: {selectedItem.parent_key} ({parentItem.title})
-                              </a>
+                  {/* Hierarchy: Epic, Belongs to, Child Items — all in the row
+                      format used by Child Items, with empty states. */}
+                  {(() => {
+                    const subjectType = selectedItem.type as WorkItem['type'];
+                    const subjectId = parseInt(selectedItem.id);
+                    const showEpicSlot = fieldSupportsType(subjectType, 'epic_id');
+                    const showParentSlot = fieldSupportsType(subjectType, 'parent_id');
+                    // Bug is leaf-only, so don't show a child slot for bugs.
+                    const showChildSlot = subjectType !== 'bug';
+                    if (!showEpicSlot && !showParentSlot && !showChildSlot) return null;
+
+                    const epicItem = selectedItem.epic_id
+                      ? workItems.find((wi) => wi.id === selectedItem.epic_id?.toString())
+                      : null;
+                    const parentItem = selectedItem.parent_id
+                      ? workItems.find((wi) => wi.id === selectedItem.parent_id?.toString())
+                      : null;
+                    // Epics roll up children via epic_id; everything else via parent_id.
+                    const childItems = !showChildSlot
+                      ? []
+                      : subjectType === 'epic'
+                        ? workItems.filter((wi) => wi.epic_id === subjectId)
+                        : workItems.filter((wi) => wi.parent_id === subjectId);
+
+                    const renderRow = (target: WorkItem) => (
+                      <div
+                        key={target.id}
+                        className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.04)] cursor-pointer hover:border-[rgba(255,255,255,0.08)] transition-colors"
+                        onClick={() => navigate(`/project/${id}/board/${target.id}`)}
+                      >
+                        <span className="text-xs font-mono text-[#737373] flex-shrink-0">
+                          {target.key}
+                        </span>
+                        <span className="text-sm text-[#a3a3a3] truncate flex-1">
+                          {target.title}
+                        </span>
+                        <span className="text-xs text-[#555] capitalize flex-shrink-0">
+                          {target.status.replace(/_/g, ' ')}
+                        </span>
+                      </div>
+                    );
+
+                    const renderEmpty = (label: string) => (
+                      <div className="flex items-center px-3 py-2 rounded-lg border border-dashed border-[rgba(255,255,255,0.06)] text-xs text-[#555] italic">
+                        {label}
+                      </div>
+                    );
+
+                    return (
+                      <div className="space-y-4">
+                        {showEpicSlot && (
+                          <div>
+                            <div className="text-xs text-[#737373] mb-2 font-medium">Epic</div>
+                            {epicItem ? renderRow(epicItem) : renderEmpty('No epic')}
+                          </div>
+                        )}
+                        {showParentSlot && (
+                          <div>
+                            <div className="text-xs text-[#737373] mb-2 font-medium">
+                              Belongs to
+                            </div>
+                            {parentItem ? renderRow(parentItem) : renderEmpty('No parent')}
+                          </div>
+                        )}
+                        {showChildSlot && (
+                          <div>
+                            <div className="text-xs text-[#737373] mb-2 font-medium">
+                              Child Items
+                              {childItems.length > 0 ? ` (${childItems.length})` : ''}
+                            </div>
+                            {childItems.length > 0 ? (
+                              <div className="space-y-1.5">{childItems.map(renderRow)}</div>
+                            ) : (
+                              renderEmpty('No child items')
                             )}
                           </div>
-                        </div>
-                      );
-                    })()}
-
-                  {/* Child items */}
-                  {(() => {
-                    const children = workItems.filter(
-                      (wi) => wi.parent_id === parseInt(selectedItem.id),
-                    );
-                    return children.length > 0 ? (
-                      <div>
-                        <div className="text-xs text-[#737373] mb-2 font-medium">
-                          Child Items ({children.length})
-                        </div>
-                        <div className="space-y-1.5">
-                          {children.map((child) => (
-                            <div
-                              key={child.id}
-                              className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.04)] cursor-pointer hover:border-[rgba(255,255,255,0.08)] transition-colors"
-                              onClick={() => navigate(`/project/${id}/board/${child.id}`)}
-                            >
-                              <span className="text-xs font-mono text-[#737373] flex-shrink-0">
-                                {child.key}
-                              </span>
-                              <span className="text-sm text-[#a3a3a3] truncate flex-1">
-                                {child.title}
-                              </span>
-                              <span className="text-xs text-[#555] capitalize flex-shrink-0">
-                                {child.status.replace(/_/g, ' ')}
-                              </span>
-                            </div>
-                          ))}
-                        </div>
+                        )}
                       </div>
-                    ) : null;
+                    );
                   })()}
 
                   {/* Tags */}
@@ -3291,81 +3428,6 @@ const ProjectBoard = () => {
                       </div>
                     </div>
                   )}
-
-                  {/* Child Items (if this is an Epic) */}
-                  {selectedItem.type === 'epic' &&
-                    (() => {
-                      const childItems = workItems.filter(
-                        (wi) => wi.epic_id === parseInt(selectedItem.id),
-                      );
-                      return childItems.length > 0 ? (
-                        <div className="pt-4 border-t border-[rgba(255,255,255,0.05)]">
-                          <div className="text-xs text-[#737373] mb-3 font-medium">
-                            Child Items ({childItems.length})
-                          </div>
-                          <div className="space-y-2 max-h-96 overflow-y-auto">
-                            {childItems.map((child) => {
-                              const childTypeInfo = TYPE_CONFIG[child.type] || TYPE_CONFIG.task;
-                              const childPriorityStyle =
-                                PRIORITY_COLORS[child.priority] || PRIORITY_COLORS.medium;
-                              return (
-                                <a
-                                  key={child.id}
-                                  href={`/project/${id}/board/${child.id}`}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="block p-3 rounded-lg border border-[rgba(255,255,255,0.05)] bg-[rgba(255,255,255,0.01)] hover:bg-[rgba(255,255,255,0.03)] hover:border-[rgba(244,246,255,0.15)] cursor-pointer transition-all"
-                                >
-                                  <div className="flex items-start justify-between gap-2 mb-1.5">
-                                    <div className="flex items-center gap-2 flex-1">
-                                      <div
-                                        className="flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium flex-shrink-0"
-                                        style={{
-                                          backgroundColor: childTypeInfo.bg,
-                                          color: childTypeInfo.color,
-                                        }}
-                                      >
-                                        <childTypeInfo.icon className="w-2.5 h-2.5" />
-                                        {childTypeInfo.label}
-                                      </div>
-                                      <span className="text-[9px] text-[#E0B954] font-mono">
-                                        {child.key}
-                                      </span>
-                                    </div>
-                                    <span
-                                      className="text-[9px] px-1.5 py-0.5 rounded font-medium flex-shrink-0"
-                                      style={{
-                                        backgroundColor: childPriorityStyle.hex + '33',
-                                        color: childPriorityStyle.hex,
-                                      }}
-                                    >
-                                      {child.priority.charAt(0).toUpperCase() +
-                                        child.priority.slice(1)}
-                                    </span>
-                                  </div>
-                                  <p className="text-xs text-[#a3a3a3] line-clamp-1 mb-1.5">
-                                    {child.title}
-                                  </p>
-                                  <div className="flex items-center justify-between text-[9px] text-[#737373]">
-                                    <span>{child.remaining_hours}h left</span>
-                                    <span
-                                      className="px-1.5 py-0.5 rounded text-[9px]"
-                                      style={{
-                                        backgroundColor: `${(STATUS_CONFIG[child.status] || STATUS_CONFIG.todo).color}22`,
-                                        color: (STATUS_CONFIG[child.status] || STATUS_CONFIG.todo)
-                                          .color,
-                                      }}
-                                    >
-                                      {(STATUS_CONFIG[child.status] || STATUS_CONFIG.todo).label}
-                                    </span>
-                                  </div>
-                                </a>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      ) : null;
-                    })()}
 
                   {/* Comments Section */}
                   <div className="pt-4 border-t border-[rgba(255,255,255,0.05)]">
@@ -3528,7 +3590,15 @@ const ProjectBoard = () => {
                 <label className="text-xs font-medium text-[#737373] block mb-1.5">Type</label>
                 <select
                   value={createForm.type}
-                  onChange={(e) => setCreateForm((f) => ({ ...f, type: e.target.value }))}
+                  onChange={(e) => {
+                    const newType = e.target.value as WorkItem['type'];
+                    setCreateForm((f) => ({
+                      ...f,
+                      type: newType,
+                      epic_id: fieldSupportsType(newType, 'epic_id') ? f.epic_id : null,
+                      parent_id: fieldSupportsType(newType, 'parent_id') ? f.parent_id : null,
+                    }));
+                  }}
                   className="w-full h-10 bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.07)] text-[#f5f5f5] rounded-xl px-3 text-sm"
                 >
                   <option value="user_story">User Story</option>
@@ -3618,57 +3688,49 @@ const ProjectBoard = () => {
                   </select>
                 </div>
               </div>
-              {createForm.type !== 'task' && (
-                /* Hierarchy - Hidden for Tasks */
+              {(fieldSupportsType(createForm.type as WorkItem['type'], 'epic_id') ||
+                fieldSupportsType(createForm.type as WorkItem['type'], 'parent_id')) && (
                 <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-xs font-medium text-[#737373] block mb-1.5">
-                      Epic (optional)
-                    </label>
-                    <select
-                      value={createForm.epic_id || ''}
-                      onChange={(e) =>
-                        setCreateForm((f) => ({
-                          ...f,
-                          epic_id: e.target.value ? parseInt(e.target.value) : null,
-                        }))
-                      }
-                      className="w-full h-10 bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.07)] text-[#f5f5f5] rounded-xl px-3 text-sm"
-                    >
-                      <option value="">No Epic</option>
-                      {workItems
-                        .filter((wi) => wi.type === 'epic')
-                        .map((wi) => (
-                          <option key={wi.id} value={wi.id}>
-                            {wi.key} — {wi.title}
-                          </option>
-                        ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="text-xs font-medium text-[#737373] block mb-1.5">
-                      Parent Story (optional)
-                    </label>
-                    <select
-                      value={createForm.parent_id || ''}
-                      onChange={(e) =>
-                        setCreateForm((f) => ({
-                          ...f,
-                          parent_id: e.target.value ? parseInt(e.target.value) : null,
-                        }))
-                      }
-                      className="w-full h-10 bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.07)] text-[#f5f5f5] rounded-xl px-3 text-sm"
-                    >
-                      <option value="">No Parent</option>
-                      {workItems
-                        .filter((wi) => wi.type === 'user_story')
-                        .map((wi) => (
-                          <option key={wi.id} value={wi.id}>
-                            {wi.key} — {wi.title}
-                          </option>
-                        ))}
-                    </select>
-                  </div>
+                  {fieldSupportsType(createForm.type as WorkItem['type'], 'epic_id') && (
+                    <div>
+                      <label className="text-xs font-medium text-[#737373] block mb-1.5">
+                        Epic (optional)
+                      </label>
+                      <WorkItemCombobox
+                        value={createForm.epic_id}
+                        valueKey={null}
+                        items={workItems}
+                        allowedTypes={getAllowedTargetTypes(
+                          createForm.type as WorkItem['type'],
+                          'epic_id',
+                        )}
+                        onChange={(newId) => setCreateForm((f) => ({ ...f, epic_id: newId }))}
+                        placeholder="No epic"
+                      />
+                    </div>
+                  )}
+                  {fieldSupportsType(createForm.type as WorkItem['type'], 'parent_id') && (
+                    <div>
+                      <label
+                        className="text-xs font-medium text-[#737373] block mb-1.5"
+                        title="This task is part of a larger story or task."
+                      >
+                        Belongs to (optional)
+                      </label>
+                      <WorkItemCombobox
+                        value={createForm.parent_id}
+                        valueKey={null}
+                        items={workItems}
+                        allowedTypes={getAllowedTargetTypes(
+                          createForm.type as WorkItem['type'],
+                          'parent_id',
+                        )}
+                        excludeIds={depth1ParentExclusions}
+                        onChange={(newId) => setCreateForm((f) => ({ ...f, parent_id: newId }))}
+                        placeholder="No parent"
+                      />
+                    </div>
+                  )}
                 </div>
               )}
               {createForm.type === 'task' && (

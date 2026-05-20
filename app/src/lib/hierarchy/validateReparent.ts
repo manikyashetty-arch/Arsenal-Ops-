@@ -67,7 +67,33 @@ export function validateReparent(
     return { ok: false, reason: 'This would create a cycle' };
   }
 
+  // Depth-1 cap (matches backend services/hierarchy.py):
+  // - target itself must not already have a parent (would make subject depth-2)
+  // - subject must not already have children (would push them to depth-2)
+  if (field === 'parent_id') {
+    if (target.parent_id != null) {
+      return {
+        ok: false,
+        reason:
+          'That item is already a child of another item — can’t nest more than one level deep',
+      };
+    }
+    if (subjectHasChildren(subject, allItems)) {
+      return {
+        ok: false,
+        reason:
+          'This item already has children — giving it a parent would exceed the one-level nesting limit',
+      };
+    }
+  }
+
   return { ok: true };
+}
+
+export function subjectHasChildren(subject: HierarchyItem, allItems: HierarchyItem[]): boolean {
+  const subjectNumericId = Number(subject.id);
+  if (Number.isNaN(subjectNumericId)) return false;
+  return allItems.some((it) => it.parent_id === subjectNumericId);
 }
 
 export function wouldCreateCycle(
