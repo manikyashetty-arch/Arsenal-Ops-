@@ -21,7 +21,6 @@ import {
   Pencil,
   Trash2,
   X,
-  Save,
   ArrowLeft,
   BarChart3,
   Github,
@@ -39,13 +38,17 @@ import {
   Search,
   ArrowUpDown,
   KeyRound,
-  Check,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { toast, Toaster } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
 import { apiFetch } from '@/lib/api';
+import RoleModal from './modals/RoleModal';
+import EmployeeModal from './modals/EmployeeModal';
+import UserModal from './modals/UserModal';
+import GitHubModal from './modals/GitHubModal';
+import ProjectMembersModal from './modals/ProjectMembersModal';
 
 interface Employee {
   id: number;
@@ -2388,189 +2391,19 @@ const AdminDashboard = () => {
       </div>
 
       {/* Role Create/Edit Modal */}
-      {showRoleModal && (
-        <div
-          className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4"
-          onClick={() => !isSavingRole && setShowRoleModal(false)}
-        >
-          <div
-            className="bg-[#0d0d0d] border border-[rgba(255,255,255,0.07)] rounded-2xl w-full max-w-2xl shadow-2xl max-h-[88vh] flex flex-col"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between p-5 border-b border-[rgba(255,255,255,0.05)]">
-              <div>
-                <h2 className="text-lg font-bold text-white">
-                  {editingRole ? `Edit Role - ${toPascalCase(editingRole.name)}` : 'Add Role'}
-                </h2>
-                {editingRole?.is_system && (
-                  <p className="text-xs text-[#737373] mt-0.5">
-                    System role — name is locked, but description and capabilities can be edited.
-                  </p>
-                )}
-              </div>
-              <button
-                onClick={() => !isSavingRole && setShowRoleModal(false)}
-                className="p-2 rounded-lg hover:bg-[rgba(244,246,255,0.05)] text-[#737373] hover:text-white"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <div className="p-5 space-y-4 overflow-y-auto">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs font-medium text-[#737373] block mb-1.5">
-                    Role Name *
-                  </label>
-                  <Input
-                    value={roleForm.name}
-                    onChange={(e) => setRoleForm((f) => ({ ...f, name: e.target.value }))}
-                    placeholder="e.g., qa_lead, finance_viewer"
-                    disabled={editingRole?.is_system}
-                    className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl h-10 disabled:opacity-50"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs font-medium text-[#737373] block mb-1.5">
-                    Description
-                  </label>
-                  <Input
-                    value={roleForm.description}
-                    onChange={(e) => setRoleForm((f) => ({ ...f, description: e.target.value }))}
-                    placeholder="Brief summary of who gets this role"
-                    className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl h-10"
-                  />
-                </div>
-              </div>
-
-              <div className="border border-[rgba(255,255,255,0.06)] rounded-xl">
-                <div className="px-4 py-3 border-b border-[rgba(255,255,255,0.05)] flex items-center justify-between">
-                  <div>
-                    <h3 className="text-sm font-medium text-white">Capabilities</h3>
-                    <p className="text-[10px] text-[#737373] mt-0.5">
-                      Wildcards (e.g. <code className="text-[#a3a3a3]">project.*</code>) cover all
-                      keys under that prefix, including ones added later.
-                    </p>
-                  </div>
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={roleForm.capability_keys.includes('*')}
-                      onChange={() => toggleGrant('*')}
-                      className="w-4 h-4 rounded cursor-pointer"
-                    />
-                    <span className="text-xs text-white">
-                      Full access (<code className="text-[#E0B954]">*</code>)
-                    </span>
-                  </label>
-                </div>
-                <div className="p-4 space-y-4 max-h-[40vh] overflow-y-auto">
-                  {groupedCapabilities.map((group) => {
-                    const wildcardSelected = roleForm.capability_keys.includes(group.wildcard);
-                    const fullAccessSelected = roleForm.capability_keys.includes('*');
-                    return (
-                      <div key={group.prefix} className="space-y-1.5">
-                        <div className="flex items-center justify-between">
-                          <h4 className="text-xs font-semibold uppercase tracking-wide text-[#737373]">
-                            {group.prefix}
-                          </h4>
-                          <label className="flex items-center gap-2 cursor-pointer">
-                            <input
-                              type="checkbox"
-                              checked={wildcardSelected}
-                              disabled={fullAccessSelected}
-                              onChange={() => toggleGrant(group.wildcard)}
-                              className="w-4 h-4 rounded cursor-pointer disabled:opacity-40"
-                            />
-                            <span className="text-[11px] text-[#a3a3a3]">
-                              Grant all <code className="text-[#E0B954]">{group.wildcard}</code>
-                            </span>
-                          </label>
-                        </div>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-1">
-                          {group.caps.map((cap) => {
-                            const isSelected = roleForm.capability_keys.includes(cap.key);
-                            const covered =
-                              !isSelected && isCoveredByWildcard(cap.key, roleForm.capability_keys);
-                            return (
-                              <label
-                                key={cap.key}
-                                className={`flex items-start gap-2 p-2 rounded-lg cursor-pointer transition ${
-                                  covered
-                                    ? 'bg-[rgba(224,185,84,0.04)]'
-                                    : 'hover:bg-[rgba(255,255,255,0.02)]'
-                                }`}
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={isSelected || covered}
-                                  onChange={() => toggleGrant(cap.key)}
-                                  className="w-4 h-4 mt-0.5 rounded cursor-pointer"
-                                />
-                                <div className="flex-1 min-w-0">
-                                  <div className="flex items-center gap-1.5">
-                                    <code
-                                      className={`text-[11px] ${
-                                        covered ? 'text-[#E0B954]/70' : 'text-[#E0B954]'
-                                      }`}
-                                    >
-                                      {cap.key}
-                                    </code>
-                                    {covered && (
-                                      <span
-                                        className="text-[9px] text-[#737373] inline-flex items-center gap-0.5"
-                                        title="Granted via a wildcard. Unchecking will expand the wildcard into explicit per-key grants minus this one."
-                                      >
-                                        <Check className="w-2.5 h-2.5" />
-                                        covered
-                                      </span>
-                                    )}
-                                  </div>
-                                  <p className="text-[10px] text-[#737373] truncate">
-                                    {cap.description}
-                                  </p>
-                                </div>
-                              </label>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    );
-                  })}
-                  {groupedCapabilities.length === 0 && (
-                    <p className="text-sm text-[#737373] text-center py-6">
-                      Capability registry is empty.
-                    </p>
-                  )}
-                </div>
-                <div className="px-4 py-2 border-t border-[rgba(255,255,255,0.05)] text-[10px] text-[#737373]">
-                  {roleForm.capability_keys.length === 0
-                    ? 'No grants selected — users with only this role will see nothing.'
-                    : `${roleForm.capability_keys.length} grant${
-                        roleForm.capability_keys.length === 1 ? '' : 's'
-                      } selected.`}
-                </div>
-              </div>
-            </div>
-            <div className="flex justify-end gap-2 p-5 border-t border-[rgba(255,255,255,0.05)]">
-              <button
-                onClick={() => !isSavingRole && setShowRoleModal(false)}
-                className="px-4 py-2 rounded-lg text-[#737373] hover:bg-[rgba(255,255,255,0.05)] transition disabled:opacity-50"
-                disabled={isSavingRole}
-              >
-                Cancel
-              </button>
-              <Button
-                onClick={handleSaveRole}
-                disabled={isSavingRole || !roleForm.name.trim()}
-                className="bg-gradient-to-r from-[#E0B954] to-[#B8872A] text-white rounded-xl px-6 font-medium shadow-lg shadow-[#B8872A]/20 disabled:opacity-50"
-              >
-                <Save className="w-4 h-4 mr-2" />
-                {isSavingRole ? 'Saving…' : editingRole ? 'Update Role' : 'Create Role'}
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
+      <RoleModal
+        open={showRoleModal}
+        onClose={() => setShowRoleModal(false)}
+        editingRole={editingRole}
+        roleForm={roleForm}
+        setRoleForm={setRoleForm}
+        isSavingRole={isSavingRole}
+        groupedCapabilities={groupedCapabilities}
+        toggleGrant={toggleGrant}
+        isCoveredByWildcard={isCoveredByWildcard}
+        toPascalCase={toPascalCase}
+        handleSaveRole={handleSaveRole}
+      />
 
       {/* Role Management Modal (per-user role assignment) */}
       {openRoleDropdown &&
@@ -2658,512 +2491,49 @@ const AdminDashboard = () => {
           );
         })()}
 
-      {/* Employee Modal */}
-      {showEmployeeModal && (
-        <div
-          className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4"
-          onClick={() => setShowEmployeeModal(false)}
-        >
-          <div
-            className="bg-[#0d0d0d] border border-[rgba(255,255,255,0.07)] rounded-2xl w-full max-w-md shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between p-5 border-b border-[rgba(255,255,255,0.05)]">
-              <h2 className="text-lg font-bold text-white">
-                {editingEmployee ? 'Edit Employee' : 'Add Employee'}
-              </h2>
-              <button
-                onClick={() => setShowEmployeeModal(false)}
-                className="p-2 rounded-lg hover:bg-[rgba(244,246,255,0.05)] text-[#737373] hover:text-white"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <div className="p-5 space-y-4">
-              <div>
-                <label className="text-xs font-medium text-[#737373] block mb-1.5">Name *</label>
-                <Input
-                  value={employeeForm.name}
-                  onChange={(e) => setEmployeeForm((f) => ({ ...f, name: e.target.value }))}
-                  placeholder="John Doe"
-                  className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl h-10"
-                />
-              </div>
-              <div>
-                <label className="text-xs font-medium text-[#737373] block mb-1.5">Email *</label>
-                <Input
-                  type="email"
-                  value={employeeForm.email}
-                  onChange={(e) => setEmployeeForm((f) => ({ ...f, email: e.target.value }))}
-                  placeholder="john@company.com"
-                  className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl h-10"
-                />
-              </div>
-              <div>
-                <label className="text-xs font-medium text-[#737373] block mb-1.5">
-                  GitHub Username
-                </label>
-                <Input
-                  value={employeeForm.github_username}
-                  onChange={(e) =>
-                    setEmployeeForm((f) => ({ ...f, github_username: e.target.value }))
-                  }
-                  placeholder="johndoe"
-                  className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl h-10"
-                />
-              </div>
-              <div>
-                <label className="text-xs font-medium text-[#737373] block mb-1.5">
-                  Specialization
-                </label>
-                <select
-                  value={employeeForm.specialization}
-                  onChange={(e) =>
-                    setEmployeeForm((f) => ({ ...f, specialization: e.target.value }))
-                  }
-                  className="w-full h-10 bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.07)] text-[#f5f5f5] rounded-xl px-3 text-sm"
-                >
-                  <option value="">Select specialization</option>
-                  <option value="frontend">Frontend</option>
-                  <option value="backend">Backend</option>
-                  <option value="fullstack">Full Stack</option>
-                  <option value="devops">DevOps</option>
-                  <option value="qa">QA</option>
-                  <option value="mobile">Mobile</option>
-                  <option value="data">Data</option>
-                  <option value="ml">Machine Learning</option>
-                  <option value="design">Design</option>
-                  <option value="pm">Product Manager</option>
-                </select>
-              </div>
-            </div>
-            <div className="flex justify-end gap-3 p-5 border-t border-[rgba(255,255,255,0.05)]">
-              <Button
-                variant="ghost"
-                onClick={() => setShowEmployeeModal(false)}
-                className="text-[#737373] rounded-xl px-5"
-              >
-                Cancel
-              </Button>
-              <Button
-                onClick={handleSaveEmployee}
-                className="bg-gradient-to-r from-[#E0B954] to-[#B8872A] text-white rounded-xl px-6 font-medium shadow-lg shadow-[#B8872A]/20"
-              >
-                <Save className="w-4 h-4 mr-2" />
-                {editingEmployee ? 'Update' : 'Create'}
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
+      <EmployeeModal
+        open={showEmployeeModal}
+        onClose={() => setShowEmployeeModal(false)}
+        editingEmployee={editingEmployee}
+        employeeForm={employeeForm}
+        setEmployeeForm={setEmployeeForm}
+        handleSaveEmployee={handleSaveEmployee}
+      />
 
-      {/* User Modal */}
-      {showUserModal && (
-        <div
-          className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4"
-          onClick={() => setShowUserModal(false)}
-        >
-          <div
-            className="bg-[#0d0d0d] border border-[rgba(255,255,255,0.07)] rounded-2xl w-full max-w-md shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between p-5 border-b border-[rgba(255,255,255,0.05)]">
-              <h2 className="text-lg font-bold text-white">Add New User</h2>
-              <button
-                onClick={() => setShowUserModal(false)}
-                className="p-2 rounded-lg hover:bg-[rgba(244,246,255,0.05)] text-[#737373] hover:text-white"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <div className="p-5 space-y-4">
-              {generatedPassword ? (
-                <div className="space-y-4">
-                  <div className="p-4 bg-[rgba(224,185,84,0.1)] border border-[rgba(224,185,84,0.2)] rounded-xl">
-                    <p className="text-sm text-[#E0B954] font-medium mb-2">
-                      User Created Successfully!
-                    </p>
-                    <p className="text-xs text-[#a3a3a3] mb-2">
-                      Share this temporary password with the user:
-                    </p>
-                    <div className="flex items-center gap-2">
-                      <code className="flex-1 bg-[rgba(244,246,255,0.05)] px-3 py-2 rounded-lg text-sm text-white font-mono">
-                        {generatedPassword}
-                      </code>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => {
-                          navigator.clipboard.writeText(generatedPassword);
-                          toast.success('Copied to clipboard');
-                        }}
-                        className="text-[#737373] hover:text-white"
-                      >
-                        Copy
-                      </Button>
-                    </div>
-                  </div>
-                  <p className="text-xs text-[#737373]">
-                    They will be required to change this password on first login.
-                  </p>
-                </div>
-              ) : (
-                <>
-                  <div>
-                    <label className="text-xs font-medium text-[#737373] block mb-1.5">
-                      Name *
-                    </label>
-                    <Input
-                      value={userForm.name}
-                      onChange={(e) => setUserForm((f) => ({ ...f, name: e.target.value }))}
-                      placeholder="John Doe"
-                      className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl h-10"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs font-medium text-[#737373] block mb-1.5">
-                      Email *
-                    </label>
-                    <Input
-                      type="email"
-                      value={userForm.email}
-                      onChange={(e) => setUserForm((f) => ({ ...f, email: e.target.value }))}
-                      placeholder="john@company.com"
-                      className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl h-10"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs font-medium text-[#737373] block mb-2">Roles</label>
-                    <div className="space-y-2">
-                      <label className="flex items-center gap-2 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={userForm.roles.includes('admin')}
-                          onChange={() => handleRoleToggle('admin')}
-                          className="w-4 h-4 rounded border-[rgba(244,246,255,0.2)] bg-[rgba(255,255,255,0.025)] text-[#E0B954] focus:ring-[#E0B954]"
-                        />
-                        <span className="text-sm text-[#f5f5f5]">Admin</span>
-                        <span className="text-xs text-[#737373]">(Full access)</span>
-                      </label>
-                      <label className="flex items-center gap-2 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={userForm.roles.includes('project_manager')}
-                          onChange={() => handleRoleToggle('project_manager')}
-                          className="w-4 h-4 rounded border-[rgba(244,246,255,0.2)] bg-[rgba(255,255,255,0.025)] text-[#C79E3B] focus:ring-[#C79E3B]"
-                        />
-                        <span className="text-sm text-[#f5f5f5]">Project Manager</span>
-                        <span className="text-xs text-[#737373]">(PM tab access)</span>
-                      </label>
-                      <label className="flex items-center gap-2 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={userForm.roles.includes('developer')}
-                          onChange={() => handleRoleToggle('developer')}
-                          className="w-4 h-4 rounded border-[rgba(244,246,255,0.2)] bg-[rgba(255,255,255,0.025)] text-[#E0B954] focus:ring-[#E0B954]"
-                        />
-                        <span className="text-sm text-[#f5f5f5]">Developer</span>
-                        <span className="text-xs text-[#737373]">(Project access)</span>
-                      </label>
-                    </div>
-                  </div>
-                </>
-              )}
-            </div>
-            <div className="flex justify-end gap-3 p-5 border-t border-[rgba(255,255,255,0.05)]">
-              <Button
-                variant="ghost"
-                onClick={() => {
-                  setShowUserModal(false);
-                  setGeneratedPassword(null);
-                }}
-                className="text-[#737373] rounded-xl px-5"
-              >
-                {generatedPassword ? 'Close' : 'Cancel'}
-              </Button>
-              {!generatedPassword && (
-                <Button
-                  onClick={handleSaveUser}
-                  className="bg-gradient-to-r from-[#E0B954] to-[#B8872A] text-white rounded-xl px-6 font-medium shadow-lg shadow-[#B8872A]/20"
-                >
-                  <Plus className="w-4 h-4 mr-2" />
-                  Create User
-                </Button>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
+      <UserModal
+        open={showUserModal}
+        onClose={() => setShowUserModal(false)}
+        userForm={userForm}
+        setUserForm={setUserForm}
+        generatedPassword={generatedPassword}
+        setGeneratedPassword={setGeneratedPassword}
+        handleRoleToggle={handleRoleToggle}
+        handleSaveUser={handleSaveUser}
+      />
 
-      {/* GitHub Settings Modal */}
-      {showGitHubModal && editingProject && (
-        <div
-          className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4"
-          onClick={() => setShowGitHubModal(false)}
-        >
-          <div
-            className="bg-[#0d0d0d] border border-[rgba(255,255,255,0.07)] rounded-2xl w-full max-w-md shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between p-5 border-b border-[rgba(255,255,255,0.05)]">
-              <div>
-                <h2 className="text-lg font-bold text-white">GitHub Settings</h2>
-                <p className="text-xs text-[#737373] mt-0.5">{editingProject.name}</p>
-              </div>
-              <button
-                onClick={() => setShowGitHubModal(false)}
-                className="p-2 rounded-lg hover:bg-[rgba(244,246,255,0.05)] text-[#737373] hover:text-white"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <div className="p-5 space-y-4">
-              <div>
-                <label className="text-xs font-medium text-[#737373] block mb-1.5">
-                  Repository URL
-                </label>
-                <Input
-                  value={gitHubForm.github_repo_url}
-                  onChange={(e) =>
-                    setGitHubForm((f) => ({ ...f, github_repo_url: e.target.value }))
-                  }
-                  placeholder="https://github.com/org/repo"
-                  className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl h-10"
-                />
-              </div>
-              <div>
-                <label className="text-xs font-medium text-[#737373] block mb-1.5">
-                  Repository Name (org/repo)
-                </label>
-                <Input
-                  value={gitHubForm.github_repo_name}
-                  onChange={(e) =>
-                    setGitHubForm((f) => ({ ...f, github_repo_name: e.target.value }))
-                  }
-                  placeholder="myorg/myrepo"
-                  className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl h-10"
-                />
-              </div>
-              <div>
-                <label className="text-xs font-medium text-[#737373] block mb-1.5">
-                  GitHub Token
-                </label>
-                <Input
-                  type="password"
-                  value={gitHubForm.github_token}
-                  onChange={(e) => setGitHubForm((f) => ({ ...f, github_token: e.target.value }))}
-                  placeholder={
-                    editingProject.has_github_token
-                      ? 'Token already set (leave empty to keep)'
-                      : 'ghp_xxxx...'
-                  }
-                  className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl h-10"
-                />
-                <p className="text-[10px] text-[#737373] mt-1">
-                  Token needs repo scope for invitations. Leave empty to keep existing token.
-                </p>
-              </div>
-            </div>
-            <div className="flex justify-end gap-3 p-5 border-t border-[rgba(255,255,255,0.05)]">
-              <Button
-                variant="ghost"
-                onClick={() => setShowGitHubModal(false)}
-                className="text-[#737373] rounded-xl px-5"
-              >
-                Cancel
-              </Button>
-              <Button
-                onClick={handleSaveGitHubSettings}
-                className="bg-gradient-to-r from-[#E0B954] to-[#B8872A] text-white rounded-xl px-6 font-medium shadow-lg shadow-[#B8872A]/20"
-              >
-                <Github className="w-4 h-4 mr-2" />
-                Save Settings
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
+      <GitHubModal
+        open={showGitHubModal}
+        onClose={() => setShowGitHubModal(false)}
+        editingProject={editingProject}
+        gitHubForm={gitHubForm}
+        setGitHubForm={setGitHubForm}
+        handleSaveGitHubSettings={handleSaveGitHubSettings}
+      />
 
-      {/* Project Members Modal */}
-      {showProjectMembersModal && selectedProjectForMembers && (
-        <div
-          className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4"
-          onClick={() => setShowProjectMembersModal(false)}
-        >
-          <div
-            className="bg-[#0d0d0d] border border-[rgba(255,255,255,0.07)] rounded-2xl w-full max-w-2xl shadow-2xl max-h-[85vh] flex flex-col"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between p-5 border-b border-[rgba(255,255,255,0.05)]">
-              <div>
-                <h2 className="text-lg font-bold text-white">Project Members</h2>
-                <div className="text-xs text-[#737373] mt-0.5">
-                  {selectedProjectForMembers.name}
-                </div>
-              </div>
-              <button
-                onClick={() => setShowProjectMembersModal(false)}
-                className="p-2 rounded-lg hover:bg-[rgba(244,246,255,0.05)] text-[#737373] hover:text-white"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="p-5 space-y-5 overflow-y-auto">
-              {/* Current members */}
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <h3 className="text-xs font-semibold text-[#a3a3a3] uppercase tracking-wider">
-                    Current Members
-                  </h3>
-                  <span className="text-xs text-[#737373]">{projectMembers.length} total</span>
-                </div>
-                {projectMembersLoading ? (
-                  <div className="flex items-center justify-center py-8">
-                    <div className="animate-spin w-6 h-6 border-2 border-[#E0B954] border-t-transparent rounded-full" />
-                  </div>
-                ) : projectMembers.length === 0 ? (
-                  <div className="text-center py-8 text-sm text-[#737373] bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-xl">
-                    No members assigned yet.
-                  </div>
-                ) : (
-                  <ul className="space-y-2">
-                    {projectMembers.map((m) => (
-                      <li
-                        key={m.id}
-                        className="flex items-center justify-between gap-3 p-3 rounded-xl bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)]"
-                      >
-                        <div className="flex items-center gap-3 min-w-0">
-                          <div className="w-8 h-8 rounded-full bg-[rgba(224,185,84,0.2)] flex items-center justify-center text-sm font-medium text-[#E0B954] flex-shrink-0">
-                            {m.name.charAt(0).toUpperCase()}
-                          </div>
-                          <div className="min-w-0">
-                            <div className="text-sm font-medium text-white truncate flex items-center gap-2">
-                              {m.name}
-                              {m.is_admin && (
-                                <span className="px-1.5 py-0.5 rounded bg-[rgba(224,185,84,0.15)] text-[#E0B954] text-[9px] font-semibold uppercase tracking-wider">
-                                  Admin
-                                </span>
-                              )}
-                            </div>
-                            <div className="text-xs text-[#737373] truncate">
-                              {m.email}
-                              {m.role && <span className="ml-2 capitalize">· {m.role}</span>}
-                            </div>
-                          </div>
-                        </div>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleRemoveProjectMember(m.id)}
-                          disabled={removeMemberMutation.isPending}
-                          className="text-red-400 hover:text-red-300 h-8 w-8 p-0 flex-shrink-0"
-                          title="Remove from project"
-                        >
-                          {removeMemberMutation.isPending ? (
-                            <div className="w-3.5 h-3.5 border border-red-400/30 border-t-red-400 rounded-full animate-spin" />
-                          ) : (
-                            <Trash2 className="w-4 h-4" />
-                          )}
-                        </Button>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-
-              {/* Add member */}
-              <div>
-                <h3 className="text-xs font-semibold text-[#a3a3a3] uppercase tracking-wider mb-2">
-                  Add Member
-                </h3>
-                {(() => {
-                  const assignedIds = new Set(projectMembers.map((m) => m.id));
-                  const available = employees.filter((e) => !assignedIds.has(e.id));
-                  return (
-                    <div className="p-3 rounded-xl bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] space-y-3">
-                      {available.length === 0 ? (
-                        <div className="text-xs text-[#737373] py-2 text-center">
-                          All employees are already on this project.
-                        </div>
-                      ) : (
-                        <>
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                            <div>
-                              <label className="text-[10px] font-medium text-[#737373] uppercase tracking-wider block mb-1.5">
-                                Employee
-                              </label>
-                              <select
-                                value={addMemberForm.developer_id}
-                                onChange={(e) =>
-                                  setAddMemberForm((f) => ({ ...f, developer_id: e.target.value }))
-                                }
-                                className="w-full h-10 bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.07)] text-[#f5f5f5] rounded-xl px-3 text-sm"
-                              >
-                                <option value="">Select an employee</option>
-                                {available.map((emp) => (
-                                  <option key={emp.id} value={emp.id}>
-                                    {emp.name} · {emp.email}
-                                  </option>
-                                ))}
-                              </select>
-                            </div>
-                            <div>
-                              <label className="text-[10px] font-medium text-[#737373] uppercase tracking-wider block mb-1.5">
-                                Role
-                              </label>
-                              <select
-                                value={addMemberForm.role}
-                                onChange={(e) =>
-                                  setAddMemberForm((f) => ({ ...f, role: e.target.value }))
-                                }
-                                className="w-full h-10 bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.07)] text-[#f5f5f5] rounded-xl px-3 text-sm"
-                              >
-                                <option value="developer">Developer</option>
-                                <option value="lead">Lead</option>
-                                <option value="qa">QA</option>
-                                <option value="designer">Designer</option>
-                                <option value="pm">Product Manager</option>
-                              </select>
-                            </div>
-                          </div>
-                          <Button
-                            onClick={handleAddProjectMember}
-                            disabled={addMemberMutation.isPending || !addMemberForm.developer_id}
-                            className="w-full h-9 bg-gradient-to-r from-[#E0B954] to-[#B8872A] text-white rounded-xl font-medium disabled:opacity-50"
-                          >
-                            {addMemberMutation.isPending ? (
-                              <>
-                                <div className="w-3.5 h-3.5 border border-white/30 border-t-white rounded-full animate-spin mr-2" />
-                                Adding...
-                              </>
-                            ) : (
-                              <>
-                                <Plus className="w-4 h-4 mr-1.5" />
-                                Add to Project
-                              </>
-                            )}
-                          </Button>
-                        </>
-                      )}
-                    </div>
-                  );
-                })()}
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-3 p-5 border-t border-[rgba(255,255,255,0.05)]">
-              <Button
-                variant="ghost"
-                onClick={() => setShowProjectMembersModal(false)}
-                className="text-[#737373] rounded-xl px-5"
-              >
-                Close
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ProjectMembersModal
+        open={showProjectMembersModal}
+        onClose={() => setShowProjectMembersModal(false)}
+        selectedProjectForMembers={selectedProjectForMembers}
+        projectMembers={projectMembers}
+        projectMembersLoading={projectMembersLoading}
+        employees={employees}
+        addMemberForm={addMemberForm}
+        setAddMemberForm={setAddMemberForm}
+        handleAddProjectMember={handleAddProjectMember}
+        handleRemoveProjectMember={handleRemoveProjectMember}
+        addMemberPending={addMemberMutation.isPending}
+        removeMemberPending={removeMemberMutation.isPending}
+      />
     </div>
   );
 };
