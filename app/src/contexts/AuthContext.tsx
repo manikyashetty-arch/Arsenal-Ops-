@@ -1,4 +1,13 @@
-import { createContext, useContext, useState, useEffect, useRef, useCallback, ReactNode } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  ReactNode,
+} from 'react';
 import { API_BASE_URL } from '@/config/api';
 import { matchesCapability } from '@/lib/capabilities';
 
@@ -6,25 +15,26 @@ interface User {
   id: number;
   email: string;
   name: string;
-  role: string;  // Comma-separated roles: 'admin', 'project_manager', 'developer', or 'admin,project_manager'
+  role: string; // Comma-separated roles: 'admin', 'project_manager', 'developer', or 'admin,project_manager'
   is_first_login: boolean;
 }
 
 // Helper functions for role checking
 export const hasRole = (userRole: string | undefined, requiredRole: string): boolean => {
   if (!userRole) return false;
-  const roles = userRole.split(',').map(r => r.trim());
+  const roles = userRole.split(',').map((r) => r.trim());
   return roles.includes(requiredRole);
 };
 
 export const hasAnyRole = (userRole: string | undefined, requiredRoles: string[]): boolean => {
   if (!userRole) return false;
-  const roles = userRole.split(',').map(r => r.trim());
-  return requiredRoles.some(role => roles.includes(role));
+  const roles = userRole.split(',').map((r) => r.trim());
+  return requiredRoles.some((role) => roles.includes(role));
 };
 
 export const isAdmin = (user: User | null): boolean => hasRole(user?.role, 'admin');
-export const isProjectManager = (user: User | null): boolean => hasAnyRole(user?.role, ['admin', 'project_manager']);
+export const isProjectManager = (user: User | null): boolean =>
+  hasAnyRole(user?.role, ['admin', 'project_manager']);
 export const isDeveloper = (user: User | null): boolean => hasRole(user?.role, 'developer');
 
 interface AuthContextType {
@@ -34,10 +44,10 @@ interface AuthContextType {
   isAuthenticated: boolean;
   login: (email: string, password: string) => Promise<void>;
   loginWithGoogle: (idToken: string) => Promise<void>;
+  loginDev: () => Promise<void>;
   logout: () => void;
   changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
   checkAuth: () => Promise<void>;
-  idleTime: number;
   showWarning: boolean;
   dismissWarning: () => void;
   // RBAC capabilities
@@ -67,10 +77,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   });
   const [token, setToken] = useState<string | null>(localStorage.getItem('token'));
   const [isLoading, setIsLoading] = useState(!!token); // Only loading if we have a token
-  const [idleTime, setIdleTime] = useState(0);
   const [showWarning, setShowWarning] = useState(false);
   const [capabilities, setCapabilities] = useState<string[]>(() => {
-    // Restore from localStorage so UI doesn't flash unauthorized on reload
+    // Restore from localStorage so UI doesn't flash unauthorized on reload.
     const saved = localStorage.getItem('capabilities');
     if (saved) {
       try {
@@ -82,69 +91,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     return [];
   });
-  
+
   const lastActivityRef = useRef(Date.now());
+  // Mirrors `showWarning` so `updateActivity` can read it in O(1) without
+  // re-subscribing the event listeners every time the state changes.
+  const showWarningRef = useRef(false);
   const isAuthenticated = !!user && !!token;
 
-  // Check authentication on mount and when token changes
-  useEffect(() => {
-    // If there's a token in localStorage, validate it
-    if (token) {
-      checkAuth();
-    } else {
-      setIsLoading(false);
-    }
-  }, []);
-
-  // Activity tracking
-  useEffect(() => {
-    if (!isAuthenticated) return;
-
-    const updateActivity = () => {
-      lastActivityRef.current = Date.now();
-      setIdleTime(0);
-      setShowWarning(false);
-    };
-
-    // Track user activity
-    const events = ['mousedown', 'keydown', 'touchstart', 'scroll', 'mousemove'];
-    events.forEach(event => {
-      document.addEventListener(event, updateActivity, true);
-    });
-
-    // Check idle time every minute
-    const interval = setInterval(() => {
-      const now = Date.now();
-      const idle = now - lastActivityRef.current;
-      setIdleTime(idle);
-
-      if (idle >= IDLE_TIMEOUT) {
-        // Auto logout after 30 minutes
-        logout();
-      } else if (idle >= WARNING_TIME) {
-        // Show warning at 25 minutes
-        setShowWarning(true);
-      }
-    }, 60000); // Check every minute
-
-    return () => {
-      events.forEach(event => {
-        document.removeEventListener(event, updateActivity, true);
-      });
-      clearInterval(interval);
-    };
-  }, [isAuthenticated]);
-
-  const dismissWarning = () => {
-    setShowWarning(false);
-    lastActivityRef.current = Date.now();
-    setIdleTime(0);
-  };
-
-  const fetchCapabilitiesWith = async (currentToken: string) => {
+  // Fetch + cache the user's effective capabilities. Keeps stale cache on
+  // failure so a transient backend hiccup doesn't wipe every gated UI.
+  const fetchCapabilitiesWith = useCallback(async (currentToken: string) => {
     try {
       const res = await fetch(`${API_BASE_URL}/api/auth/me/capabilities`, {
-        headers: { 'Authorization': `Bearer ${currentToken}` },
+        headers: { Authorization: `Bearer ${currentToken}` },
       });
       if (res.ok) {
         const data = await res.json();
@@ -152,24 +111,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setCapabilities(caps);
         localStorage.setItem('capabilities', JSON.stringify(caps));
       }
-      // On non-ok, intentionally keep the previously cached set — better than wiping
-      // every gated UI on a transient backend hiccup.
     } catch {
-      // same: keep stale cache on network error
+      // keep stale cache on network error
     }
-  };
+  }, []);
 
-  const refreshCapabilities = async () => {
+  const refreshCapabilities = useCallback(async () => {
     const currentToken = token || localStorage.getItem('token');
     if (currentToken) await fetchCapabilitiesWith(currentToken);
-  };
+  }, [token, fetchCapabilitiesWith]);
 
-  const can = useCallback(
-    (cap: string) => matchesCapability(cap, capabilities),
-    [capabilities],
-  );
+  const can = useCallback((cap: string) => matchesCapability(cap, capabilities), [capabilities]);
 
-  const checkAuth = async () => {
+  const logout = useCallback(() => {
+    setUser(null);
+    setToken(null);
+    showWarningRef.current = false;
+    setShowWarning(false);
+    setCapabilities([]);
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    localStorage.removeItem('capabilities');
+  }, []);
+
+  const checkAuth = useCallback(async () => {
     try {
       const currentToken = token || localStorage.getItem('token');
       if (!currentToken) {
@@ -179,8 +144,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       const response = await fetch(`${API_BASE_URL}/api/auth/me`, {
         headers: {
-          'Authorization': `Bearer ${currentToken}`
-        }
+          Authorization: `Bearer ${currentToken}`,
+        },
       });
 
       if (response.ok) {
@@ -189,7 +154,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (!token) {
           setToken(currentToken);
         }
-        // Refresh capabilities alongside user so the two stay in sync
+        // Refresh capabilities alongside user so the two stay in sync.
         fetchCapabilitiesWith(currentToken);
       } else {
         // Token invalid, clear it
@@ -201,111 +166,197 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [token, logout, fetchCapabilitiesWith]);
 
-  const login = async (email: string, password: string) => {
-    const formData = new URLSearchParams();
-    formData.append('username', email);
-    formData.append('password', password);
+  // Check authentication on mount only. checkAuth is intentionally excluded
+  // from deps — we re-validate on token change via the regular login flow,
+  // not by re-running this effect.
+  useEffect(() => {
+    if (token) {
+      checkAuth();
+    } else {
+      setIsLoading(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-    const response = await fetch(`${API_BASE_URL}/api/auth/login`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded'
-      },
-      body: formData
+  // Activity tracking
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    const updateActivity = () => {
+      lastActivityRef.current = Date.now();
+      // No-op guard. mousedown/keydown/touchstart can fire several times per
+      // second; without this, every event would re-render AuthProvider and
+      // every useAuth() consumer. Only set state when the warning is up.
+      if (showWarningRef.current) {
+        showWarningRef.current = false;
+        setShowWarning(false);
+      }
+    };
+
+    // `mousemove` is excluded (60Hz noise; cursor motion is not engagement).
+    // `scroll` is also excluded — it fires continuously during a scroll
+    // gesture and adds nothing meaningful: the click/key/touch that
+    // initiated the scroll already counted as activity, and a user who is
+    // *only* scrolling (no clicks/keys/touch) for 23+ hours is exactly the
+    // idle-warning case the timeout is meant to catch.
+    const events = ['mousedown', 'keydown', 'touchstart'];
+    events.forEach((event) => {
+      document.addEventListener(event, updateActivity, true);
     });
 
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.detail || 'Login failed');
-    }
+    const interval = setInterval(() => {
+      const idle = Date.now() - lastActivityRef.current;
+      if (idle >= IDLE_TIMEOUT) {
+        logout();
+      } else if (idle >= WARNING_TIME && !showWarningRef.current) {
+        showWarningRef.current = true;
+        setShowWarning(true);
+      }
+    }, 60000);
 
-    const data = await response.json();
-    setToken(data.access_token);
-    setUser(data.user);
-    localStorage.setItem('token', data.access_token);
-    localStorage.setItem('user', JSON.stringify(data.user));
-    lastActivityRef.current = Date.now();
-    setIdleTime(0);
-    fetchCapabilitiesWith(data.access_token);
-  };
+    return () => {
+      events.forEach((event) => {
+        document.removeEventListener(event, updateActivity, true);
+      });
+      clearInterval(interval);
+    };
+  }, [isAuthenticated, logout]);
 
-  const loginWithGoogle = async (idToken: string) => {
-    const response = await fetch(`${API_BASE_URL}/api/auth/google-login`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ token: idToken })
-    });
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.detail || 'Google login failed');
-    }
-
-    const data = await response.json();
-    setToken(data.access_token);
-    setUser(data.user);
-    localStorage.setItem('token', data.access_token);
-    localStorage.setItem('user', JSON.stringify(data.user));
-    lastActivityRef.current = Date.now();
-    setIdleTime(0);
-    fetchCapabilitiesWith(data.access_token);
-  };
-
-  const logout = () => {
-    setUser(null);
-    setToken(null);
-    setIdleTime(0);
+  const dismissWarning = useCallback(() => {
+    showWarningRef.current = false;
     setShowWarning(false);
-    setCapabilities([]);
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
-    localStorage.removeItem('capabilities');
-  };
+    lastActivityRef.current = Date.now();
+  }, []);
 
-  const changePassword = async (currentPassword: string, newPassword: string) => {
-    const response = await fetch(`${API_BASE_URL}/api/auth/change-password`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      },
-      body: JSON.stringify({ current_password: currentPassword, new_password: newPassword })
-    });
+  const login = useCallback(
+    async (email: string, password: string) => {
+      const formData = new URLSearchParams();
+      formData.append('username', email);
+      formData.append('password', password);
 
+      const response = await fetch(`${API_BASE_URL}/api/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.detail || 'Login failed');
+      }
+
+      const data = await response.json();
+      setToken(data.access_token);
+      setUser(data.user);
+      localStorage.setItem('token', data.access_token);
+      localStorage.setItem('user', JSON.stringify(data.user));
+      lastActivityRef.current = Date.now();
+      fetchCapabilitiesWith(data.access_token);
+    },
+    [fetchCapabilitiesWith],
+  );
+
+  const loginWithGoogle = useCallback(
+    async (idToken: string) => {
+      const response = await fetch(`${API_BASE_URL}/api/auth/google-login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: idToken }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.detail || 'Google login failed');
+      }
+
+      const data = await response.json();
+      setToken(data.access_token);
+      setUser(data.user);
+      localStorage.setItem('token', data.access_token);
+      localStorage.setItem('user', JSON.stringify(data.user));
+      lastActivityRef.current = Date.now();
+      fetchCapabilitiesWith(data.access_token);
+    },
+    [fetchCapabilitiesWith],
+  );
+
+  const loginDev = useCallback(async () => {
+    const response = await fetch(`${API_BASE_URL}/api/auth/dev-login`, { method: 'POST' });
     if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.detail || 'Failed to change password');
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.detail || 'Dev login unavailable (set DEV_AUTH_BYPASS=1 on backend)');
     }
+    const data = await response.json();
+    setToken(data.access_token);
+    setUser(data.user);
+    localStorage.setItem('token', data.access_token);
+    localStorage.setItem('user', JSON.stringify(data.user));
+    lastActivityRef.current = Date.now();
+    fetchCapabilitiesWith(data.access_token);
+  }, [fetchCapabilitiesWith]);
 
-    // Update user state to reflect password changed
-    setUser(prev => prev ? { ...prev, is_first_login: false } : null);
-  };
+  const changePassword = useCallback(
+    async (currentPassword: string, newPassword: string) => {
+      const response = await fetch(`${API_BASE_URL}/api/auth/change-password`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+      });
 
-  return (
-    <AuthContext.Provider value={{
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.detail || 'Failed to change password');
+      }
+
+      // Update user state to reflect password changed
+      setUser((prev) => (prev ? { ...prev, is_first_login: false } : null));
+    },
+    [token],
+  );
+
+  const value = useMemo<AuthContextType>(
+    () => ({
       user,
       token,
       isLoading,
       isAuthenticated,
       login,
       loginWithGoogle,
+      loginDev,
       logout,
       changePassword,
       checkAuth,
-      idleTime,
       showWarning,
       dismissWarning,
       capabilities,
       can,
       refreshCapabilities,
-    }}>
-      {children}
-    </AuthContext.Provider>
+    }),
+    [
+      user,
+      token,
+      isLoading,
+      isAuthenticated,
+      showWarning,
+      login,
+      loginWithGoogle,
+      loginDev,
+      logout,
+      changePassword,
+      checkAuth,
+      dismissWarning,
+      capabilities,
+      can,
+      refreshCapabilities,
+    ],
   );
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
 export function useAuth() {

@@ -1,10 +1,13 @@
 import { BrowserRouter as Router, Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import { useState, useEffect, lazy, Suspense } from 'react';
+import { QueryClientProvider } from '@tanstack/react-query';
+import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { Login } from './components/Login';
 import { PasswordChange } from './components/PasswordChange';
 import { Button } from '@/components/ui/button';
 import { AlertTriangle, Clock } from 'lucide-react';
+import { queryClient } from '@/lib/queryClient';
 import './App.css';
 
 // Heavy routes are code-split so the initial bundle stays light.
@@ -21,10 +24,18 @@ const RouteSpinner = () => (
   </div>
 );
 
-function IdleWarningModal({ onStay, onLogout, remainingSeconds }: { onStay: () => void, onLogout: () => void, remainingSeconds: number }) {
+function IdleWarningModal({
+  onStay,
+  onLogout,
+  remainingSeconds,
+}: {
+  onStay: () => void;
+  onLogout: () => void;
+  remainingSeconds: number;
+}) {
   const minutes = Math.floor(remainingSeconds / 60);
   const seconds = remainingSeconds % 60;
-  
+
   return (
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
       <div className="bg-[#0d0d0d] border border-[rgba(255,255,255,0.07)] rounded-2xl w-full max-w-md shadow-2xl p-6">
@@ -37,7 +48,7 @@ function IdleWarningModal({ onStay, onLogout, remainingSeconds }: { onStay: () =
             <p className="text-sm text-[#737373]">You have been inactive for 25 minutes</p>
           </div>
         </div>
-        
+
         <div className="bg-[rgba(245,158,11,0.1)] border border-[rgba(245,158,11,0.2)] rounded-xl p-4 mb-6">
           <div className="flex items-center gap-2 text-[#F59E0B] mb-2">
             <Clock className="w-4 h-4" />
@@ -50,16 +61,16 @@ function IdleWarningModal({ onStay, onLogout, remainingSeconds }: { onStay: () =
             You will be automatically logged out due to inactivity.
           </p>
         </div>
-        
+
         <div className="flex gap-3">
-          <Button 
-            variant="ghost" 
+          <Button
+            variant="ghost"
             onClick={onLogout}
             className="flex-1 text-[#737373] hover:text-white rounded-xl h-11"
           >
             Logout Now
           </Button>
-          <Button 
+          <Button
             onClick={onStay}
             className="flex-1 bg-gradient-to-r from-[#E0B954] to-[#B8872A] hover:from-[#C79E3B] hover:to-[#B8872A] text-white rounded-xl h-11 font-medium"
           >
@@ -97,10 +108,11 @@ function AuthenticatedRoutes() {
   // Countdown timer for warning modal
   useEffect(() => {
     if (!showWarning) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- reset to initial value when modal closes
       setCountdown(300);
       return;
     }
-    
+
     const timer = setInterval(() => {
       setCountdown((prev: number) => {
         if (prev <= 1) {
@@ -110,7 +122,7 @@ function AuthenticatedRoutes() {
         return prev - 1;
       });
     }, 1000);
-    
+
     return () => clearInterval(timer);
   }, [showWarning, logout]);
 
@@ -134,11 +146,7 @@ function AuthenticatedRoutes() {
   return (
     <>
       {showWarning && (
-        <IdleWarningModal 
-          onStay={dismissWarning}
-          onLogout={logout}
-          remainingSeconds={countdown}
-        />
+        <IdleWarningModal onStay={dismissWarning} onLogout={logout} remainingSeconds={countdown} />
       )}
       <Suspense fallback={<RouteSpinner />}>
         <Routes>
@@ -157,11 +165,14 @@ function AuthenticatedRoutes() {
 
 function App() {
   return (
-    <Router>
-      <AuthProvider>
-        <AuthenticatedRoutes />
-      </AuthProvider>
-    </Router>
+    <QueryClientProvider client={queryClient}>
+      <Router>
+        <AuthProvider>
+          <AuthenticatedRoutes />
+        </AuthProvider>
+      </Router>
+      {import.meta.env.DEV && <ReactQueryDevtools initialIsOpen={false} />}
+    </QueryClientProvider>
   );
 }
 

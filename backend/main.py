@@ -3,41 +3,43 @@ Arsenal Ops - AI-Powered Project Management Platform
 FastAPI backend with Jira-like project/work item management + AI generation
 """
 
-from fastapi import FastAPI, Request
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
-from dotenv import load_dotenv
 import os
 
 # Load environment variables
 from pathlib import Path
-load_dotenv()
-load_dotenv(Path(__file__).parent.parent / '.env')
 
-# Import routers
-from routers.projects import router as projects_router
-from routers.workitems import router as workitems_router
-from routers.developers import router as developers_router
-from routers.prd_analysis import router as prd_router
-from routers.comments import router as comments_router
-from routers.admin import router as admin_router
-from routers.auth import router as auth_router
-from routers.personal_tasks import router as personal_tasks_router
-from routers.roadmap import router as roadmap_router
+from dotenv import load_dotenv
+from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+
+load_dotenv()
+load_dotenv(Path(__file__).parent.parent / ".env")
+
+# Import routers (after load_dotenv so router-level env reads see the right values)
+from routers.admin import router as admin_router  # noqa: E402
+from routers.auth import router as auth_router  # noqa: E402
+from routers.comments import router as comments_router  # noqa: E402
+from routers.developers import router as developers_router  # noqa: E402
+from routers.personal_tasks import router as personal_tasks_router  # noqa: E402
+from routers.prd_analysis import router as prd_router  # noqa: E402
+from routers.projects import router as projects_router  # noqa: E402
+from routers.roadmap import router as roadmap_router  # noqa: E402
+from routers.workitems import router as workitems_router  # noqa: E402
 
 # Create FastAPI app
 app = FastAPI(
     title="Arsenal Ops - AI Project Management",
     description="""
     AI-powered project management platform with Jira-like boards.
-    
+
     ## Features
     - **Projects**: Create and manage multiple projects
     - **Kanban Board**: Drag-and-drop work item management
     - **AI Generation**: Auto-generate user stories and tasks
     - **Sprint Management**: Organize work into sprints
     """,
-    version="1.0.0"
+    version="1.0.0",
 )
 
 # CORS middleware - MUST be added before other middleware/routes
@@ -49,8 +51,14 @@ cors_origins = [
     "https://arsenal-ops.vercel.app",
     "https://www.arsenal-ops.vercel.app",
     "https://arsenal-ops-git-main-manikyashetty-archs-projects.vercel.app",
+    # Vite's default port plus its auto-fallback ports when 5173 is in use
+    # (common when running multiple frontend projects locally).
     "http://localhost:5173",
     "http://127.0.0.1:5173",
+    "http://localhost:5174",
+    "http://127.0.0.1:5174",
+    "http://localhost:5175",
+    "http://127.0.0.1:5175",
 ]
 
 # Add any additional origins from environment variable
@@ -73,6 +81,12 @@ app.add_middleware(
     max_age=3600,
 )
 
+# Request timing + query count instrumentation. No-op unless PERF_LOG=1.
+from middleware.perf import PerfMiddleware  # noqa: E402
+
+app.add_middleware(PerfMiddleware)
+
+
 # Global exception handler to ensure CORS headers on errors
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
@@ -91,6 +105,7 @@ async def global_exception_handler(request: Request, exc: Exception):
         headers=headers,
     )
 
+
 # Include routers
 app.include_router(auth_router)
 app.include_router(projects_router)
@@ -102,12 +117,14 @@ app.include_router(admin_router)
 app.include_router(roadmap_router)
 app.include_router(personal_tasks_router)
 
+
 # Startup event for database initialization
 @app.on_event("startup")
 async def startup_event():
     """Initialize database on startup"""
     try:
-        from database import init_db, SessionLocal
+        from database import SessionLocal, init_db
+
         init_db()
         print("DEBUG: Database initialized successfully")
     except Exception as e:
@@ -118,20 +135,21 @@ async def startup_event():
     # added to an existing model so production deploys self-heal.
     try:
         import migrate_add_last_assigned_at
+
         migrate_add_last_assigned_at.migrate()
     except Exception as e:
         print(f"DEBUG: migrate_add_last_assigned_at failed: {e}")
-    
+
     # Create default admin users from .env configuration
     try:
-        from models.user import User, UserRole
-        from models.developer import Developer
         from database import SessionLocal
-        
+        from models.developer import Developer
+        from models.user import User, UserRole
+
         # Read admin emails from .env (format: "email1@company.com,email2@company.com")
         admin_emails_str = os.getenv("ADMIN_EMAILS", "manikya.shetty@arsenalai.com")
         admin_emails = [email.strip() for email in admin_emails_str.split(",") if email.strip()]
-        
+
         db = SessionLocal()
         try:
             for email in admin_emails:
@@ -145,21 +163,18 @@ async def startup_event():
                         hashed_password=None,  # No password for SSO users
                         role=UserRole.ADMIN.value,
                         is_active=True,
-                        is_first_login=False  # SSO users don't need password change
+                        is_first_login=False,  # SSO users don't need password change
                     )
                     db.add(admin)
                     db.commit()
-                    
+
                     # Also create as Developer/Employee
                     existing_dev = db.query(Developer).filter(Developer.email == email).first()
                     if not existing_dev:
-                        developer = Developer(
-                            name=name,
-                            email=email
-                        )
+                        developer = Developer(name=name, email=email)
                         db.add(developer)
                         db.commit()
-                    
+
                     print(f"DEFAULT ADMIN CREATED! Email: {email}, Name: {name}")
         except Exception as e:
             print(f"Admin creation error: {e}")
@@ -167,6 +182,7 @@ async def startup_event():
             db.close()
     except Exception as e:
         print(f"Admin setup error: {e}")
+
 
 @app.get("/")
 @app.head("/")  # Support HEAD requests for Render health check
@@ -184,24 +200,30 @@ def root():
             "comments": "/api/comments",
             "admin": "/api/admin",
         },
-        "docs": "/docs"
+        "docs": "/docs",
     }
+
 
 @app.get("/api/health")
 def health_check():
     """Health check endpoint"""
     from datetime import datetime
-    azure_configured = bool(os.getenv("AZURE_OPENAI_API_KEY") and os.getenv("AZURE_OPENAI_ENDPOINT"))
+
+    azure_configured = bool(
+        os.getenv("AZURE_OPENAI_API_KEY") and os.getenv("AZURE_OPENAI_ENDPOINT")
+    )
     return {
         "status": "healthy",
         "timestamp": datetime.now().isoformat(),
         "services": {
             "ai_engine": "operational" if azure_configured else "missing_credentials",
-            "api": "operational"
+            "api": "operational",
         },
-        "version": "1.0.0"
+        "version": "1.0.0",
     }
+
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

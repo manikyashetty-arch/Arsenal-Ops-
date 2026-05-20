@@ -1,71 +1,203 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { apiFetch } from '@/lib/api';
 import { toast, Toaster } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
-import { API_BASE_URL } from '@/config/api';
 import {
-    AppHeader,
-    DashboardStats,
-    MyTasksBox,
-    ProjectsBox,
-    QuickNotesPanel,
-    TicketDetailPanel,
-    AddPersonalTaskDialog,
-    ConvertToTicketDialog,
-    EditPersonalTaskDialog,
-    CreateProjectDialog,
+  AppHeader,
+  DashboardStats,
+  MyTasksBox,
+  ProjectsBox,
+  QuickNotesPanel,
+  TicketDetailPanel,
+  AddPersonalTaskDialog,
+  ConvertToTicketDialog,
+  EditPersonalTaskDialog,
+  CreateProjectDialog,
 } from '@/components/ProjectsPage';
 import type {
-    Project,
-    Developer,
-    MyTask,
-    PersonalTask,
-    ProjectMember,
-    NewPersonalTaskForm,
-    EditPersonalTaskForm,
-    CreateProjectForm,
-    SelectedDeveloper,
+  Project,
+  Developer,
+  MyTask,
+  PersonalTask,
+  ProjectMember,
+  NewPersonalTaskForm,
+  EditPersonalTaskForm,
+  CreateProjectForm,
+  SelectedDeveloper,
 } from '@/components/ProjectsPage';
 
 const ProjectsPage = () => {
-    const navigate = useNavigate();
-    const { user, token, logout } = useAuth();
+  const navigate = useNavigate();
+  const { user, token, logout } = useAuth();
+  const queryClient = useQueryClient();
 
-    // Projects state
-    const [projects, setProjects] = useState<Project[]>([]);
-    const [isLoading, setIsLoading] = useState(true);
-    const [searchQuery, setSearchQuery] = useState('');
+  // Projects state
+  const [searchQuery, setSearchQuery] = useState('');
 
-    // Create project modal
-    const [showCreateModal, setShowCreateModal] = useState(false);
-    const [createForm, setCreateForm] = useState<CreateProjectForm>({ name: '', description: '', github_repo_url: '' });
-    const [isCreating, setIsCreating] = useState(false);
-    const [availableDevelopers, setAvailableDevelopers] = useState<Developer[]>([]);
-    const [selectedDevelopers, setSelectedDevelopers] = useState<SelectedDeveloper[]>([]);
-    const [selectedDeveloperId, setSelectedDeveloperId] = useState<string>('');
-    const [newRole, setNewRole] = useState('');
-    const [newResponsibilities, setNewResponsibilities] = useState('');
+  // Create project modal
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [createForm, setCreateForm] = useState<CreateProjectForm>({
+    name: '',
+    description: '',
+    github_repo_url: '',
+  });
+  const [selectedDevelopers, setSelectedDevelopers] = useState<SelectedDeveloper[]>([]);
+  const [selectedDeveloperId, setSelectedDeveloperId] = useState<string>('');
+  const [newRole, setNewRole] = useState('');
+  const [newResponsibilities, setNewResponsibilities] = useState('');
 
-    // My Tasks
-    const [myTasks, setMyTasks] = useState<MyTask[]>([]);
-    const [myTaskTab, setMyTaskTab] = useState<'upcoming' | 'overdue' | 'completed' | 'personal'>('upcoming');
-    const [myTasksLoading, setMyTasksLoading] = useState(false);
-    const [showAllTasks, setShowAllTasks] = useState(false);
-    const [selectedTask, setSelectedTask] = useState<MyTask | null>(null);
+  // My Tasks
+  const [myTaskTab, setMyTaskTab] = useState<'upcoming' | 'overdue' | 'completed' | 'personal'>(
+    'upcoming',
+  );
+  const [showAllTasks, setShowAllTasks] = useState(false);
+  const [selectedTask, setSelectedTask] = useState<MyTask | null>(null);
 
-    // Personal Tasks
-    const [personalTasks, setPersonalTasks] = useState<PersonalTask[]>([]);
-    const [showAddTaskDialog, setShowAddTaskDialog] = useState(false);
-    const [showCalendarAddTask, setShowCalendarAddTask] = useState(false);
-    const [showConvertDialog, setShowConvertDialog] = useState(false);
-    const [convertingTask, setConvertingTask] = useState<PersonalTask | null>(null);
-    const [convertProjectId, setConvertProjectId] = useState('');
-    const [convertAssigneeId, setConvertAssigneeId] = useState('');
-    const [convertEstimatedHours, setConvertEstimatedHours] = useState('');
-    const [projectMembers, setProjectMembers] = useState<ProjectMember[]>([]);
-    const [addingTask, setAddingTask] = useState(false);
-    const [convertingTicket, setConvertingTicket] = useState(false);
-    const [newPersonalTask, setNewPersonalTask] = useState<NewPersonalTaskForm>({
+  // Personal Tasks
+  const [showAddTaskDialog, setShowAddTaskDialog] = useState(false);
+  const [showCalendarAddTask, setShowCalendarAddTask] = useState(false);
+  const [showConvertDialog, setShowConvertDialog] = useState(false);
+  const [convertingTask, setConvertingTask] = useState<PersonalTask | null>(null);
+  const [convertProjectId, setConvertProjectId] = useState('');
+  const [convertAssigneeId, setConvertAssigneeId] = useState('');
+  const [convertEstimatedHours, setConvertEstimatedHours] = useState('');
+  // memberLookupProjectId drives the ['project', id] query for the convert + add-task dialogs
+  const [memberLookupProjectId, setMemberLookupProjectId] = useState<string>('');
+  const [newPersonalTask, setNewPersonalTask] = useState<NewPersonalTaskForm>({
+    title: '',
+    description: '',
+    priority: 'medium',
+    due_date: '',
+    project_id: '',
+    assignee_developer_id: '',
+    estimated_hours: '',
+  });
+  const [isEditingPersonalTask, setIsEditingPersonalTask] = useState(false);
+  const [editingPersonalTask, setEditingPersonalTask] = useState<PersonalTask | null>(null);
+  const [showCalendarEditPersonalTask, setShowCalendarEditPersonalTask] = useState(false);
+  const [editPersonalTaskForm, setEditPersonalTaskForm] = useState<EditPersonalTaskForm>({
+    title: '',
+    description: '',
+    priority: 'medium',
+    due_date: '',
+  });
+
+  // Quick Notes
+  const [notepadContent, setNotepadContent] = useState('');
+  const [notepadSaved, setNotepadSaved] = useState(true);
+  const [notepadOpen, setNotepadOpen] = useState(false);
+
+  // ── react-query: projects list ────────────────────────────────────────────
+  const projectsQuery = useQuery<Project[]>({
+    queryKey: ['projects'],
+    queryFn: () => apiFetch<Project[]>('/api/projects/'),
+  });
+  const projects = projectsQuery.data ?? [];
+  const isLoading = projectsQuery.isLoading;
+
+  // ── react-query: developers (available for project-create modal) ──────────
+  const developersQuery = useQuery<Developer[]>({
+    queryKey: ['developers'],
+    queryFn: () => apiFetch<Developer[]>('/api/developers/'),
+    enabled: showCreateModal,
+  });
+  const availableDevelopers = developersQuery.data ?? [];
+
+  // ── react-query: personal tasks ───────────────────────────────────────────
+  const personalTasksQuery = useQuery<PersonalTask[]>({
+    queryKey: ['personalTasks'],
+    queryFn: () => apiFetch<PersonalTask[]>('/api/personal-tasks/'),
+  });
+  const personalTasks = personalTasksQuery.data ?? [];
+
+  // ── react-query: project members (drives convert + add-task dialogs) ──────
+  const projectMembersQuery = useQuery<{
+    developers?: ProjectMember[];
+  }>({
+    queryKey: ['project', memberLookupProjectId],
+    queryFn: () =>
+      apiFetch<{ developers?: ProjectMember[] }>(`/api/projects/${memberLookupProjectId}`),
+    enabled: !!memberLookupProjectId,
+  });
+  const projectMembers: ProjectMember[] = projectMembersQuery.data?.developers ?? [];
+
+  // ── react-query: my tasks ─────────────────────────────────────────────────
+  const myTasksQuery = useQuery<MyTask[]>({
+    queryKey: ['myTasks'],
+    queryFn: () => apiFetch<MyTask[]>('/api/workitems/my-tasks'),
+  });
+  const myTasksLoading = myTasksQuery.isLoading;
+  const myTasks = myTasksQuery.data ?? [];
+
+  // Apply an optimistic update directly inside the ['myTasks'] cache.
+  const patchMyTasksCache = (updater: (old: MyTask[]) => MyTask[]) =>
+    queryClient.setQueryData<MyTask[]>(['myTasks'], (old) => updater(old ?? []));
+
+  // ── mutations: personal tasks ─────────────────────────────────────────────
+  const invalidatePersonalTasks = () =>
+    queryClient.invalidateQueries({ queryKey: ['personalTasks'] });
+
+  const togglePersonalTaskMutation = useMutation({
+    mutationFn: async (task: PersonalTask) => {
+      const newStatus = task.status === 'done' ? 'todo' : 'done';
+      await apiFetch(`/api/personal-tasks/${task.id}`, {
+        method: 'PUT',
+        body: JSON.stringify({ status: newStatus }),
+      });
+      return newStatus;
+    },
+    onMutate: async (task: PersonalTask) => {
+      await queryClient.cancelQueries({ queryKey: ['personalTasks'] });
+      const previous = queryClient.getQueryData<PersonalTask[]>(['personalTasks']);
+      const newStatus = task.status === 'done' ? 'todo' : 'done';
+      queryClient.setQueryData<PersonalTask[]>(['personalTasks'], (old) =>
+        (old ?? []).map((t) => (t.id === task.id ? { ...t, status: newStatus } : t)),
+      );
+      return { previous, newStatus };
+    },
+    onError: (_err, _task, ctx) => {
+      if (ctx?.previous) queryClient.setQueryData(['personalTasks'], ctx.previous);
+      toast.error('Failed to update task');
+    },
+    onSuccess: (newStatus) => {
+      toast.success(newStatus === 'done' ? 'Task completed! 🎉' : 'Task reopened');
+    },
+    onSettled: () => invalidatePersonalTasks(),
+  });
+
+  const createPersonalTaskMutation = useMutation({
+    mutationFn: async () => {
+      const createdTask = await apiFetch<PersonalTask>('/api/personal-tasks/', {
+        method: 'POST',
+        body: JSON.stringify({
+          title: newPersonalTask.title,
+          description: newPersonalTask.description,
+          priority: newPersonalTask.priority,
+          due_date: newPersonalTask.due_date || undefined,
+          estimated_hours: newPersonalTask.estimated_hours
+            ? parseInt(newPersonalTask.estimated_hours)
+            : 0,
+        }),
+      });
+      if (newPersonalTask.project_id) {
+        await apiFetch(`/api/personal-tasks/${createdTask.id}/convert-to-ticket`, {
+          method: 'POST',
+          body: JSON.stringify({
+            project_id: parseInt(newPersonalTask.project_id),
+            assignee_developer_id: newPersonalTask.assignee_developer_id
+              ? parseInt(newPersonalTask.assignee_developer_id)
+              : undefined,
+          }),
+        });
+      }
+      return createdTask;
+    },
+    onSuccess: () => {
+      toast.success('Task created!');
+      setShowAddTaskDialog(false);
+      setNewPersonalTask({
         title: '',
         description: '',
         priority: 'medium',
@@ -73,569 +205,532 @@ const ProjectsPage = () => {
         project_id: '',
         assignee_developer_id: '',
         estimated_hours: '',
+      });
+      setMemberLookupProjectId('');
+      invalidatePersonalTasks();
+      // If a project was selected, a new work item was created — refresh both caches.
+      queryClient.invalidateQueries({ queryKey: ['myTasks'] });
+      queryClient.invalidateQueries({ queryKey: ['workItems'] });
+    },
+    onError: () => toast.error('Failed to create task'),
+  });
+
+  const convertToTicketMutation = useMutation({
+    mutationFn: async () => {
+      if (!convertingTask) throw new Error('No task selected');
+      return apiFetch<{ work_item: { key: string; assignee_name?: string } }>(
+        `/api/personal-tasks/${convertingTask.id}/convert-to-ticket`,
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            project_id: parseInt(convertProjectId),
+            type: 'task',
+            estimated_hours: convertEstimatedHours
+              ? parseInt(convertEstimatedHours)
+              : convertingTask.estimated_hours,
+            assignee_developer_id: convertAssigneeId ? parseInt(convertAssigneeId) : undefined,
+          }),
+        },
+      );
+    },
+    onSuccess: (data) => {
+      const assigneeName = data.work_item.assignee_name
+        ? ` → assigned to ${data.work_item.assignee_name}`
+        : '';
+      toast.success(`Ticket ${data.work_item.key} created!${assigneeName}`);
+      setShowConvertDialog(false);
+      setConvertingTask(null);
+      setConvertProjectId('');
+      setConvertAssigneeId('');
+      setConvertEstimatedHours('');
+      setMemberLookupProjectId('');
+      invalidatePersonalTasks();
+      queryClient.invalidateQueries({ queryKey: ['myTasks'] });
+      queryClient.invalidateQueries({ queryKey: ['workItems'] });
+    },
+    onError: () => toast.error('Failed to convert'),
+  });
+
+  const deletePersonalTaskMutation = useMutation({
+    mutationFn: (taskId: number) =>
+      apiFetch<void>(`/api/personal-tasks/${taskId}`, { method: 'DELETE' }),
+    onSuccess: () => {
+      toast.success('Task deleted');
+      invalidatePersonalTasks();
+    },
+    onError: () => toast.error('Failed to delete task'),
+  });
+
+  const updatePersonalTaskMutation = useMutation({
+    mutationFn: (taskId: number) =>
+      apiFetch<PersonalTask>(`/api/personal-tasks/${taskId}`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          title: editPersonalTaskForm.title,
+          description: editPersonalTaskForm.description,
+          priority: editPersonalTaskForm.priority,
+          due_date: editPersonalTaskForm.due_date || null,
+        }),
+      }),
+    onSuccess: () => {
+      toast.success('Task updated successfully');
+      setIsEditingPersonalTask(false);
+      setEditingPersonalTask(null);
+      setEditPersonalTaskForm({ title: '', description: '', priority: 'medium', due_date: '' });
+      invalidatePersonalTasks();
+    },
+    onError: () => toast.error('Failed to update task'),
+  });
+
+  // Wrapper functions (call sites in JSX unchanged)
+  const togglePersonalTaskComplete = (task: PersonalTask) => {
+    if (task.is_converted) {
+      toast.error('Cannot modify a converted task');
+      return;
+    }
+    togglePersonalTaskMutation.mutate(task);
+  };
+  const createPersonalTask = () => {
+    if (!newPersonalTask.title.trim()) {
+      toast.error('Title is required');
+      return;
+    }
+    createPersonalTaskMutation.mutate();
+  };
+  const convertToTicket = () => {
+    if (!convertingTask || !convertProjectId) return;
+    convertToTicketMutation.mutate();
+  };
+  const deletePersonalTask = (taskId: number) => {
+    if (!confirm('Delete this task?')) return;
+    deletePersonalTaskMutation.mutate(taskId);
+  };
+  const updatePersonalTask = () => {
+    if (!editingPersonalTask) return;
+    if (!editPersonalTaskForm.title.trim()) {
+      toast.error('Title is required');
+      return;
+    }
+    updatePersonalTaskMutation.mutate(editingPersonalTask.id);
+  };
+  const addingTask = createPersonalTaskMutation.isPending || updatePersonalTaskMutation.isPending;
+  const convertingTicket = convertToTicketMutation.isPending;
+
+  const startEditPersonalTask = (task: PersonalTask) => {
+    setEditingPersonalTask(task);
+    setEditPersonalTaskForm({
+      title: task.title,
+      description: task.description,
+      priority: task.priority,
+      due_date: task.due_date || '',
     });
-    const [isEditingPersonalTask, setIsEditingPersonalTask] = useState(false);
-    const [editingPersonalTask, setEditingPersonalTask] = useState<PersonalTask | null>(null);
-    const [showCalendarEditPersonalTask, setShowCalendarEditPersonalTask] = useState(false);
-    const [editPersonalTaskForm, setEditPersonalTaskForm] = useState<EditPersonalTaskForm>({
-        title: '', description: '', priority: 'medium', due_date: '',
-    });
+    setIsEditingPersonalTask(true);
+  };
 
-    // Quick Notes
-    const [notepadContent, setNotepadContent] = useState('');
-    const [notepadSaved, setNotepadSaved] = useState(true);
-    const [notepadOpen, setNotepadOpen] = useState(false);
+  const cancelEditPersonalTask = () => {
+    setIsEditingPersonalTask(false);
+    setEditingPersonalTask(null);
+    setEditPersonalTaskForm({ title: '', description: '', priority: 'medium', due_date: '' });
+  };
 
-    // ---------- Data fetching ----------
+  // ── mutations: work-item quick-edit (status + due date) ───────────────────
+  const statusMutation = useMutation({
+    mutationFn: ({ taskId, newStatus }: { taskId: string; newStatus: string }) =>
+      apiFetch(`/api/workitems/${taskId}`, {
+        method: 'PUT',
+        body: JSON.stringify({ status: newStatus }),
+      }),
+    onMutate: async ({ taskId, newStatus }) => {
+      await queryClient.cancelQueries({ queryKey: ['myTasks'] });
+      const snapshot = queryClient.getQueryData<MyTask[]>(['myTasks']);
+      patchMyTasksCache((old) =>
+        old.map((t) =>
+          t.id === taskId
+            ? ({
+                ...t,
+                status: newStatus,
+                is_overdue: newStatus === 'done' ? false : t.is_overdue,
+              } as MyTask)
+            : t,
+        ),
+      );
+      return { snapshot };
+    },
+    onError: (_err, _vars, ctx) => {
+      if (ctx?.snapshot) queryClient.setQueryData(['myTasks'], ctx.snapshot);
+      toast.error('Failed to update status');
+    },
+    onSuccess: (_data, { taskId, newStatus }) => {
+      if (newStatus === 'done') {
+        const task = queryClient.getQueryData<MyTask[]>(['myTasks'])?.find((t) => t.id === taskId);
+        toast.success(`${task?.key || 'Task'} completed 🎉`);
+      }
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['myTasks'] });
+      queryClient.invalidateQueries({ queryKey: ['workItems'] });
+    },
+  });
 
-    const fetchProjects = async () => {
-        try {
-            const response = await fetch(`${API_BASE_URL}/api/projects/`, {
-                headers: { 'Authorization': `Bearer ${token}` },
-            });
-            if (response.ok) setProjects(await response.json());
-        } catch (err) {
-            console.error('Failed to fetch projects:', err);
-        } finally {
-            setIsLoading(false);
-        }
-    };
+  const handleChangeMyTaskStatus = (task: MyTask, newStatus: string) => {
+    if (selectedTask?.id === task.id) {
+      setSelectedTask({ ...task, status: newStatus } as MyTask);
+    }
+    statusMutation.mutate({ taskId: task.id, newStatus });
+  };
 
-    const fetchDevelopers = async () => {
-        try {
-            const response = await fetch(`${API_BASE_URL}/api/developers/`, {
-                headers: { 'Authorization': `Bearer ${token}` },
-            });
-            if (response.ok) setAvailableDevelopers(await response.json());
-        } catch (err) {
-            console.error('Failed to fetch developers:', err);
-        }
-    };
+  const personalTaskDueDateMutation = useMutation({
+    mutationFn: ({ realId, dueValue }: { realId: string; dueValue: string | null }) =>
+      apiFetch(`/api/personal-tasks/${realId}`, {
+        method: 'PUT',
+        body: JSON.stringify({ due_date: dueValue }),
+      }),
+    onMutate: async ({ realId, dueValue }) => {
+      await queryClient.cancelQueries({ queryKey: ['personalTasks'] });
+      const snapshot = queryClient.getQueryData<PersonalTask[]>(['personalTasks']);
+      queryClient.setQueryData<PersonalTask[]>(['personalTasks'], (old) =>
+        (old ?? []).map((p) =>
+          String(p.id) === realId ? { ...p, due_date: dueValue || undefined } : p,
+        ),
+      );
+      return { snapshot, cleared: !dueValue };
+    },
+    onError: (_err, _vars, ctx) => {
+      if (ctx?.snapshot) queryClient.setQueryData(['personalTasks'], ctx.snapshot);
+      toast.error('Failed to update due date');
+    },
+    onSuccess: (_data, _vars, ctx) => {
+      toast.success(ctx?.cleared ? 'Due date cleared' : 'Due date updated');
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['personalTasks'] });
+    },
+  });
 
-    const fetchPersonalTasks = async () => {
-        try {
-            const res = await fetch(`${API_BASE_URL}/api/personal-tasks/`, {
-                headers: { 'Authorization': `Bearer ${token}` },
-            });
-            if (res.ok) setPersonalTasks(await res.json());
-        } catch (err) {
-            console.error('Failed to fetch personal tasks:', err);
-        }
-    };
+  const workItemDueDateMutation = useMutation({
+    mutationFn: ({ taskId, dueValue }: { taskId: string; dueValue: string | null }) =>
+      apiFetch(`/api/workitems/${taskId}`, {
+        method: 'PUT',
+        body: JSON.stringify({ due_date: dueValue }),
+      }),
+    onMutate: async ({ taskId, dueValue }) => {
+      await queryClient.cancelQueries({ queryKey: ['myTasks'] });
+      const snapshot = queryClient.getQueryData<MyTask[]>(['myTasks']);
+      patchMyTasksCache((old) =>
+        old.map((t) => {
+          if (t.id !== taskId) return t;
+          let isOverdue = false;
+          if (dueValue) {
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            const due = new Date(dueValue + 'T00:00:00');
+            isOverdue = due < today && t.status !== 'done';
+          }
+          return { ...t, due_date: dueValue, is_overdue: isOverdue };
+        }),
+      );
+      return { snapshot, cleared: !dueValue };
+    },
+    onError: (_err, _vars, ctx) => {
+      if (ctx?.snapshot) queryClient.setQueryData(['myTasks'], ctx.snapshot);
+      toast.error('Failed to update due date');
+    },
+    onSuccess: (_data, _vars, ctx) => {
+      toast.success(ctx?.cleared ? 'Due date cleared' : 'Due date updated');
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['myTasks'] });
+      queryClient.invalidateQueries({ queryKey: ['workItems'] });
+    },
+  });
 
-    const fetchMyTasks = async () => {
-        setMyTasksLoading(true);
-        try {
-            const res = await fetch(`${API_BASE_URL}/api/workitems/my-tasks`, {
-                headers: { 'Authorization': `Bearer ${token}` },
-            });
-            if (res.ok) setMyTasks(await res.json());
-        } catch (err) {
-            console.error('Failed to fetch my tasks:', err);
-        } finally {
-            setMyTasksLoading(false);
-        }
-    };
+  const handleQuickDueDateChange = (task: MyTask & { is_personal?: boolean }, isoDate: string) => {
+    const dueValue = isoDate ? isoDate : null;
+    if (task.is_personal) {
+      const realId = String(task.id).replace(/^personal-/, '');
+      personalTaskDueDateMutation.mutate({ realId, dueValue });
+    } else {
+      workItemDueDateMutation.mutate({ taskId: task.id, dueValue });
+    }
+  };
 
-    const fetchProjectMembers = async (projectId: string) => {
-        try {
-            const res = await fetch(`${API_BASE_URL}/api/projects/${projectId}`, {
-                headers: { 'Authorization': `Bearer ${token}` },
-            });
-            if (res.ok) {
-                const data = await res.json();
-                setProjectMembers(data.developers || []);
-            }
-        } catch {
-            setProjectMembers([]);
-        }
-    };
+  // TicketDetailPanel calls this when it has mutated a task. Update myTasks cache
+  // and the local selectedTask reference.
+  const handleTaskChanged = (updated: MyTask) => {
+    patchMyTasksCache((old) => old.map((t) => (t.id === updated.id ? updated : t)));
+    setSelectedTask(updated);
+    queryClient.invalidateQueries({ queryKey: ['myTasks'] });
+    queryClient.invalidateQueries({ queryKey: ['workItems'] });
+  };
 
-    useEffect(() => {
-        fetchProjects();
-    }, []);
+  // Notepad: load from localStorage per user
+  useEffect(() => {
+    if (user?.id) {
+      const saved = localStorage.getItem(`notepad_${user.id}`);
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- hydrating from localStorage is a one-shot mount sync
+      if (saved !== null) setNotepadContent(saved);
+    }
+  }, [user?.id]);
 
-    useEffect(() => {
-        if (showCreateModal) fetchDevelopers();
-    }, [showCreateModal]);
+  // Notepad: auto-save with debounce
+  useEffect(() => {
+    if (!user?.id) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- mark dirty before the debounced save fires
+    setNotepadSaved(false);
+    const timer = setTimeout(() => {
+      localStorage.setItem(`notepad_${user.id}`, notepadContent);
+      setNotepadSaved(true);
+    }, 800);
+    return () => clearTimeout(timer);
+  }, [notepadContent, user?.id]);
 
-    useEffect(() => {
-        if (token) { fetchMyTasks(); fetchPersonalTasks(); }
-    }, [token]);
+  const handleAddDeveloper = () => {
+    if (!selectedDeveloperId || !newRole.trim()) {
+      toast.error('Please select a developer and enter a role');
+      return;
+    }
+    const devId = parseInt(selectedDeveloperId);
+    const alreadyAdded = selectedDevelopers.find((d) => d.developer_id === devId);
+    if (alreadyAdded) {
+      toast.error('Developer already added to this project');
+      return;
+    }
+    const developer = availableDevelopers.find((d) => d.id === devId);
+    setSelectedDevelopers((prev) => [
+      ...prev,
+      { developer_id: devId, role: newRole, responsibilities: newResponsibilities },
+    ]);
+    toast.success(`${developer?.name} added as ${newRole}`);
+    setSelectedDeveloperId('');
+    setNewRole('');
+    setNewResponsibilities('');
+  };
 
-    // Notepad — load from localStorage per user
-    useEffect(() => {
-        if (user?.id) {
-            const saved = localStorage.getItem(`notepad_${user.id}`);
-            if (saved !== null) setNotepadContent(saved);
-        }
-    }, [user?.id]);
+  const handleRemoveDeveloper = (developerId: number) => {
+    setSelectedDevelopers((prev) => prev.filter((d) => d.developer_id !== developerId));
+  };
 
-    // Notepad — auto-save with debounce
-    useEffect(() => {
-        if (!user?.id) return;
-        setNotepadSaved(false);
-        const timer = setTimeout(() => {
-            localStorage.setItem(`notepad_${user.id}`, notepadContent);
-            setNotepadSaved(true);
-        }, 800);
-        return () => clearTimeout(timer);
-    }, [notepadContent]);
+  const createProjectMutation = useMutation({
+    mutationFn: () =>
+      apiFetch<Project>('/api/projects/', {
+        method: 'POST',
+        body: JSON.stringify({
+          name: createForm.name,
+          description: createForm.description,
+          github_repo_url: createForm.github_repo_url || undefined,
+          developers: selectedDevelopers,
+        }),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['projects'] });
+      setShowCreateModal(false);
+      setCreateForm({ name: '', description: '', github_repo_url: '' });
+      setSelectedDevelopers([]);
+      toast.success('Project created successfully!');
+    },
+    onError: () => toast.error('Failed to create project'),
+  });
 
-    // ---------- Personal task actions ----------
+  const deleteProjectMutation = useMutation({
+    mutationFn: (projectId: number) =>
+      apiFetch<void>(`/api/projects/${projectId}/`, { method: 'DELETE' }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['projects'] });
+      toast.success('Project deleted');
+    },
+    onError: () => toast.error('Failed to delete project'),
+  });
 
-    const createPersonalTask = async () => {
-        if (!newPersonalTask.title.trim()) { toast.error('Title is required'); return; }
-        setAddingTask(true);
-        try {
-            const res = await fetch(`${API_BASE_URL}/api/personal-tasks/`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                body: JSON.stringify({
-                    title: newPersonalTask.title,
-                    description: newPersonalTask.description,
-                    priority: newPersonalTask.priority,
-                    due_date: newPersonalTask.due_date || undefined,
-                    estimated_hours: newPersonalTask.estimated_hours ? parseInt(newPersonalTask.estimated_hours) : 0,
-                }),
-            });
-            if (res.ok) {
-                const createdTask = await res.json();
-                if (newPersonalTask.project_id) {
-                    await fetch(`${API_BASE_URL}/api/personal-tasks/${createdTask.id}/convert-to-ticket`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                        body: JSON.stringify({
-                            project_id: parseInt(newPersonalTask.project_id),
-                            assignee_developer_id: newPersonalTask.assignee_developer_id ? parseInt(newPersonalTask.assignee_developer_id) : undefined,
-                        }),
-                    });
-                }
-                toast.success('Task created!');
-                setShowAddTaskDialog(false);
-                setNewPersonalTask({ title: '', description: '', priority: 'medium', due_date: '', project_id: '', assignee_developer_id: '', estimated_hours: '' });
-                setProjectMembers([]);
-                setPersonalTasks(prev => [...prev, createdTask]);
-                if (!newPersonalTask.project_id) setMyTaskTab('personal');
-                fetchPersonalTasks();
-            } else {
-                toast.error('Failed to create task');
-            }
-        } catch {
-            toast.error('Failed to create task');
-        } finally {
-            setAddingTask(false);
-        }
-    };
+  const handleCreateProject = () => {
+    if (!createForm.name.trim()) {
+      toast.error('Project name is required');
+      return;
+    }
+    createProjectMutation.mutate();
+  };
+  const isCreating = createProjectMutation.isPending;
 
-    const convertToTicket = async () => {
-        if (!convertingTask || !convertProjectId) return;
-        setConvertingTicket(true);
-        try {
-            const res = await fetch(`${API_BASE_URL}/api/personal-tasks/${convertingTask.id}/convert-to-ticket`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                body: JSON.stringify({
-                    project_id: parseInt(convertProjectId),
-                    type: 'task',
-                    estimated_hours: convertEstimatedHours ? parseInt(convertEstimatedHours) : convertingTask.estimated_hours,
-                    assignee_developer_id: convertAssigneeId ? parseInt(convertAssigneeId) : undefined,
-                }),
-            });
-            if (res.ok) {
-                const data = await res.json();
-                const assigneeName = data.work_item.assignee_name ? ` → assigned to ${data.work_item.assignee_name}` : '';
-                toast.success(`Ticket ${data.work_item.key} created!${assigneeName}`);
-                setShowConvertDialog(false);
-                setConvertingTask(null);
-                setConvertProjectId('');
-                setConvertAssigneeId('');
-                setConvertEstimatedHours('');
-                setProjectMembers([]);
-                fetchPersonalTasks();
-            } else {
-                toast.error('Failed to convert');
-            }
-        } catch {
-            toast.error('Failed to convert');
-        } finally {
-            setConvertingTicket(false);
-        }
-    };
+  const handleDeleteProject = (e: React.MouseEvent, projectId: number) => {
+    e.stopPropagation();
+    if (!confirm('Delete this project and all its work items?')) return;
+    deleteProjectMutation.mutate(projectId);
+  };
 
-    const deletePersonalTask = async (taskId: number) => {
-        if (!confirm('Delete this task?')) return;
-        try {
-            const res = await fetch(`${API_BASE_URL}/api/personal-tasks/${taskId}`, {
-                method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` },
-            });
-            if (res.ok) { toast.success('Task deleted'); fetchPersonalTasks(); }
-        } catch {
-            toast.error('Failed to delete task');
-        }
-    };
+  return (
+    <div className="h-screen flex flex-col bg-[#080808] text-[#F4F6FF]">
+      <Toaster position="top-right" theme="dark" richColors />
 
-    const updatePersonalTask = async () => {
-        if (!editingPersonalTask) return;
-        if (!editPersonalTaskForm.title.trim()) { toast.error('Title is required'); return; }
-        setAddingTask(true);
-        try {
-            const res = await fetch(`${API_BASE_URL}/api/personal-tasks/${editingPersonalTask.id}`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                body: JSON.stringify({
-                    title: editPersonalTaskForm.title,
-                    description: editPersonalTaskForm.description,
-                    priority: editPersonalTaskForm.priority,
-                    due_date: editPersonalTaskForm.due_date || null,
-                }),
-            });
-            if (res.ok) {
-                toast.success('Task updated successfully');
-                cancelEditPersonalTask();
-                fetchPersonalTasks();
-            } else {
-                toast.error('Failed to update task');
-            }
-        } catch {
-            toast.error('Failed to update task');
-        } finally {
-            setAddingTask(false);
-        }
-    };
+      <AppHeader user={user} onAdminClick={() => navigate('/admin')} onLogout={logout} />
 
-    const startEditPersonalTask = (task: PersonalTask) => {
-        setEditingPersonalTask(task);
-        setEditPersonalTaskForm({
-            title: task.title,
-            description: task.description,
-            priority: task.priority,
-            due_date: task.due_date || '',
-        });
-        setIsEditingPersonalTask(true);
-    };
-
-    const cancelEditPersonalTask = () => {
-        setIsEditingPersonalTask(false);
-        setEditingPersonalTask(null);
-        setEditPersonalTaskForm({ title: '', description: '', priority: 'medium', due_date: '' });
-    };
-
-    const togglePersonalTaskComplete = async (task: PersonalTask) => {
-        if (task.is_converted) { toast.error('Cannot modify a converted task'); return; }
-        const newStatus = task.status === 'done' ? 'todo' : 'done';
-        try {
-            const res = await fetch(`${API_BASE_URL}/api/personal-tasks/${task.id}`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                body: JSON.stringify({ status: newStatus }),
-            });
-            if (res.ok) {
-                setPersonalTasks(personalTasks.map(t => t.id === task.id ? { ...t, status: newStatus } : t));
-                toast.success(newStatus === 'done' ? 'Task completed! 🎉' : 'Task reopened');
-            } else {
-                toast.error('Failed to update task');
-            }
-        } catch {
-            toast.error('Failed to update task');
-        }
-    };
-
-    const handleAddDeveloper = () => {
-        if (!selectedDeveloperId || !newRole.trim()) {
-            toast.error('Please select a developer and enter a role');
-            return;
-        }
-        const devId = parseInt(selectedDeveloperId);
-        if (selectedDevelopers.find(d => d.developer_id === devId)) {
-            toast.error('Developer already added to this project');
-            return;
-        }
-        const developer = availableDevelopers.find(d => d.id === devId);
-        setSelectedDevelopers(prev => [...prev, { developer_id: devId, role: newRole, responsibilities: newResponsibilities }]);
-        toast.success(`${developer?.name} added as ${newRole}`);
-        setSelectedDeveloperId('');
-        setNewRole('');
-        setNewResponsibilities('');
-    };
-
-    const handleRemoveDeveloper = (developerId: number) => {
-        setSelectedDevelopers(prev => prev.filter(d => d.developer_id !== developerId));
-    };
-
-    const handleCreateProject = async () => {
-        if (!createForm.name.trim()) { toast.error('Project name is required'); return; }
-        setIsCreating(true);
-        const startTime = Date.now();
-        try {
-            const response = await fetch(`${API_BASE_URL}/api/projects/`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                body: JSON.stringify({
-                    name: createForm.name,
-                    description: createForm.description,
-                    github_repo_url: createForm.github_repo_url || undefined,
-                    developers: selectedDevelopers,
-                }),
-            });
-            if (response.ok) {
-                const newProject = await response.json();
-                setProjects(prev => [...prev, newProject]);
-                setShowCreateModal(false);
-                setCreateForm({ name: '', description: '', github_repo_url: '' });
-                setSelectedDevelopers([]);
-                toast.success('Project created successfully!');
-            }
-        } catch {
-            toast.error('Failed to create project');
-        } finally {
-            const elapsedTime = Date.now() - startTime;
-            const remainingTime = Math.max(0, 300 - elapsedTime);
-            setTimeout(() => setIsCreating(false), remainingTime);
-        }
-    };
-
-    const handleDeleteProject = async (e: React.MouseEvent, projectId: number) => {
-        e.stopPropagation();
-        if (!confirm('Delete this project and all its work items?')) return;
-        try {
-            await fetch(`${API_BASE_URL}/api/projects/${projectId}/`, {
-                method: 'DELETE',
-                headers: { 'Authorization': `Bearer ${token}` },
-            });
-            setProjects(prev => prev.filter(p => p.id !== projectId));
-            toast.success('Project deleted');
-        } catch {
-            toast.error('Failed to delete project');
-        }
-    };
-
-    const handleTaskChanged = (updated: MyTask) => {
-        setMyTasks(prev => prev.map(t => t.id === updated.id ? updated : t));
-        setSelectedTask(updated);
-    };
-
-    const handleQuickDueDateChange = async (task: MyTask & { is_personal?: boolean }, isoDate: string) => {
-        const dueValue = isoDate || null;
-        if (task.is_personal) {
-            const realId = String(task.id).replace(/^personal-/, '');
-            setPersonalTasks(prev => prev.map(p => String(p.id) === realId ? { ...p, due_date: dueValue || undefined } : p));
-            try {
-                const res = await fetch(`${API_BASE_URL}/api/personal-tasks/${realId}`, {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                    body: JSON.stringify({ due_date: dueValue }),
-                });
-                if (!res.ok) throw new Error();
-                toast.success(dueValue ? 'Due date updated' : 'Due date cleared');
-            } catch {
-                toast.error('Failed to update due date');
-            }
-        } else {
-            let isOverdue = false;
-            if (dueValue) {
-                const today = new Date(); today.setHours(0, 0, 0, 0);
-                const due = new Date(dueValue + 'T00:00:00');
-                isOverdue = due < today && task.status !== 'done';
-            }
-            setMyTasks(prev => prev.map(t => t.id === task.id ? { ...t, due_date: dueValue, is_overdue: isOverdue } : t));
-            try {
-                const res = await fetch(`${API_BASE_URL}/api/workitems/${task.id}`, {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                    body: JSON.stringify({ due_date: dueValue }),
-                });
-                if (!res.ok) throw new Error();
-                toast.success(dueValue ? 'Due date updated' : 'Due date cleared');
-            } catch {
-                toast.error('Failed to update due date');
-            }
-        }
-    };
-
-    const handleChangeMyTaskStatus = async (task: MyTask, newStatus: string) => {
-        const previousStatus = task.status;
-        setMyTasks(prev => prev.map(t =>
-            t.id === task.id
-                ? { ...t, status: newStatus, is_overdue: newStatus === 'done' ? false : t.is_overdue }
-                : t
-        ));
-        try {
-            const res = await fetch(`${API_BASE_URL}/api/workitems/${task.id}`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                body: JSON.stringify({ status: newStatus }),
-            });
-            if (!res.ok) throw new Error('Failed');
-            if (newStatus === 'done') toast.success(`${task.key || 'Task'} completed 🎉`);
-        } catch {
-            setMyTasks(prev => prev.map(t => t.id === task.id ? { ...t, status: previousStatus } : t));
-            toast.error('Failed to update status');
-        }
-    };
-
-    return (
-        <div className="h-screen flex flex-col bg-[#080808] text-[#F4F6FF]">
-            <Toaster position="top-right" theme="dark" richColors />
-
-            <AppHeader
-                user={user}
-                onAdminClick={() => navigate('/admin')}
-                onLogout={logout}
-            />
-
-            <div className="flex-1 min-h-0 flex flex-col max-w-[1400px] mx-auto px-8 py-8 w-full">
-                <div className="flex-shrink-0">
-                    <DashboardStats
-                        userName={user?.name}
-                        myTasks={myTasks}
-                        myTasksLoading={myTasksLoading}
-                        onTabChange={setMyTaskTab}
-                    />
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-5 gap-5 flex-1 min-h-0">
-                    <div className="md:col-span-2 min-h-0 h-full">
-                        <ProjectsBox
-                            projects={projects}
-                            isLoading={isLoading}
-                            searchQuery={searchQuery}
-                            setSearchQuery={setSearchQuery}
-                            onCreateProjectClick={() => setShowCreateModal(true)}
-                            onProjectClick={(projectId) => navigate(`/project/${projectId}`)}
-                            onDeleteProject={handleDeleteProject}
-                        />
-                    </div>
-
-                    <div className="md:col-span-3 min-h-0 h-full">
-                        <MyTasksBox
-                            myTasks={myTasks}
-                            personalTasks={personalTasks}
-                            myTasksLoading={myTasksLoading}
-                            myTaskTab={myTaskTab}
-                            setMyTaskTab={setMyTaskTab}
-                            showAllTasks={showAllTasks}
-                            setShowAllTasks={setShowAllTasks}
-                            onSelectTask={setSelectedTask}
-                            onAddPersonalTaskClick={() => setShowAddTaskDialog(true)}
-                            onEditPersonalTask={startEditPersonalTask}
-                            onConvertPersonalTask={(task) => { setConvertingTask(task); setShowConvertDialog(true); }}
-                            onDeletePersonalTask={deletePersonalTask}
-                            onTogglePersonalTaskComplete={togglePersonalTaskComplete}
-                            onNavigateToPersonalTasks={() => navigate('/personal-tasks')}
-                            onChangeTaskStatus={handleChangeMyTaskStatus}
-                            onQuickDueDateChange={handleQuickDueDateChange}
-                        />
-                    </div>
-                </div>
-            </div>
-
-            <QuickNotesPanel
-                notepadOpen={notepadOpen}
-                setNotepadOpen={setNotepadOpen}
-                notepadContent={notepadContent}
-                setNotepadContent={setNotepadContent}
-                notepadSaved={notepadSaved}
-            />
-
-            {selectedTask && (
-                <TicketDetailPanel
-                    task={selectedTask}
-                    token={token}
-                    currentUserId={user?.id ?? null}
-                    onClose={() => setSelectedTask(null)}
-                    onTaskChanged={handleTaskChanged}
-                    onOpenInProjectBoard={(projectId, taskId) => {
-                        navigate(`/project/${projectId}/board/${taskId}`);
-                        setSelectedTask(null);
-                    }}
-                />
-            )}
-
-            <AddPersonalTaskDialog
-                open={showAddTaskDialog}
-                onOpenChange={(open) => {
-                    setShowAddTaskDialog(open);
-                    if (!open) {
-                        setNewPersonalTask({ title: '', description: '', priority: 'medium', due_date: '', project_id: '', assignee_developer_id: '', estimated_hours: '' });
-                        setProjectMembers([]);
-                    }
-                }}
-                form={newPersonalTask}
-                setForm={setNewPersonalTask}
-                showCalendar={showCalendarAddTask}
-                setShowCalendar={setShowCalendarAddTask}
-                projects={projects}
-                projectMembers={projectMembers}
-                onProjectChange={(projectId) => {
-                    setNewPersonalTask({ ...newPersonalTask, project_id: projectId, assignee_developer_id: '' });
-                    if (projectId) fetchProjectMembers(projectId); else setProjectMembers([]);
-                }}
-                addingTask={addingTask}
-                onCreate={createPersonalTask}
-            />
-
-            <ConvertToTicketDialog
-                open={showConvertDialog}
-                onOpenChange={(open) => {
-                    setShowConvertDialog(open);
-                    if (!open) {
-                        setConvertProjectId('');
-                        setConvertAssigneeId('');
-                        setConvertEstimatedHours('');
-                        setProjectMembers([]);
-                    }
-                }}
-                convertingTask={convertingTask}
-                projects={projects}
-                projectMembers={projectMembers}
-                convertProjectId={convertProjectId}
-                setConvertProjectId={setConvertProjectId}
-                convertAssigneeId={convertAssigneeId}
-                setConvertAssigneeId={setConvertAssigneeId}
-                convertEstimatedHours={convertEstimatedHours}
-                setConvertEstimatedHours={setConvertEstimatedHours}
-                onProjectChange={(projectId) => {
-                    setConvertProjectId(projectId);
-                    setConvertAssigneeId('');
-                    fetchProjectMembers(projectId);
-                }}
-                converting={convertingTicket}
-                onConvert={convertToTicket}
-            />
-
-            <EditPersonalTaskDialog
-                open={isEditingPersonalTask}
-                onOpenChange={(open) => { if (!open) cancelEditPersonalTask(); }}
-                form={editPersonalTaskForm}
-                setForm={setEditPersonalTaskForm}
-                showCalendar={showCalendarEditPersonalTask}
-                setShowCalendar={setShowCalendarEditPersonalTask}
-                saving={addingTask}
-                onSave={updatePersonalTask}
-                onCancel={cancelEditPersonalTask}
-            />
-
-            <CreateProjectDialog
-                open={showCreateModal}
-                onClose={() => setShowCreateModal(false)}
-                form={createForm}
-                setForm={setCreateForm}
-                isCreating={isCreating}
-                onCreate={handleCreateProject}
-                availableDevelopers={availableDevelopers}
-                selectedDevelopers={selectedDevelopers}
-                selectedDeveloperId={selectedDeveloperId}
-                setSelectedDeveloperId={setSelectedDeveloperId}
-                newRole={newRole}
-                setNewRole={setNewRole}
-                newResponsibilities={newResponsibilities}
-                setNewResponsibilities={setNewResponsibilities}
-                onAddDeveloper={handleAddDeveloper}
-                onRemoveDeveloper={handleRemoveDeveloper}
-            />
+      <div className="flex-1 min-h-0 flex flex-col max-w-[1400px] mx-auto px-8 py-8 w-full">
+        <div className="flex-shrink-0">
+          <DashboardStats
+            userName={user?.name}
+            myTasks={myTasks}
+            myTasksLoading={myTasksLoading}
+            onTabChange={setMyTaskTab}
+          />
         </div>
-    );
+
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-5 flex-1 min-h-0">
+          <div className="md:col-span-2 min-h-0 h-full">
+            <ProjectsBox
+              projects={projects}
+              isLoading={isLoading}
+              searchQuery={searchQuery}
+              setSearchQuery={setSearchQuery}
+              onCreateProjectClick={() => setShowCreateModal(true)}
+              onProjectClick={(projectId) => navigate(`/project/${projectId}`)}
+              onDeleteProject={handleDeleteProject}
+            />
+          </div>
+
+          <div className="md:col-span-3 min-h-0 h-full">
+            <MyTasksBox
+              myTasks={myTasks}
+              personalTasks={personalTasks}
+              myTasksLoading={myTasksLoading}
+              myTaskTab={myTaskTab}
+              setMyTaskTab={setMyTaskTab}
+              showAllTasks={showAllTasks}
+              setShowAllTasks={setShowAllTasks}
+              onSelectTask={setSelectedTask}
+              onAddPersonalTaskClick={() => setShowAddTaskDialog(true)}
+              onEditPersonalTask={startEditPersonalTask}
+              onConvertPersonalTask={(task) => {
+                setConvertingTask(task);
+                setShowConvertDialog(true);
+              }}
+              onDeletePersonalTask={deletePersonalTask}
+              onTogglePersonalTaskComplete={togglePersonalTaskComplete}
+              onNavigateToPersonalTasks={() => navigate('/personal-tasks')}
+              onChangeTaskStatus={handleChangeMyTaskStatus}
+              onQuickDueDateChange={handleQuickDueDateChange}
+            />
+          </div>
+        </div>
+      </div>
+
+      <QuickNotesPanel
+        notepadOpen={notepadOpen}
+        setNotepadOpen={setNotepadOpen}
+        notepadContent={notepadContent}
+        setNotepadContent={setNotepadContent}
+        notepadSaved={notepadSaved}
+      />
+
+      {selectedTask && (
+        <TicketDetailPanel
+          task={selectedTask}
+          token={token}
+          currentUserId={user?.id ?? null}
+          onClose={() => setSelectedTask(null)}
+          onTaskChanged={handleTaskChanged}
+          onOpenInProjectBoard={(projectId, taskId) => {
+            navigate(`/project/${projectId}/board/${taskId}`);
+            setSelectedTask(null);
+          }}
+        />
+      )}
+
+      <AddPersonalTaskDialog
+        open={showAddTaskDialog}
+        onOpenChange={(open) => {
+          setShowAddTaskDialog(open);
+          if (!open) {
+            setNewPersonalTask({
+              title: '',
+              description: '',
+              priority: 'medium',
+              due_date: '',
+              project_id: '',
+              assignee_developer_id: '',
+              estimated_hours: '',
+            });
+            setMemberLookupProjectId('');
+          }
+        }}
+        form={newPersonalTask}
+        setForm={setNewPersonalTask}
+        showCalendar={showCalendarAddTask}
+        setShowCalendar={setShowCalendarAddTask}
+        projects={projects}
+        projectMembers={projectMembers}
+        onProjectChange={(projectId) => {
+          setNewPersonalTask({
+            ...newPersonalTask,
+            project_id: projectId,
+            assignee_developer_id: '',
+          });
+          setMemberLookupProjectId(projectId || '');
+        }}
+        addingTask={addingTask}
+        onCreate={createPersonalTask}
+      />
+
+      <ConvertToTicketDialog
+        open={showConvertDialog}
+        onOpenChange={(open) => {
+          setShowConvertDialog(open);
+          if (!open) {
+            setConvertProjectId('');
+            setConvertAssigneeId('');
+            setConvertEstimatedHours('');
+            setMemberLookupProjectId('');
+          }
+        }}
+        convertingTask={convertingTask}
+        projects={projects}
+        projectMembers={projectMembers}
+        convertProjectId={convertProjectId}
+        setConvertProjectId={setConvertProjectId}
+        convertAssigneeId={convertAssigneeId}
+        setConvertAssigneeId={setConvertAssigneeId}
+        convertEstimatedHours={convertEstimatedHours}
+        setConvertEstimatedHours={setConvertEstimatedHours}
+        onProjectChange={(projectId) => {
+          setConvertProjectId(projectId);
+          setConvertAssigneeId('');
+          setMemberLookupProjectId(projectId || '');
+        }}
+        converting={convertingTicket}
+        onConvert={convertToTicket}
+      />
+
+      <EditPersonalTaskDialog
+        open={isEditingPersonalTask}
+        onOpenChange={(open) => {
+          if (!open) cancelEditPersonalTask();
+        }}
+        form={editPersonalTaskForm}
+        setForm={setEditPersonalTaskForm}
+        showCalendar={showCalendarEditPersonalTask}
+        setShowCalendar={setShowCalendarEditPersonalTask}
+        saving={addingTask}
+        onSave={updatePersonalTask}
+        onCancel={cancelEditPersonalTask}
+      />
+
+      <CreateProjectDialog
+        open={showCreateModal}
+        onClose={() => setShowCreateModal(false)}
+        form={createForm}
+        setForm={setCreateForm}
+        isCreating={isCreating}
+        onCreate={handleCreateProject}
+        availableDevelopers={availableDevelopers}
+        selectedDevelopers={selectedDevelopers}
+        selectedDeveloperId={selectedDeveloperId}
+        setSelectedDeveloperId={setSelectedDeveloperId}
+        newRole={newRole}
+        setNewRole={setNewRole}
+        newResponsibilities={newResponsibilities}
+        setNewResponsibilities={setNewResponsibilities}
+        onAddDeveloper={handleAddDeveloper}
+        onRemoveDeveloper={handleRemoveDeveloper}
+      />
+    </div>
+  );
 };
 
 export default ProjectsPage;

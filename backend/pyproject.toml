@@ -1,0 +1,41 @@
+# Ruff configuration for the Arsenal Ops backend.
+#
+# This file intentionally contains ONLY tool configuration. Python
+# dependencies remain in ``requirements.txt`` — moving them here is a
+# separate, larger change.
+#
+# Usage (from repo root, with backend/requirements.txt installed):
+#
+#     pip install -r backend/requirements.txt    # includes ruff (pinned)
+#     ruff check backend/                        # lint
+#     ruff check backend/ --fix                  # autofix where possible
+#     ruff format backend/                       # apply formatter
+#     ruff format --check backend/               # verify formatting (CI mode)
+#
+# The CI workflow at .github/workflows/lint.yml runs the last two commands
+# without ``--fix`` / without writes on every PR. CI failures are visible
+# (red workflow status) but do not block merges unless "Lint" is added to
+# the required-status-checks list in the repo's branch protection rules.
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+extend-exclude = [
+    ".venv",
+    "__pycache__",
+    "*.db",
+    "migrate_*.py",  # one-off historical migration scripts
+]
+
+[tool.ruff.lint]
+# E,W = pycodestyle  |  F = pyflakes  |  I = isort
+# UP  = pyupgrade    |  B = bugbear   |  SIM = simplify
+select = ["E", "W", "F", "I", "UP", "B", "SIM"]
+ignore = [
+    "E501",  # line too long — the formatter handles wrapping
+    "B008",  # do not perform function call in default args — required for FastAPI Depends(...)
+]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"

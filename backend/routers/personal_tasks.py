@@ -1,20 +1,22 @@
 """
 Personal Tasks Router - User-specific tasks that can be converted to project tickets
 """
-from fastapi import APIRouter, HTTPException, Depends
-from pydantic import BaseModel
-from typing import List, Optional
-from datetime import datetime
-from sqlalchemy.orm import Session
 
 import sys
-sys.path.append('..')
+from datetime import datetime
+
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
+from sqlalchemy.orm import Session
+
+sys.path.append("..")
 from database import get_db
 from models.personal_task import PersonalTask
 from models.project import Project
-from models.work_item import WorkItem, WorkItemStatus, WorkItemType
 from models.user import User
+from models.work_item import WorkItem, WorkItemStatus
 from routers.auth import get_current_user
+from routers.workitems import get_next_item_number
 
 router = APIRouter(prefix="/api/personal-tasks", tags=["Personal Tasks"])
 
@@ -22,51 +24,51 @@ router = APIRouter(prefix="/api/personal-tasks", tags=["Personal Tasks"])
 # Request/Response models
 class CreatePersonalTaskRequest(BaseModel):
     title: str
-    description: Optional[str] = ""
-    priority: Optional[str] = "medium"
-    estimated_hours: Optional[int] = 0
-    due_date: Optional[str] = None
-    tags: Optional[List[str]] = []
+    description: str | None = ""
+    priority: str | None = "medium"
+    estimated_hours: int | None = 0
+    due_date: str | None = None
+    tags: list[str] | None = []
 
 
 class UpdatePersonalTaskRequest(BaseModel):
-    title: Optional[str] = None
-    description: Optional[str] = None
-    status: Optional[str] = None
-    priority: Optional[str] = None
-    estimated_hours: Optional[int] = None
-    due_date: Optional[str] = None
-    tags: Optional[List[str]] = None
+    title: str | None = None
+    description: str | None = None
+    status: str | None = None
+    priority: str | None = None
+    estimated_hours: int | None = None
+    due_date: str | None = None
+    tags: list[str] | None = None
 
 
 class ConvertToTicketRequest(BaseModel):
     project_id: int
-    type: Optional[str] = "task"
-    estimated_hours: Optional[int] = None
-    assignee_developer_id: Optional[int] = None  # Optional: who to assign the ticket to
+    type: str | None = "task"
+    estimated_hours: int | None = None
+    assignee_developer_id: int | None = None  # Optional: who to assign the ticket to
 
 
 @router.get("/")
-async def get_personal_tasks(
-    status: Optional[str] = None,
+def get_personal_tasks(
+    status: str | None = None,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
     """Get all personal tasks for the current user"""
     query = db.query(PersonalTask).filter(PersonalTask.user_id == current_user.id)
-    
+
     if status:
         query = query.filter(PersonalTask.status == status)
-    
+
     tasks = query.order_by(PersonalTask.created_at.desc()).all()
     return [task.to_dict() for task in tasks]
 
 
 @router.post("/")
-async def create_personal_task(
+def create_personal_task(
     request: CreatePersonalTaskRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
     """Create a new personal task"""
     task = PersonalTask(
@@ -77,53 +79,53 @@ async def create_personal_task(
         estimated_hours=request.estimated_hours or 0,
         due_date=datetime.fromisoformat(request.due_date) if request.due_date else None,
         tags=request.tags or [],
-        status="todo"
+        status="todo",
     )
-    
+
     db.add(task)
     db.commit()
     db.refresh(task)
-    
+
     return task.to_dict()
 
 
 @router.get("/{task_id}")
-async def get_personal_task(
-    task_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+def get_personal_task(
+    task_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
 ):
     """Get a specific personal task"""
-    task = db.query(PersonalTask).filter(
-        PersonalTask.id == task_id,
-        PersonalTask.user_id == current_user.id
-    ).first()
-    
+    task = (
+        db.query(PersonalTask)
+        .filter(PersonalTask.id == task_id, PersonalTask.user_id == current_user.id)
+        .first()
+    )
+
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
-    
+
     return task.to_dict()
 
 
 @router.put("/{task_id}")
-async def update_personal_task(
+def update_personal_task(
     task_id: int,
     request: UpdatePersonalTaskRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
     """Update a personal task"""
-    task = db.query(PersonalTask).filter(
-        PersonalTask.id == task_id,
-        PersonalTask.user_id == current_user.id
-    ).first()
-    
+    task = (
+        db.query(PersonalTask)
+        .filter(PersonalTask.id == task_id, PersonalTask.user_id == current_user.id)
+        .first()
+    )
+
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
-    
+
     if task.is_converted:
         raise HTTPException(status_code=400, detail="Cannot update a converted task")
-    
+
     # Update fields
     if request.title is not None:
         task.title = request.title
@@ -139,78 +141,83 @@ async def update_personal_task(
         task.due_date = datetime.fromisoformat(request.due_date) if request.due_date else None
     if request.tags is not None:
         task.tags = request.tags
-    
+
     db.commit()
     db.refresh(task)
-    
+
     return task.to_dict()
 
 
 @router.delete("/{task_id}")
-async def delete_personal_task(
-    task_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+def delete_personal_task(
+    task_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
 ):
     """Delete a personal task"""
-    task = db.query(PersonalTask).filter(
-        PersonalTask.id == task_id,
-        PersonalTask.user_id == current_user.id
-    ).first()
-    
+    task = (
+        db.query(PersonalTask)
+        .filter(PersonalTask.id == task_id, PersonalTask.user_id == current_user.id)
+        .first()
+    )
+
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
-    
+
     db.delete(task)
     db.commit()
-    
+
     return {"status": "deleted", "id": task_id}
 
 
 @router.post("/{task_id}/convert-to-ticket")
-async def convert_to_ticket(
+def convert_to_ticket(
     task_id: int,
     request: ConvertToTicketRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
     """Convert a personal task to a project ticket"""
     from models.developer import Developer
     from services.email_service import email_service
-    
+
     # Get the personal task
-    task = db.query(PersonalTask).filter(
-        PersonalTask.id == task_id,
-        PersonalTask.user_id == current_user.id
-    ).first()
-    
+    task = (
+        db.query(PersonalTask)
+        .filter(PersonalTask.id == task_id, PersonalTask.user_id == current_user.id)
+        .first()
+    )
+
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
-    
+
     if task.is_converted:
         raise HTTPException(status_code=400, detail="Task already converted")
-    
+
     # Verify project exists
     project = db.query(Project).filter(Project.id == request.project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
-    
+
     # Determine assignee: use explicitly chosen developer or fall back to current user
     if request.assignee_developer_id:
         assignee = db.query(Developer).filter(Developer.id == request.assignee_developer_id).first()
     else:
         assignee = db.query(Developer).filter(Developer.email == current_user.email).first()
-    
-    # Generate key BEFORE inserting (key is NOT NULL)
-    from sqlalchemy import text
+
+    # Generate key BEFORE inserting (key is NOT NULL). Use the shared helper
+    # so the Postgres-vs-SQLite split lives in one place.
     key_prefix = project.key_prefix or "TASK"
-    result = db.execute(text("""
-        SELECT COALESCE(MAX(CAST(REGEXP_REPLACE(key, '^.*-', '') AS INTEGER)), 0) + 1
-        FROM work_items WHERE key LIKE :prefix
-    """), {"prefix": f"{key_prefix}-%"})
-    next_number = result.scalar() or 1
+
+    # Acquire the same advisory lock as create_work_item so concurrent
+    # converters don't race on key numbering. No-op on SQLite.
+    if db.bind.dialect.name == "postgresql":
+        from sqlalchemy import text
+
+        lock_id = abs(hash(key_prefix)) % 2_147_483_647
+        db.execute(text("SELECT pg_advisory_xact_lock(:lock_id)"), {"lock_id": lock_id})
+
+    next_number = get_next_item_number(db, key_prefix)
     generated_key = f"{key_prefix}-{next_number}"
-    
+
     # Create work item with key already set
     work_item = WorkItem(
         project_id=request.project_id,
@@ -225,20 +232,20 @@ async def convert_to_ticket(
         assignee_id=assignee.id if assignee else None,
         tags=task.tags or [],
     )
-    
+
     db.add(work_item)
     db.flush()  # Get the work_item.id
-    
+
     # Update personal task
     task.is_converted = True
     task.converted_at = datetime.utcnow()
     task.project_id = request.project_id
     task.work_item_id = work_item.id
-    
+
     db.commit()
     db.refresh(work_item)
     db.refresh(task)
-    
+
     # Send assignment email notification
     if assignee and assignee.email:
         try:
@@ -257,7 +264,7 @@ async def convert_to_ticket(
             )
         except Exception as e:
             print(f"[EMAIL ERROR] Failed to send assignment notification: {e}")
-    
+
     return {
         "status": "converted",
         "personal_task": task.to_dict(),
@@ -268,5 +275,5 @@ async def convert_to_ticket(
             "project_id": work_item.project_id,
             "status": work_item.status,
             "assignee_name": assignee.name if assignee else None,
-        }
+        },
     }

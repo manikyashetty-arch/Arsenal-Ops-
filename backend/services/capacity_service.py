@@ -24,8 +24,9 @@ A developer "had this ticket this week" iff they have at least one assignment sp
 in work_item_assignment_history that overlaps the week (or they logged hours on it
 this week — same outcome).
 """
+
+from collections.abc import Iterable
 from datetime import datetime, timedelta
-from typing import Dict, Iterable, Optional, Set, Tuple
 
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
@@ -34,16 +35,18 @@ from models.time_entry import TimeEntry
 from models.work_item_assignment_history import WorkItemAssignmentHistory
 
 
-def week_boundaries(now: Optional[datetime] = None) -> Tuple[datetime, datetime]:
+def week_boundaries(now: datetime | None = None) -> tuple[datetime, datetime]:
     """Saturday 00:00 → Friday 23:59 UTC for the week containing `now`."""
     today = now or datetime.utcnow()
     days_back = (today.weekday() + 2) % 7  # Mon=0, Sat=5; (0+2)%7=2 ... (5+2)%7=0
-    week_start = (today - timedelta(days=days_back)).replace(hour=0, minute=0, second=0, microsecond=0)
+    week_start = (today - timedelta(days=days_back)).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    )
     week_end = week_start + timedelta(days=6, hours=23, minutes=59, seconds=59)
     return week_start, week_end
 
 
-def _bucket_for(item) -> Optional[str]:
+def _bucket_for(item) -> str | None:
     if item.status == "done":
         return "done"
     if item.status == "in_review":
@@ -61,9 +64,7 @@ def _ticket_belongs_this_week(item, week_start: datetime, week_end: datetime) ->
     """
     if item.status == "done":
         return bool(item.completed_at and week_start <= item.completed_at <= week_end)
-    if item.status in ("in_progress", "in_review"):
-        return True
-    return False
+    return item.status in ("in_progress", "in_review")
 
 
 def _ticket_to_dict_for_dev(
@@ -86,7 +87,9 @@ def _ticket_to_dict_for_dev(
         "logged_hours": total_logged,
         "remaining_hours": max(0, estimated - total_logged),
         "started_at": item.started_at.isoformat() if item.started_at else None,
-        "last_assigned_at": item.last_assigned_at.isoformat() if getattr(item, "last_assigned_at", None) else None,
+        "last_assigned_at": item.last_assigned_at.isoformat()
+        if getattr(item, "last_assigned_at", None)
+        else None,
         "completed_at": item.completed_at.isoformat() if item.completed_at else None,
         "counted_hours": counted,
         "counted_basis": basis,
@@ -101,7 +104,7 @@ def compute_capacity_breakdown(
     db: Session,
     developer_id: int,
     week_capacity: int = 40,
-    restrict_to_project_ids: Optional[Set[int]] = None,
+    restrict_to_project_ids: set[int] | None = None,
 ) -> dict:
     """Aggregate per-status hours and ticket detail for one developer's items.
 
@@ -117,18 +120,15 @@ def compute_capacity_breakdown(
     """
     week_end = week_start + timedelta(days=6, hours=23, minutes=59, seconds=59)
 
-    item_by_id: Dict[int, object] = {it.id: it for it in items}
+    item_by_id: dict[int, object] = {it.id: it for it in items}
 
     from models.work_item import WorkItem
 
     # Tickets they logged on this week (covers transferred-away cases).
-    logged_q = (
-        db.query(TimeEntry.work_item_id)
-        .filter(
-            TimeEntry.developer_id == developer_id,
-            TimeEntry.logged_at >= week_start,
-            TimeEntry.logged_at <= week_end,
-        )
+    logged_q = db.query(TimeEntry.work_item_id).filter(
+        TimeEntry.developer_id == developer_id,
+        TimeEntry.logged_at >= week_start,
+        TimeEntry.logged_at <= week_end,
     )
     if restrict_to_project_ids is not None:
         logged_q = logged_q.join(WorkItem, TimeEntry.work_item_id == WorkItem.id).filter(
@@ -137,16 +137,13 @@ def compute_capacity_breakdown(
     logged_ids = {r[0] for r in logged_q.distinct().all()}
 
     # Tickets they were assigned to at any point this week (covers held-but-no-log).
-    history_q = (
-        db.query(WorkItemAssignmentHistory.work_item_id)
-        .filter(
-            WorkItemAssignmentHistory.developer_id == developer_id,
-            WorkItemAssignmentHistory.assigned_at <= week_end,
-            or_(
-                WorkItemAssignmentHistory.unassigned_at.is_(None),
-                WorkItemAssignmentHistory.unassigned_at >= week_start,
-            ),
-        )
+    history_q = db.query(WorkItemAssignmentHistory.work_item_id).filter(
+        WorkItemAssignmentHistory.developer_id == developer_id,
+        WorkItemAssignmentHistory.assigned_at <= week_end,
+        or_(
+            WorkItemAssignmentHistory.unassigned_at.is_(None),
+            WorkItemAssignmentHistory.unassigned_at >= week_start,
+        ),
     )
     if restrict_to_project_ids is not None:
         history_q = history_q.join(

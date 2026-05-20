@@ -1,0 +1,70 @@
+# Lint workflow — runs Ruff (Python) and ESLint + Prettier (frontend) on every
+# pull request and push to main.
+#
+# Loud but not blocking: any lint failure fails the workflow, so the PR check
+# shows red. Merging is gated by *branch protection settings*, not this file.
+# As long as "Lint" is NOT in the required-status-checks list for `main`, a
+# red workflow is visible feedback but does not block merge.
+#
+# To flip to strict enforcement once the baseline is clean: add "Lint" to
+# the required-status-checks list under
+#   Repo → Settings → Branches → Branch protection rules → main
+# No workflow file change needed.
+
+name: Lint
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  python:
+    name: Python (Ruff)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install ruff
+        # ruff is pinned in backend/requirements.txt so CI and local runs stay
+        # in sync. We only install ruff here (not the whole backend) since the
+        # lint job doesn't need the rest of the runtime deps.
+        run: pip install $(grep '^ruff==' backend/requirements.txt)
+
+      - name: ruff check
+        run: ruff check backend/
+
+      - name: ruff format --check
+        run: ruff format --check backend/
+
+  frontend:
+    name: Frontend (ESLint + Prettier)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: app/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: ESLint
+        run: npm run lint
+
+      - name: Prettier
+        run: npm run format:check

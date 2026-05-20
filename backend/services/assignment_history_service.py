@@ -4,8 +4,8 @@ Call ``record_assignment_change`` whenever a work item's assignee changes (inclu
 initial assignment on creation, transfers between developers, and clearing the
 assignee). The caller still owns commit/rollback — these helpers only stage changes.
 """
+
 from datetime import datetime
-from typing import Optional
 
 from sqlalchemy.orm import Session
 
@@ -29,8 +29,8 @@ def _close_open_span(db: Session, work_item_id: int, at: datetime) -> None:
 def record_assignment_change(
     db: Session,
     work_item_id: int,
-    new_assignee_id: Optional[int],
-    at: Optional[datetime] = None,
+    new_assignee_id: int | None,
+    at: datetime | None = None,
 ) -> None:
     """Close the currently-open span (if any) and open a new one for `new_assignee_id`.
 

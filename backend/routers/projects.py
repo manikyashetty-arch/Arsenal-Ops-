@@ -1,25 +1,26 @@
 """
 Projects Router - CRUD operations for projects with work item stats
 """
-from fastapi import APIRouter, HTTPException, Depends, status, UploadFile, File
+
+import os
+import sys
+from datetime import datetime
+
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
-from typing import List, Optional
-from datetime import datetime
+from sqlalchemy import insert, select
 from sqlalchemy.orm import Session
-from sqlalchemy import select, insert, delete
 from sqlalchemy.orm.attributes import flag_modified
-import os
 
-import sys
-sys.path.append('..')
+sys.path.append("..")
 from database import get_db
-from models.project import Project
-from models.developer import Developer, project_developers
 from models.architecture import Architecture
+from models.developer import Developer, project_developers
+from models.project import Project
 from models.user import User, UserRole
-from services.github_service import github_service, GitHubService
 from routers.auth import get_current_user
+from services.github_service import GitHubService, github_service
 
 router = APIRouter(prefix="/api/projects", tags=["Projects"])
 
@@ -27,32 +28,30 @@ router = APIRouter(prefix="/api/projects", tags=["Projects"])
 def has_project_access(project: Project, user: User) -> bool:
     """Check if user has access to a project (admin or assigned developer)"""
     # Admin has access to all projects (roles are comma-separated)
-    if 'admin' in user.role:
+    if "admin" in user.role:
         return True
-    
+
     # Check if user is assigned as a developer to this project
-    for dev in project.developers:
-        if dev.email == user.email:
-            return True
-    
-    return False
+    return any(dev.email == user.email for dev in project.developers)
 
 
 def is_project_admin(project_id: int, user: User, db: Session) -> bool:
     """Check if user is a project-specific admin"""
     # System admins are project admins
-    if 'admin' in user.role:
+    if "admin" in user.role:
         return True
-    
+
     # Check if user is a project admin
     result = db.execute(
-        select(project_developers.c.is_admin).where(
-            (project_developers.c.project_id == project_id) &
-            (Developer.id == project_developers.c.developer_id) &
-            (Developer.email == user.email)
-        ).join(Developer, Developer.id == project_developers.c.developer_id)
+        select(project_developers.c.is_admin)
+        .where(
+            (project_developers.c.project_id == project_id)
+            & (Developer.id == project_developers.c.developer_id)
+            & (Developer.email == user.email)
+        )
+        .join(Developer, Developer.id == project_developers.c.developer_id)
     ).first()
-    
+
     return result[0] if result else False
 
 
@@ -61,13 +60,13 @@ def require_project_admin(project_id: int, user: User, db: Session):
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
-    
+
     if not is_project_admin(project_id, user, db):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="You must be a project admin to perform this action"
+            detail="You must be a project admin to perform this action",
         )
-    
+
     return project
 
 
@@ -76,39 +75,38 @@ def require_project_access(project_id: int, user: User, db: Session):
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
-    
+
     if not has_project_access(project, user):
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You don't have access to this project"
+            status_code=status.HTTP_403_FORBIDDEN, detail="You don't have access to this project"
         )
-    
+
     return project
 
 
 class DeveloperAssignment(BaseModel):
     developer_id: int
     role: str
-    responsibilities: Optional[str] = None
+    responsibilities: str | None = None
 
 
 class ProjectCreate(BaseModel):
     name: str
     description: str
     key_prefix: str = "PROJ"
-    github_repo_url: Optional[str] = None
-    github_repo_urls: Optional[List[str]] = None
-    developers: Optional[List[DeveloperAssignment]] = []
+    github_repo_url: str | None = None
+    github_repo_urls: list[str] | None = None
+    developers: list[DeveloperAssignment] | None = []
 
 
 class ProjectUpdate(BaseModel):
-    name: Optional[str] = None
-    description: Optional[str] = None
-    status: Optional[str] = None
-    github_repo_url: Optional[str] = None
-    github_repo_urls: Optional[List[str]] = None
-    created_at: Optional[str] = None
-    end_date: Optional[str] = None
+    name: str | None = None
+    description: str | None = None
+    status: str | None = None
+    github_repo_url: str | None = None
+    github_repo_urls: list[str] | None = None
+    created_at: str | None = None
+    end_date: str | None = None
 
 
 class ProjectDeveloperResponse(BaseModel):
@@ -116,7 +114,7 @@ class ProjectDeveloperResponse(BaseModel):
     name: str
     email: str
     role: str
-    responsibilities: Optional[str]
+    responsibilities: str | None
     is_admin: bool
 
 
@@ -128,142 +126,214 @@ class ProjectResponse(BaseModel):
     status: str
     created_at: str
     work_item_stats: dict
-    developers: List[ProjectDeveloperResponse]
+    developers: list[ProjectDeveloperResponse]
 
 
-def get_project_work_item_stats(project_id: int, db: Session) -> dict:
-    """Get work item statistics for a project"""
-    from models.work_item import WorkItem
-    
-    items = db.query(WorkItem).filter(WorkItem.project_id == project_id).all()
-    total = len(items)
-    by_status = {}
-    for item in items:
-        s = item.status or "todo"
-        by_status[s] = by_status.get(s, 0) + 1
-    total_points = sum(item.story_points or 0 for item in items)
-    completed = by_status.get("done", 0)
+def _empty_stats() -> dict:
     return {
-        "total": total,
-        "by_status": by_status,
-        "total_points": total_points,
-        "completed": completed,
-        "completion_pct": round((completed / total * 100) if total > 0 else 0, 1)
+        "total": 0,
+        "by_status": {},
+        "total_points": 0,
+        "completed": 0,
+        "completion_pct": 0,
     }
 
 
-def format_project(project: Project, db: Session) -> dict:
-    stats = get_project_work_item_stats(project.id, db)
-    
-    # Get developers with their roles from the association table
-    developers = []
-    result = db.execute(
+def get_work_item_stats_batch(project_ids: list[int], db: Session) -> dict:
+    """Return ``{project_id: stats_dict}`` for the given project ids.
+
+    Runs a single GROUP BY query instead of one-pass-per-project. Items with a
+    NULL status are bucketed as ``"todo"`` to match the legacy behavior of
+    ``get_project_work_item_stats``.
+    """
+    from sqlalchemy import func
+
+    from models.work_item import WorkItem
+
+    if not project_ids:
+        return {}
+
+    status_expr = func.coalesce(WorkItem.status, "todo").label("status")
+    rows = (
+        db.query(
+            WorkItem.project_id,
+            status_expr,
+            func.count().label("n"),
+            func.coalesce(func.sum(WorkItem.story_points), 0).label("points"),
+        )
+        .filter(WorkItem.project_id.in_(project_ids))
+        .group_by(WorkItem.project_id, status_expr)
+        .all()
+    )
+
+    stats: dict = {pid: _empty_stats() for pid in project_ids}
+    for row in rows:
+        bucket = stats[row.project_id]
+        bucket["by_status"][row.status] = row.n
+        bucket["total"] += row.n
+        bucket["total_points"] += int(row.points or 0)
+
+    for bucket in stats.values():
+        completed = bucket["by_status"].get("done", 0)
+        total = bucket["total"]
+        bucket["completed"] = completed
+        bucket["completion_pct"] = round((completed / total * 100) if total > 0 else 0, 1)
+
+    return stats
+
+
+def _developers_by_project(project_ids: list[int], db: Session) -> dict:
+    """Return ``{project_id: [developer_dict, ...]}`` in one query."""
+    if not project_ids:
+        return {}
+
+    rows = db.execute(
         select(
+            project_developers.c.project_id,
             Developer.id,
             Developer.name,
             Developer.email,
             Developer.github_username,
             project_developers.c.role,
             project_developers.c.responsibilities,
-            project_developers.c.is_admin
+            project_developers.c.is_admin,
         )
         .join(project_developers, Developer.id == project_developers.c.developer_id)
-        .where(project_developers.c.project_id == project.id)
+        .where(project_developers.c.project_id.in_(project_ids))
     ).all()
-    
-    for row in result:
-        developers.append({
-            "id": row.id,
-            "name": row.name,
-            "email": row.email,
-            "github_username": row.github_username,
-            "role": row.role,
-            "responsibilities": row.responsibilities,
-            "is_admin": row.is_admin
-        })
-    
-    # Parse GitHub repo name if URL exists
-    github_repo_name = None
-    if project.github_repo_url:
-        github_repo_name = github_service.parse_repo_name(project.github_repo_url)
-    
-    # Get selected architecture
-    selected_architecture = db.query(Architecture).filter(
-        Architecture.project_id == project.id,
-        Architecture.is_selected == True
-    ).first()
-    
-    # Get all architectures for this project
-    all_architectures = db.query(Architecture).filter(
-        Architecture.project_id == project.id
-    ).order_by(Architecture.created_at.desc()).all()
-    
-    return {
-        "id": project.id,
-        "name": project.name,
-        "description": project.description,
-        "key_prefix": project.status or "PROJ",
-        "status": project.status or "active",
-        "github_repo_url": project.github_repo_url,
-        "github_repo_urls": project.github_repo_urls if isinstance(project.github_repo_urls, list) else (project.github_repo_urls or []),
-        "github_repo_name": github_repo_name,
-        "created_at": project.created_at.isoformat() if project.created_at else datetime.utcnow().isoformat(),
-        "end_date": project.end_date.isoformat() if project.end_date else None,
-        "work_item_stats": stats,
-        "developers": developers,
-        "selected_architecture": selected_architecture.to_dict() if selected_architecture else None,
-        "architectures": [arch.to_dict() for arch in all_architectures]
-    }
+
+    by_project: dict = {pid: [] for pid in project_ids}
+    for row in rows:
+        by_project[row.project_id].append(
+            {
+                "id": row.id,
+                "name": row.name,
+                "email": row.email,
+                "github_username": row.github_username,
+                "role": row.role,
+                "responsibilities": row.responsibilities,
+                "is_admin": row.is_admin,
+            }
+        )
+    return by_project
+
+
+def _architectures_by_project(project_ids: list[int], db: Session) -> dict:
+    """Return ``{project_id: [Architecture, ...]}`` ordered by created_at desc."""
+    if not project_ids:
+        return {}
+
+    rows = (
+        db.query(Architecture)
+        .filter(Architecture.project_id.in_(project_ids))
+        .order_by(Architecture.created_at.desc())
+        .all()
+    )
+
+    by_project: dict = {pid: [] for pid in project_ids}
+    for arch in rows:
+        by_project[arch.project_id].append(arch)
+    return by_project
+
+
+def format_projects_batch(projects: list[Project], db: Session) -> list[dict]:
+    """Serialize a list of projects using batched DB lookups.
+
+    Total query count: 3 (stats, developers, architectures) regardless of how
+    many projects are passed in. Output is identical to calling
+    ``format_project`` on each project individually.
+    """
+    project_ids = [p.id for p in projects]
+    stats_by_id = get_work_item_stats_batch(project_ids, db)
+    devs_by_id = _developers_by_project(project_ids, db)
+    archs_by_id = _architectures_by_project(project_ids, db)
+
+    out: list[dict] = []
+    for project in projects:
+        archs = archs_by_id.get(project.id, [])
+        selected = next((a for a in archs if a.is_selected), None)
+
+        github_repo_name = None
+        if project.github_repo_url:
+            github_repo_name = github_service.parse_repo_name(project.github_repo_url)
+
+        out.append(
+            {
+                "id": project.id,
+                "name": project.name,
+                "description": project.description,
+                "key_prefix": project.status or "PROJ",
+                "status": project.status or "active",
+                "github_repo_url": project.github_repo_url,
+                "github_repo_urls": project.github_repo_urls
+                if isinstance(project.github_repo_urls, list)
+                else (project.github_repo_urls or []),
+                "github_repo_name": github_repo_name,
+                "created_at": project.created_at.isoformat()
+                if project.created_at
+                else datetime.utcnow().isoformat(),
+                "end_date": project.end_date.isoformat() if project.end_date else None,
+                "work_item_stats": stats_by_id.get(project.id, _empty_stats()),
+                "developers": devs_by_id.get(project.id, []),
+                "selected_architecture": selected.to_dict() if selected else None,
+                "architectures": [arch.to_dict() for arch in archs],
+            }
+        )
+    return out
+
+
+def format_project(project: Project, db: Session) -> dict:
+    """Single-project wrapper around ``format_projects_batch`` for backward compat."""
+    return format_projects_batch([project], db)[0]
 
 
 @router.post("/")
-async def create_project(
-    project: ProjectCreate, 
+def create_project(
+    project: ProjectCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
     """Create a new project (all authenticated users can create)"""
     # Check for duplicate project name
     existing = db.query(Project).filter(Project.name == project.name).first()
     if existing:
-        raise HTTPException(status_code=400, detail=f"Project with name '{project.name}' already exists")
-    
+        raise HTTPException(
+            status_code=400, detail=f"Project with name '{project.name}' already exists"
+        )
+
     # Parse GitHub repo name from URL
     github_repo_name = None
     github_repo_url = project.github_repo_url
     github_repo_urls = project.github_repo_urls or []
-    
+
     # If single github_repo_url is provided, add it to the urls array
     if github_repo_url:
         github_repo_name = github_service.parse_repo_name(github_repo_url)
         if github_repo_url not in github_repo_urls:
             github_repo_urls.insert(0, github_repo_url)
-    
+
     new_project = Project(
         name=project.name,
         description=project.description,
         status=project.key_prefix.upper().replace(" ", "") if project.key_prefix else "PROJ",
         github_repo_url=github_repo_url,
         github_repo_urls=github_repo_urls,
-        github_repo_name=github_repo_name
+        github_repo_name=github_repo_name,
     )
-    
+
     db.add(new_project)
     db.commit()
     db.refresh(new_project)
-    
+
     # Add creator as a project member with project admin role
     creator_dev = db.query(Developer).filter(Developer.email == current_user.email).first()
     if not creator_dev:
         # Create developer record if doesn't exist
-        creator_dev = Developer(
-            name=current_user.email.split('@')[0],
-            email=current_user.email
-        )
+        creator_dev = Developer(name=current_user.email.split("@")[0], email=current_user.email)
         db.add(creator_dev)
         db.commit()
         db.refresh(creator_dev)
-    
+
     # Add creator as a project member (not admin by default)
     db.execute(
         insert(project_developers).values(
@@ -271,23 +341,28 @@ async def create_project(
             developer_id=creator_dev.id,
             role="Project Creator",
             responsibilities=None,
-            is_admin=False
+            is_admin=False,
         )
     )
     db.commit()
-    
+
     # Assign additional developers if provided
     if project.developers:
         for dev_assignment in project.developers:
             # Skip if this developer is already added as creator
             if dev_assignment.developer_id == creator_dev.id:
                 continue
-            
+
             # Verify developer exists
-            developer = db.query(Developer).filter(Developer.id == dev_assignment.developer_id).first()
+            developer = (
+                db.query(Developer).filter(Developer.id == dev_assignment.developer_id).first()
+            )
             if not developer:
-                raise HTTPException(status_code=400, detail=f"Developer with ID {dev_assignment.developer_id} not found")
-            
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Developer with ID {dev_assignment.developer_id} not found",
+                )
+
             # Insert into association table (not admin by default)
             db.execute(
                 insert(project_developers).values(
@@ -295,41 +370,40 @@ async def create_project(
                     developer_id=dev_assignment.developer_id,
                     role=dev_assignment.role,
                     responsibilities=dev_assignment.responsibilities,
-                    is_admin=False
+                    is_admin=False,
                 )
             )
         db.commit()
-    
+
     return format_project(new_project, db)
 
 
 @router.get("/")
-async def list_projects(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
+def list_projects(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """List all projects (admin sees all, developers see assigned only)"""
     # Check if user has admin role (handles multi-role users like 'admin,developer')
-    user_roles = [role.strip() for role in current_user.role.split(',')]
+    user_roles = [role.strip() for role in current_user.role.split(",")]
     is_admin = UserRole.ADMIN.value in user_roles
-    
+
     if is_admin:
         # Admin sees all projects
         projects = db.query(Project).all()
     else:
         # Developer sees only assigned projects
-        projects = db.query(Project).join(project_developers).join(Developer).filter(
-            Developer.email == current_user.email
-        ).all()
-    
-    return [format_project(p, db) for p in projects]
+        projects = (
+            db.query(Project)
+            .join(project_developers)
+            .join(Developer)
+            .filter(Developer.email == current_user.email)
+            .all()
+        )
+
+    return format_projects_batch(projects, db)
 
 
 @router.get("/{project_id}")
-async def get_project(
-    project_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+def get_project(
+    project_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
 ):
     """Get a project with work item stats (requires access)"""
     project = require_project_access(project_id, current_user, db)
@@ -337,11 +411,11 @@ async def get_project(
 
 
 @router.put("/{project_id}")
-async def update_project(
+def update_project(
     project_id: int,
     update: ProjectUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
     """Update a project (requires access)"""
     project = require_project_access(project_id, current_user, db)
@@ -353,7 +427,7 @@ async def update_project(
         project.description = update.description
     if update.status is not None:
         project.status = update.status
-    
+
     # Handle github_repo_url update
     if update.github_repo_url is not None:
         project.github_repo_url = update.github_repo_url
@@ -363,7 +437,7 @@ async def update_project(
         else:
             project.github_repo_name = None
         print(f"[DEBUG] Updated github_repo_url to: {project.github_repo_url}")
-    
+
     # Handle github_repo_urls update
     if update.github_repo_urls is not None:
         project.github_repo_urls = update.github_repo_urls
@@ -372,44 +446,40 @@ async def update_project(
         if update.github_repo_urls and len(update.github_repo_urls) > 0:
             project.github_repo_url = update.github_repo_urls[0]
             project.github_repo_name = github_service.parse_repo_name(update.github_repo_urls[0])
-    
+
     # Handle dates
+    import contextlib
+
     if update.created_at is not None:
-        try:
+        with contextlib.suppress(ValueError, TypeError):
             # Parse YYYY-MM-DD format from frontend
-            project.created_at = datetime.strptime(update.created_at, '%Y-%m-%d')
-        except (ValueError, TypeError):
-            pass
+            project.created_at = datetime.strptime(update.created_at, "%Y-%m-%d")
     if update.end_date is not None:
-        try:
+        with contextlib.suppress(ValueError, TypeError):
             # Parse YYYY-MM-DD format from frontend
-            project.end_date = datetime.strptime(update.end_date, '%Y-%m-%d')
-        except (ValueError, TypeError):
-            pass
+            project.end_date = datetime.strptime(update.end_date, "%Y-%m-%d")
 
     project.updated_at = datetime.utcnow()
     db.commit()
     db.refresh(project)
-    
+
     result = format_project(project, db)
     print(f"[DEBUG] Response with github_repo_url: {result.get('github_repo_url')}")
     return result
 
 
 @router.delete("/{project_id}")
-async def delete_project(
-    project_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+def delete_project(
+    project_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
 ):
     """Delete a project and its work items (requires project admin or system admin access)"""
     # Check if user is system admin or project admin
     if not is_project_admin(project_id, current_user, db):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only project admins or system admins can delete projects"
+            detail="Only project admins or system admins can delete projects",
         )
-    
+
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
@@ -421,11 +491,11 @@ async def delete_project(
 
 
 @router.post("/{project_id}/github-invite")
-async def send_github_invitations(
-    project_id: int, 
+def send_github_invitations(
+    project_id: int,
     role: str = "push",  # pull, push, admin, maintain, triage
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
     """
     Send GitHub repository invitations to all project developers.
@@ -435,51 +505,51 @@ async def send_github_invitations(
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
-    
+
     if not project.github_repo_url:
-        raise HTTPException(status_code=400, detail="Project has no GitHub repository URL configured")
-    
+        raise HTTPException(
+            status_code=400, detail="Project has no GitHub repository URL configured"
+        )
+
     # Parse repo name - prefer explicit repo_name if set
     repo_name = project.github_repo_name or github_service.parse_repo_name(project.github_repo_url)
     if not repo_name:
         raise HTTPException(status_code=400, detail="Invalid GitHub repository URL")
-    
+
     # Use project-specific token or fall back to global token
-    project_github_service = GitHubService(token=project.github_token) if project.github_token else github_service
-    
+    project_github_service = (
+        GitHubService(token=project.github_token) if project.github_token else github_service
+    )
+
     # Check GitHub configuration
     if not project_github_service.is_configured():
         raise HTTPException(
-            status_code=503, 
-            detail="GitHub integration not configured. Set GITHUB_TOKEN environment variable or add a project-specific token in Admin."
+            status_code=503,
+            detail="GitHub integration not configured. Set GITHUB_TOKEN environment variable or add a project-specific token in Admin.",
         )
-    
+
     # Get developers with GitHub usernames
     developers = db.execute(
-        select(
-            Developer.id,
-            Developer.name,
-            Developer.github_username
-        )
+        select(Developer.id, Developer.name, Developer.github_username)
         .join(project_developers, Developer.id == project_developers.c.developer_id)
         .where(project_developers.c.project_id == project_id)
     ).all()
-    
+
     # Filter developers with GitHub usernames
     github_usernames = [d.github_username for d in developers if d.github_username]
-    
+
     if not github_usernames:
         return {
             "success": False,
             "message": "No developers with GitHub usernames found in this project",
             "developers_without_github": [
                 {"id": d.id, "name": d.name} for d in developers if not d.github_username
-            ]
+            ],
         }
-    
+
     # Send invitations using project-specific or global service
     result = project_github_service.send_bulk_invitations(repo_name, github_usernames, role)
-    
+
     return {
         "success": result["failed"] == 0,
         "project_id": project_id,
@@ -491,33 +561,28 @@ async def send_github_invitations(
         "results": result["results"],
         "developers_without_github": [
             {"id": d.id, "name": d.name} for d in developers if not d.github_username
-        ]
+        ],
     }
 
 
 @router.get("/{project_id}/github-status")
-async def check_github_status(
-    project_id: int, 
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+def check_github_status(
+    project_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
 ):
     """Check GitHub integration status for a project (requires auth)"""
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
-    
+
     # Get developers with GitHub usernames
     developers = db.execute(
-        select(
-            Developer.id,
-            Developer.github_username
-        )
+        select(Developer.id, Developer.github_username)
         .join(project_developers, Developer.id == project_developers.c.developer_id)
         .where(project_developers.c.project_id == project_id)
     ).all()
-    
+
     developers_with_github = [d for d in developers if d.github_username]
-    
+
     return {
         "has_repo": bool(project.github_repo_url),
         "repo_url": project.github_repo_url,
@@ -525,167 +590,176 @@ async def check_github_status(
         "developer_count": len(developers_with_github),
         "sent_count": 0,  # TODO: Track sent invitations in database
         "configured": github_service.is_configured(),
-        "has_admin_access": github_service.validate_repo_access(project.github_repo_name) if project.github_repo_name else False,
+        "has_admin_access": github_service.validate_repo_access(project.github_repo_name)
+        if project.github_repo_name
+        else False,
     }
 
 
 @router.post("/{project_id}/developers")
-async def add_developer_to_project(
-    project_id: int, 
-    assignment: DeveloperAssignment, 
+def add_developer_to_project(
+    project_id: int,
+    assignment: DeveloperAssignment,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
     """Add a developer to a project (requires auth)"""
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
-    
+
     developer = db.query(Developer).filter(Developer.id == assignment.developer_id).first()
     if not developer:
         raise HTTPException(status_code=404, detail="Developer not found")
-    
+
     # Check if already assigned
     existing = db.execute(
         select(project_developers).where(
             project_developers.c.project_id == project_id,
-            project_developers.c.developer_id == assignment.developer_id
+            project_developers.c.developer_id == assignment.developer_id,
         )
     ).first()
-    
+
     if existing:
         raise HTTPException(status_code=400, detail="Developer already assigned to this project")
-    
+
     # Add to association table
     db.execute(
         insert(project_developers).values(
             project_id=project_id,
             developer_id=assignment.developer_id,
             role=assignment.role,
-            responsibilities=assignment.responsibilities
+            responsibilities=assignment.responsibilities,
         )
     )
     db.commit()
-    
+
     return {"status": "success", "message": f"Developer {developer.name} added to project"}
 
 
 @router.delete("/{project_id}/developers/{developer_id}")
-async def remove_developer_from_project(
-    project_id: int, 
-    developer_id: int, 
+def remove_developer_from_project(
+    project_id: int,
+    developer_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
     """Remove a developer from a project (requires auth)"""
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
-    
+
     # Delete from association table
     result = db.execute(
         project_developers.delete().where(
             project_developers.c.project_id == project_id,
-            project_developers.c.developer_id == developer_id
+            project_developers.c.developer_id == developer_id,
         )
     )
-    
+
     if result.rowcount == 0:
         raise HTTPException(status_code=404, detail="Developer not found in this project")
-    
+
     # Unassign all work items in this project that were assigned to the removed developer
     from models.work_item import WorkItem
+
     db.query(WorkItem).filter(
-        WorkItem.project_id == project_id,
-        WorkItem.assignee_id == developer_id
+        WorkItem.project_id == project_id, WorkItem.assignee_id == developer_id
     ).update({"assignee_id": None}, synchronize_session=False)
-    
+
     db.commit()
     return {"status": "success", "message": "Developer removed from project"}
 
 
 # ============== PROJECT ADMIN MANAGEMENT ==============
 
+
 @router.put("/{project_id}/developers/{developer_id}/admin")
-async def set_developer_as_admin(
+def set_developer_as_admin(
     project_id: int,
     developer_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
     """Promote a developer to project admin (requires project admin access)"""
-    project = require_project_admin(project_id, current_user, db)
-    
+    require_project_admin(project_id, current_user, db)
+
     # Verify developer exists in project
     result = db.execute(
         select(project_developers).where(
-            (project_developers.c.project_id == project_id) &
-            (project_developers.c.developer_id == developer_id)
+            (project_developers.c.project_id == project_id)
+            & (project_developers.c.developer_id == developer_id)
         )
     ).first()
-    
+
     if not result:
         raise HTTPException(status_code=404, detail="Developer not found in this project")
-    
+
     # Update is_admin to True
     db.execute(
-        project_developers.update().where(
-            (project_developers.c.project_id == project_id) &
-            (project_developers.c.developer_id == developer_id)
-        ).values(is_admin=True)
+        project_developers.update()
+        .where(
+            (project_developers.c.project_id == project_id)
+            & (project_developers.c.developer_id == developer_id)
+        )
+        .values(is_admin=True)
     )
     db.commit()
-    
+
     return {"status": "success", "message": "Developer promoted to project admin"}
 
 
 @router.put("/{project_id}/developers/{developer_id}/member")
-async def remove_admin_from_developer(
+def remove_admin_from_developer(
     project_id: int,
     developer_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
     """Demote a developer from project admin (requires project admin access)"""
-    project = require_project_admin(project_id, current_user, db)
-    
+    require_project_admin(project_id, current_user, db)
+
     # Get current user's developer record
     current_dev = db.query(Developer).filter(Developer.email == current_user.email).first()
-    
+
     # Prevent demoting yourself if you're the last admin
     if current_dev and current_dev.id == developer_id:
         # Check if there are other admins
         other_admins = db.execute(
             select(project_developers).where(
-                (project_developers.c.project_id == project_id) &
-                (project_developers.c.developer_id != developer_id) &
-                (project_developers.c.is_admin == True)
+                (project_developers.c.project_id == project_id)
+                & (project_developers.c.developer_id != developer_id)
+                & (project_developers.c.is_admin.is_(True))
             )
         ).first()
-        
+
         if not other_admins:
-            raise HTTPException(status_code=400, detail="Cannot demote yourself if you are the last project admin")
-    
+            raise HTTPException(
+                status_code=400, detail="Cannot demote yourself if you are the last project admin"
+            )
+
     # Verify developer exists in project
     result = db.execute(
         select(project_developers).where(
-            (project_developers.c.project_id == project_id) &
-            (project_developers.c.developer_id == developer_id)
+            (project_developers.c.project_id == project_id)
+            & (project_developers.c.developer_id == developer_id)
         )
     ).first()
-    
+
     if not result:
         raise HTTPException(status_code=404, detail="Developer not found in this project")
-    
+
     # Update is_admin to False
     db.execute(
-        project_developers.update().where(
-            (project_developers.c.project_id == project_id) &
-            (project_developers.c.developer_id == developer_id)
-        ).values(is_admin=False)
+        project_developers.update()
+        .where(
+            (project_developers.c.project_id == project_id)
+            & (project_developers.c.developer_id == developer_id)
+        )
+        .values(is_admin=False)
     )
     db.commit()
-    
+
     return {"status": "success", "message": "Developer removed from project admin role"}
 
 
@@ -693,53 +767,60 @@ async def remove_admin_from_developer(
 
 # --- Goals ---
 
+
 class GoalCreate(BaseModel):
     title: str
-    description: Optional[str] = None
-    due_date: Optional[datetime] = None
+    description: str | None = None
+    due_date: datetime | None = None
+
 
 class GoalUpdate(BaseModel):
-    title: Optional[str] = None
-    description: Optional[str] = None
-    status: Optional[str] = None
-    progress: Optional[int] = None
-    due_date: Optional[datetime] = None
+    title: str | None = None
+    description: str | None = None
+    status: str | None = None
+    progress: int | None = None
+    due_date: datetime | None = None
+
 
 @router.get("/{project_id}/goals")
-async def get_project_goals(
-    project_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+def get_project_goals(
+    project_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
 ):
     """Get all goals for a project"""
-    project = require_project_access(project_id, current_user, db)
-    
+    require_project_access(project_id, current_user, db)
+
     from models.project_goal import ProjectGoal
-    goals = db.query(ProjectGoal).filter(ProjectGoal.project_id == project_id).order_by(ProjectGoal.created_at.desc()).all()
+
+    goals = (
+        db.query(ProjectGoal)
+        .filter(ProjectGoal.project_id == project_id)
+        .order_by(ProjectGoal.created_at.desc())
+        .all()
+    )
     return [g.to_dict() for g in goals]
 
 
 @router.post("/{project_id}/goals")
-async def create_project_goal(
+def create_project_goal(
     project_id: int,
     goal: GoalCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
     """Create a new project goal"""
-    project = require_project_access(project_id, current_user, db)
-    
-    from models.project_goal import ProjectGoal
+    require_project_access(project_id, current_user, db)
+
     from models.activity_log import ActivityLog
-    
+    from models.project_goal import ProjectGoal
+
     new_goal = ProjectGoal(
         project_id=project_id,
         title=goal.title,
         description=goal.description,
-        due_date=goal.due_date
+        due_date=goal.due_date,
     )
     db.add(new_goal)
-    
+
     # Log activity
     activity = ActivityLog(
         project_id=project_id,
@@ -747,32 +828,32 @@ async def create_project_goal(
         action="created",
         entity_type="goal",
         entity_id=new_goal.id,
-        title=f"Created goal: {goal.title}"
+        title=f"Created goal: {goal.title}",
     )
     db.add(activity)
-    
+
     db.commit()
     db.refresh(new_goal)
     return new_goal.to_dict()
 
 
 @router.put("/goals/{goal_id}")
-async def update_project_goal(
+def update_project_goal(
     goal_id: int,
     goal_update: GoalUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
     """Update a project goal"""
-    from models.project_goal import ProjectGoal
     from models.activity_log import ActivityLog
-    
+    from models.project_goal import ProjectGoal
+
     goal = db.query(ProjectGoal).filter(ProjectGoal.id == goal_id).first()
     if not goal:
         raise HTTPException(status_code=404, detail="Goal not found")
-    
+
     require_project_access(goal.project_id, current_user, db)
-    
+
     if goal_update.title is not None:
         goal.title = goal_update.title
     if goal_update.description is not None:
@@ -785,9 +866,9 @@ async def update_project_goal(
         goal.progress = goal_update.progress
     if goal_update.due_date is not None:
         goal.due_date = goal_update.due_date
-    
+
     goal.updated_at = datetime.utcnow()
-    
+
     # Log activity
     activity = ActivityLog(
         project_id=goal.project_id,
@@ -795,40 +876,38 @@ async def update_project_goal(
         action="updated",
         entity_type="goal",
         entity_id=goal.id,
-        title=f"Updated goal: {goal.title}"
+        title=f"Updated goal: {goal.title}",
     )
     db.add(activity)
-    
+
     db.commit()
     return goal.to_dict()
 
 
 @router.delete("/goals/{goal_id}")
-async def delete_project_goal(
-    goal_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+def delete_project_goal(
+    goal_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
 ):
     """Delete a project goal"""
-    from models.project_goal import ProjectGoal
     from models.activity_log import ActivityLog
-    
+    from models.project_goal import ProjectGoal
+
     goal = db.query(ProjectGoal).filter(ProjectGoal.id == goal_id).first()
     if not goal:
         raise HTTPException(status_code=404, detail="Goal not found")
-    
-    project = require_project_access(goal.project_id, current_user, db)
-    
+
+    require_project_access(goal.project_id, current_user, db)
+
     # Log activity before deletion
     activity = ActivityLog(
         project_id=goal.project_id,
         user_id=current_user.id,
         action="deleted",
         entity_type="goal",
-        title=f"Deleted goal: {goal.title}"
+        title=f"Deleted goal: {goal.title}",
     )
     db.add(activity)
-    
+
     db.delete(goal)
     db.commit()
     return {"status": "deleted", "id": goal_id}
@@ -836,46 +915,52 @@ async def delete_project_goal(
 
 # --- Milestones ---
 
+
 class MilestoneCreate(BaseModel):
     title: str
-    description: Optional[str] = None
-    due_date: Optional[datetime] = None
+    description: str | None = None
+    due_date: datetime | None = None
+
 
 @router.get("/{project_id}/milestones")
-async def get_project_milestones(
-    project_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+def get_project_milestones(
+    project_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
 ):
     """Get all milestones for a project"""
-    project = require_project_access(project_id, current_user, db)
-    
+    require_project_access(project_id, current_user, db)
+
     from models.project_milestone import ProjectMilestone
-    milestones = db.query(ProjectMilestone).filter(ProjectMilestone.project_id == project_id).order_by(ProjectMilestone.due_date).all()
+
+    milestones = (
+        db.query(ProjectMilestone)
+        .filter(ProjectMilestone.project_id == project_id)
+        .order_by(ProjectMilestone.due_date)
+        .all()
+    )
     return [m.to_dict() for m in milestones]
 
 
 @router.post("/{project_id}/milestones")
-async def create_project_milestone(
+def create_project_milestone(
     project_id: int,
     milestone: MilestoneCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
     """Create a new project milestone"""
-    project = require_project_access(project_id, current_user, db)
-    
-    from models.project_milestone import ProjectMilestone
+    require_project_access(project_id, current_user, db)
+
     from models.activity_log import ActivityLog
-    
+    from models.project_milestone import ProjectMilestone
+
     new_milestone = ProjectMilestone(
         project_id=project_id,
         title=milestone.title,
         description=milestone.description,
-        due_date=milestone.due_date
+        due_date=milestone.due_date,
     )
     db.add(new_milestone)
-    
+
     # Log activity
     activity = ActivityLog(
         project_id=project_id,
@@ -883,57 +968,55 @@ async def create_project_milestone(
         action="created",
         entity_type="milestone",
         entity_id=new_milestone.id,
-        title=f"Created milestone: {milestone.title}"
+        title=f"Created milestone: {milestone.title}",
     )
     db.add(activity)
-    
+
     db.commit()
     db.refresh(new_milestone)
     return new_milestone.to_dict()
 
 
 @router.put("/milestones/{milestone_id}")
-async def update_project_milestone(
+def update_project_milestone(
     milestone_id: int,
     milestone_update: MilestoneCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
     """Update a project milestone"""
     from models.project_milestone import ProjectMilestone
-    
+
     milestone = db.query(ProjectMilestone).filter(ProjectMilestone.id == milestone_id).first()
     if not milestone:
         raise HTTPException(status_code=404, detail="Milestone not found")
-    
+
     require_project_access(milestone.project_id, current_user, db)
-    
+
     milestone.title = milestone_update.title
     milestone.description = milestone_update.description
     milestone.due_date = milestone_update.due_date
-    
+
     db.commit()
     return milestone.to_dict()
 
 
 @router.post("/milestones/{milestone_id}/complete")
-async def complete_project_milestone(
-    milestone_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+def complete_project_milestone(
+    milestone_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
 ):
     """Mark a milestone as completed"""
-    from models.project_milestone import ProjectMilestone
     from models.activity_log import ActivityLog
-    
+    from models.project_milestone import ProjectMilestone
+
     milestone = db.query(ProjectMilestone).filter(ProjectMilestone.id == milestone_id).first()
     if not milestone:
         raise HTTPException(status_code=404, detail="Milestone not found")
-    
+
     require_project_access(milestone.project_id, current_user, db)
-    
+
     milestone.completed_at = datetime.utcnow()
-    
+
     # Log activity
     activity = ActivityLog(
         project_id=milestone.project_id,
@@ -941,40 +1024,38 @@ async def complete_project_milestone(
         action="completed",
         entity_type="milestone",
         entity_id=milestone.id,
-        title=f"Completed milestone: {milestone.title}"
+        title=f"Completed milestone: {milestone.title}",
     )
     db.add(activity)
-    
+
     db.commit()
     return milestone.to_dict()
 
 
 @router.delete("/milestones/{milestone_id}")
-async def delete_project_milestone(
-    milestone_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+def delete_project_milestone(
+    milestone_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
 ):
     """Delete a project milestone"""
-    from models.project_milestone import ProjectMilestone
     from models.activity_log import ActivityLog
-    
+    from models.project_milestone import ProjectMilestone
+
     milestone = db.query(ProjectMilestone).filter(ProjectMilestone.id == milestone_id).first()
     if not milestone:
         raise HTTPException(status_code=404, detail="Milestone not found")
-    
-    project = require_project_access(milestone.project_id, current_user, db)
-    
+
+    require_project_access(milestone.project_id, current_user, db)
+
     # Log activity before deletion
     activity = ActivityLog(
         project_id=milestone.project_id,
         user_id=current_user.id,
         action="deleted",
         entity_type="milestone",
-        title=f"Deleted milestone: {milestone.title}"
+        title=f"Deleted milestone: {milestone.title}",
     )
     db.add(activity)
-    
+
     db.delete(milestone)
     db.commit()
     return {"status": "deleted", "id": milestone_id}
@@ -982,89 +1063,105 @@ async def delete_project_milestone(
 
 # --- Activity Feed ---
 
+
 @router.get("/{project_id}/activity")
-async def get_project_activity(
+def get_project_activity(
     project_id: int,
     limit: int = 50,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
     """Get activity feed for a project"""
-    project = require_project_access(project_id, current_user, db)
-    
+    require_project_access(project_id, current_user, db)
+
     from models.activity_log import ActivityLog
-    activities = db.query(ActivityLog).filter(
-        ActivityLog.project_id == project_id
-    ).order_by(ActivityLog.created_at.desc()).limit(limit).all()
-    
+
+    activities = (
+        db.query(ActivityLog)
+        .filter(ActivityLog.project_id == project_id)
+        .order_by(ActivityLog.created_at.desc())
+        .limit(limit)
+        .all()
+    )
+
     return [a.to_dict() for a in activities]
 
 
 # --- Workload ---
 
+
 def get_working_days_in_range(start_date: datetime, end_date: datetime) -> int:
     """Calculate number of working days (Mon-Fri) between two dates"""
     from datetime import timedelta
-    
+
     if not start_date or not end_date:
         return 0
-    
+
     # Ensure start <= end
     if start_date > end_date:
         start_date, end_date = end_date, start_date
-    
+
     working_days = 0
     current = start_date.replace(hour=0, minute=0, second=0, microsecond=0)
     end = end_date.replace(hour=0, minute=0, second=0, microsecond=0)
-    
+
     while current <= end:
         # weekday(): Monday=0, Sunday=6
         if current.weekday() < 5:  # Mon-Fri
             working_days += 1
         current += timedelta(days=1)
-    
+
     return working_days
 
-def calculate_hours_excluding_weekends(total_hours: int, start_date: datetime, end_date: datetime) -> int:
+
+def calculate_hours_excluding_weekends(
+    total_hours: int, start_date: datetime, end_date: datetime
+) -> int:
     """Calculate hours proportionally excluding weekend days"""
     if not start_date or not end_date or total_hours <= 0:
         return 0
-    
+
     # Total days in range
     total_days = (end_date - start_date).days + 1
     if total_days <= 0:
         return total_hours
-    
+
     # Working days in range
     working_days = get_working_days_in_range(start_date, end_date)
-    
+
     # If no working days (task spans only weekend), return 0
     if working_days == 0:
         return 0
-    
+
     # Proportional hours: (working_days / total_days) * total_hours
     # But simpler: assume hours are evenly distributed across working days only
     hours_per_day = total_hours / total_days
     return int(hours_per_day * working_days)
 
+
 @router.get("/{project_id}/workload")
-async def get_project_workload(
-    project_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+def get_project_workload(
+    project_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
 ):
     """Get workload + Sat-Fri weekly capacity for all assignees in this project.
 
     Capacity rules (status-based, transfer-aware) live in
     backend/services/capacity_service.py — same logic as the admin capacity endpoint.
     """
-    project = require_project_access(project_id, current_user, db)
+    require_project_access(project_id, current_user, db)
+
+    from sqlalchemy.orm import selectinload
 
     from models.work_item import WorkItem
-    from services.capacity_service import week_boundaries, compute_capacity_breakdown
+    from services.capacity_service import compute_capacity_breakdown, week_boundaries
 
     week_start, week_end = week_boundaries()
-    items = db.query(WorkItem).filter(WorkItem.project_id == project_id).all()
+    items = (
+        db.query(WorkItem)
+        .options(selectinload(WorkItem.assignee))
+        .filter(WorkItem.project_id == project_id)
+        .all()
+    )
 
     workload_data: dict = {}
 
@@ -1085,7 +1182,7 @@ async def get_project_workload(
                 "logged_hours": 0,
                 "remaining_hours": 0,
                 "_items": [],  # collected, used by helper below
-                "items": [],   # public list, kept for backwards compat
+                "items": [],  # public list, kept for backwards compat
             }
 
         bucket = workload_data[assignee_id]
@@ -1105,41 +1202,50 @@ async def get_project_workload(
         if item.due_date and item.due_date < datetime.utcnow() and item.status != "done":
             bucket["overdue_items"] += 1
 
-        bucket["items"].append({
-            "id": item.id,
-            "key": item.key,
-            "title": item.title,
-            "status": item.status,
-            "priority": item.priority,
-            "due_date": item.due_date.isoformat() if item.due_date else None,
-            "estimated_hours": item.estimated_hours,
-            "logged_hours": item.logged_hours,
-        })
+        bucket["items"].append(
+            {
+                "id": item.id,
+                "key": item.key,
+                "title": item.title,
+                "status": item.status,
+                "priority": item.priority,
+                "due_date": item.due_date.isoformat() if item.due_date else None,
+                "estimated_hours": item.estimated_hours,
+                "logged_hours": item.logged_hours,
+            }
+        )
 
     # Apply the shared Sat-Fri capacity helper per-assignee (skip "unassigned")
     for dev_id, bucket in workload_data.items():
         if dev_id == "unassigned":
-            bucket.update({
-                "this_week_in_progress_hours": 0,
-                "this_week_in_review_hours": 0,
-                "this_week_done_hours": 0,
-                "this_week_capacity_used": 0,
-                "this_week_remaining_capacity": 40,
-                "this_week_tickets": [],
-            })
+            bucket.update(
+                {
+                    "this_week_in_progress_hours": 0,
+                    "this_week_in_review_hours": 0,
+                    "this_week_done_hours": 0,
+                    "this_week_capacity_used": 0,
+                    "this_week_remaining_capacity": 40,
+                    "this_week_tickets": [],
+                }
+            )
         else:
             breakdown = compute_capacity_breakdown(
-                bucket["_items"], week_start, db=db, developer_id=dev_id,
+                bucket["_items"],
+                week_start,
+                db=db,
+                developer_id=dev_id,
                 restrict_to_project_ids={project_id},
             )
-            bucket.update({
-                "this_week_in_progress_hours": breakdown["this_week_in_progress_hours"],
-                "this_week_in_review_hours": breakdown["this_week_in_review_hours"],
-                "this_week_done_hours": breakdown["this_week_done_hours"],
-                "this_week_capacity_used": breakdown["this_week_capacity_used"],
-                "this_week_remaining_capacity": breakdown["this_week_remaining_capacity"],
-                "this_week_tickets": breakdown["tickets"],
-            })
+            bucket.update(
+                {
+                    "this_week_in_progress_hours": breakdown["this_week_in_progress_hours"],
+                    "this_week_in_review_hours": breakdown["this_week_in_review_hours"],
+                    "this_week_done_hours": breakdown["this_week_done_hours"],
+                    "this_week_capacity_used": breakdown["this_week_capacity_used"],
+                    "this_week_remaining_capacity": breakdown["this_week_remaining_capacity"],
+                    "this_week_tickets": breakdown["tickets"],
+                }
+            )
         bucket["week_start"] = week_start.isoformat()
         bucket["week_end"] = week_end.isoformat()
         bucket.pop("_items", None)
@@ -1150,6 +1256,7 @@ async def get_project_workload(
 # ============================================================================
 # FILE MANAGEMENT ENDPOINTS
 # ============================================================================
+
 
 class ProjectFileResponse(BaseModel):
     id: int
@@ -1162,18 +1269,21 @@ class ProjectFileResponse(BaseModel):
 
 
 @router.get("/{project_id}/files")
-async def get_project_files(
-    project_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+def get_project_files(
+    project_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
 ):
     """Get all files for a project"""
     from models.project_file import ProjectFile
-    
-    project = require_project_access(project_id, current_user, db)
-    
-    files = db.query(ProjectFile).filter(ProjectFile.project_id == project_id).order_by(ProjectFile.created_at.desc()).all()
-    
+
+    require_project_access(project_id, current_user, db)
+
+    files = (
+        db.query(ProjectFile)
+        .filter(ProjectFile.project_id == project_id)
+        .order_by(ProjectFile.created_at.desc())
+        .all()
+    )
+
     return [
         {
             "id": f.id,
@@ -1182,7 +1292,7 @@ async def get_project_files(
             "file_type": f.file_type,
             "file_url": f.file_url,
             "uploaded_by": f.uploaded_by_name,
-            "created_at": f.created_at.isoformat()
+            "created_at": f.created_at.isoformat(),
         }
         for f in files
     ]
@@ -1193,21 +1303,21 @@ async def upload_project_file(
     project_id: int,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
     """Upload a file to a project"""
     from models.project_file import ProjectFile
-    
-    project = require_project_access(project_id, current_user, db)
-    
+
+    require_project_access(project_id, current_user, db)
+
     # Create uploads directory if it doesn't exist
     upload_dir = "uploads/projects"
     os.makedirs(upload_dir, exist_ok=True)
-    
+
     # Create project-specific directory
     project_upload_dir = os.path.join(upload_dir, str(project_id))
     os.makedirs(project_upload_dir, exist_ok=True)
-    
+
     # Save file
     file_path = os.path.join(project_upload_dir, file.filename)
     try:
@@ -1215,11 +1325,11 @@ async def upload_project_file(
             content = await file.read()
             f.write(content)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to save file: {str(e)}")
-    
+        raise HTTPException(status_code=500, detail=f"Failed to save file: {str(e)}") from e
+
     # Get file size
     file_size = os.path.getsize(file_path)
-    
+
     # Create database record
     db_file = ProjectFile(
         project_id=project_id,
@@ -1228,17 +1338,17 @@ async def upload_project_file(
         file_type=file.content_type or "application/octet-stream",
         file_url="",  # Will be set after commit to get the ID
         uploaded_by=current_user.id,
-        uploaded_by_name=current_user.email
+        uploaded_by_name=current_user.email,
     )
-    
+
     db.add(db_file)
     db.commit()
     db.refresh(db_file)
-    
+
     # Update file_url with the actual file ID
     db_file.file_url = f"/api/projects/{project_id}/files/{db_file.id}/download"
     db.commit()
-    
+
     return {
         "id": db_file.id,
         "file_name": db_file.file_name,
@@ -1246,67 +1356,65 @@ async def upload_project_file(
         "file_type": db_file.file_type,
         "file_url": db_file.file_url,
         "uploaded_by": db_file.uploaded_by_name,
-        "created_at": db_file.created_at.isoformat()
+        "created_at": db_file.created_at.isoformat(),
     }
 
 
 @router.get("/{project_id}/files/{file_id}/download")
-async def download_project_file(
+def download_project_file(
     project_id: int,
     file_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
     """Download a file from a project"""
     from models.project_file import ProjectFile
-    
-    project = require_project_access(project_id, current_user, db)
-    
-    db_file = db.query(ProjectFile).filter(
-        ProjectFile.id == file_id,
-        ProjectFile.project_id == project_id
-    ).first()
-    
+
+    require_project_access(project_id, current_user, db)
+
+    db_file = (
+        db.query(ProjectFile)
+        .filter(ProjectFile.id == file_id, ProjectFile.project_id == project_id)
+        .first()
+    )
+
     if not db_file:
         raise HTTPException(status_code=404, detail="File not found")
-    
+
     # Build file path
     upload_dir = "uploads/projects"
     project_dir = os.path.join(upload_dir, str(project_id))
     file_path = os.path.join(project_dir, db_file.file_name)
-    
+
     # Check if file exists
     if not os.path.exists(file_path):
         raise HTTPException(status_code=404, detail="File not found on disk")
-    
+
     # Return file with proper headers
-    return FileResponse(
-        path=file_path,
-        filename=db_file.file_name,
-        media_type=db_file.file_type
-    )
+    return FileResponse(path=file_path, filename=db_file.file_name, media_type=db_file.file_type)
 
 
 @router.delete("/{project_id}/files/{file_id}")
-async def delete_project_file(
+def delete_project_file(
     project_id: int,
     file_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
     """Delete a file from a project"""
     from models.project_file import ProjectFile
-    
-    project = require_project_access(project_id, current_user, db)
-    
-    db_file = db.query(ProjectFile).filter(
-        ProjectFile.id == file_id,
-        ProjectFile.project_id == project_id
-    ).first()
-    
+
+    require_project_access(project_id, current_user, db)
+
+    db_file = (
+        db.query(ProjectFile)
+        .filter(ProjectFile.id == file_id, ProjectFile.project_id == project_id)
+        .first()
+    )
+
     if not db_file:
         raise HTTPException(status_code=404, detail="File not found")
-    
+
     # Delete physical file
     try:
         upload_dir = "uploads/projects"
@@ -1320,11 +1428,11 @@ async def delete_project_file(
     except Exception as e:
         # Log error but don't fail - still delete DB record
         print(f"Error deleting file: {e}")
-    
+
     # Delete database record
     db.delete(db_file)
     db.commit()
-    
+
     return {"success": True, "message": "File deleted"}
 
 
@@ -1341,63 +1449,80 @@ class ProjectLinkResponse(BaseModel):
     created_at: str
 
 
-@router.get("/{project_id}/links", response_model=List[ProjectLinkResponse])
-async def get_project_links(project_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+@router.get("/{project_id}/links", response_model=list[ProjectLinkResponse])
+def get_project_links(
+    project_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)
+):
     """Get all links for a project"""
     from models.project_link import ProjectLink
-    
+
     require_project_access(project_id, user, db)
-    
-    links = db.query(ProjectLink).filter(ProjectLink.project_id == project_id).order_by(ProjectLink.created_at.desc()).all()
+
+    links = (
+        db.query(ProjectLink)
+        .filter(ProjectLink.project_id == project_id)
+        .order_by(ProjectLink.created_at.desc())
+        .all()
+    )
     return [
         {
             "id": link.id,
             "name": link.name,
             "url": link.url,
-            "created_at": link.created_at.isoformat()
+            "created_at": link.created_at.isoformat(),
         }
         for link in links
     ]
 
 
 @router.post("/{project_id}/links", response_model=ProjectLinkResponse)
-async def create_project_link(project_id: int, link_data: ProjectLinkCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def create_project_link(
+    project_id: int,
+    link_data: ProjectLinkCreate,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
     """Create a new link for a project"""
     from models.project_link import ProjectLink
-    
+
     require_project_access(project_id, user, db)
-    
-    new_link = ProjectLink(
-        project_id=project_id,
-        name=link_data.name,
-        url=link_data.url
-    )
-    
+
+    new_link = ProjectLink(project_id=project_id, name=link_data.name, url=link_data.url)
+
     db.add(new_link)
     db.commit()
     db.refresh(new_link)
-    
+
     return {
         "id": new_link.id,
         "name": new_link.name,
         "url": new_link.url,
-        "created_at": new_link.created_at.isoformat()
+        "created_at": new_link.created_at.isoformat(),
     }
 
 
 @router.delete("/{project_id}/links/{link_id}")
-async def delete_project_link(project_id: int, link_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def delete_project_link(
+    project_id: int,
+    link_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
     """Delete a link from a project"""
     from models.project_link import ProjectLink
-    
+
     require_project_access(project_id, user, db)
-    
-    link = db.query(ProjectLink).filter(ProjectLink.id == link_id, ProjectLink.project_id == project_id).first()
-    
+
+    link = (
+        db.query(ProjectLink)
+        .filter(ProjectLink.id == link_id, ProjectLink.project_id == project_id)
+        .first()
+    )
+
     if not link:
         raise HTTPException(status_code=404, detail="Link not found")
-    
+
     db.delete(link)
     db.commit()
-    
+
     return {"success": True, "message": "Link deleted"}
