@@ -14,10 +14,9 @@ interface TimeEntry {
 
 interface TimeEntriesTableProps {
   workItemId: string;
-  token: string;
 }
 
-export default function TimeEntriesTable({ workItemId, token }: TimeEntriesTableProps) {
+export default function TimeEntriesTable({ workItemId }: TimeEntriesTableProps) {
   const [timeEntries, setTimeEntries] = useState<TimeEntry[]>([]);
   const [thisWeekTotal, setThisWeekTotal] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -34,7 +33,7 @@ export default function TimeEntriesTable({ workItemId, token }: TimeEntriesTable
     try {
       const res = await fetch(
         `${API_BASE_URL}/api/workitems/${workItemId}/time-entries?this_week_only=true`,
-        { headers: { Authorization: `Bearer ${token}` } },
+        { credentials: 'include' },
       );
       if (res.ok) {
         const data = await res.json();

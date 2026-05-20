@@ -6,7 +6,6 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import MermaidRenderer from './MermaidRenderer';
 import { toast } from 'sonner';
-import { useAuth } from '@/contexts/AuthContext';
 
 import { API_BASE_URL } from '@/config/api';
 
@@ -34,7 +33,6 @@ interface ArchitectureEditorProps {
 }
 
 const ArchitectureEditor = ({ architecture, onSave, onClose }: ArchitectureEditorProps) => {
-  const { token } = useAuth();
   const [code, setCode] = useState(architecture.mermaid_code);
   const [name, setName] = useState(architecture.name);
   const [description, setDescription] = useState(architecture.description);
@@ -83,7 +81,8 @@ const ArchitectureEditor = ({ architecture, onSave, onClose }: ArchitectureEdito
         `${API_BASE_URL}/api/prd/architectures/${architecture.id}/ai-refine`,
         {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
           body: JSON.stringify({
             current_mermaid_code: code,
             change_instructions: changeInstructions,

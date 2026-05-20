@@ -69,13 +69,7 @@ import { toast, Toaster } from 'sonner';
 const MermaidRenderer = lazy(() => import('@/components/MermaidRenderer'));
 const ArchitectureEditor = lazy(() => import('@/components/ArchitectureEditor'));
 import { useAuth } from '@/contexts/AuthContext';
-
-// Helper function to parse YYYY-MM-DD string to local Date object (avoids UTC timezone issues)
-const parseLocalDate = (dateString: string | undefined): Date | undefined => {
-  if (!dateString) return undefined;
-  const [year, month, day] = dateString.split('-');
-  return new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
-};
+import { parseLocalDateOptional as parseLocalDate } from '@/lib/dates';
 
 interface Developer {
   id: number;
@@ -277,14 +271,6 @@ interface ProjectLink {
   created_at?: string;
 }
 
-interface CustomRestriction {
-  id: number;
-  name: string;
-  tab_name: string;
-  subsection: string;
-  created_at?: string;
-}
-
 const ProjectDetail = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -297,15 +283,20 @@ const ProjectDetail = () => {
   const initialTab = (searchParams.get('tab') as TabType) || 'overview';
   const [activeTab, setActiveTab] = useState<TabType>(initialTab);
   // Keep ?tab= in sync with the active tab so refresh / share works.
+  // searchParams + setSearchParams included in deps to satisfy
+  // exhaustive-deps; the current !== activeTab guard prevents loops.
+  // The setSearchParams call inside the effect is the intended URL→state
+  // mirror, hence the per-statement disable.
   useEffect(() => {
     const current = searchParams.get('tab');
     if (current !== activeTab) {
       const next = new URLSearchParams(searchParams);
       if (activeTab === 'overview') next.delete('tab');
       else next.set('tab', activeTab);
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- mirroring activeTab into the URL is the whole point of this effect
       setSearchParams(next, { replace: true });
     }
-  }, [activeTab]);
+  }, [activeTab, searchParams, setSearchParams]);
 
   const [isEditing, setIsEditing] = useState(false);
   const [editForm, setEditForm] = useState<Partial<Project>>({});
@@ -455,16 +446,6 @@ const ProjectDetail = () => {
   const links = linksQuery.data ?? [];
   const linksLoading = linksQuery.isLoading;
 
-  // ── react-query: user restrictions ─────────────────────────────────────
-  const userRestrictionsQuery = useQuery<CustomRestriction[]>({
-    queryKey: ['userRestrictions'],
-    queryFn: async () => {
-      const data = await apiFetch<CustomRestriction[]>('/api/auth/me/custom-restrictions');
-      return data ?? [];
-    },
-  });
-  const userRestrictions = userRestrictionsQuery.data ?? [];
-
   // hubLoading: true until all hub sub-resources are done loading
   const hubLoading =
     hubWorkItemsQuery.isLoading ||
@@ -561,14 +542,12 @@ const ProjectDetail = () => {
       Object.keys(updateData).forEach((key) => {
         if (updateData[key] === undefined) delete updateData[key];
       });
-      console.log('Sending update data:', updateData);
       return apiFetch<Project>(`/api/projects/${project.id}`, {
         method: 'PUT',
         body: JSON.stringify(updateData),
       });
     },
-    onSuccess: (responseData) => {
-      console.log('Update response:', responseData);
+    onSuccess: () => {
       toast.success('Project updated!');
       setIsEditing(false);
       queryClient.invalidateQueries({ queryKey: ['project', id] });
@@ -861,17 +840,6 @@ const ProjectDetail = () => {
   const availableDevelopers = allDevelopers.filter(
     (d) => !project.developers.some((pd) => pd.id === d.id),
   );
-
-  // Helper function to check if a subsection is restricted
-  // Accepts string (not just TabType) so legacy restriction rows that still
-  // reference renamed tabs (e.g. 'business' before it became 'pulse') keep working.
-  const isSubsectionRestricted = (tabName: string, subsectionName: string): boolean => {
-    return userRestrictions.some(
-      (r) =>
-        r.tab_name.toLowerCase() === tabName.toLowerCase() &&
-        r.subsection.toLowerCase() === subsectionName.toLowerCase(),
-    );
-  };
 
   return (
     <div className="min-h-screen bg-[#080808] text-[#F4F6FF]">
@@ -1257,9 +1225,7 @@ const ProjectDetail = () => {
                       <div>
                         <span className="text-xs text-[#737373]">End Date</span>
                         <p className="text-sm text-[#f5f5f5]">
-                          {project.end_date
-                            ? new Date(project.end_date).toLocaleDateString()
-                            : 'Not set'}
+                          {parseLocalDate(project.end_date)?.toLocaleDateString() ?? 'Not set'}
                         </p>
                       </div>
                     </div>
@@ -1311,7 +1277,7 @@ const ProjectDetail = () => {
               </div>
 
               {/* PRD Analysis Section */}
-              {prdAnalysis && !isSubsectionRestricted('overview', 'prd analysis') && (
+              {prdAnalysis && (
                 <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-2xl p-5">
                   <div className="flex items-center gap-3 mb-4">
                     <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#E0B954] to-[#B8872A] flex items-center justify-center">
@@ -1547,7 +1513,6 @@ const ProjectDetail = () => {
 
               {/* Architecture Section */}
               {project.selected_architecture &&
-                !isSubsectionRestricted('overview', 'architecture') &&
                 (() => {
                   const arch = project.selected_architecture!;
                   return (
@@ -1779,251 +1744,247 @@ const ProjectDetail = () => {
                 })()}
 
               {/* Team Section */}
-              {!isSubsectionRestricted('overview', 'team') && (
-                <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-2xl p-5 mb-4">
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-xl bg-[#E0B954]/10 flex items-center justify-center">
-                        <Users className="w-5 h-5 text-[#E0B954]" />
-                      </div>
-                      <div>
-                        <h3 className="font-semibold text-white">Project Team</h3>
-                        <p className="text-xs text-[#737373]">
-                          {project.developers.length} developers assigned
-                        </p>
-                      </div>
+              <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-2xl p-5 mb-4">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-[#E0B954]/10 flex items-center justify-center">
+                      <Users className="w-5 h-5 text-[#E0B954]" />
                     </div>
+                    <div>
+                      <h3 className="font-semibold text-white">Project Team</h3>
+                      <p className="text-xs text-[#737373]">
+                        {project.developers.length} developers assigned
+                      </p>
+                    </div>
+                  </div>
+                  <Button
+                    onClick={() => setShowAddDeveloper(true)}
+                    disabled={availableDevelopers.length === 0}
+                    className="bg-gradient-to-r from-[#E0B954] to-[#B8872A] hover:from-[#C79E3B] hover:to-[#B8872A] text-white font-medium shadow-lg shadow-[#B8872A]/20 disabled:opacity-50 rounded-xl"
+                    size="sm"
+                  >
+                    <Plus className="w-4 h-4 mr-2" />
+                    Add Developer
+                  </Button>
+                </div>
+                {project.developers.length === 0 ? (
+                  <div className="text-center py-10 bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-2xl">
+                    <Users className="w-10 h-10 text-[#334155] mx-auto mb-3" />
+                    <p className="text-[#737373]">No developers assigned yet</p>
                     <Button
                       onClick={() => setShowAddDeveloper(true)}
-                      disabled={availableDevelopers.length === 0}
-                      className="bg-gradient-to-r from-[#E0B954] to-[#B8872A] hover:from-[#C79E3B] hover:to-[#B8872A] text-white font-medium shadow-lg shadow-[#B8872A]/20 disabled:opacity-50 rounded-xl"
-                      size="sm"
+                      variant="ghost"
+                      className="text-[#E0B954] mt-2"
                     >
-                      <Plus className="w-4 h-4 mr-2" />
-                      Add Developer
+                      Add your first developer
                     </Button>
                   </div>
-                  {project.developers.length === 0 ? (
-                    <div className="text-center py-10 bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-2xl">
-                      <Users className="w-10 h-10 text-[#334155] mx-auto mb-3" />
-                      <p className="text-[#737373]">No developers assigned yet</p>
-                      <Button
-                        onClick={() => setShowAddDeveloper(true)}
-                        variant="ghost"
-                        className="text-[#E0B954] mt-2"
+                ) : (
+                  <div className="space-y-3">
+                    {project.developers.map((dev) => (
+                      <div
+                        key={dev.id}
+                        className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-xl p-4 flex items-start justify-between"
                       >
-                        Add your first developer
-                      </Button>
-                    </div>
-                  ) : (
-                    <div className="space-y-3">
-                      {project.developers.map((dev) => (
-                        <div
-                          key={dev.id}
-                          className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-xl p-4 flex items-start justify-between"
-                        >
-                          <div className="flex-1 flex items-start gap-4">
-                            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#E0B954] to-[#B8872A] flex items-center justify-center text-white font-semibold">
-                              {dev.name.charAt(0).toUpperCase()}
-                            </div>
-                            <div className="flex-1">
-                              <div className="flex items-center gap-2">
-                                <h3 className="font-semibold text-white">{dev.name}</h3>
-                                {dev.is_admin && (
-                                  <Badge className="bg-blue-500/20 text-blue-400 border-0">
-                                    Admin
-                                  </Badge>
-                                )}
-                              </div>
-                              <p className="text-sm text-[#737373]">{dev.email}</p>
-                              <div className="flex items-center gap-2 mt-1.5">
-                                <Badge className="bg-[#E0B954]/20 text-[#E0B954] border-0">
-                                  {dev.role}
-                                </Badge>
-                                {dev.github_username && (
-                                  <Badge
-                                    variant="outline"
-                                    className="text-[#737373] border-[rgba(255,255,255,0.08)]"
-                                  >
-                                    <Github className="w-3 h-3 mr-1" />
-                                    {dev.github_username}
-                                  </Badge>
-                                )}
-                              </div>
-                              {dev.responsibilities && (
-                                <p className="text-sm text-[#a3a3a3] mt-1.5">
-                                  {dev.responsibilities}
-                                </p>
-                              )}
-                            </div>
+                        <div className="flex-1 flex items-start gap-4">
+                          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#E0B954] to-[#B8872A] flex items-center justify-center text-white font-semibold">
+                            {dev.name.charAt(0).toUpperCase()}
                           </div>
-                          {isCurrentUserAdmin() ? (
+                          <div className="flex-1">
                             <div className="flex items-center gap-2">
-                              {dev.is_admin ? (
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => handleDemoteFromAdmin(dev.id)}
-                                  className="text-yellow-400 hover:text-yellow-300 hover:bg-yellow-400/10"
-                                  title="Demote from admin"
-                                >
-                                  <Crown className="w-4 h-4" />
-                                </Button>
-                              ) : (
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => handlePromoteToAdmin(dev.id)}
-                                  className="text-gray-500 hover:text-gray-400 hover:bg-gray-500/10"
-                                  title="Promote to admin"
-                                >
-                                  <Crown className="w-4 h-4" />
-                                </Button>
+                              <h3 className="font-semibold text-white">{dev.name}</h3>
+                              {dev.is_admin && (
+                                <Badge className="bg-blue-500/20 text-blue-400 border-0">
+                                  Admin
+                                </Badge>
                               )}
+                            </div>
+                            <p className="text-sm text-[#737373]">{dev.email}</p>
+                            <div className="flex items-center gap-2 mt-1.5">
+                              <Badge className="bg-[#E0B954]/20 text-[#E0B954] border-0">
+                                {dev.role}
+                              </Badge>
+                              {dev.github_username && (
+                                <Badge
+                                  variant="outline"
+                                  className="text-[#737373] border-[rgba(255,255,255,0.08)]"
+                                >
+                                  <Github className="w-3 h-3 mr-1" />
+                                  {dev.github_username}
+                                </Badge>
+                              )}
+                            </div>
+                            {dev.responsibilities && (
+                              <p className="text-sm text-[#a3a3a3] mt-1.5">
+                                {dev.responsibilities}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                        {isCurrentUserAdmin() ? (
+                          <div className="flex items-center gap-2">
+                            {dev.is_admin ? (
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                onClick={() => handleRemoveDeveloper(dev.id)}
-                                className="text-red-400 hover:text-red-300 hover:bg-red-400/10"
-                                title="Remove developer"
+                                onClick={() => handleDemoteFromAdmin(dev.id)}
+                                className="text-yellow-400 hover:text-yellow-300 hover:bg-yellow-400/10"
+                                title="Demote from admin"
                               >
-                                <Trash2 className="w-4 h-4" />
+                                <Crown className="w-4 h-4" />
                               </Button>
-                            </div>
-                          ) : null}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
+                            ) : (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handlePromoteToAdmin(dev.id)}
+                                className="text-gray-500 hover:text-gray-400 hover:bg-gray-500/10"
+                                title="Promote to admin"
+                              >
+                                <Crown className="w-4 h-4" />
+                              </Button>
+                            )}
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleRemoveDeveloper(dev.id)}
+                              className="text-red-400 hover:text-red-300 hover:bg-red-400/10"
+                              title="Remove developer"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        ) : null}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           ))}
 
         {/* Files/Links Section */}
-        {activeTab === 'overview' &&
-          !hubLoading &&
-          !isSubsectionRestricted('overview', 'resources') && (
-            <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-2xl p-5 mb-4 mt-6">
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-[#E0B954]/10 flex items-center justify-center">
-                    <Link2 className="w-5 h-5 text-[#E0B954]" />
+        {activeTab === 'overview' && !hubLoading && (
+          <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-2xl p-5 mb-4 mt-6">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-[#E0B954]/10 flex items-center justify-center">
+                  <Link2 className="w-5 h-5 text-[#E0B954]" />
+                </div>
+                <div>
+                  <h3 className="font-semibold text-white">Resources</h3>
+                  <p className="text-xs text-[#737373]">Useful links and resources</p>
+                </div>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowAddLink(!showAddLink)}
+                className="text-[#E0B954] hover:bg-[#E0B954]/10"
+              >
+                <Plus className="w-4 h-4 mr-2" />
+                Add Link
+              </Button>
+            </div>
+
+            {/* Add Link Form */}
+            {showAddLink && (
+              <div
+                ref={addLinkFormRef}
+                className="bg-[rgba(255,255,255,0.01)] border border-[rgba(224,185,84,0.2)] rounded-xl p-4 mb-4"
+              >
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-xs font-medium text-[#737373] block mb-1.5">
+                      Link Name
+                    </label>
+                    <Input
+                      value={newLink.name}
+                      onChange={(e) => setNewLink((l) => ({ ...l, name: e.target.value }))}
+                      placeholder="e.g., API Documentation"
+                      className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl"
+                    />
                   </div>
                   <div>
-                    <h3 className="font-semibold text-white">Resources</h3>
-                    <p className="text-xs text-[#737373]">Useful links and resources</p>
-                  </div>
-                </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setShowAddLink(!showAddLink)}
-                  className="text-[#E0B954] hover:bg-[#E0B954]/10"
-                >
-                  <Plus className="w-4 h-4 mr-2" />
-                  Add Link
-                </Button>
-              </div>
-
-              {/* Add Link Form */}
-              {showAddLink && (
-                <div
-                  ref={addLinkFormRef}
-                  className="bg-[rgba(255,255,255,0.01)] border border-[rgba(224,185,84,0.2)] rounded-xl p-4 mb-4"
-                >
-                  <div className="space-y-3">
-                    <div>
-                      <label className="text-xs font-medium text-[#737373] block mb-1.5">
-                        Link Name
-                      </label>
-                      <Input
-                        value={newLink.name}
-                        onChange={(e) => setNewLink((l) => ({ ...l, name: e.target.value }))}
-                        placeholder="e.g., API Documentation"
-                        className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-xs font-medium text-[#737373] block mb-1.5">URL</label>
-                      <Input
-                        value={newLink.url}
-                        onChange={(e) => setNewLink((l) => ({ ...l, url: e.target.value }))}
-                        placeholder="https://example.com"
-                        className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl"
-                      />
-                    </div>
-                    <div className="flex justify-end gap-2">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => {
-                          setShowAddLink(false);
-                          setNewLink({ name: '', url: '' });
-                        }}
-                        className="text-[#737373] hover:text-white"
-                      >
-                        Cancel
-                      </Button>
-                      <Button
-                        size="sm"
-                        onClick={handleAddLink}
-                        disabled={!newLink.name || !newLink.url}
-                        className="bg-[#E0B954] hover:bg-[#C79E3B] text-white rounded-xl disabled:opacity-50"
-                      >
-                        Add Link
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Links List */}
-              {linksLoading ? (
-                <div className="space-y-2">
-                  {[...Array(2)].map((_, i) => (
-                    <div
-                      key={i}
-                      className="h-12 bg-[rgba(255,255,255,0.02)] rounded-lg animate-pulse"
+                    <label className="text-xs font-medium text-[#737373] block mb-1.5">URL</label>
+                    <Input
+                      value={newLink.url}
+                      onChange={(e) => setNewLink((l) => ({ ...l, url: e.target.value }))}
+                      placeholder="https://example.com"
+                      className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl"
                     />
-                  ))}
-                </div>
-              ) : links.length > 0 ? (
-                <div className="space-y-2">
-                  {links.map((link) => (
-                    <div
-                      key={link.id}
-                      className="flex items-center justify-between p-3 bg-[rgba(255,255,255,0.01)] border border-[rgba(255,255,255,0.04)] rounded-lg hover:bg-[rgba(255,255,255,0.02)] transition"
+                  </div>
+                  <div className="flex justify-end gap-2">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setShowAddLink(false);
+                        setNewLink({ name: '', url: '' });
+                      }}
+                      className="text-[#737373] hover:text-white"
                     >
-                      <a
-                        href={link.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex items-center gap-2 flex-1 min-w-0"
-                      >
-                        <ExternalLink className="w-4 h-4 text-[#E0B954] flex-shrink-0" />
-                        <span className="text-sm text-[#E0B954] hover:underline truncate">
-                          {link.name}
-                        </span>
-                      </a>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleDeleteLink(link.id)}
-                        className="text-red-400 hover:text-red-300 hover:bg-red-400/10 ml-2"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
-                    </div>
-                  ))}
+                      Cancel
+                    </Button>
+                    <Button
+                      size="sm"
+                      onClick={handleAddLink}
+                      disabled={!newLink.name || !newLink.url}
+                      className="bg-[#E0B954] hover:bg-[#C79E3B] text-white rounded-xl disabled:opacity-50"
+                    >
+                      Add Link
+                    </Button>
+                  </div>
                 </div>
-              ) : (
-                <div className="text-center py-6">
-                  <p className="text-sm text-[#737373]">No links added yet</p>
-                </div>
-              )}
-            </div>
-          )}
+              </div>
+            )}
+
+            {/* Links List */}
+            {linksLoading ? (
+              <div className="space-y-2">
+                {[...Array(2)].map((_, i) => (
+                  <div
+                    key={i}
+                    className="h-12 bg-[rgba(255,255,255,0.02)] rounded-lg animate-pulse"
+                  />
+                ))}
+              </div>
+            ) : links.length > 0 ? (
+              <div className="space-y-2">
+                {links.map((link) => (
+                  <div
+                    key={link.id}
+                    className="flex items-center justify-between p-3 bg-[rgba(255,255,255,0.01)] border border-[rgba(255,255,255,0.04)] rounded-lg hover:bg-[rgba(255,255,255,0.02)] transition"
+                  >
+                    <a
+                      href={link.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-2 flex-1 min-w-0"
+                    >
+                      <ExternalLink className="w-4 h-4 text-[#E0B954] flex-shrink-0" />
+                      <span className="text-sm text-[#E0B954] hover:underline truncate">
+                        {link.name}
+                      </span>
+                    </a>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleDeleteLink(link.id)}
+                      className="text-red-400 hover:text-red-300 hover:bg-red-400/10 ml-2"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-6">
+                <p className="text-sm text-[#737373]">No links added yet</p>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Add Developer Modal (shared across overview & hub) */}
         {showAddDeveloper && (
@@ -2154,7 +2115,7 @@ const ProjectDetail = () => {
           ) : (
             <div className="space-y-4">
               {/* Active Sprints */}
-              {sprints.length > 0 && !isSubsectionRestricted('tracker', 'active sprints') && (
+              {sprints.length > 0 && (
                 <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(224,185,84,0.12)] rounded-2xl p-5">
                   <div className="flex items-center justify-between mb-4">
                     <div className="flex items-center gap-3">
@@ -2248,7 +2209,7 @@ const ProjectDetail = () => {
                           {sprint.start_date && sprint.end_date && (
                             <>
                               <span>·</span>
-                              <span>{new Date(sprint.end_date).toLocaleDateString()}</span>
+                              <span>{parseLocalDate(sprint.end_date)?.toLocaleDateString()}</span>
                             </>
                           )}
                         </div>
@@ -2259,7 +2220,7 @@ const ProjectDetail = () => {
               )}
 
               {/* Analytics Charts */}
-              {analytics && !isSubsectionRestricted('tracker', 'analytics') && (
+              {analytics && (
                 <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-2xl p-5">
                   <div className="flex items-center gap-3 mb-4">
                     <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#E0B954] to-[#C79E3B] flex items-center justify-center">
@@ -2467,7 +2428,7 @@ const ProjectDetail = () => {
                 <div className="h-96 bg-[rgba(255,255,255,0.025)] rounded-xl" />
               </div>
             </div>
-          ) : !isSubsectionRestricted('calendar', 'calendar') ? (
+          ) : (
             <div className="space-y-4">
               <TimelineView
                 workItems={hubWorkItems}
@@ -2485,10 +2446,6 @@ const ProjectDetail = () => {
               />
               <CalendarView workItems={hubWorkItems} milestones={milestones} goals={goals} />
             </div>
-          ) : (
-            <div className="text-center py-12 text-[#737373]">
-              This section is restricted from your view.
-            </div>
           ))}
 
         {/* Pulse Tab (was Business Review) */}
@@ -2505,13 +2462,8 @@ const ProjectDetail = () => {
                 </div>
               ))}
             </div>
-          ) : !isSubsectionRestricted('pulse', 'pulse') &&
-            !isSubsectionRestricted('business', 'business review') ? (
-            <ProjectPulseView pulse={pulseData} />
           ) : (
-            <div className="text-center py-12 text-[#737373]">
-              This section is restricted from your view.
-            </div>
+            <ProjectPulseView pulse={pulseData} />
           ))}
 
         {/* Pulse Settings Tab — gated on `project.pulse.settings` capability */}
@@ -2539,12 +2491,8 @@ const ProjectDetail = () => {
                 </div>
               ))}
             </div>
-          ) : !isSubsectionRestricted('activity', 'activity feed') ? (
-            <ActivityFeed activities={activities} />
           ) : (
-            <div className="text-center py-12 text-[#737373]">
-              This section is restricted from your view.
-            </div>
+            <ActivityFeed activities={activities} />
           ))}
 
         {/* Project Manager Tab */}
@@ -2599,9 +2547,7 @@ const ProjectDetail = () => {
             </div>
           ) : (
             <div className="space-y-4">
-              {!isSubsectionRestricted('project_manager', 'pmview') && (
-                <PMView projectId={id!} token={localStorage.getItem('token')!} sprints={sprints} />
-              )}
+              <PMView projectId={id!} sprints={sprints} />
             </div>
           ))}
       </main>

@@ -1,5 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { parseLocalDate } from '@/lib/dates';
 import { Badge } from '@/components/ui/badge';
 import {
   CheckCircle2,
@@ -16,7 +17,6 @@ import {
   X,
 } from 'lucide-react';
 import { API_BASE_URL } from '@/config/api';
-import { useAuth } from '@/contexts/AuthContext';
 
 interface WorkItem {
   id: string;
@@ -97,7 +97,6 @@ const BusinessReviewView: React.FC<BusinessReviewViewProps> = ({
   workItems,
 }) => {
   const navigate = useNavigate();
-  const { token } = useAuth();
   const [businessReviewComments, setBusinessReviewComments] = useState<BusinessReviewComment[]>([]);
   const [expandedComments, setExpandedComments] = useState<Set<number>>(new Set());
   const [isBusinessReviewExpanded, setIsBusinessReviewExpanded] = useState(true);
@@ -106,27 +105,32 @@ const BusinessReviewView: React.FC<BusinessReviewViewProps> = ({
   const [showBugsDialog, setShowBugsDialog] = useState(false);
   const [showCriticalDialog, setShowCriticalDialog] = useState(false);
 
-  // Fetch business review comments on mount
+  // Fetch business review comments on mount.
+  // AbortController guarantees we won't setState on an unmounted component
+  // if the user navigates away mid-fetch (audit F-M8).
   useEffect(() => {
-    const fetchBusinessReviewComments = async () => {
-      if (!project?.id) return;
+    if (!project?.id) return;
+    const controller = new AbortController();
 
+    const fetchBusinessReviewComments = async () => {
       try {
         const response = await fetch(
           `${API_BASE_URL}/api/comments/project/${project.id}/business-review`,
-          { headers: { Authorization: `Bearer ${token}` } },
+          { credentials: 'include', signal: controller.signal },
         );
         if (response.ok) {
           const comments = await response.json();
           setBusinessReviewComments(comments);
         }
       } catch (error) {
+        if ((error as { name?: string })?.name === 'AbortError') return;
         console.error('Failed to fetch business review comments:', error);
       }
     };
 
     fetchBusinessReviewComments();
-  }, [project?.id, token]);
+    return () => controller.abort();
+  }, [project?.id]);
 
   const toggleCommentExpanded = (commentId: number) => {
     const newExpanded = new Set(expandedComments);
@@ -144,7 +148,7 @@ const BusinessReviewView: React.FC<BusinessReviewViewProps> = ({
         `${API_BASE_URL}/api/comments/${commentId}/resolve?is_resolved=${!currentStatus}`,
         {
           method: 'PATCH',
-          headers: { Authorization: `Bearer ${token}` },
+          credentials: 'include',
         },
       );
       if (response.ok) {
@@ -158,21 +162,32 @@ const BusinessReviewView: React.FC<BusinessReviewViewProps> = ({
     }
   };
 
-  const today = new Date();
+  // `new Date()` in render body is impure (react-hooks/purity flags it).
+  // Pin to mount time; this view doesn't need second-by-second precision.
+  const today = useMemo(() => new Date(), []);
 
-  const overdueItems = workItems.filter(
-    (item) => item.due_date && new Date(item.due_date) < today && item.status !== 'done',
-  ).length;
-
-  const openBugs = workItems.filter((item) => item.type === 'bug' && item.status !== 'done').length;
-
-  // Filter lists for dialogs
-  const overdueItemsList = workItems.filter(
-    (item) => item.due_date && new Date(item.due_date) < today && item.status !== 'done',
+  // Memoize the workItems sweeps so they don't re-run on every parent
+  // re-render — only when the relevant inputs change (audit F-C12).
+  // Also routes through parseLocalDate so the overdue check doesn't
+  // UTC-shift the due date one day early (F-C1 follow-up).
+  const overdueItemsList = useMemo(
+    () =>
+      workItems.filter(
+        (item) => item.due_date && parseLocalDate(item.due_date) < today && item.status !== 'done',
+      ),
+    [workItems, today],
   );
-  const bugsList = workItems.filter((item) => item.type === 'bug' && item.status !== 'done');
-  const criticalItemsList = workItems.filter(
-    (item) => item.priority === 'critical' && item.status !== 'done',
+  const overdueItems = overdueItemsList.length;
+
+  const bugsList = useMemo(
+    () => workItems.filter((item) => item.type === 'bug' && item.status !== 'done'),
+    [workItems],
+  );
+  const openBugs = bugsList.length;
+
+  const criticalItemsList = useMemo(
+    () => workItems.filter((item) => item.priority === 'critical' && item.status !== 'done'),
+    [workItems],
   );
 
   const completedMilestones = milestones.filter((m) => m.is_completed).length;

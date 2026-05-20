@@ -195,11 +195,13 @@ const WorkloadView: React.FC<WorkloadViewProps> = ({ workloadData, onDeveloperCl
                         <TooltipTrigger className="text-left">
                           <div>
                             <span className="text-[#737373] text-xs">Remaining</span>
-                            <p className="text-white font-medium">{developer.remaining_hours}h</p>
+                            <p className="text-white font-medium">
+                              {developer.this_week_remaining_capacity ?? developer.remaining_hours}h
+                            </p>
                           </div>
                         </TooltipTrigger>
                         <TooltipContent className="bg-[#121212] border-[rgba(255,255,255,0.08)] text-white">
-                          <p>Hours for tasks due this week (Mon-Fri only)</p>
+                          <p>Capacity remaining this week (40h − used)</p>
                         </TooltipContent>
                       </Tooltip>
                     </TooltipProvider>

@@ -4,14 +4,14 @@
  *
  * Why this exists:
  *
- * - Reads the auth token from ``localStorage`` at fetch time (not from a
- *   captured ``useAuth()`` value). If the queryFn closed over the context's
- *   ``token`` value, the closure would hold the old token after rotation
- *   until react-query rebuilt the queryFn. Reading localStorage per fetch
- *   sidesteps the closure-capture problem entirely.
+ * - Sends the auth cookie automatically via ``credentials: 'include'`` (the
+ *   server issues an httpOnly JWT cookie on login — see F-S2).
  * - Throws ``ApiError`` on non-2xx so react-query's ``error`` state
  *   surfaces a useful status code + detail message instead of an opaque
  *   ``Error("HTTP 401")``.
+ * - On 401 (expired/missing session), notifies a registered auth-failure
+ *   handler so the app can log the user out and redirect to /login instead
+ *   of letting queries silently fail.
  * - Handles 204 No Content by returning ``undefined`` cast to ``T``.
  */
 import { API_BASE_URL } from '@/config/api';
@@ -26,9 +26,23 @@ export class ApiError extends Error {
   }
 }
 
-export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const token = localStorage.getItem('token');
+// Registered by AuthProvider on mount. Called once per 401 from any fetch.
+// Stored at module scope (not in React context) so apiFetch can stay a pure
+// function that any caller — react-query, raw effects, ad-hoc handlers —
+// can use without threading the context through.
+let authFailureHandler: (() => void) | null = null;
+let authFailureFired = false;
 
+export function setAuthFailureHandler(fn: (() => void) | null) {
+  authFailureHandler = fn;
+  authFailureFired = false;
+}
+
+export function resetAuthFailureLatch() {
+  authFailureFired = false;
+}
+
+export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
   // Don't set Content-Type on GET/DELETE or when body is FormData/URLSearchParams.
   // For JSON-bodied mutations the caller is expected to JSON.stringify the body
   // and pass it in init.body — we default to application/json then.
@@ -39,13 +53,20 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
 
   const headers: Record<string, string> = {
     ...(isJsonBody ? { 'Content-Type': 'application/json' } : {}),
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
     ...((init.headers as Record<string, string>) ?? {}),
   };
 
-  const res = await fetch(`${API_BASE_URL}${path}`, { ...init, headers });
+  const res = await fetch(`${API_BASE_URL}${path}`, {
+    ...init,
+    headers,
+    credentials: 'include',
+  });
 
   if (!res.ok) {
+    if (res.status === 401 && authFailureHandler && !authFailureFired) {
+      authFailureFired = true;
+      authFailureHandler();
+    }
     let detail: string;
     try {
       const body = await res.json();

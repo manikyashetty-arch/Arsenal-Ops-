@@ -22,7 +22,6 @@ import { TASK_TYPE_CONFIG, STATUS_CONFIG, CALENDAR_CLASS_NAMES } from './constan
 
 interface TicketDetailPanelProps {
   task: MyTask;
-  token: string | null;
   currentUserId: number | null;
   onClose: () => void;
   onTaskChanged: (updated: MyTask) => void;
@@ -43,7 +42,6 @@ const renderTextWithNewlines = (text: string) => {
 
 const TicketDetailPanel = ({
   task,
-  token,
   currentUserId,
   onClose,
   onTaskChanged,
@@ -60,12 +58,15 @@ const TicketDetailPanel = ({
   const [mentionFilter, setMentionFilter] = useState('');
   const [allDevelopers, setAllDevelopers] = useState<Developer[]>([]);
   const commentCache = useRef<Map<string, Comment[]>>(new Map());
+  // Inline "Log Hours" input — useRef instead of document.getElementById to
+  // avoid colliding with the matching input on ProjectBoard if both render.
+  const logHoursInputRef = useRef<HTMLInputElement>(null);
 
   const startEdit = async () => {
     let developers: ProjectDeveloper[] = [];
     try {
       const projectRes = await fetch(`${API_BASE_URL}/api/projects/${task.project_id}`, {
-        headers: { Authorization: `Bearer ${token}` },
+        credentials: 'include',
       });
       if (projectRes.ok) {
         const projectData = await projectRes.json();
@@ -108,7 +109,8 @@ const TicketDetailPanel = ({
     try {
       const res = await fetch(`${API_BASE_URL}/api/workitems/${task.id}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({
           title: editForm.title,
           description: editForm.description,
@@ -141,7 +143,8 @@ const TicketDetailPanel = ({
     try {
       const res = await fetch(`${API_BASE_URL}/api/workitems/${task.id}/log-hours`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({ hours: hoursToLog }),
       });
       if (res.ok) {
@@ -167,7 +170,8 @@ const TicketDetailPanel = ({
     try {
       await fetch(`${API_BASE_URL}/api/workitems/${task.id}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({ status: newStatus }),
       });
     } catch {
@@ -205,7 +209,8 @@ const TicketDetailPanel = ({
     try {
       const response = await fetch(`${API_BASE_URL}/api/comments/`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({
           work_item_id: parseInt(task.id),
           content: newComment,
@@ -296,7 +301,6 @@ const TicketDetailPanel = ({
   // Fetch comments when task changes
   useEffect(() => {
     const fetchComments = async () => {
-      if (!token) return;
       const cached = commentCache.current.get(task.id);
       if (cached !== undefined) {
         setComments(cached);
@@ -304,7 +308,7 @@ const TicketDetailPanel = ({
       }
       try {
         const response = await fetch(`${API_BASE_URL}/api/comments/workitem/${task.id}`, {
-          headers: { Authorization: `Bearer ${token}` },
+          credentials: 'include',
         });
         if (response.ok) {
           const data = await response.json();
@@ -316,15 +320,14 @@ const TicketDetailPanel = ({
       }
     };
     fetchComments();
-  }, [task.id, token]);
+  }, [task.id]);
 
   // Fetch all developers for @mentions
   useEffect(() => {
-    if (!token) return;
     const fetchDevs = async () => {
       try {
         const response = await fetch(`${API_BASE_URL}/api/developers/`, {
-          headers: { Authorization: `Bearer ${token}` },
+          credentials: 'include',
         });
         if (response.ok) {
           const data = await response.json();
@@ -335,7 +338,7 @@ const TicketDetailPanel = ({
       }
     };
     fetchDevs();
-  }, [token]);
+  }, []);
 
   const handleClose = () => {
     setIsEditing(false);
@@ -687,18 +690,18 @@ const TicketDetailPanel = ({
                 <div className="text-xs text-[#737373] mb-3 font-medium">Log Work Hours</div>
                 <div className="flex items-center gap-3">
                   <Input
+                    ref={logHoursInputRef}
                     type="number"
                     placeholder="Hours"
                     min="0"
                     className="w-24 h-9 bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl"
-                    id="log-hours-input"
                   />
                   <Button
                     size="sm"
                     onClick={() => {
-                      const input = document.getElementById('log-hours-input') as HTMLInputElement;
+                      const input = logHoursInputRef.current;
                       const hours = parseInt(input?.value || '0');
-                      if (hours > 0) {
+                      if (hours > 0 && input) {
                         handleLogHours(hours);
                         input.value = '';
                       }

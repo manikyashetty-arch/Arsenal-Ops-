@@ -61,13 +61,7 @@ import {
 } from '@/lib/hierarchy/validateReparent';
 import { buildEpicGroups } from '@/lib/hierarchy/buildEpicGroups';
 import { apiFetch } from '@/lib/api';
-
-// Helper function to parse YYYY-MM-DD string to local Date object (avoids UTC timezone issues)
-const parseLocalDate = (dateString: string | undefined): Date | undefined => {
-  if (!dateString) return undefined;
-  const [year, month, day] = dateString.split('-');
-  return new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
-};
+import { parseLocalDateOptional as parseLocalDate } from '@/lib/dates';
 
 interface WorkItem {
   id: string;
@@ -240,8 +234,12 @@ const PRIORITY_COLORS = {
 const ProjectBoard = () => {
   const { id, ticketId } = useParams<{ id: string; ticketId?: string }>();
   const navigate = useNavigate();
-  const { token, user } = useAuth(); // token kept for legacy child components (TimeEntriesTable, TicketContributors, ReviewerView)
+  const { user } = useAuth();
   const queryClient = useQueryClient();
+  // Inline "Log Hours" input on the item-detail drawer — useRef instead of
+  // document.getElementById so it survives extraction/portal moves and
+  // doesn't collide with the matching input on ProjectsPage if both render.
+  const logHoursInputRef = useRef<HTMLInputElement>(null);
   const [showReviewer, setShowReviewer] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editForm, setEditForm] = useState<Partial<WorkItem>>({});
@@ -993,11 +991,14 @@ const ProjectBoard = () => {
   const handleSubmitComment = (
     commentType: 'comment' | 'blocker' | 'business_review' = 'comment',
   ) => {
-    if (!selectedItem || !newComment.trim()) return;
+    if (!selectedItem || !newComment.trim() || !user?.id) return;
     submitCommentMutation.mutate({
       workItemId: selectedItem.id,
       content: newComment,
-      authorId: project?.developers?.[0]?.id || 1,
+      // The logged-in author is the comment author, not the first developer on
+      // the project. Previously every comment was attributed to project.devs[0]
+      // (or user id 1 if none) — a real data-integrity bug.
+      authorId: user.id,
       commentType,
     });
   };
@@ -2205,7 +2206,7 @@ const ProjectBoard = () => {
                           )}
 
                           {/* This Week Time Entries Table */}
-                          <TimeEntriesTable workItemId={item.id} token={token || ''} />
+                          <TimeEntriesTable workItemId={item.id} />
                         </div>
                       );
                     })}
@@ -2643,10 +2644,14 @@ const ProjectBoard = () => {
               {isEditing ? (
                 /* Edit Form */
                 <div className="space-y-4">
+                  {/* All fields below are controlled (value + onChange) — see audit F-M6.
+                                        defaultValue was previously used on 9 fields, which meant a
+                                        background ['workItems'] refetch could leave the cache and the
+                                        displayed input value silently divergent. */}
                   <div>
                     <label className="text-xs font-medium text-[#737373] block mb-1.5">Title</label>
                     <Input
-                      defaultValue={selectedItem.title}
+                      value={editForm.title ?? ''}
                       onChange={(e) => setEditForm((f) => ({ ...f, title: e.target.value }))}
                       className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl"
                     />
@@ -2656,7 +2661,7 @@ const ProjectBoard = () => {
                       Description
                     </label>
                     <Textarea
-                      defaultValue={selectedItem.description}
+                      value={editForm.description ?? ''}
                       onChange={(e) => setEditForm((f) => ({ ...f, description: e.target.value }))}
                       className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl min-h-[120px] resize-none whitespace-pre-wrap"
                     />
@@ -2667,7 +2672,7 @@ const ProjectBoard = () => {
                         Type
                       </label>
                       <select
-                        defaultValue={selectedItem.type}
+                        value={editForm.type ?? 'task'}
                         onChange={(e) => {
                           const newType = e.target.value as WorkItem['type'];
                           setEditForm((f) => {
@@ -2696,7 +2701,7 @@ const ProjectBoard = () => {
                         Priority
                       </label>
                       <select
-                        defaultValue={selectedItem.priority}
+                        value={editForm.priority ?? 'medium'}
                         onChange={(e) =>
                           setEditForm((f) => ({
                             ...f,
@@ -2719,7 +2724,7 @@ const ProjectBoard = () => {
                       </label>
                       <Input
                         type="number"
-                        defaultValue={selectedItem.story_points}
+                        value={editForm.story_points ?? 0}
                         onChange={(e) =>
                           setEditForm((f) => ({
                             ...f,
@@ -2735,7 +2740,7 @@ const ProjectBoard = () => {
                       </label>
                       <Input
                         type="number"
-                        defaultValue={selectedItem.assigned_hours}
+                        value={editForm.assigned_hours ?? 0}
                         onChange={(e) =>
                           setEditForm((f) => ({
                             ...f,
@@ -2753,7 +2758,7 @@ const ProjectBoard = () => {
                       </label>
                       <Input
                         type="number"
-                        defaultValue={selectedItem.logged_hours || 0}
+                        value={editForm.logged_hours ?? 0}
                         onChange={(e) =>
                           setEditForm((f) => ({
                             ...f,
@@ -2769,7 +2774,7 @@ const ProjectBoard = () => {
                       </label>
                       <Input
                         type="number"
-                        defaultValue={selectedItem.remaining_hours}
+                        value={editForm.remaining_hours ?? 0}
                         onChange={(e) =>
                           setEditForm((f) => ({
                             ...f,
@@ -2893,7 +2898,7 @@ const ProjectBoard = () => {
                       Sprint
                     </label>
                     <Input
-                      defaultValue={selectedItem.sprint}
+                      value={editForm.sprint ?? ''}
                       onChange={(e) => setEditForm((f) => ({ ...f, sprint: e.target.value }))}
                       className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl"
                     />
@@ -3170,20 +3175,18 @@ const ProjectBoard = () => {
                     <div className="text-xs text-[#737373] mb-3 font-medium">Log Work Hours</div>
                     <div className="flex items-center gap-3">
                       <Input
+                        ref={logHoursInputRef}
                         type="number"
                         placeholder="Hours"
                         min="0"
                         className="w-24 h-9 bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl"
-                        id="log-hours-input"
                       />
                       <Button
                         size="sm"
                         onClick={() => {
-                          const input = document.getElementById(
-                            'log-hours-input',
-                          ) as HTMLInputElement;
+                          const input = logHoursInputRef.current;
                           const hours = parseInt(input?.value || '0');
-                          if (hours > 0) {
+                          if (hours > 0 && input) {
                             handleLogHours(selectedItem, hours);
                             input.value = '';
                           }
@@ -3201,7 +3204,7 @@ const ProjectBoard = () => {
                   </div>
 
                   {/* Contributors (only renders when 2+ people have logged hours) */}
-                  <TicketContributors workItemId={selectedItem.id} token={token || ''} />
+                  <TicketContributors workItemId={selectedItem.id} />
 
                   {/* Status Buttons */}
                   <div className="pt-4 border-t border-[rgba(255,255,255,0.05)]">
@@ -5355,7 +5358,6 @@ const ProjectBoard = () => {
                 estimated_hours: item.estimated_hours ?? undefined,
               }))}
               projectId={id!}
-              token={token!}
               onTaskUpdate={(itemId, updates) => {
                 queryClient.setQueryData<WorkItem[]>(['workItems', workItemFilters], (old) =>
                   (old ?? []).map((item) => (item.id === itemId ? { ...item, ...updates } : item)),

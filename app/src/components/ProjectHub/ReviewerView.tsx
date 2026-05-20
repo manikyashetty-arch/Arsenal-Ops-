@@ -41,7 +41,6 @@ interface Comment {
 interface ReviewerViewProps {
   workItems: WorkItem[];
   projectId: string;
-  token: string;
   onTaskUpdate?: (itemId: string, updates: any) => void;
 }
 
@@ -57,7 +56,6 @@ const PRIORITY_COLOR: Record<string, string> = {
 const ReviewerView: React.FC<ReviewerViewProps> = ({
   workItems,
   projectId: _projectId,
-  token,
   onTaskUpdate,
 }) => {
   const [comments, setComments] = useState<Record<string, Comment[]>>({});
@@ -69,17 +67,21 @@ const ReviewerView: React.FC<ReviewerViewProps> = ({
   // Filter to in_review items only
   const reviewItems = workItems.filter((item) => item.status === 'in_review');
 
-  // Fetch comments for each review item
+  // Fetch comments for each review item. Key the effect on the set of ids
+  // (not just the count) so churn — one item leaves in_review, another
+  // enters — still triggers fetches for the new item (audit F-M9).
+  const reviewItemIdsKey = reviewItems.map((i) => i.id).join(',');
   useEffect(() => {
     reviewItems.forEach((item) => {
       fetchComments(item.id);
     });
-  }, [reviewItems.length]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally keyed on the id list (reviewItems identity changes every render; fetchComments is stable)
+  }, [reviewItemIdsKey]);
 
   const fetchComments = async (itemId: string) => {
     try {
       const res = await fetch(`${API_BASE_URL}/api/comments/workitem/${itemId}`, {
-        headers: { Authorization: `Bearer ${token}` },
+        credentials: 'include',
       });
       if (res.ok) {
         const data = await res.json();
@@ -98,10 +100,8 @@ const ReviewerView: React.FC<ReviewerViewProps> = ({
     try {
       const res = await fetch(`${API_BASE_URL}/api/comments/`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({
           work_item_id: parseInt(itemId),
           content,
@@ -133,10 +133,8 @@ const ReviewerView: React.FC<ReviewerViewProps> = ({
     try {
       const res = await fetch(`${API_BASE_URL}/api/workitems/${itemId}/log-hours`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({ hours, description: 'Reviewed and logged' }),
       });
 
@@ -161,10 +159,8 @@ const ReviewerView: React.FC<ReviewerViewProps> = ({
     try {
       const res = await fetch(`${API_BASE_URL}/api/workitems/${itemId}`, {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({ status: 'done' }),
       });
 
