@@ -19,6 +19,7 @@ from models.user import User
 from models.work_item import WorkItem, WorkItemStatus, WorkItemType
 from routers.auth import get_current_user
 from services.email_service import email_service
+from services.hierarchy import validate_hierarchy
 from services.llm_agent import llm_agent
 
 router = APIRouter(prefix="/api/workitems", tags=["Work Items"])
@@ -388,6 +389,15 @@ def create_work_item(
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
 
+    validate_hierarchy(
+        db,
+        item_type=item.type,
+        project_id=item.project_id,
+        parent_id=item.parent_id,
+        epic_id=item.epic_id,
+        item_id=None,
+    )
+
     # Generate key using project's key_prefix
     key_prefix = getattr(project, "key_prefix", None) or "PROJ"
 
@@ -530,6 +540,18 @@ def update_work_item(
     # Handle frontend compatibility: assigned_hours -> estimated_hours
     if "assigned_hours" in update_data:
         update_data["estimated_hours"] = update_data.pop("assigned_hours")
+
+    # Validate hierarchy if type / parent_id / epic_id is being touched.
+    # Compute the proposed post-update values so we validate the final shape.
+    if any(k in update_data for k in ("type", "parent_id", "epic_id")):
+        validate_hierarchy(
+            db,
+            item_type=update_data.get("type", item.type),
+            project_id=item.project_id,
+            parent_id=update_data.get("parent_id", item.parent_id),
+            epic_id=update_data.get("epic_id", item.epic_id),
+            item_id=item.id,
+        )
 
     # Handle date fields - parse ISO strings to datetime
     if "start_date" in update_data and update_data["start_date"]:
