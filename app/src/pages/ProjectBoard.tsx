@@ -1091,10 +1091,25 @@ const ProjectBoard = () => {
       .filter(Boolean);
   };
 
-  // Exclude IDs for the parent_id picker: subject + all descendants via parent_id chain.
-  // Selecting any of these as the new parent would create a cycle.
-  const parentExcludeIds = useMemo(() => {
+  // Depth-1 cap (matches backend services/hierarchy.py): an item that already
+  // has a parent cannot itself be picked as a parent — that would create a
+  // depth-2 chain. Shared by create form and edit form parent pickers.
+  const depth1ParentExclusions = useMemo(() => {
     const excluded = new Set<number>();
+    for (const wi of workItems) {
+      if (wi.parent_id != null) {
+        const n = Number(wi.id);
+        if (!Number.isNaN(n)) excluded.add(n);
+      }
+    }
+    return excluded;
+  }, [workItems]);
+
+  // Exclude IDs for the edit form's parent_id picker: subject + all
+  // descendants (cycle prevention) PLUS any item that's already a child of
+  // something else (depth-1 cap).
+  const parentExcludeIds = useMemo(() => {
+    const excluded = new Set<number>(depth1ParentExclusions);
     if (!selectedItem) return excluded;
     const subjectId = Number(selectedItem.id);
     if (Number.isNaN(subjectId)) return excluded;
@@ -1120,6 +1135,15 @@ const ProjectBoard = () => {
       }
     }
     return excluded;
+  }, [depth1ParentExclusions, selectedItem, workItems]);
+
+  // Edit form: if the subject already has children, giving it a parent would
+  // push them to depth-2. Lock the picker in that case.
+  const selectedItemHasChildren = useMemo(() => {
+    if (!selectedItem) return false;
+    const n = Number(selectedItem.id);
+    if (Number.isNaN(n)) return false;
+    return workItems.some((wi) => wi.parent_id === n);
   }, [selectedItem, workItems]);
 
   // For the epic_id picker: epics can't have epics, so only self-exclusion is needed.
@@ -2865,6 +2889,7 @@ const ProjectBoard = () => {
                           'parent_id',
                         )}
                         excludeIds={parentExcludeIds}
+                        disabled={selectedItemHasChildren}
                         onChange={(newId, newKey) => {
                           const target =
                             newId != null
@@ -2889,6 +2914,12 @@ const ProjectBoard = () => {
                         }}
                         placeholder="No parent"
                       />
+                      {selectedItemHasChildren && (
+                        <p className="text-[10px] text-[#737373] mt-1.5 leading-snug">
+                          This task already has child tasks, so it can’t be nested under another
+                          item.
+                        </p>
+                      )}
                     </div>
                   )}
                   <div>
@@ -3666,6 +3697,7 @@ const ProjectBoard = () => {
                           createForm.type as WorkItem['type'],
                           'parent_id',
                         )}
+                        excludeIds={depth1ParentExclusions}
                         onChange={(newId) => setCreateForm((f) => ({ ...f, parent_id: newId }))}
                         placeholder="No parent"
                       />
