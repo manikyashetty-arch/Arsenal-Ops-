@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef, Dispatch, SetStateAction } from 'react';
+import { useState, useEffect, useMemo, useRef, Dispatch, SetStateAction, lazy, Suspense } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
@@ -35,15 +35,22 @@ import StatusDotMenu from '@/components/ProjectsPage/StatusDotMenu';
 import { useAuth, isProjectManager } from '@/contexts/AuthContext';
 import { buildEpicGroups } from '@/lib/hierarchy/buildEpicGroups';
 import { apiFetch } from '@/lib/api';
-import AIPlanningModal from './modals/AIPlanningModal';
-import CreateItemModal, { CreateItemFormValues } from './modals/CreateItemModal';
-import CreateSprintModal from './modals/CreateSprintModal';
+import type { CreateItemFormValues } from './modals/CreateItemModal';
+// EditSprintModal's file also exports the CompleteSprintConfirm /
+// DeleteSprintConfirm confirmation modals as named exports, which must be
+// available eagerly. That static import already pulls the file into the main
+// bundle, so a separate `lazy(() => import(...))` for EditSprintModal can't
+// move it into its own chunk — Rollup will emit a warning and keep it inline.
+// Keep EditSprintModal as a static import to match reality.
 import EditSprintModal, {
   CompleteSprintConfirm,
   DeleteSprintConfirm,
 } from './modals/EditSprintModal';
+const AIPlanningModal = lazy(() => import('./modals/AIPlanningModal'));
+const CreateItemModal = lazy(() => import('./modals/CreateItemModal'));
+const CreateSprintModal = lazy(() => import('./modals/CreateSprintModal'));
+const ItemDetailDrawer = lazy(() => import('./ItemDetailDrawer'));
 import BoardColumn from './components/BoardColumn';
-import ItemDetailDrawer from './ItemDetailDrawer';
 import ReviewerPanel from './ReviewerPanel';
 import ArchitectureEditorWrapper from './ArchitectureEditorWrapper';
 
@@ -315,32 +322,32 @@ const ProjectBoard = () => {
     });
   };
 
-  // Close filter menu when clicking outside
+  // Single outside-click listener for both the filter and sprint menus. We
+  // only attach it when at least one menu is open so we don't pay for the
+  // global event handler in the common case where everything is closed.
   useEffect(() => {
+    if (!showFilterMenu && !showSprintMenu) return;
     const handleClickOutside = (event: MouseEvent) => {
-      if (filterMenuRef.current && !filterMenuRef.current.contains(event.target as Node)) {
+      const target = event.target as Node;
+      if (
+        showFilterMenu &&
+        filterMenuRef.current &&
+        !filterMenuRef.current.contains(target)
+      ) {
         setShowFilterMenu(false);
         setAssigneeSearchFilter('');
       }
-    };
-    if (showFilterMenu) {
-      document.addEventListener('mousedown', handleClickOutside);
-      return () => document.removeEventListener('mousedown', handleClickOutside);
-    }
-  }, [showFilterMenu]);
-
-  // Close sprint menu when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (sprintMenuRef.current && !sprintMenuRef.current.contains(event.target as Node)) {
+      if (
+        showSprintMenu &&
+        sprintMenuRef.current &&
+        !sprintMenuRef.current.contains(target)
+      ) {
         setShowSprintMenu(false);
       }
     };
-    if (showSprintMenu) {
-      document.addEventListener('mousedown', handleClickOutside);
-      return () => document.removeEventListener('mousedown', handleClickOutside);
-    }
-  }, [showSprintMenu]);
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showFilterMenu, showSprintMenu]);
 
   // Derived: unique tags computed from cached workItems — no useEffect needed
   const existingTags = useMemo(
@@ -569,10 +576,12 @@ const ProjectBoard = () => {
       }),
     onSuccess: (_data, { targetSprintId }) => {
       toast.success(targetSprintId ? 'Moved to sprint' : 'Moved to backlog');
+    },
+    onError: () => toast.error('Failed to move ticket'),
+    onSettled: () => {
       invalidateWorkItems();
       queryClient.invalidateQueries({ queryKey: ['sprints', id] });
     },
-    onError: () => toast.error('Failed to move ticket'),
   });
 
   const handleMoveToSprint = (itemId: string, targetSprintId: number | null) => {
@@ -611,9 +620,11 @@ const ProjectBoard = () => {
     onSuccess: () => {
       toast.success('Sprint created!');
       setShowCreateSprintModal(false);
-      queryClient.invalidateQueries({ queryKey: ['sprints', id] });
     },
     onError: () => toast.error('Failed to create sprint'),
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['sprints', id] });
+    },
   });
 
   const handleCreateSprint = (form: {
@@ -697,9 +708,11 @@ const ProjectBoard = () => {
     onSuccess: () => {
       toast.success('Sprint updated!');
       setEditingSprint(null);
-      queryClient.invalidateQueries({ queryKey: ['sprints', id] });
     },
     onError: () => toast.error('Failed to update sprint'),
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['sprints', id] });
+    },
   });
 
   const handleEditSprint = (form: {
@@ -761,9 +774,11 @@ const ProjectBoard = () => {
       const sprint = sprints.find((s) => s.id === sprintId);
       toast.success(`"${sprint?.name}" has been completed.`);
       setCompletingSprintId(null);
-      queryClient.invalidateQueries({ queryKey: ['sprints', id] });
     },
     onError: () => toast.error('Failed to complete sprint'),
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['sprints', id] });
+    },
   });
 
   const handleCompleteSprint = () => {
@@ -778,10 +793,12 @@ const ProjectBoard = () => {
     onSuccess: () => {
       toast.success('Sprint deleted');
       setDeletingSprintId(null);
+    },
+    onError: () => toast.error('Failed to delete sprint'),
+    onSettled: () => {
       invalidateWorkItems();
       queryClient.invalidateQueries({ queryKey: ['sprints', id] });
     },
-    onError: () => toast.error('Failed to delete sprint'),
   });
 
   const handleDeleteSprint = () => {
@@ -1888,77 +1905,87 @@ const ProjectBoard = () => {
 
       {/* Detail Slide-in Drawer */}
       {selectedItem && (
-        <ItemDetailDrawer
-          key={selectedItem.id}
-          selectedItem={selectedItem}
-          workItems={workItems}
-          sprints={sprints}
-          project={project}
-          allDevelopers={allDevelopers}
-          id={id}
-          token={token || ''}
-          navigate={navigate}
-          parseLocalDate={parseLocalDate}
-          isSavingEdit={isSavingEdit}
-          onSaveEdit={handleSaveEdit}
-          onDeleteItem={handleDeleteItem}
-          onStatusChange={handleStatusChange}
-          onLogHours={handleLogHours}
-          onMoveToSprint={handleMoveToSprint}
-          onSubmitComment={handleSubmitComment}
-          getNextSprint={getNextSprint}
-        />
+        <Suspense fallback={null}>
+          <ItemDetailDrawer
+            key={selectedItem.id}
+            selectedItem={selectedItem}
+            workItems={workItems}
+            sprints={sprints}
+            project={project}
+            allDevelopers={allDevelopers}
+            id={id}
+            token={token || ''}
+            navigate={navigate}
+            parseLocalDate={parseLocalDate}
+            isSavingEdit={isSavingEdit}
+            onSaveEdit={handleSaveEdit}
+            onDeleteItem={handleDeleteItem}
+            onStatusChange={handleStatusChange}
+            onLogHours={handleLogHours}
+            onMoveToSprint={handleMoveToSprint}
+            onSubmitComment={handleSubmitComment}
+            getNextSprint={getNextSprint}
+          />
+        </Suspense>
       )}
 
       {/* Create Item Modal */}
       {showCreateForm && (
-        <CreateItemModal
-          project={project}
-          workItems={workItems}
-          existingTags={existingTags}
-          parseLocalDate={parseLocalDate}
-          isCreatingItem={isCreatingItem}
-          onClose={() => setShowCreateForm(false)}
-          onSubmit={(form) => createItemMutation.mutate(form)}
-        />
+        <Suspense fallback={null}>
+          <CreateItemModal
+            project={project}
+            workItems={workItems}
+            existingTags={existingTags}
+            parseLocalDate={parseLocalDate}
+            isCreatingItem={isCreatingItem}
+            onClose={() => setShowCreateForm(false)}
+            onSubmit={(form) => createItemMutation.mutate(form)}
+          />
+        </Suspense>
       )}
 
       {/* AI Planning Modal */}
       {showAIModal && (
-        <AIPlanningModal
-          project={project}
-          architectures={architectures}
-          setArchitectures={setArchitectures}
-          onEditArchitecture={setEditingArchitecture}
-          startDate={startDate}
-          setStartDate={setStartDate}
-          endDate={endDate}
-          setEndDate={setEndDate}
-          onClose={() => setShowAIModal(false)}
-          onCommitted={handleAIPlanningCommitted}
-          setIsGenerating={setIsGenerating}
-        />
+        <Suspense fallback={null}>
+          <AIPlanningModal
+            project={project}
+            architectures={architectures}
+            setArchitectures={setArchitectures}
+            onEditArchitecture={setEditingArchitecture}
+            startDate={startDate}
+            setStartDate={setStartDate}
+            endDate={endDate}
+            setEndDate={setEndDate}
+            onClose={() => setShowAIModal(false)}
+            onCommitted={handleAIPlanningCommitted}
+            setIsGenerating={setIsGenerating}
+          />
+        </Suspense>
       )}
 
       {/* Create Sprint Modal */}
       {showCreateSprintModal && (
-        <CreateSprintModal
-          parseLocalDate={parseLocalDate}
-          onClose={() => setShowCreateSprintModal(false)}
-          onSubmit={handleCreateSprint}
-          disabled={createSprintMutation.isPending}
-        />
+        <Suspense fallback={null}>
+          <CreateSprintModal
+            parseLocalDate={parseLocalDate}
+            onClose={() => setShowCreateSprintModal(false)}
+            onSubmit={handleCreateSprint}
+            disabled={createSprintMutation.isPending}
+          />
+        </Suspense>
       )}
 
       {/* Edit Sprint Modal */}
       {editingSprint && (
-        <EditSprintModal
-          key={editingSprint.id}
-          editingSprint={editingSprint}
-          parseLocalDate={parseLocalDate}
-          onClose={() => setEditingSprint(null)}
-          onSubmit={handleEditSprint}
-        />
+        <Suspense fallback={null}>
+          <EditSprintModal
+            key={editingSprint.id}
+            editingSprint={editingSprint}
+            parseLocalDate={parseLocalDate}
+            onClose={() => setEditingSprint(null)}
+            onSubmit={handleEditSprint}
+          />
+        </Suspense>
       )}
 
       {/* Complete Sprint Confirmation */}

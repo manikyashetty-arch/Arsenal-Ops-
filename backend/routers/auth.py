@@ -14,7 +14,7 @@ from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import JWTError, jwt
 from pydantic import BaseModel
 from sqlalchemy import func
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 sys.path.append("..")
 from capabilities import CAPABILITIES, is_valid_grant
@@ -112,7 +112,12 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     except JWTError:
         raise credentials_exception from None
 
-    user = db.query(User).filter(User.id == int(user_id)).first()
+    user = (
+        db.query(User)
+        .options(selectinload(User.roles).selectinload(Role.capabilities))
+        .filter(User.id == int(user_id))
+        .first()
+    )
     if user is None:
         raise credentials_exception
     return user
@@ -618,13 +623,13 @@ def _validate_grants_or_400(keys: list[str]) -> list[str]:
 
 
 @router.get("/capabilities")
-async def list_capabilities(current_user: User = Depends(get_current_user)):
+def list_capabilities(current_user: User = Depends(get_current_user)):
     """Return the static capability registry. Used by the admin role-edit UI."""
     return [{"key": k, "description": v} for k, v in CAPABILITIES.items()]
 
 
 @router.get("/me/capabilities")
-async def get_my_capabilities(current_user: User = Depends(get_current_user)):
+def get_my_capabilities(current_user: User = Depends(get_current_user)):
     """Effective capability set for the calling user (union over their roles)."""
     return {
         "roles": [r.name for r in current_user.roles],
@@ -633,7 +638,7 @@ async def get_my_capabilities(current_user: User = Depends(get_current_user)):
 
 
 @router.get("/admin/roles")
-async def list_roles(
+def list_roles(
     db: Session = Depends(get_db), current_user: User = Depends(require_capability("admin.roles"))
 ):
     from models.role import user_roles as ur_table
@@ -649,7 +654,7 @@ async def list_roles(
 
 
 @router.post("/admin/roles", status_code=status.HTTP_201_CREATED)
-async def create_role(
+def create_role(
     req: RoleCreateRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_capability("admin.roles")),
@@ -673,7 +678,7 @@ async def create_role(
 
 
 @router.get("/admin/roles/{role_id}")
-async def get_role(
+def get_role(
     role_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_capability("admin.roles")),
@@ -685,7 +690,7 @@ async def get_role(
 
 
 @router.put("/admin/roles/{role_id}")
-async def update_role(
+def update_role(
     role_id: int,
     req: RoleUpdateRequest,
     db: Session = Depends(get_db),
@@ -721,7 +726,7 @@ async def update_role(
 
 
 @router.delete("/admin/roles/{role_id}")
-async def delete_role(
+def delete_role(
     role_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_capability("admin.roles")),
@@ -745,7 +750,7 @@ async def delete_role(
 
 
 @router.put("/admin/roles/{role_id}/capabilities")
-async def replace_role_capabilities(
+def replace_role_capabilities(
     role_id: int,
     req: RoleCapabilitiesRequest,
     db: Session = Depends(get_db),
@@ -767,7 +772,7 @@ async def replace_role_capabilities(
 
 
 @router.get("/admin/users/{user_id}/roles")
-async def get_user_roles(
+def get_user_roles(
     user_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_capability("admin.roles")),
@@ -779,7 +784,7 @@ async def get_user_roles(
 
 
 @router.post("/admin/users/{user_id}/roles/{role_id}", status_code=status.HTTP_201_CREATED)
-async def assign_role_to_user(
+def assign_role_to_user(
     user_id: int,
     role_id: int,
     db: Session = Depends(get_db),
@@ -802,7 +807,7 @@ async def assign_role_to_user(
 
 
 @router.delete("/admin/users/{user_id}/roles/{role_id}")
-async def remove_role_from_user(
+def remove_role_from_user(
     user_id: int,
     role_id: int,
     db: Session = Depends(get_db),

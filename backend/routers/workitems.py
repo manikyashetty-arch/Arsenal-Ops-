@@ -6,9 +6,9 @@ Production-ready database storage
 import sys
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import func, text
+from sqlalchemy import case, func, text
 from sqlalchemy.orm import Session, selectinload
 
 sys.path.append("..")
@@ -379,6 +379,7 @@ def get_work_item(
 @router.post("/")
 def create_work_item(
     item: WorkItemCreate,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -457,10 +458,11 @@ def create_work_item(
         update_epic_hours(work_item.epic_id, db)
         db.commit()
 
-    # Send assignment notification if assignee is set
+    # Send assignment notification if assignee is set (off the request thread)
     if work_item.assignee_id and work_item.assignee:
         assignee = work_item.assignee
-        email_service.send_task_assignment_notification(
+        background_tasks.add_task(
+            email_service.send_task_assignment_notification,
             to_email=assignee.email,
             to_name=assignee.name,
             assigner_name=current_user.email,
@@ -508,6 +510,7 @@ def create_work_item(
 def update_work_item(
     item_id: int,
     update: WorkItemUpdate,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -525,7 +528,7 @@ def update_work_item(
     # Track old status before update for status change notification
     old_status = item.status
 
-    update_data = update.dict(exclude_unset=True)
+    update_data = update.model_dump(exclude_unset=True)
 
     # Handle frontend compatibility: assigned_hours -> estimated_hours
     if "assigned_hours" in update_data:
@@ -621,11 +624,12 @@ def update_work_item(
             )
             db.add(activity)
 
-            # Send assignment notification to new assignee if newly assigned
+            # Send assignment notification to new assignee if newly assigned (off the request thread)
             if new_assignee_id and new_assignee_name != "Unassigned":
                 new_assignee = db.query(Developer).filter(Developer.id == new_assignee_id).first()
                 if new_assignee and new_assignee.email:
-                    email_service.send_task_assignment_notification(
+                    background_tasks.add_task(
+                        email_service.send_task_assignment_notification,
                         to_email=new_assignee.email,
                         to_name=new_assignee.name,
                         assigner_name=current_user.email,
@@ -668,11 +672,12 @@ def update_work_item(
         )
         notified_emails = set()  # Avoid sending duplicate emails
 
-        # Notify the assignee (if not the person making the change)
+        # Notify the assignee (if not the person making the change) — off thread
         if item.assignee_id and item.assignee and item.assignee.email:
             assignee_dev = item.assignee
             if assignee_dev.email != current_user.email:
-                email_service.send_status_change_notification(
+                background_tasks.add_task(
+                    email_service.send_status_change_notification,
                     to_email=assignee_dev.email,
                     to_name=assignee_dev.name,
                     changed_by=changer_name,
@@ -693,7 +698,8 @@ def update_work_item(
                 reporter_dev.email != current_user.email
                 and reporter_dev.email not in notified_emails
             ):
-                email_service.send_status_change_notification(
+                background_tasks.add_task(
+                    email_service.send_status_change_notification,
                     to_email=reporter_dev.email,
                     to_name=reporter_dev.name,
                     changed_by=changer_name,
@@ -1352,80 +1358,83 @@ def list_project_sprints(
         db.query(Sprint).filter(Sprint.project_id == project_id).order_by(Sprint.start_date).all()
     )
 
-    # Auto-update sprint status based on current date
+    # Compute sprint status on-read (no DB mutation on GET)
     today = datetime.utcnow()
-    status_changed = False
-    for sprint in sprints:
+
+    def _computed_status(sprint: Sprint) -> str:
+        """Compute display status without mutating the row."""
         if (
             sprint.status in (SprintStatus.PLANNING.value, "planned")
             and sprint.start_date
             and sprint.end_date
         ):
             if sprint.start_date <= today <= sprint.end_date:
-                sprint.status = SprintStatus.ACTIVE.value
-                sprint.activated_at = sprint.activated_at or today
-                status_changed = True
-            elif today > sprint.end_date:
-                sprint.status = SprintStatus.COMPLETED.value
-                sprint.completed_at = sprint.completed_at or today
-                status_changed = True
+                return SprintStatus.ACTIVE.value
+            if today > sprint.end_date:
+                return SprintStatus.COMPLETED.value
         elif (
             sprint.status == SprintStatus.ACTIVE.value
             and sprint.end_date
             and today > sprint.end_date
         ):
-            sprint.status = SprintStatus.COMPLETED.value
-            sprint.completed_at = sprint.completed_at or today
-            status_changed = True
-    if status_changed:
-        db.commit()
+            return SprintStatus.COMPLETED.value
+        return sprint.status
+
+    # Single GROUP BY query for all sprint counts/sums (replaces 5N queries)
+    sprint_ids = [s.id for s in sprints]
+    counts_by_sprint: dict[int, dict] = {}
+    if sprint_ids:
+        agg_rows = (
+            db.query(
+                WorkItem.sprint_id,
+                func.sum(
+                    case((WorkItem.status == WorkItemStatus.TODO.value, 1), else_=0)
+                ).label("todo"),
+                func.sum(
+                    case((WorkItem.status == WorkItemStatus.IN_PROGRESS.value, 1), else_=0)
+                ).label("in_progress"),
+                func.sum(
+                    case((WorkItem.status == WorkItemStatus.DONE.value, 1), else_=0)
+                ).label("done"),
+                func.sum(WorkItem.story_points).label("total_points"),
+                func.sum(
+                    case(
+                        (WorkItem.status == WorkItemStatus.DONE.value, WorkItem.story_points),
+                        else_=0,
+                    )
+                ).label("completed_points"),
+            )
+            .filter(WorkItem.sprint_id.in_(sprint_ids))
+            .group_by(WorkItem.sprint_id)
+            .all()
+        )
+        for row in agg_rows:
+            counts_by_sprint[row.sprint_id] = {
+                "todo": int(row.todo or 0),
+                "in_progress": int(row.in_progress or 0),
+                "done": int(row.done or 0),
+                "total_points": int(row.total_points or 0),
+                "completed_points": int(row.completed_points or 0),
+            }
 
     result = []
     for sprint in sprints:
-        # Count items by status
-        todo_count = (
-            db.query(func.count(WorkItem.id))
-            .filter(WorkItem.sprint_id == sprint.id, WorkItem.status == WorkItemStatus.TODO.value)
-            .scalar()
-            or 0
+        stats = counts_by_sprint.get(
+            sprint.id,
+            {"todo": 0, "in_progress": 0, "done": 0, "total_points": 0, "completed_points": 0},
         )
-
-        in_progress_count = (
-            db.query(func.count(WorkItem.id))
-            .filter(
-                WorkItem.sprint_id == sprint.id, WorkItem.status == WorkItemStatus.IN_PROGRESS.value
-            )
-            .scalar()
-            or 0
-        )
-
-        done_count = (
-            db.query(func.count(WorkItem.id))
-            .filter(WorkItem.sprint_id == sprint.id, WorkItem.status == WorkItemStatus.DONE.value)
-            .scalar()
-            or 0
-        )
-
-        total_points = (
-            db.query(func.sum(WorkItem.story_points))
-            .filter(WorkItem.sprint_id == sprint.id)
-            .scalar()
-            or 0
-        )
-
-        completed_points = (
-            db.query(func.sum(WorkItem.story_points))
-            .filter(WorkItem.sprint_id == sprint.id, WorkItem.status == WorkItemStatus.DONE.value)
-            .scalar()
-            or 0
-        )
+        todo_count = stats["todo"]
+        in_progress_count = stats["in_progress"]
+        done_count = stats["done"]
+        total_points = stats["total_points"]
+        completed_points = stats["completed_points"]
 
         result.append(
             {
                 "id": sprint.id,
                 "name": sprint.name,
                 "goal": sprint.goal,
-                "status": sprint.status,
+                "status": _computed_status(sprint),
                 "start_date": sprint.start_date.isoformat() if sprint.start_date else None,
                 "end_date": sprint.end_date.isoformat() if sprint.end_date else None,
                 "capacity_hours": sprint.capacity_hours,
@@ -1481,25 +1490,25 @@ def get_project_analytics(
     sprints = (
         db.query(Sprint).filter(Sprint.project_id == project_id).order_by(Sprint.start_date).all()
     )
+    # Aggregate sprint points in-Python from already-loaded items (no extra DB queries)
+    points_by_sprint: dict[int, dict] = {}
+    for item in items:
+        if item.sprint_id is None:
+            continue
+        sp = item.story_points or 0
+        bucket = points_by_sprint.setdefault(item.sprint_id, {"total": 0, "completed": 0})
+        bucket["total"] += sp
+        if item.status == WorkItemStatus.DONE.value:
+            bucket["completed"] += sp
+
     velocity_data = []
     for sprint in sprints:
-        total_points = (
-            db.query(func.sum(WorkItem.story_points))
-            .filter(WorkItem.sprint_id == sprint.id)
-            .scalar()
-            or 0
-        )
-        completed_points = (
-            db.query(func.sum(WorkItem.story_points))
-            .filter(WorkItem.sprint_id == sprint.id, WorkItem.status == WorkItemStatus.DONE.value)
-            .scalar()
-            or 0
-        )
+        bucket = points_by_sprint.get(sprint.id, {"total": 0, "completed": 0})
         velocity_data.append(
             {
                 "sprint_name": sprint.name,
-                "committed": total_points,
-                "completed": completed_points,
+                "committed": bucket["total"],
+                "completed": bucket["completed"],
                 "start_date": sprint.start_date.isoformat() if sprint.start_date else None,
             }
         )
@@ -1592,31 +1601,24 @@ def get_hours_analytics(
         db.query(Sprint).filter(Sprint.project_id == project_id).order_by(Sprint.start_date).all()
     )
 
-    # Auto-update sprint status based on current date (same logic as list endpoint)
+    # Compute sprint status on-read (no DB mutation on GET) — same logic as list endpoint
     now = datetime.utcnow()
-    ha_changed = False
-    for sprint in sprints:
+
+    def _sprint_display_status(sprint: Sprint) -> str:
         if (
             sprint.status in (SprintStatus.PLANNING.value, "planned")
             and sprint.start_date
             and sprint.end_date
         ):
             if sprint.start_date <= now <= sprint.end_date:
-                sprint.status = SprintStatus.ACTIVE.value
-                sprint.activated_at = sprint.activated_at or now
-                ha_changed = True
-            elif now > sprint.end_date:
-                sprint.status = SprintStatus.COMPLETED.value
-                sprint.completed_at = sprint.completed_at or now
-                ha_changed = True
+                return SprintStatus.ACTIVE.value
+            if now > sprint.end_date:
+                return SprintStatus.COMPLETED.value
         elif (
             sprint.status == SprintStatus.ACTIVE.value and sprint.end_date and now > sprint.end_date
         ):
-            sprint.status = SprintStatus.COMPLETED.value
-            sprint.completed_at = sprint.completed_at or now
-            ha_changed = True
-    if ha_changed:
-        db.commit()
+            return SprintStatus.COMPLETED.value
+        return sprint.status
 
     # Get all developers assigned to this project
     developers = list(project.developers) if hasattr(project, "developers") else []
@@ -1642,7 +1644,7 @@ def get_hours_analytics(
             {
                 "sprint_id": sprint.id,
                 "sprint_name": sprint.name,
-                "status": sprint.status,
+                "status": _sprint_display_status(sprint),
                 "allocated_hours": allocated,
                 "logged_hours": logged,
                 "remaining_hours": remaining,

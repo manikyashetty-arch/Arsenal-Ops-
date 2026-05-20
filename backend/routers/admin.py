@@ -5,6 +5,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
 sys.path.append("..")
@@ -79,40 +80,37 @@ SPECIALIZATIONS = [
     dependencies=[Depends(require_capability("admin.dashboard"))],
 )
 def get_dashboard_stats(db: Session = Depends(get_db)):
-    """Get admin dashboard statistics"""
-    from models.developer import Developer
-    from models.sprint import Sprint
-    from models.user import User
+    """Get admin dashboard statistics.
 
-    # Sync users to developers - ensure every user has a developer record
-    try:
-        users = db.query(User).filter(User.is_active.is_(True)).all()
-        for user in users:
-            existing_dev = db.query(Developer).filter(Developer.email == user.email).first()
-            if not existing_dev:
-                new_developer = Developer(name=user.name, email=user.email)
-                db.add(new_developer)
-        db.commit()
-    except Exception as e:
-        db.rollback()
-        print(f"Warning: Failed to sync users to developers: {e}")
+    NOTE: This used to backfill missing Developer rows for active Users on GET.
+    That side-effect has been moved to ``backend/scripts/backfill_developers.py``
+    which must be run once at deploy.
+    """
+    from models.sprint import Sprint
 
     total_employees = db.query(Developer).count()
     total_projects = db.query(Project).count()
     total_tickets = db.query(WorkItem).count()
     active_sprints = db.query(Sprint).filter(Sprint.status == "active").count()
 
-    # Tickets by status
-    tickets_by_status = {}
-    for status in ["backlog", "todo", "in_progress", "in_review", "done"]:
-        count = db.query(WorkItem).filter(WorkItem.status == status).count()
-        tickets_by_status[status] = count
+    # Tickets by status (single GROUP BY replaces 5 separate COUNTs)
+    status_rows = (
+        db.query(WorkItem.status, func.count(WorkItem.id)).group_by(WorkItem.status).all()
+    )
+    status_counts = {s: c for s, c in status_rows}
+    tickets_by_status = {
+        s: int(status_counts.get(s, 0))
+        for s in ("backlog", "todo", "in_progress", "in_review", "done")
+    }
 
-    # Tickets by priority
-    tickets_by_priority = {}
-    for priority in ["low", "medium", "high", "critical"]:
-        count = db.query(WorkItem).filter(WorkItem.priority == priority).count()
-        tickets_by_priority[priority] = count
+    # Tickets by priority (single GROUP BY replaces 4 separate COUNTs)
+    priority_rows = (
+        db.query(WorkItem.priority, func.count(WorkItem.id)).group_by(WorkItem.priority).all()
+    )
+    priority_counts = {p: c for p, c in priority_rows}
+    tickets_by_priority = {
+        p: int(priority_counts.get(p, 0)) for p in ("low", "medium", "high", "critical")
+    }
 
     return DashboardStats(
         total_employees=total_employees,

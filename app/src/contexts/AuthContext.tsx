@@ -142,20 +142,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      const response = await fetch(`${API_BASE_URL}/api/auth/me`, {
-        headers: {
-          Authorization: `Bearer ${currentToken}`,
-        },
-      });
+      // Fire /me and /me/capabilities in parallel. The capabilities call
+      // doesn't depend on /me succeeding — the backend authenticates each
+      // call from the bearer token directly. Doing them together saves one
+      // serial network round-trip on every page load.
+      const [meResponse] = await Promise.all([
+        fetch(`${API_BASE_URL}/api/auth/me`, {
+          headers: { Authorization: `Bearer ${currentToken}` },
+        }),
+        fetchCapabilitiesWith(currentToken),
+      ]);
 
-      if (response.ok) {
-        const userData = await response.json();
+      if (meResponse.ok) {
+        const userData = await meResponse.json();
         setUser(userData);
         if (!token) {
           setToken(currentToken);
         }
-        // Refresh capabilities alongside user so the two stay in sync.
-        fetchCapabilitiesWith(currentToken);
       } else {
         // Token invalid, clear it
         logout();

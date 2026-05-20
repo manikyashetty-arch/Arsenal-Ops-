@@ -522,23 +522,27 @@ const ProjectsPage = () => {
         }),
       }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['projects'] });
       setShowCreateModal(false);
       setCreateForm({ name: '', description: '', github_repo_url: '' });
       setSelectedDevelopers([]);
       toast.success('Project created successfully!');
     },
     onError: () => toast.error('Failed to create project'),
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['projects'] });
+    },
   });
 
   const deleteProjectMutation = useMutation({
     mutationFn: (projectId: number) =>
       apiFetch<void>(`/api/projects/${projectId}/`, { method: 'DELETE' }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['projects'] });
       toast.success('Project deleted');
     },
     onError: () => toast.error('Failed to delete project'),
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['projects'] });
+    },
   });
 
   const handleCreateProject = () => {

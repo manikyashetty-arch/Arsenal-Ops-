@@ -1,4 +1,4 @@
-import { lazy, Suspense } from 'react';
+import { lazy, Suspense, useState } from 'react';
 import {
   Layers,
   Pencil,
@@ -9,6 +9,7 @@ import {
   CheckCircle2,
   AlertCircle,
   Wrench,
+  Eye,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
@@ -59,6 +60,9 @@ const ArchitectureSection = ({
   onEdit,
   onOpenBoard,
 }: ArchitectureSectionProps) => {
+  // Gate the diagram render — Mermaid is ~550KB gzipped and we only want to
+  // load it when the user explicitly asks to see the diagram.
+  const [showDiagram, setShowDiagram] = useState(false);
   return (
     <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-2xl overflow-hidden">
       <div className="p-4 border-b border-[rgba(255,255,255,0.05)] flex items-center justify-between">
@@ -90,15 +94,31 @@ const ArchitectureSection = ({
         </div>
       </div>
       <div className="p-4 bg-[#080808] min-h-[400px]">
-        <Suspense
-          fallback={
-            <div className="flex items-center justify-center p-8">
-              <div className="w-8 h-8 border-2 border-[#E0B954]/30 border-t-[#E0B954] rounded-full animate-spin" />
-            </div>
-          }
-        >
-          <MermaidRenderer code={arch.mermaid_code} className="w-full h-full min-h-[350px]" />
-        </Suspense>
+        {showDiagram ? (
+          <Suspense
+            fallback={
+              <div className="flex items-center justify-center p-8">
+                <div className="w-8 h-8 border-2 border-[#E0B954]/30 border-t-[#E0B954] rounded-full animate-spin" />
+              </div>
+            }
+          >
+            <MermaidRenderer code={arch.mermaid_code} className="w-full h-full min-h-[350px]" />
+          </Suspense>
+        ) : (
+          <div className="flex flex-col items-center justify-center min-h-[350px] gap-3">
+            <Layers className="w-10 h-10 text-[#737373]" />
+            <p className="text-sm text-[#737373]">Architecture diagram is not loaded</p>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setShowDiagram(true)}
+              className="text-[#E0B954] hover:text-[#E0B954] hover:bg-[rgba(224,185,84,0.08)]"
+            >
+              <Eye className="w-4 h-4 mr-2" />
+              Show diagram
+            </Button>
+          </div>
+        )}
       </div>
 
       {/* Architecture Details */}

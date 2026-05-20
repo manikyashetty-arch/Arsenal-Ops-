@@ -13,7 +13,6 @@ import {
   PulseUpdate,
   FeatureForecastRow,
   IncludedServicesRow,
-  DUMMY_PULSE_DATA,
   savePulseData,
   resetPulseData,
 } from '../pulseData';
@@ -49,8 +48,11 @@ const PulseSettingsView: React.FC<PulseSettingsViewProps> = ({ projectId, initia
     toast.success('Pulse data saved');
   };
 
-  const handleReset = () => {
+  const handleReset = async () => {
     resetPulseData(projectId);
+    // Lazy-load the fixture only when the user actually resets; keeps the
+    // dummy data out of the main bundle. (See pulseData.fixtures.ts.)
+    const { DUMMY_PULSE_DATA } = await import('../pulseData.fixtures');
     setData(DUMMY_PULSE_DATA);
     onChange(DUMMY_PULSE_DATA);
     setIsDirty(false);

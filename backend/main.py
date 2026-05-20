@@ -3,6 +3,7 @@ Arsenal Ops - AI-Powered Project Management Platform
 FastAPI backend with Jira-like project/work item management + AI generation
 """
 
+import logging
 import os
 
 # Load environment variables
@@ -11,10 +12,13 @@ from pathlib import Path
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.middleware.gzip import GZipMiddleware
+from fastapi.responses import JSONResponse, ORJSONResponse
 
 load_dotenv()
 load_dotenv(Path(__file__).parent.parent / ".env")
+
+logger = logging.getLogger(__name__)
 
 # Import routers (after load_dotenv so router-level env reads see the right values)
 from routers.admin import router as admin_router  # noqa: E402
@@ -40,6 +44,7 @@ app = FastAPI(
     - **Sprint Management**: Organize work into sprints
     """,
     version="1.0.0",
+    default_response_class=ORJSONResponse,
 )
 
 # CORS middleware - MUST be added before other middleware/routes
@@ -69,7 +74,7 @@ if cors_origins_env:
         if origin and origin not in cors_origins:
             cors_origins.append(origin)
 
-print(f"DEBUG CORS Origins: {cors_origins}")  # Debug logging
+logger.debug("CORS Origins: %s", cors_origins)
 
 app.add_middleware(
     CORSMiddleware,
@@ -81,6 +86,10 @@ app.add_middleware(
     max_age=3600,
 )
 
+# GZip large responses (added after CORS so it runs before CORS on requests
+# and after CORS on responses — i.e. the body is gzipped, then CORS adds headers).
+app.add_middleware(GZipMiddleware, minimum_size=1000)
+
 # Request timing + query count instrumentation. No-op unless PERF_LOG=1.
 from middleware.perf import PerfMiddleware  # noqa: E402
 
@@ -91,7 +100,7 @@ app.add_middleware(PerfMiddleware)
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     """Catch all unhandled exceptions and return JSON with proper CORS headers"""
-    print(f"[GLOBAL ERROR] {request.method} {request.url.path}: {str(exc)}")
+    logger.exception("[GLOBAL ERROR] %s %s", request.method, request.url.path)
     origin = request.headers.get("origin", "")
     headers = {}
     if origin in cors_origins:
@@ -123,12 +132,13 @@ app.include_router(personal_tasks_router)
 async def startup_event():
     """Initialize database on startup"""
     try:
-        from database import SessionLocal, init_db
+        from database import SessionLocal, engine, init_db
 
         init_db()
-        print("DEBUG: Database initialized successfully")
+        logger.info("[DB] Using %s", engine.url.get_backend_name())
+        logger.info("Database initialized successfully")
     except Exception as e:
-        print(f"DEBUG: Database initialization error: {e}")
+        logger.exception("Database initialization error: %s", e)
 
     # Run idempotent column-add migrations. Each script is a no-op if the
     # column already exists. Add new migrations here whenever a column is
@@ -138,7 +148,14 @@ async def startup_event():
 
         migrate_add_last_assigned_at.migrate()
     except Exception as e:
-        print(f"DEBUG: migrate_add_last_assigned_at failed: {e}")
+        logger.exception("migrate_add_last_assigned_at failed: %s", e)
+
+    try:
+        import migrate_add_perf_indexes
+
+        migrate_add_perf_indexes.migrate()
+    except Exception as e:
+        logger.exception("migrate_add_perf_indexes failed: %s", e)
 
     # Create default admin users from .env configuration
     try:
@@ -175,13 +192,13 @@ async def startup_event():
                         db.add(developer)
                         db.commit()
 
-                    print(f"DEFAULT ADMIN CREATED! Email: {email}, Name: {name}")
+                    logger.info("DEFAULT ADMIN CREATED! Email: %s, Name: %s", email, name)
         except Exception as e:
-            print(f"Admin creation error: {e}")
+            logger.exception("Admin creation error: %s", e)
         finally:
             db.close()
     except Exception as e:
-        print(f"Admin setup error: {e}")
+        logger.exception("Admin setup error: %s", e)
 
 
 @app.get("/")

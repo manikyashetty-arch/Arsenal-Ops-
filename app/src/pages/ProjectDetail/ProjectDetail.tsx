@@ -26,12 +26,12 @@ import PRDAnalysisSection from './sections/PRDAnalysisSection';
 import ArchitectureSection from './sections/ArchitectureSection';
 import TeamSection from './sections/TeamSection';
 import LinksSection from './sections/LinksSection';
-import TrackerTab from './tabs/TrackerTab';
-import TimelineTab from './tabs/TimelineTab';
-import PulseTab from './tabs/PulseTab';
-import PulseSettingsTab from './tabs/PulseSettingsTab';
-import ActivityTab from './tabs/ActivityTab';
-import ProjectManagerTab from './tabs/ProjectManagerTab';
+const TrackerTab = lazy(() => import('./tabs/TrackerTab'));
+const TimelineTab = lazy(() => import('./tabs/TimelineTab'));
+const PulseTab = lazy(() => import('./tabs/PulseTab'));
+const PulseSettingsTab = lazy(() => import('./tabs/PulseSettingsTab'));
+const ActivityTab = lazy(() => import('./tabs/ActivityTab'));
+const ProjectManagerTab = lazy(() => import('./tabs/ProjectManagerTab'));
 
 interface Developer {
   id: number;
@@ -273,8 +273,14 @@ const ProjectDetail = () => {
   // re-hydrate from storage when it does. Same pattern as on main.
   const [pulseData, setPulseData] = useState<PulseData | null>(null);
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (id) setPulseData(loadPulseData(id));
+    if (!id) return;
+    let cancelled = false;
+    loadPulseData(id).then((data) => {
+      if (!cancelled) setPulseData(data);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [id]);
 
   // ── react-query: project ────────────────────────────────────────────────
@@ -414,6 +420,8 @@ const ProjectDetail = () => {
       }),
     onSuccess: () => {
       toast.success('Link added!');
+    },
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['project', id, 'links'] });
     },
     onError: () => toast.error('Failed to add link'),
@@ -424,9 +432,11 @@ const ProjectDetail = () => {
       apiFetch<void>(`/api/projects/${id}/links/${linkId}`, { method: 'DELETE' }),
     onSuccess: () => {
       toast.success('Link deleted!');
-      queryClient.invalidateQueries({ queryKey: ['project', id, 'links'] });
     },
     onError: () => toast.error('Error deleting link'),
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['project', id, 'links'] });
+    },
   });
 
   const handleAddLink = (link: { name: string; url: string }) => {
@@ -445,11 +455,11 @@ const ProjectDetail = () => {
         method: 'PUT',
         body: JSON.stringify(updates),
       }),
-    onSuccess: () => {
+    onError: () => toast.error('Failed to update task'),
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['workItems'] });
       queryClient.invalidateQueries({ queryKey: ['myTasks'] });
     },
-    onError: () => toast.error('Failed to update task'),
   });
 
   const taskCreateMutation = useMutation({
@@ -460,10 +470,12 @@ const ProjectDetail = () => {
       }),
     onSuccess: () => {
       toast.success('Task created!');
+    },
+    onError: () => toast.error('Failed to create task'),
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['workItems'] });
       queryClient.invalidateQueries({ queryKey: ['myTasks'] });
     },
-    onError: () => toast.error('Failed to create task'),
   });
 
   // Task update/create handlers for TimelineView
@@ -499,12 +511,14 @@ const ProjectDetail = () => {
     onSuccess: (responseData) => {
       console.log('Update response:', responseData);
       toast.success('Project updated!');
-      queryClient.invalidateQueries({ queryKey: ['project', id] });
-      queryClient.invalidateQueries({ queryKey: ['projects'] });
     },
     onError: (err: any) => {
       console.error('Error updating project:', err);
       toast.error(err?.message || 'Failed to update project');
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['project', id] });
+      queryClient.invalidateQueries({ queryKey: ['projects'] });
     },
   });
 
@@ -528,9 +542,11 @@ const ProjectDetail = () => {
     },
     onSuccess: () => {
       toast.success('Developer added!');
-      queryClient.invalidateQueries({ queryKey: ['project', id] });
     },
     onError: () => toast.error('Failed to add developer'),
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['project', id] });
+    },
   });
 
   // Add developer to project
@@ -553,9 +569,11 @@ const ProjectDetail = () => {
     },
     onSuccess: () => {
       toast.success('Developer removed!');
-      queryClient.invalidateQueries({ queryKey: ['project', id] });
     },
     onError: () => toast.error('Failed to remove developer'),
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['project', id] });
+    },
   });
 
   // Remove developer from project
@@ -575,9 +593,11 @@ const ProjectDetail = () => {
     },
     onSuccess: () => {
       toast.success('Developer promoted to project admin!');
-      queryClient.invalidateQueries({ queryKey: ['project', id] });
     },
     onError: (err: any) => toast.error(err?.message || 'Failed to promote developer'),
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['project', id] });
+    },
   });
 
   const demoteFromAdminMutation = useMutation({
@@ -589,9 +609,11 @@ const ProjectDetail = () => {
     },
     onSuccess: () => {
       toast.success('Developer demoted from project admin!');
-      queryClient.invalidateQueries({ queryKey: ['project', id] });
     },
     onError: (err: any) => toast.error(err?.message || 'Failed to demote developer'),
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['project', id] });
+    },
   });
 
   // Promote developer to project admin
@@ -632,9 +654,11 @@ const ProjectDetail = () => {
     onSuccess: () => {
       toast.success('Architecture updated!');
       setEditingArchitecture(null);
-      queryClient.invalidateQueries({ queryKey: ['project', id] });
     },
     onError: () => toast.error('Failed to update architecture'),
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['project', id] });
+    },
   });
 
   // Save architecture changes
@@ -976,73 +1000,75 @@ const ProjectDetail = () => {
             />
           )}
 
-        {/* Project Tracker Tab */}
-        {activeTab === 'tracker' && (
-          <TrackerTab
-            hubLoading={hubLoading}
-            sprints={sprints}
-            analytics={analytics}
-            sprintsExpanded={sprintsExpanded}
-            setSprintsExpanded={setSprintsExpanded}
-            isSubsectionRestricted={isSubsectionRestricted}
-          />
-        )}
+        <Suspense fallback={<div className="text-sm text-muted-foreground p-6">Loading...</div>}>
+          {/* Project Tracker Tab */}
+          {activeTab === 'tracker' && (
+            <TrackerTab
+              hubLoading={hubLoading}
+              sprints={sprints}
+              analytics={analytics}
+              sprintsExpanded={sprintsExpanded}
+              setSprintsExpanded={setSprintsExpanded}
+              isSubsectionRestricted={isSubsectionRestricted}
+            />
+          )}
 
-        {/* Timeline Tab (Calendar + Timeline) */}
-        {activeTab === 'calendar' && (
-          <TimelineTab
-            hubLoading={hubLoading}
-            hubWorkItems={hubWorkItems}
-            milestones={milestones}
-            goals={goals}
-            projectStartDate={project.created_at}
-            projectId={parseInt(id!)}
-            developers={project.developers.map((d) => ({
-              id: d.id,
-              name: d.name,
-              email: d.email,
-            }))}
-            onTaskUpdate={handleTaskUpdate}
-            onTaskCreate={handleTaskCreate}
-            isSubsectionRestricted={isSubsectionRestricted}
-          />
-        )}
+          {/* Timeline Tab (Calendar + Timeline) */}
+          {activeTab === 'calendar' && (
+            <TimelineTab
+              hubLoading={hubLoading}
+              hubWorkItems={hubWorkItems}
+              milestones={milestones}
+              goals={goals}
+              projectStartDate={project.created_at}
+              projectId={parseInt(id!)}
+              developers={project.developers.map((d) => ({
+                id: d.id,
+                name: d.name,
+                email: d.email,
+              }))}
+              onTaskUpdate={handleTaskUpdate}
+              onTaskCreate={handleTaskCreate}
+              isSubsectionRestricted={isSubsectionRestricted}
+            />
+          )}
 
-        {/* Pulse Tab (was Business Review) */}
-        {activeTab === 'pulse' && (
-          <PulseTab
-            hubLoading={hubLoading}
-            pulseData={pulseData}
-            isSubsectionRestricted={isSubsectionRestricted}
-          />
-        )}
+          {/* Pulse Tab (was Business Review) */}
+          {activeTab === 'pulse' && (
+            <PulseTab
+              hubLoading={hubLoading}
+              pulseData={pulseData}
+              isSubsectionRestricted={isSubsectionRestricted}
+            />
+          )}
 
-        {/* Pulse Settings Tab — gated on `project.pulse.settings` capability */}
-        {activeTab === 'pulse_settings' &&
-          (canAccessPulseSettings && id && pulseData ? (
-            <PulseSettingsTab projectId={id} pulseData={pulseData} onChange={setPulseData} />
-          ) : (
-            <div className="text-center py-12 text-[#737373]">This section is restricted.</div>
-          ))}
+          {/* Pulse Settings Tab — gated on `project.pulse.settings` capability */}
+          {activeTab === 'pulse_settings' &&
+            (canAccessPulseSettings && id && pulseData ? (
+              <PulseSettingsTab projectId={id} pulseData={pulseData} onChange={setPulseData} />
+            ) : (
+              <div className="text-center py-12 text-[#737373]">This section is restricted.</div>
+            ))}
 
-        {/* Activity Tab */}
-        {activeTab === 'activity' && (
-          <ActivityTab
-            hubLoading={hubLoading}
-            activities={activities}
-            isSubsectionRestricted={isSubsectionRestricted}
-          />
-        )}
+          {/* Activity Tab */}
+          {activeTab === 'activity' && (
+            <ActivityTab
+              hubLoading={hubLoading}
+              activities={activities}
+              isSubsectionRestricted={isSubsectionRestricted}
+            />
+          )}
 
-        {/* Project Manager Tab — capability-gated; only renders when canAccessPMTab() is true */}
-        {activeTab === 'project_manager' && canAccessPMTab() && (
-          <ProjectManagerTab
-            hubLoading={hubLoading}
-            projectId={id!}
-            sprints={sprints}
-            isSubsectionRestricted={isSubsectionRestricted}
-          />
-        )}
+          {/* Project Manager Tab — capability-gated; only renders when canAccessPMTab() is true */}
+          {activeTab === 'project_manager' && canAccessPMTab() && (
+            <ProjectManagerTab
+              hubLoading={hubLoading}
+              projectId={id!}
+              sprints={sprints}
+              isSubsectionRestricted={isSubsectionRestricted}
+            />
+          )}
+        </Suspense>
       </main>
 
       {/* Architecture Editor Modal */}

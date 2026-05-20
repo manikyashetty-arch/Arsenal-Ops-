@@ -318,11 +318,13 @@ const AdminDashboard = () => {
     onSuccess: () => {
       toast.success(editingEmployee ? 'Employee updated!' : 'Employee created!');
       setShowEmployeeModal(false);
+    },
+    onError: (err: any) => toast.error(err?.message || 'Failed to save employee'),
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'employees'] });
       queryClient.invalidateQueries({ queryKey: ['admin', 'stats'] });
       queryClient.invalidateQueries({ queryKey: ['admin', 'developers-capacity'] });
     },
-    onError: (err: any) => toast.error(err?.message || 'Failed to save employee'),
   });
 
   const handleSaveEmployee = () => {
@@ -337,11 +339,13 @@ const AdminDashboard = () => {
     mutationFn: (id: number) => apiFetch<void>(`/api/admin/employees/${id}`, { method: 'DELETE' }),
     onSuccess: () => {
       toast.success('Employee deleted');
+    },
+    onError: () => toast.error('Failed to delete employee'),
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'employees'] });
       queryClient.invalidateQueries({ queryKey: ['admin', 'stats'] });
       queryClient.invalidateQueries({ queryKey: ['admin', 'developers-capacity'] });
     },
-    onError: () => toast.error('Failed to delete employee'),
   });
 
   const handleDeleteEmployee = (id: number) => {
@@ -372,9 +376,11 @@ const AdminDashboard = () => {
     onSuccess: () => {
       toast.success('GitHub settings updated!');
       setShowGitHubModal(false);
-      queryClient.invalidateQueries({ queryKey: ['admin', 'projects'] });
     },
     onError: () => toast.error('Failed to update GitHub settings'),
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin', 'projects'] });
+    },
   });
 
   const handleSaveGitHubSettings = () => saveGitHubMutation.mutate();
@@ -443,10 +449,12 @@ const AdminDashboard = () => {
     onSuccess: () => {
       toast.success('Member added');
       setAddMemberForm({ developer_id: '', role: 'developer' });
+    },
+    onError: (err: any) => toast.error(err?.message || 'Failed to add member'),
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['project', selectedProjectForMembers?.id] });
       queryClient.invalidateQueries({ queryKey: ['admin', 'projects'] });
     },
-    onError: (err: any) => toast.error(err?.message || 'Failed to add member'),
   });
 
   const handleAddProjectMember = () => {
@@ -468,10 +476,12 @@ const AdminDashboard = () => {
       apiFetch<void>(`/api/projects/${projectId}/developers/${developerId}`, { method: 'DELETE' }),
     onSuccess: () => {
       toast.success('Member removed');
+    },
+    onError: (err: any) => toast.error(err?.message || 'Failed to remove member'),
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['project', selectedProjectForMembers?.id] });
       queryClient.invalidateQueries({ queryKey: ['admin', 'projects'] });
     },
-    onError: (err: any) => toast.error(err?.message || 'Failed to remove member'),
   });
 
   const handleRemoveProjectMember = (developerId: number) => {
