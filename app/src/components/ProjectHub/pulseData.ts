@@ -149,71 +149,39 @@ export const currentIncludedServices = (data: PulseData): IncludedServicesRow =>
 const STORAGE_PREFIX = 'pulse-data:';
 
 /**
- * Load pulse data for a project.
- *
- * The fixture (`DUMMY_PULSE_DATA`) is split into a separate chunk via dynamic
- * import so its ~9 KB of JSON literal never ships in the main bundle. We only
- * pay that cost when a project has no saved pulse override AND the user
- * actually opens the Pulse tab.
- *
- * Callers should treat this as async — the first call without a localStorage
- * row will resolve after the fixtures chunk loads. Subsequent calls that hit
- * the cached module are effectively synchronous.
+ * Compatibility shim: returns the dummy fixture. Authoritative loading now
+ * happens in `usePulseManualData` (see `usePulseData.ts`), which combines the
+ * server-backed overrides with this fixture for defaults. This export is kept
+ * for the reset-to-defaults flow and any non-hook caller that still wants the
+ * baseline fixture without bundling it into the main chunk.
  */
-export const loadPulseData = async (projectId: string | number): Promise<PulseData> => {
+export const loadPulseData = async (_projectId: string | number): Promise<PulseData> => {
+  const { DUMMY_PULSE_DATA } = await import('./pulseData.fixtures');
+  return DUMMY_PULSE_DATA;
+};
+
+/**
+ * Cache-only write to localStorage. The authoritative write now happens
+ * through `usePulseOverridesMutation` (server PUT). This is kept as an
+ * offline-fallback path and as a manual escape hatch for code paths that
+ * still call into the old API.
+ */
+export const savePulseData = (projectId: string | number, data: PulseData): void => {
   try {
-    const raw = localStorage.getItem(STORAGE_PREFIX + projectId);
-    if (!raw) {
-      const { DUMMY_PULSE_DATA } = await import('./pulseData.fixtures');
-      return DUMMY_PULSE_DATA;
-    }
-    const parsed = JSON.parse(raw);
-    const { DUMMY_PULSE_DATA } = await import('./pulseData.fixtures');
-    // Migrate legacy includedServices: single object → single-element list.
-    let includedServices: IncludedServicesRow[];
-    if (Array.isArray(parsed.includedServices)) {
-      includedServices = parsed.includedServices;
-    } else if (parsed.includedServices && typeof parsed.includedServices === 'object') {
-      const old = parsed.includedServices as any;
-      includedServices = [
-        {
-          month: old.throughMonth || DUMMY_PULSE_DATA.summary.monthLabel,
-          totalHours: old.totalHours ?? 0,
-          usedHours: old.usedHours ?? 0,
-          billableAccrued: old.billableAccrued ?? 0,
-          billableAccruedCost: old.billableAccruedCost ?? 0,
-          billableInvoiced: old.billableInvoiced ?? 0,
-          invoiceCount: old.invoiceCount ?? 0,
-          expectedRemaining: old.expectedRemaining ?? 0,
-        },
-      ];
-    } else {
-      includedServices = DUMMY_PULSE_DATA.includedServices;
-    }
-    // Deep-merge nested objects so older saved payloads pick up new fields.
-    return {
-      ...DUMMY_PULSE_DATA,
-      ...parsed,
-      project: { ...DUMMY_PULSE_DATA.project, ...(parsed.project || {}) },
-      summary: { ...DUMMY_PULSE_DATA.summary, ...(parsed.summary || {}) },
-      includedServices,
-      forecastVsActuals: {
-        ...DUMMY_PULSE_DATA.forecastVsActuals,
-        ...(parsed.forecastVsActuals || {}),
-      },
-    };
+    localStorage.setItem(STORAGE_PREFIX + projectId, JSON.stringify(data));
   } catch {
-    const { DUMMY_PULSE_DATA } = await import('./pulseData.fixtures');
-    return DUMMY_PULSE_DATA;
+    /* localStorage may be unavailable (private mode, quota) — ignore. */
   }
 };
 
-export const savePulseData = (projectId: string | number, data: PulseData): void => {
-  localStorage.setItem(STORAGE_PREFIX + projectId, JSON.stringify(data));
-};
-
+/** Clear the localStorage cache for a project. The server-side reset happens
+ *  by issuing a PUT with the fixture payload from `usePulseManualData`. */
 export const resetPulseData = (projectId: string | number): void => {
-  localStorage.removeItem(STORAGE_PREFIX + projectId);
+  try {
+    localStorage.removeItem(STORAGE_PREFIX + projectId);
+  } catch {
+    /* ignore */
+  }
 };
 
 // ───────────────────────────────────────────────────────────────────────────

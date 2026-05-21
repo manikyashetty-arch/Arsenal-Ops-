@@ -20,8 +20,8 @@ import {
   Activity,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { PulseData, loadPulseData } from '@/components/ProjectHub/pulseData';
-import { useMergedPulse } from '@/components/ProjectHub/usePulseData';
+import { resetPulseData } from '@/components/ProjectHub/pulseData';
+import { useMergedPulse, usePulseManualData } from '@/components/ProjectHub/usePulseData';
 import { toast, Toaster } from 'sonner';
 // ArchitectureEditor (modal) is lazy here at the parent since edit state lives at the parent.
 // MermaidRenderer is lazy-loaded inside ArchitectureSection.
@@ -281,24 +281,21 @@ const ProjectDetail = () => {
 
   const [sprintsExpanded, setSprintsExpanded] = useState(false);
 
-  // Pulse view data — admin-edited variables, hydrated from localStorage with dummy defaults.
-  // Effect form is intentional: id can change via in-place navigation, so we
-  // re-hydrate from storage when it does. Same pattern as on main.
-  const [pulseData, setPulseData] = useState<PulseData | null>(null);
-  useEffect(() => {
-    if (!id) return;
-    let cancelled = false;
-    loadPulseData(id).then((data) => {
-      if (!cancelled) setPulseData(data);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [id]);
+  // Pulse view data — editorial overrides loaded from the server (with a
+  // localStorage fallback for offline / first-load). `usePulseManualData`
+  // hides the migration from the legacy `pulse-data:<id>` localStorage key
+  // and exposes a `saveMutation` the Pulse Settings tab uses to persist
+  // edits. The derived overlay below stays read-only.
+  const {
+    manual: pulseData,
+    saveMutation: pulseSaveMutation,
+    updatedAt: pulseUpdatedAt,
+    updatedBy: pulseUpdatedBy,
+  } = usePulseManualData(id);
 
-  // DB-derived overlay on top of the manual localStorage `pulseData`. While the
-  // derived endpoint is loading or errors, `mergedPulseData === pulseData` so
-  // the Pulse view stays fully functional in the pure-manual path. The Pulse
+  // DB-derived overlay on top of the manual override blob. While the derived
+  // endpoint is loading or errors, `mergedPulseData === pulseData` so the
+  // Pulse view stays fully functional in the pure-manual path. The Pulse
   // Settings tab still edits the raw manual data — derivation is read-only.
   const { data: mergedPulseData } = useMergedPulse(id, pulseData);
 
@@ -1061,7 +1058,20 @@ const ProjectDetail = () => {
           {/* Pulse Settings Tab — gated on `project.pulse.settings` capability */}
           {activeTab === 'pulse_settings' &&
             (canAccessPulseSettings && id && pulseData ? (
-              <PulseSettingsTab projectId={id} pulseData={pulseData} onChange={setPulseData} />
+              <PulseSettingsTab
+                projectId={id}
+                pulseData={pulseData}
+                derivedMilestones={mergedPulseData?.milestones ?? pulseData.milestones}
+                updatedAt={pulseUpdatedAt}
+                updatedBy={pulseUpdatedBy}
+                onSave={async (data) => {
+                  await pulseSaveMutation.mutateAsync({ data });
+                }}
+                onReset={async (fixture) => {
+                  resetPulseData(id);
+                  await pulseSaveMutation.mutateAsync({ data: fixture });
+                }}
+              />
             ) : (
               <div className="text-center py-12 text-[#737373]">This section is restricted.</div>
             ))}

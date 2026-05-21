@@ -37,6 +37,7 @@ from calendar import monthrange
 from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends
+from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.orm import Session, selectinload
 
@@ -45,6 +46,7 @@ from database import get_db
 from models.activity_log import ActivityLog
 from models.project import Project
 from models.project_milestone import ProjectMilestone
+from models.project_pulse_override import ProjectPulseOverride
 from models.sprint import Sprint, SprintStatus
 from models.time_entry import TimeEntry
 from models.user import User
@@ -589,3 +591,103 @@ def get_pulse_derived(
             {"current": [], "last": [], "project": []},
         ),
     }
+
+
+# ---------------------------------------------------------------------------
+# Pulse overrides — editorial blob (narrative, ledger, risks, manual cost
+# categories, billing inputs, milestone budgets) stored as JSON. The frontend
+# ``PulseData`` types are the schema; the server stores the blob as-is.
+# ---------------------------------------------------------------------------
+
+
+class PulseOverridePayload(BaseModel):
+    """Request body for ``PUT /pulse-overrides``. Treated as opaque."""
+
+    data: dict
+
+
+def _serialize_override(override: ProjectPulseOverride | None) -> dict:
+    """Standard GET/PUT response shape — empty defaults when no row exists."""
+    if override is None:
+        return {"data": {}, "updated_at": None, "updated_by": None}
+    return {
+        "data": override.data or {},
+        "updated_at": override.updated_at.isoformat() if override.updated_at else None,
+        "updated_by": (
+            {
+                "id": override.updated_by.id,
+                "name": override.updated_by.name,
+                "email": override.updated_by.email,
+            }
+            if override.updated_by
+            else None
+        ),
+    }
+
+
+@router.get("/{project_id}/pulse-overrides")
+def get_pulse_overrides(
+    project_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Return the editorial Pulse blob for a project.
+
+    If no row exists, returns ``{"data": {}, "updated_at": null,
+    "updated_by": null}`` — the frontend uses that as the "first-time"
+    signal to do a one-shot localStorage migration.
+    """
+    require_project_access(project_id, current_user, db)
+    override = (
+        db.query(ProjectPulseOverride)
+        .options(selectinload(ProjectPulseOverride.updated_by))
+        .filter(ProjectPulseOverride.project_id == project_id)
+        .first()
+    )
+    return _serialize_override(override)
+
+
+@router.put("/{project_id}/pulse-overrides")
+def put_pulse_overrides(
+    project_id: int,
+    payload: PulseOverridePayload,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Upsert the editorial Pulse blob for a project.
+
+    The blob is opaque on the server — the frontend types are the
+    contract and they evolve faster than the backend should. The PUT
+    handler captures the calling user into ``updated_by_user_id`` so
+    the UI can show "last edited by X".
+    """
+    require_project_access(project_id, current_user, db)
+
+    override = (
+        db.query(ProjectPulseOverride).filter(ProjectPulseOverride.project_id == project_id).first()
+    )
+    if override is None:
+        override = ProjectPulseOverride(
+            project_id=project_id,
+            data=payload.data,
+            updated_by_user_id=current_user.id,
+        )
+        db.add(override)
+    else:
+        override.data = payload.data
+        override.updated_by_user_id = current_user.id
+        # ``onupdate=datetime.utcnow`` doesn't fire when only JSON contents
+        # change (SQLAlchemy can't tell the dict was mutated in-place),
+        # so set updated_at explicitly to be safe across drivers.
+        override.updated_at = datetime.utcnow()
+
+    db.commit()
+    db.refresh(override)
+    # Re-query to eager-load updated_by for the response.
+    override = (
+        db.query(ProjectPulseOverride)
+        .options(selectinload(ProjectPulseOverride.updated_by))
+        .filter(ProjectPulseOverride.project_id == project_id)
+        .first()
+    )
+    return _serialize_override(override)

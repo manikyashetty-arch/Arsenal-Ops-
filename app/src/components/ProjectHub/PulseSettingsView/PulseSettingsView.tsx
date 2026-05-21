@@ -4,24 +4,37 @@ import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import {
   PulseData,
+  PulseMilestone,
   PulseSummary,
   LedgerRow,
   MonthRow,
   PulseRisk,
   IncludedServicesRow,
-  savePulseData,
-  resetPulseData,
 } from '../pulseData';
+import { PulseOverridesUser } from '../usePulseData';
 import PulseSummarySection from './sections/PulseSummarySection';
 import PulseBudgetSection from './sections/PulseBudgetSection';
 import PulseMonthlyBurnSection from './sections/PulseMonthlyBurnSection';
 import PulseServicesSection from './sections/PulseServicesSection';
 import PulseRisksSection from './sections/PulseRisksSection';
+import PulseMilestonesFinancialSection from './sections/PulseMilestonesFinancialSection';
 
 interface PulseSettingsViewProps {
   projectId: string | number;
   initial: PulseData;
-  onChange: (data: PulseData) => void;
+  /** Milestones after the derive-endpoint merge — these own phase/date/status
+   *  in the financial-fields-only editor. */
+  derivedMilestones: PulseMilestone[];
+  /** Audit metadata from the server. Powers the "Last saved by X · Y ago"
+   *  caption near the save button. */
+  updatedAt: string | null;
+  updatedBy: PulseOverridesUser | null;
+  /** Persist the override blob. Returns a promise so we can show success /
+   *  error toasts in line with the round-trip. */
+  onSave: (data: PulseData) => Promise<void>;
+  /** Reset the override to the dummy fixture *and* clear the localStorage
+   *  cache. Parent handles both halves. */
+  onReset: (fixture: PulseData) => Promise<void>;
 }
 
 // Why: shared banner for sections now replaced by DB-derived values.
@@ -32,30 +45,68 @@ const DerivedBanner: React.FC<{ children: React.ReactNode }> = ({ children }) =>
   </div>
 );
 
-const PulseSettingsView: React.FC<PulseSettingsViewProps> = ({ projectId, initial, onChange }) => {
+/** Format an ISO timestamp as "Nm ago" / "Nh ago" / "Nd ago". Falls back to a
+ *  locale date string for anything older than 6 days. Pure — safe to call in
+ *  render. */
+const formatRelative = (iso: string): string => {
+  const then = Date.parse(iso);
+  if (Number.isNaN(then)) return iso;
+  const diff = Math.max(0, Date.now() - then);
+  const minutes = Math.floor(diff / 60_000);
+  if (minutes < 1) return 'just now';
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  return new Date(then).toLocaleDateString();
+};
+
+const PulseSettingsView: React.FC<PulseSettingsViewProps> = ({
+  projectId: _projectId,
+  initial,
+  derivedMilestones,
+  updatedAt,
+  updatedBy,
+  onSave,
+  onReset,
+}) => {
   const [data, setData] = useState<PulseData>(initial);
   const [isDirty, setIsDirty] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
   const update = (next: PulseData) => {
     setData(next);
     setIsDirty(true);
   };
 
-  const handleSave = () => {
-    savePulseData(projectId, data);
-    onChange(data);
-    setIsDirty(false);
-    toast.success('Pulse data saved');
+  const handleSave = async () => {
+    setIsSaving(true);
+    try {
+      await onSave(data);
+      setIsDirty(false);
+      toast.success('Pulse data saved');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to save Pulse data');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleReset = async () => {
-    resetPulseData(projectId);
-    // Why: keep dummy fixture out of main bundle.
-    const { DUMMY_PULSE_DATA } = await import('../pulseData.fixtures');
-    setData(DUMMY_PULSE_DATA);
-    onChange(DUMMY_PULSE_DATA);
-    setIsDirty(false);
-    toast.info('Reset to dummy data');
+    setIsSaving(true);
+    try {
+      // Why: keep dummy fixture out of main bundle.
+      const { DUMMY_PULSE_DATA } = await import('../pulseData.fixtures');
+      await onReset(DUMMY_PULSE_DATA);
+      setData(DUMMY_PULSE_DATA);
+      setIsDirty(false);
+      toast.info('Reset to dummy data');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to reset Pulse data');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   // Summary
@@ -115,6 +166,29 @@ const PulseSettingsView: React.FC<PulseSettingsViewProps> = ({ projectId, initia
   const removeIncluded = (i: number) =>
     update({ ...data, includedServices: data.includedServices.filter((_, idx) => idx !== i) });
 
+  // Milestone financials (upsert by id)
+  const patchMilestoneById = (
+    id: string,
+    patch: Partial<PulseMilestone>,
+    template: PulseMilestone,
+  ) => {
+    const i = data.milestones.findIndex((m) => m.id === id);
+    if (i >= 0) {
+      update({
+        ...data,
+        milestones: data.milestones.map((m, idx) => (idx === i ? { ...m, ...patch } : m)),
+      });
+    } else {
+      // Manual milestones array doesn't have a row for this derived milestone
+      // yet — append one seeded from the template (phase/date/status come from
+      // the derive endpoint; budget/spent/pct default to 0 then take the patch).
+      update({
+        ...data,
+        milestones: [...data.milestones, { ...template, ...patch }],
+      });
+    }
+  };
+
   // Risks
   const updateRisk = (i: number, patch: Partial<PulseRisk>) =>
     update({ ...data, risks: data.risks.map((r, idx) => (idx === i ? { ...r, ...patch } : r)) });
@@ -145,24 +219,33 @@ const PulseSettingsView: React.FC<PulseSettingsViewProps> = ({ projectId, initia
             Edit the variables that drive the Pulse view. Saved per project.
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleReset}
-            className="text-[#a3a3a3] hover:text-white"
-          >
-            <RotateCcw className="w-4 h-4 mr-2" />
-            Reset to dummy data
-          </Button>
-          <Button
-            onClick={handleSave}
-            disabled={!isDirty}
-            className="bg-gradient-to-r from-[#E0B954] to-[#C79E3B] text-[#080808] font-semibold disabled:opacity-50"
-          >
-            <Save className="w-4 h-4 mr-2" />
-            {isDirty ? 'Save changes' : 'Saved'}
-          </Button>
+        <div className="flex flex-col items-end gap-1">
+          <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleReset}
+              disabled={isSaving}
+              className="text-[#a3a3a3] hover:text-white"
+            >
+              <RotateCcw className="w-4 h-4 mr-2" />
+              Reset to dummy data
+            </Button>
+            <Button
+              onClick={handleSave}
+              disabled={!isDirty || isSaving}
+              className="bg-gradient-to-r from-[#E0B954] to-[#C79E3B] text-[#080808] font-semibold disabled:opacity-50"
+            >
+              <Save className="w-4 h-4 mr-2" />
+              {isSaving ? 'Saving…' : isDirty ? 'Save changes' : 'Saved'}
+            </Button>
+          </div>
+          {updatedAt && (
+            <p className="text-[10px] text-[#737373]">
+              Last saved
+              {updatedBy ? ` by ${updatedBy.name}` : ''} · {formatRelative(updatedAt)}
+            </p>
+          )}
         </div>
       </div>
 
@@ -227,9 +310,15 @@ const PulseSettingsView: React.FC<PulseSettingsViewProps> = ({ projectId, initia
       />
 
       <DerivedBanner>
-        Milestone titles, dates, and status are now synced from project milestones. Financial
-        budget/spent fields will return in a future update — they are temporarily not editable here.
+        Milestone titles, dates, and status are synced from project milestones. Attach financial
+        budget / spent / pct below.
       </DerivedBanner>
+
+      <PulseMilestonesFinancialSection
+        manualMilestones={data.milestones}
+        derivedMilestones={derivedMilestones}
+        onPatchById={patchMilestoneById}
+      />
 
       <DerivedBanner>Activity updates are now sourced from the project activity log.</DerivedBanner>
 
@@ -241,11 +330,11 @@ const PulseSettingsView: React.FC<PulseSettingsViewProps> = ({ projectId, initia
       <div className="sticky bottom-4 flex justify-end gap-2">
         <Button
           onClick={handleSave}
-          disabled={!isDirty}
+          disabled={!isDirty || isSaving}
           className="bg-gradient-to-r from-[#E0B954] to-[#C79E3B] text-[#080808] font-semibold disabled:opacity-50 shadow-xl"
         >
           <Save className="w-4 h-4 mr-2" />
-          {isDirty ? 'Save changes' : 'Saved'}
+          {isSaving ? 'Saving…' : isDirty ? 'Save changes' : 'Saved'}
         </Button>
       </div>
     </div>
