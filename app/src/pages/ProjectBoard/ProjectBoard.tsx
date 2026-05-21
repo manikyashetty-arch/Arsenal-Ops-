@@ -1,4 +1,14 @@
-import { useState, useEffect, useMemo, useRef, Dispatch, SetStateAction, lazy, Suspense } from 'react';
+import {
+  useState,
+  useEffect,
+  useMemo,
+  useCallback,
+  useRef,
+  Dispatch,
+  SetStateAction,
+  lazy,
+  Suspense,
+} from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
@@ -283,10 +293,14 @@ const ProjectBoard = () => {
   // Filters object drives the query key so filter changes auto-refetch.
   // useMemo keeps the reference stable across renders so the query key
   // (and any closures holding it) stay equal.
+  // Switched to /api/workitems/board (slim shape: 18 fields, no description,
+  // due_date, etc.). The drawer fetches the full item separately so list-only
+  // bandwidth drops without breaking the detail view. Query key has a 'board'
+  // suffix so it doesn't collide with the Hub view's full-shape cache.
   const workItemFilters = useMemo(() => ({ project_id: id }), [id]);
   const workItemsQuery = useQuery<WorkItem[]>({
-    queryKey: ['workItems', workItemFilters],
-    queryFn: () => apiFetch<WorkItem[]>(`/api/workitems/?project_id=${id}`),
+    queryKey: ['workItems', workItemFilters, 'board'],
+    queryFn: () => apiFetch<WorkItem[]>(`/api/workitems/board?project_id=${id}`),
     enabled: !!id,
   });
   // Stabilize ref so downstream useMemos (parentExcludeIds, existingTags) don't bust on every render.
@@ -314,13 +328,18 @@ const ProjectBoard = () => {
   // prefetchComments remains here because the kanban cards (parent JSX) call
   // it on hover.
 
-  // Prefetch comments on hover so data is ready before the drawer opens
-  const prefetchComments = (itemId: string) => {
-    queryClient.prefetchQuery({
-      queryKey: ['workItem', itemId, 'comments'],
-      queryFn: () => apiFetch(`/api/comments/workitem/${itemId}`),
-    });
-  };
+  // Prefetch comments on hover so data is ready before the drawer opens.
+  // useCallback so the KanbanCard memo can compare prop references and skip
+  // re-renders when items don't change.
+  const prefetchComments = useCallback(
+    (itemId: string) => {
+      queryClient.prefetchQuery({
+        queryKey: ['workItem', itemId, 'comments'],
+        queryFn: () => apiFetch(`/api/comments/workitem/${itemId}`),
+      });
+    },
+    [queryClient],
+  );
 
   // Single outside-click listener for both the filter and sprint menus. We
   // only attach it when at least one menu is open so we don't pay for the
@@ -329,19 +348,11 @@ const ProjectBoard = () => {
     if (!showFilterMenu && !showSprintMenu) return;
     const handleClickOutside = (event: MouseEvent) => {
       const target = event.target as Node;
-      if (
-        showFilterMenu &&
-        filterMenuRef.current &&
-        !filterMenuRef.current.contains(target)
-      ) {
+      if (showFilterMenu && filterMenuRef.current && !filterMenuRef.current.contains(target)) {
         setShowFilterMenu(false);
         setAssigneeSearchFilter('');
       }
-      if (
-        showSprintMenu &&
-        sprintMenuRef.current &&
-        !sprintMenuRef.current.contains(target)
-      ) {
+      if (showSprintMenu && sprintMenuRef.current && !sprintMenuRef.current.contains(target)) {
         setShowSprintMenu(false);
       }
     };
@@ -365,42 +376,79 @@ const ProjectBoard = () => {
 
   // Helper: invalidate workItems list (prefix match) plus the current user's
   // MyTasks view, which any work-item write may affect if the assignee is
-  // the active user.
+  // the active user. Also nudges the drawer's per-item detail cache so the
+  // full-shape view (description, sprint name, due_date) refreshes after a
+  // save — the slim /board list doesn't carry those fields.
   const invalidateWorkItems = () => {
     queryClient.invalidateQueries({ queryKey: ['workItems'] });
     queryClient.invalidateQueries({ queryKey: ['myTasks'] });
+    if (selectedItem) {
+      queryClient.invalidateQueries({ queryKey: ['workItem', selectedItem.id, 'detail'] });
+    }
   };
   // Helper: invalidate project (stats)
   const invalidateProject = () => queryClient.invalidateQueries({ queryKey: ['project', id] });
 
-  // Filtered items
-  const filteredItems = workItems.filter((item) => {
-    if (searchQuery) {
-      const searchLower = searchQuery.toLowerCase();
-      const titleMatch = item.title.toLowerCase().includes(searchLower);
-      const keyMatch = item.key.toLowerCase().includes(searchLower);
-      if (!titleMatch && !keyMatch) return false;
+  // Filtered items — memoized so KanbanCard React.memo + BoardColumn React.memo
+  // can rely on stable array references when filters don't change.
+  const filteredItems = useMemo(
+    () =>
+      workItems.filter((item) => {
+        if (searchQuery) {
+          const searchLower = searchQuery.toLowerCase();
+          const titleMatch = item.title.toLowerCase().includes(searchLower);
+          const keyMatch = item.key.toLowerCase().includes(searchLower);
+          if (!titleMatch && !keyMatch) return false;
+        }
+        if (filterTypes.length > 0 && !filterTypes.includes(item.type)) return false;
+        if (filterPriorities.length > 0 && !filterPriorities.includes(item.priority)) return false;
+        if (filterAssignees.length > 0) {
+          const isUnassigned = item.assignee_id === null || item.assignee_id === undefined;
+          const matchesUnassigned = filterAssignees.includes('unassigned') && isUnassigned;
+          const matchesAssignee = filterAssignees.some(
+            (id) => id !== 'unassigned' && String(item.assignee_id) === id,
+          );
+          if (!matchesUnassigned && !matchesAssignee) return false;
+        }
+        // Tags filter - if any tags are selected, item must have at least one of them
+        if (filterTags.length > 0) {
+          const hasMatchingTag = filterTags.some((tag) => item.tags?.includes(tag));
+          if (!hasMatchingTag) return false;
+        }
+        // Sprint filter
+        if (selectedSprintId === 'unassigned' && item.sprint_id !== null) return false;
+        if (typeof selectedSprintId === 'number' && item.sprint_id !== selectedSprintId)
+          return false;
+        return true;
+      }),
+    [
+      workItems,
+      searchQuery,
+      filterTypes,
+      filterPriorities,
+      filterAssignees,
+      filterTags,
+      selectedSprintId,
+    ],
+  );
+
+  // Precompute per-status column buckets once per filter change so each
+  // BoardColumn receives a stable items reference — required for the
+  // React.memo equality check on BoardColumn to skip re-renders.
+  const columnItemsByStatus = useMemo(() => {
+    const buckets: Record<string, WorkItem[]> = {
+      backlog: [],
+      todo: [],
+      in_progress: [],
+      in_review: [],
+      done: [],
+    };
+    for (const item of filteredItems) {
+      const bucket = buckets[item.status];
+      if (bucket) bucket.push(item);
     }
-    if (filterTypes.length > 0 && !filterTypes.includes(item.type)) return false;
-    if (filterPriorities.length > 0 && !filterPriorities.includes(item.priority)) return false;
-    if (filterAssignees.length > 0) {
-      const isUnassigned = item.assignee_id === null || item.assignee_id === undefined;
-      const matchesUnassigned = filterAssignees.includes('unassigned') && isUnassigned;
-      const matchesAssignee = filterAssignees.some(
-        (id) => id !== 'unassigned' && String(item.assignee_id) === id,
-      );
-      if (!matchesUnassigned && !matchesAssignee) return false;
-    }
-    // Tags filter - if any tags are selected, item must have at least one of them
-    if (filterTags.length > 0) {
-      const hasMatchingTag = filterTags.some((tag) => item.tags?.includes(tag));
-      if (!hasMatchingTag) return false;
-    }
-    // Sprint filter
-    if (selectedSprintId === 'unassigned' && item.sprint_id !== null) return false;
-    if (typeof selectedSprintId === 'number' && item.sprint_id !== selectedSprintId) return false;
-    return true;
-  });
+    return buckets;
+  }, [filteredItems]);
 
   const activeFilterCount =
     filterTypes.length + filterPriorities.length + filterAssignees.length + filterTags.length;
@@ -470,19 +518,20 @@ const ProjectBoard = () => {
     });
   };
 
-  // Drag and drop handlers
-  const handleDragStart = (itemId: string) => {
+  // Drag and drop handlers — useCallback so they're stable across renders.
+  // setState setters are stable, so deps stay empty.
+  const handleDragStart = useCallback((itemId: string) => {
     setDraggedItem(itemId);
-  };
+  }, []);
 
-  const handleDragOver = (e: React.DragEvent, status: string) => {
+  const handleDragOver = useCallback((e: React.DragEvent, status: string) => {
     e.preventDefault();
     setDragOverColumn(status);
-  };
+  }, []);
 
-  const handleDragLeave = () => {
+  const handleDragLeave = useCallback(() => {
     setDragOverColumn(null);
-  };
+  }, []);
 
   // ── Mutations ─────────────────────────────────────────────────────────────
 
@@ -497,8 +546,12 @@ const ProjectBoard = () => {
       // Cancel by prefix so sibling ['workItems', ...] queries (with other
       // filters) can't overwrite the optimistic state mid-flight. F-C3.
       await queryClient.cancelQueries({ queryKey: ['workItems'] });
-      const previous = queryClient.getQueryData<WorkItem[]>(['workItems', workItemFilters]);
-      queryClient.setQueryData<WorkItem[]>(['workItems', workItemFilters], (old) =>
+      const previous = queryClient.getQueryData<WorkItem[]>([
+        'workItems',
+        workItemFilters,
+        'board',
+      ]);
+      queryClient.setQueryData<WorkItem[]>(['workItems', workItemFilters, 'board'], (old) =>
         (old ?? []).map((t) =>
           t.id === itemId ? { ...t, status: newStatus as WorkItem['status'] } : t,
         ),
@@ -506,7 +559,8 @@ const ProjectBoard = () => {
       return { previous };
     },
     onError: (_err, _vars, ctx) => {
-      if (ctx?.previous) queryClient.setQueryData(['workItems', workItemFilters], ctx.previous);
+      if (ctx?.previous)
+        queryClient.setQueryData(['workItems', workItemFilters, 'board'], ctx.previous);
       toast.error('Failed to move ticket');
     },
     onSettled: () => {
@@ -515,13 +569,16 @@ const ProjectBoard = () => {
     },
   });
 
-  const handleDrop = (e: React.DragEvent, newStatus: string) => {
-    e.preventDefault();
-    setDragOverColumn(null);
-    if (!draggedItem) return;
-    moveMutation.mutate({ itemId: draggedItem, newStatus });
-    setDraggedItem(null);
-  };
+  const handleDrop = useCallback(
+    (e: React.DragEvent, newStatus: string) => {
+      e.preventDefault();
+      setDragOverColumn(null);
+      if (!draggedItem) return;
+      moveMutation.mutate({ itemId: draggedItem, newStatus });
+      setDraggedItem(null);
+    },
+    [draggedItem, moveMutation],
+  );
 
   // Create work item mutation. Form values are supplied by the
   // CreateItemModal (which owns the form state).
@@ -557,12 +614,14 @@ const ProjectBoard = () => {
     onSuccess: () => {
       setShowCreateForm(false);
       toast.success('Work item created!', { duration: 1000 });
-      invalidateWorkItems();
-      invalidateProject();
     },
     onError: (err: any) => {
       console.error('Failed to create item:', err);
       toast.error('Failed to create item');
+    },
+    onSettled: () => {
+      invalidateWorkItems();
+      invalidateProject();
     },
   });
   const isCreatingItem = createItemMutation.isPending;
@@ -829,8 +888,7 @@ const ProjectBoard = () => {
           comment_type: commentType,
         }),
       }),
-    onSuccess: (_data, { workItemId, commentType }) => {
-      queryClient.invalidateQueries({ queryKey: ['workItem', workItemId, 'comments'] });
+    onSuccess: (_data, { commentType }) => {
       const messages = {
         blocker: 'Blocker reported!',
         business_review: 'Business Review comment added!',
@@ -839,6 +897,9 @@ const ProjectBoard = () => {
       toast.success(messages[commentType]);
     },
     onError: () => toast.error('Failed to add comment'),
+    onSettled: (_data, _err, { workItemId }) => {
+      queryClient.invalidateQueries({ queryKey: ['workItem', workItemId, 'comments'] });
+    },
   });
 
   const handleSubmitComment = (
@@ -860,16 +921,28 @@ const ProjectBoard = () => {
 
   // Open another item in the detail panel by its numeric id (used by hierarchy chips).
   // The drawer keys on selectedItem.id so navigation alone resets its internal
-  // edit/form state.
-  const openItemByNumericId = (numericId: number | null | undefined) => {
-    if (numericId == null) return;
-    const target = workItems.find((wi) => wi.id === String(numericId));
-    if (!target) {
-      toast.error('Referenced item not found');
-      return;
-    }
-    navigate(`/project/${id}/board/${target.id}`);
-  };
+  // edit/form state. useCallback so KanbanCard memo can compare prop refs.
+  const openItemByNumericId = useCallback(
+    (numericId: number | null | undefined) => {
+      if (numericId == null) return;
+      const target = workItems.find((wi) => wi.id === String(numericId));
+      if (!target) {
+        toast.error('Referenced item not found');
+        return;
+      }
+      navigate(`/project/${id}/board/${target.id}`);
+    },
+    [workItems, navigate, id],
+  );
+
+  // Stable callback used by BoardColumn to route card clicks. Extracted from
+  // an inline arrow so prop reference is stable across renders.
+  const handleCardOpen = useCallback(
+    (itemId: string) => {
+      navigate(`/project/${id}/board/${itemId}`);
+    },
+    [navigate, id],
+  );
 
   // Save edited item mutation. Accepts the form payload from the drawer so
   // the mutation stays at the parent (R3) while the form state lives in the
@@ -882,16 +955,18 @@ const ProjectBoard = () => {
       }),
     onSuccess: (updated, { edits }) => {
       // Merge: backend may omit fields like due_date; prefer edit form values
-      queryClient.setQueryData<WorkItem[]>(['workItems', workItemFilters], (old) =>
+      queryClient.setQueryData<WorkItem[]>(['workItems', workItemFilters, 'board'], (old) =>
         (old ?? []).map((wi) =>
           wi.id === updated.id ? ({ ...wi, ...edits, ...updated } as WorkItem) : wi,
         ),
       );
       toast.success('Item updated!');
+    },
+    onError: () => toast.error('Failed to update item'),
+    onSettled: () => {
       invalidateWorkItems();
       invalidateProject();
     },
-    onError: () => toast.error('Failed to update item'),
   });
   const isSavingEdit = saveEditMutation.isPending;
 
@@ -906,10 +981,12 @@ const ProjectBoard = () => {
     onSuccess: () => {
       navigate(`/project/${id}/board`);
       toast.success('Item deleted');
+    },
+    onError: () => toast.error('Failed to delete item'),
+    onSettled: () => {
       invalidateWorkItems();
       invalidateProject();
     },
-    onError: () => toast.error('Failed to delete item'),
   });
 
   const handleDeleteItem = (itemId: string) => {
@@ -925,7 +1002,7 @@ const ProjectBoard = () => {
         { method: 'POST', body: JSON.stringify({ hours }) },
       ),
     onSuccess: (data, { itemId, hours }) => {
-      queryClient.setQueryData<WorkItem[]>(['workItems', workItemFilters], (old) =>
+      queryClient.setQueryData<WorkItem[]>(['workItems', workItemFilters, 'board'], (old) =>
         (old ?? []).map((wi) =>
           wi.id === itemId
             ? { ...wi, logged_hours: data.logged_hours, remaining_hours: data.remaining_hours }
@@ -933,10 +1010,12 @@ const ProjectBoard = () => {
         ),
       );
       toast.success(`Logged ${hours}h! Remaining: ${data.remaining_hours}h`);
+    },
+    onError: () => toast.error('Failed to log hours'),
+    onSettled: () => {
       invalidateWorkItems();
       invalidateProject();
     },
-    onError: () => toast.error('Failed to log hours'),
   });
 
   const handleLogHours = (item: WorkItem, hoursToLog: number) => {
@@ -988,8 +1067,12 @@ const ProjectBoard = () => {
     onMutate: async ({ itemId, newStatus }) => {
       // Prefix cancel — see moveMutation above. F-C3.
       await queryClient.cancelQueries({ queryKey: ['workItems'] });
-      const previous = queryClient.getQueryData<WorkItem[]>(['workItems', workItemFilters]);
-      queryClient.setQueryData<WorkItem[]>(['workItems', workItemFilters], (old) =>
+      const previous = queryClient.getQueryData<WorkItem[]>([
+        'workItems',
+        workItemFilters,
+        'board',
+      ]);
+      queryClient.setQueryData<WorkItem[]>(['workItems', workItemFilters, 'board'], (old) =>
         (old ?? []).map((t) =>
           t.id === itemId ? { ...t, status: newStatus as WorkItem['status'] } : t,
         ),
@@ -997,7 +1080,8 @@ const ProjectBoard = () => {
       return { previous };
     },
     onError: (_err, _vars, ctx) => {
-      if (ctx?.previous) queryClient.setQueryData(['workItems', workItemFilters], ctx.previous);
+      if (ctx?.previous)
+        queryClient.setQueryData(['workItems', workItemFilters, 'board'], ctx.previous);
       toast.error('Failed to update status');
     },
     onSettled: () => {
@@ -1526,7 +1610,7 @@ const ProjectBoard = () => {
           <div className="flex gap-4 p-6 min-h-[calc(100vh-140px)]">
             {(Object.keys(STATUS_CONFIG) as Array<keyof typeof STATUS_CONFIG>).map((status) => {
               const config = STATUS_CONFIG[status];
-              const columnItems = filteredItems.filter((item) => item.status === status);
+              const columnItems = columnItemsByStatus[status] ?? [];
               const isDropTarget = dragOverColumn === status;
 
               return (
@@ -1544,9 +1628,7 @@ const ProjectBoard = () => {
                   onDrop={handleDrop}
                   onCardDragStart={handleDragStart}
                   onCardPrefetchComments={prefetchComments}
-                  onCardOpen={(itemId) => {
-                    navigate(`/project/${id}/board/${itemId}`);
-                  }}
+                  onCardOpen={handleCardOpen}
                   onCardOpenByNumericId={openItemByNumericId}
                 />
               );
@@ -2018,7 +2100,7 @@ const ProjectBoard = () => {
           token={token!}
           onClose={() => setShowReviewer(false)}
           onTaskUpdate={(itemId, updates) => {
-            queryClient.setQueryData<WorkItem[]>(['workItems', workItemFilters], (old) =>
+            queryClient.setQueryData<WorkItem[]>(['workItems', workItemFilters, 'board'], (old) =>
               (old ?? []).map((item) => (item.id === itemId ? { ...item, ...updates } : item)),
             );
             invalidateWorkItems();

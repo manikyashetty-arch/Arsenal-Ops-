@@ -16,7 +16,6 @@ Idempotent: only creates a Developer row when none exists for a given email.
 from __future__ import annotations
 
 import logging
-import os
 import sys
 from pathlib import Path
 
@@ -53,9 +52,7 @@ def backfill() -> int:
                 logger.warning("Skipping user id=%s with no email", user.id)
                 continue
 
-            existing = (
-                session.query(Developer).filter(Developer.email == user.email).first()
-            )
+            existing = session.query(Developer).filter(Developer.email == user.email).first()
             if existing:
                 continue
 

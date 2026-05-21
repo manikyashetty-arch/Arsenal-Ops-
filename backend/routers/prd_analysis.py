@@ -235,7 +235,7 @@ def get_project_analysis(
     )
 
     if not analysis:
-        raise HTTPException(status_code=404, detail="No analysis found for this project")
+        return None
 
     return analysis.to_dict()
 

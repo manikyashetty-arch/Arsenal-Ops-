@@ -63,7 +63,6 @@ interface TrackerTabProps {
   analytics: ProjectAnalytics | null;
   sprintsExpanded: boolean;
   setSprintsExpanded: (updater: (prev: boolean) => boolean) => void;
-  isSubsectionRestricted: (tabName: string, subsectionName: string) => boolean;
 }
 
 const TrackerTab = ({
@@ -72,7 +71,6 @@ const TrackerTab = ({
   analytics,
   sprintsExpanded,
   setSprintsExpanded,
-  isSubsectionRestricted,
 }: TrackerTabProps) => {
   if (hubLoading) {
     return (
@@ -129,7 +127,7 @@ const TrackerTab = ({
   return (
     <div className="space-y-4">
       {/* Active Sprints */}
-      {sprints.length > 0 && !isSubsectionRestricted('tracker', 'active sprints') && (
+      {sprints.length > 0 && (
         <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(224,185,84,0.12)] rounded-2xl p-5">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-3">
@@ -232,7 +230,7 @@ const TrackerTab = ({
       )}
 
       {/* Analytics Charts */}
-      {analytics && !isSubsectionRestricted('tracker', 'analytics') && (
+      {analytics && (
         <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-2xl p-5">
           <div className="flex items-center gap-3 mb-4">
             <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#E0B954] to-[#C79E3B] flex items-center justify-center">

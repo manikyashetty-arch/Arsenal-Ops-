@@ -1,4 +1,4 @@
-import { ComponentType, SVGProps } from 'react';
+import React, { ComponentType, SVGProps } from 'react';
 import { Badge } from '@/components/ui/badge';
 import KanbanCard from './KanbanCard';
 
@@ -119,4 +119,22 @@ const BoardColumn = ({
   );
 };
 
-export default BoardColumn;
+// Custom equality: items must be a stable reference (parent precomputes via
+// useMemo) — when items changes the column rerenders, otherwise we skip.
+const areEqual = (prev: BoardColumnProps, next: BoardColumnProps) =>
+  prev.status === next.status &&
+  prev.items === next.items &&
+  prev.workItems === next.workItems &&
+  prev.isDropTarget === next.isDropTarget &&
+  prev.draggedItem === next.draggedItem &&
+  prev.token === next.token &&
+  prev.config === next.config &&
+  prev.onDragOver === next.onDragOver &&
+  prev.onDragLeave === next.onDragLeave &&
+  prev.onDrop === next.onDrop &&
+  prev.onCardDragStart === next.onCardDragStart &&
+  prev.onCardPrefetchComments === next.onCardPrefetchComments &&
+  prev.onCardOpen === next.onCardOpen &&
+  prev.onCardOpenByNumericId === next.onCardOpenByNumericId;
+
+export default React.memo(BoardColumn, areEqual);

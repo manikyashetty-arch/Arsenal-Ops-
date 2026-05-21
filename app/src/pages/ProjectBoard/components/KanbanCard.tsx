@@ -1,3 +1,4 @@
+import React from 'react';
 import { BookOpen, ClipboardList, Bug, Target, Clock } from 'lucide-react';
 import TimeEntriesTable from '@/components/TimeEntriesTable';
 import { EpicChip } from '@/components/board/EpicChip';
@@ -192,4 +193,39 @@ const KanbanCard = ({
   );
 };
 
-export default KanbanCard;
+// Custom equality: only re-render when fields that affect this card change.
+// The parent's filteredItems memo means item identity changes only on data
+// updates, so this is a defensive optimization for tag/hour/status tweaks.
+const areEqual = (prev: KanbanCardProps, next: KanbanCardProps) => {
+  const a = prev.item;
+  const b = next.item;
+  return (
+    a.id === b.id &&
+    a.status === b.status &&
+    a.priority === b.priority &&
+    a.title === b.title &&
+    a.story_points === b.story_points &&
+    a.remaining_hours === b.remaining_hours &&
+    a.logged_hours === b.logged_hours &&
+    a.assigned_hours === b.assigned_hours &&
+    a.assignee === b.assignee &&
+    a.epic_key === b.epic_key &&
+    a.parent_key === b.parent_key &&
+    a.epic_id === b.epic_id &&
+    a.parent_id === b.parent_id &&
+    (a.tags?.length ?? 0) === (b.tags?.length ?? 0) &&
+    prev.draggedItem === next.draggedItem &&
+    prev.token === next.token &&
+    prev.config?.color === next.config?.color &&
+    prev.onDragStart === next.onDragStart &&
+    prev.onPrefetchComments === next.onPrefetchComments &&
+    prev.onOpen === next.onOpen &&
+    prev.onOpenByNumericId === next.onOpenByNumericId &&
+    // workItems is used for hierarchy chip title lookups. Reference equality
+    // is sufficient — parent precomputes via useMemo so the array ref is
+    // stable across renders.
+    prev.workItems === next.workItems
+  );
+};
+
+export default React.memo(KanbanCard, areEqual);

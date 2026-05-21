@@ -181,7 +181,7 @@ def seed(db):
 
 class TestListWorkItems:
     def test_returns_all_items_with_assignee_and_sprint_names(self, db, seed):
-        result = list_work_items(db=db, current_user=seed["user"])
+        result = list_work_items(db=db, current_user=seed["user"], limit=500, offset=0)
 
         # 4 work items minus the parent (id=201) and epic (id=200)? No —
         # list_work_items returns ALL work items (including epics, stories,
@@ -203,7 +203,9 @@ class TestListWorkItems:
         assert by_key["A-EPIC"]["sprint"] == "Backlog"
 
     def test_project_filter_works(self, db, seed):
-        result = list_work_items(db=db, current_user=seed["user"], project_id=2)
+        result = list_work_items(
+            db=db, current_user=seed["user"], project_id=2, limit=500, offset=0
+        )
         assert {r["key"] for r in result} == {"B-1"}
 
     def test_query_count_does_not_grow_with_item_count(self, db, seed):
@@ -218,14 +220,14 @@ class TestListWorkItems:
             count["n"] += 1
 
         try:
-            list_work_items(db=db, current_user=seed["user"])
+            list_work_items(db=db, current_user=seed["user"], limit=500, offset=0)
         finally:
             event.remove(engine, "before_cursor_execute", _inc)
 
-        # Expected: main query + parent/epic batch + assignee selectinload
-        # + sprint selectinload = 4 queries. Plus one possible empty
-        # parent/epic fetch when items list is empty — we have items, so 4.
-        assert count["n"] <= 5, f"list_work_items issued {count['n']} queries; expected ≤ 5"
+        # Expected: count(*) for X-Total-Count header + main query +
+        # parent/epic batch + assignee selectinload + sprint selectinload = 5
+        # queries. Pagination adds the COUNT(*) query.
+        assert count["n"] <= 6, f"list_work_items issued {count['n']} queries; expected ≤ 6"
 
 
 # ---------------------------------------------------------------------------

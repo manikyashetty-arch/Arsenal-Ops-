@@ -22,15 +22,9 @@ interface ProjectManagerTabProps {
   hubLoading: boolean;
   projectId: string;
   sprints: Sprint[];
-  isSubsectionRestricted: (tabName: string, subsectionName: string) => boolean;
 }
 
-const ProjectManagerTab = ({
-  hubLoading,
-  projectId,
-  sprints,
-  isSubsectionRestricted,
-}: ProjectManagerTabProps) => {
+const ProjectManagerTab = ({ hubLoading, projectId, sprints }: ProjectManagerTabProps) => {
   if (hubLoading) {
     return (
       <div className="space-y-4 animate-pulse">
@@ -84,9 +78,7 @@ const ProjectManagerTab = ({
 
   return (
     <div className="space-y-4">
-      {!isSubsectionRestricted('project_manager', 'pmview') && (
-        <PMView projectId={projectId} token={localStorage.getItem('token')!} sprints={sprints} />
-      )}
+      <PMView projectId={projectId} token={localStorage.getItem('token')!} sprints={sprints} />
     </div>
   );
 };

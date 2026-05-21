@@ -518,13 +518,15 @@ const AdminDashboard = () => {
     onSuccess: (data) => {
       toast.success('User created successfully!');
       setGeneratedPassword(data.temporary_password);
+    },
+    onError: (err: any) => toast.error(err?.message || 'Failed to create user'),
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'users'] });
       // Developer-role users also surface in the Employees tab — keep both
       // tabs consistent on role mutations.
       queryClient.invalidateQueries({ queryKey: ['admin', 'employees'] });
       queryClient.invalidateQueries({ queryKey: ['admin', 'stats'] });
     },
-    onError: (err: any) => toast.error(err?.message || 'Failed to create user'),
   });
 
   const handleSaveUser = () => {
@@ -550,12 +552,12 @@ const AdminDashboard = () => {
     onSuccess: (_data, vars) => {
       toast.success(`Role '${vars.name}' created`);
       setShowRoleModal(false);
-      invalidateRoles();
     },
     onError: (err: unknown) => {
       const msg = err instanceof Error ? err.message : 'Failed to create role';
       toast.error(msg);
     },
+    onSettled: () => invalidateRoles(),
   });
 
   const updateRoleMetaMutation = useMutation({
@@ -578,12 +580,12 @@ const AdminDashboard = () => {
     mutationFn: (id: number) => apiFetch<void>(`/api/auth/admin/roles/${id}`, { method: 'DELETE' }),
     onSuccess: (_data, _id) => {
       toast.success('Role deleted');
-      invalidateRoles();
     },
     onError: (err: unknown) => {
       const msg = err instanceof Error ? err.message : 'Failed to delete role';
       toast.error(msg);
     },
+    onSettled: () => invalidateRoles(),
   });
 
   const assignUserRoleMutation = useMutation({
@@ -591,11 +593,11 @@ const AdminDashboard = () => {
       apiFetch<void>(`/api/auth/admin/users/${vars.userId}/roles/${vars.roleId}`, {
         method: 'POST',
       }),
-    onSuccess: () => invalidateRoles(),
     onError: (err: unknown) => {
       const msg = err instanceof Error ? err.message : 'Failed to assign role';
       toast.error(msg);
     },
+    onSettled: () => invalidateRoles(),
   });
 
   const removeUserRoleMutation = useMutation({
@@ -603,11 +605,11 @@ const AdminDashboard = () => {
       apiFetch<void>(`/api/auth/admin/users/${vars.userId}/roles/${vars.roleId}`, {
         method: 'DELETE',
       }),
-    onSuccess: () => invalidateRoles(),
     onError: (err: unknown) => {
       const msg = err instanceof Error ? err.message : 'Failed to remove role';
       toast.error(msg);
     },
+    onSettled: () => invalidateRoles(),
   });
 
   const isSavingRole =

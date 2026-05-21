@@ -25,6 +25,7 @@ from routers.admin import router as admin_router  # noqa: E402
 from routers.auth import router as auth_router  # noqa: E402
 from routers.comments import router as comments_router  # noqa: E402
 from routers.developers import router as developers_router  # noqa: E402
+from routers.overview import router as overview_router  # noqa: E402
 from routers.personal_tasks import router as personal_tasks_router  # noqa: E402
 from routers.prd_analysis import router as prd_router  # noqa: E402
 from routers.projects import router as projects_router  # noqa: E402
@@ -82,9 +83,20 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
     allow_headers=["*"],
-    expose_headers=["*"],
+    expose_headers=["X-Total-Count", "ETag", "Cache-Control", "Content-Disposition"],
     max_age=3600,
 )
+
+# ETag middleware MUST be added before GZip so it sees the uncompressed
+# response body on the way out (Starlette's `insert(0, ...)` semantics put the
+# last-added middleware outermost, so adding ETag here — before GZip —
+# leaves ETag innermore than GZip on the response path). Gated behind
+# ENABLE_ETAG_MIDDLEWARE so it ships disabled and we can flip it on per env.
+if os.getenv("ENABLE_ETAG_MIDDLEWARE", "false").lower() == "true":
+    from middleware.etag import ETagMiddleware  # noqa: E402
+
+    app.add_middleware(ETagMiddleware)
+    logger.info("[middleware] ETagMiddleware enabled")
 
 # GZip large responses (added after CORS so it runs before CORS on requests
 # and after CORS on responses — i.e. the body is gzipped, then CORS adds headers).
@@ -125,6 +137,7 @@ app.include_router(comments_router)
 app.include_router(admin_router)
 app.include_router(roadmap_router)
 app.include_router(personal_tasks_router)
+app.include_router(overview_router)
 
 
 # Startup event for database initialization
@@ -157,48 +170,54 @@ async def startup_event():
     except Exception as e:
         logger.exception("migrate_add_perf_indexes failed: %s", e)
 
-    # Create default admin users from .env configuration
+    # Emergency-bootstrap safety net: if the users table is empty (fresh deploy
+    # where scripts/seed_admins.py has not been run yet) seed exactly ONE admin
+    # from the first ADMIN_EMAILS entry so the system isn't locked out.
+    #
+    # Full admin seeding has moved to backend/scripts/seed_admins.py — run it
+    # once per deploy (or whenever ADMIN_EMAILS changes). Cost here is one
+    # COUNT(*) per worker startup; the write path is skipped once any user
+    # exists.
     try:
         from database import SessionLocal
         from models.developer import Developer
         from models.user import User, UserRole
 
-        # Read admin emails from .env (format: "email1@company.com,email2@company.com")
-        admin_emails_str = os.getenv("ADMIN_EMAILS", "manikya.shetty@arsenalai.com")
-        admin_emails = [email.strip() for email in admin_emails_str.split(",") if email.strip()]
-
         db = SessionLocal()
         try:
-            for email in admin_emails:
-                existing = db.query(User).filter(User.email == email).first()
-                if not existing:
-                    # Extract name from email (part before @)
-                    name = email.split("@")[0].replace(".", " ").title()
+            user_count = db.query(User).count()
+            if user_count == 0:
+                admin_emails_str = os.getenv("ADMIN_EMAILS", "manikya.shetty@arsenalai.com")
+                first_email = next(
+                    (e.strip() for e in admin_emails_str.split(",") if e.strip()),
+                    None,
+                )
+                if first_email:
+                    name = first_email.split("@")[0].replace(".", " ").title()
                     admin = User(
-                        email=email,
+                        email=first_email,
                         name=name,
-                        hashed_password=None,  # No password for SSO users
+                        hashed_password=None,
                         role=UserRole.ADMIN.value,
                         is_active=True,
-                        is_first_login=False,  # SSO users don't need password change
+                        is_first_login=False,
                     )
                     db.add(admin)
                     db.commit()
-
-                    # Also create as Developer/Employee
-                    existing_dev = db.query(Developer).filter(Developer.email == email).first()
-                    if not existing_dev:
-                        developer = Developer(name=name, email=email)
-                        db.add(developer)
+                    if not db.query(Developer).filter(Developer.email == first_email).first():
+                        db.add(Developer(name=name, email=first_email))
                         db.commit()
-
-                    logger.info("DEFAULT ADMIN CREATED! Email: %s, Name: %s", email, name)
+                    logger.warning(
+                        "[BOOTSTRAP] Users table was empty; emergency-seeded admin %s. "
+                        "Run scripts/seed_admins.py to provision the full ADMIN_EMAILS list.",
+                        first_email,
+                    )
         except Exception as e:
-            logger.exception("Admin creation error: %s", e)
+            logger.exception("Emergency admin bootstrap error: %s", e)
         finally:
             db.close()
     except Exception as e:
-        logger.exception("Admin setup error: %s", e)
+        logger.exception("Emergency admin bootstrap setup error: %s", e)
 
 
 @app.get("/")

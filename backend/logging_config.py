@@ -58,9 +58,7 @@ def setup_logger(name: str, level: int = logging.INFO) -> logging.Logger:
 
     # File handler (rotating; skipped on Render where stdout is captured)
     if not ON_RENDER:
-        file_handler = RotatingFileHandler(
-            LOG_FILE, maxBytes=10 * 1024 * 1024, backupCount=5
-        )
+        file_handler = RotatingFileHandler(LOG_FILE, maxBytes=10 * 1024 * 1024, backupCount=5)
         file_handler.setLevel(logging.DEBUG)  # Always log DEBUG and above to file
         file_formatter = logging.Formatter(LOG_FORMAT, datefmt=DATE_FORMAT)
         file_handler.setFormatter(file_formatter)

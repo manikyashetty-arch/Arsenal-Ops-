@@ -56,7 +56,6 @@ interface TimelineTabProps {
   onTaskUpdate: (itemId: string, updates: any) => void;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   onTaskCreate: (taskData: any) => void;
-  isSubsectionRestricted: (tabName: string, subsectionName: string) => boolean;
 }
 
 const TimelineTab = ({
@@ -69,7 +68,6 @@ const TimelineTab = ({
   developers,
   onTaskUpdate,
   onTaskCreate,
-  isSubsectionRestricted,
 }: TimelineTabProps) => {
   if (hubLoading) {
     return (
@@ -93,14 +91,6 @@ const TimelineTab = ({
         <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-2xl p-5">
           <div className="h-96 bg-[rgba(255,255,255,0.025)] rounded-xl" />
         </div>
-      </div>
-    );
-  }
-
-  if (isSubsectionRestricted('calendar', 'calendar')) {
-    return (
-      <div className="text-center py-12 text-[#737373]">
-        This section is restricted from your view.
       </div>
     );
   }

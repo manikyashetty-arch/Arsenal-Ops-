@@ -37,26 +37,35 @@ export const isProjectManager = (user: User | null): boolean =>
   hasAnyRole(user?.role, ['admin', 'project_manager']);
 export const isDeveloper = (user: User | null): boolean => hasRole(user?.role, 'developer');
 
-interface AuthContextType {
+// Split into State and Actions contexts so consumers that only need to call
+// actions (e.g. logout button) don't re-render when state values (capabilities,
+// showWarning, user) change. Backward compat: useAuth() still returns the full
+// combined shape so existing consumers don't have to migrate.
+interface AuthStateContextType {
   user: User | null;
   token: string | null;
   isLoading: boolean;
   isAuthenticated: boolean;
+  showWarning: boolean;
+  capabilities: string[];
+  can: (cap: string) => boolean;
+}
+
+interface AuthActionsContextType {
   login: (email: string, password: string) => Promise<void>;
   loginWithGoogle: (idToken: string) => Promise<void>;
   loginDev: () => Promise<void>;
   logout: () => void;
   changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
   checkAuth: () => Promise<void>;
-  showWarning: boolean;
   dismissWarning: () => void;
-  // RBAC capabilities
-  capabilities: string[];
-  can: (cap: string) => boolean;
   refreshCapabilities: () => Promise<void>;
 }
 
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
+interface AuthContextType extends AuthStateContextType, AuthActionsContextType {}
+
+const AuthStateContext = createContext<AuthStateContextType | undefined>(undefined);
+const AuthActionsContext = createContext<AuthActionsContextType | undefined>(undefined);
 
 // 24 hours in milliseconds
 const IDLE_TIMEOUT = 24 * 60 * 60 * 1000;
@@ -322,30 +331,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [token],
   );
 
-  const value = useMemo<AuthContextType>(
+  const stateValue = useMemo<AuthStateContextType>(
     () => ({
       user,
       token,
       isLoading,
       isAuthenticated,
+      showWarning,
+      capabilities,
+      can,
+    }),
+    [user, token, isLoading, isAuthenticated, showWarning, capabilities, can],
+  );
+
+  const actionsValue = useMemo<AuthActionsContextType>(
+    () => ({
       login,
       loginWithGoogle,
       loginDev,
       logout,
       changePassword,
       checkAuth,
-      showWarning,
       dismissWarning,
-      capabilities,
-      can,
       refreshCapabilities,
     }),
     [
-      user,
-      token,
-      isLoading,
-      isAuthenticated,
-      showWarning,
       login,
       loginWithGoogle,
       loginDev,
@@ -353,19 +363,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       changePassword,
       checkAuth,
       dismissWarning,
-      capabilities,
-      can,
       refreshCapabilities,
     ],
   );
 
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+  return (
+    <AuthActionsContext.Provider value={actionsValue}>
+      <AuthStateContext.Provider value={stateValue}>{children}</AuthStateContext.Provider>
+    </AuthActionsContext.Provider>
+  );
 }
 
-export function useAuth() {
-  const context = useContext(AuthContext);
-  if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider');
+export function useAuthState(): AuthStateContextType {
+  const ctx = useContext(AuthStateContext);
+  if (ctx === undefined) {
+    throw new Error('useAuthState must be used within an AuthProvider');
   }
-  return context;
+  return ctx;
+}
+
+export function useAuthActions(): AuthActionsContextType {
+  const ctx = useContext(AuthActionsContext);
+  if (ctx === undefined) {
+    throw new Error('useAuthActions must be used within an AuthProvider');
+  }
+  return ctx;
+}
+
+// Backward-compat hook: combines state + actions so existing consumers keep
+// working unchanged. New code should prefer useAuthState() / useAuthActions().
+export function useAuth(): AuthContextType {
+  const state = useAuthState();
+  const actions = useAuthActions();
+  // Stable when both halves are stable, which is the normal case since each
+  // provider memoizes its value.
+  return useMemo(() => ({ ...state, ...actions }), [state, actions]);
 }

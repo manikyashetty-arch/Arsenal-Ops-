@@ -6,7 +6,7 @@ Production-ready database storage
 import sys
 from datetime import datetime
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Response
 from pydantic import BaseModel
 from sqlalchemy import case, func, text
 from sqlalchemy.orm import Session, selectinload
@@ -200,15 +200,23 @@ class SprintCreate(BaseModel):
 
 @router.get("/")
 def list_work_items(
+    response: Response = None,
     project_id: int = None,
     status: str = None,
     type: str = None,
     sprint_id: int = None,
     assignee_id: int = None,
+    limit: int = Query(500, ge=1, le=1000),
+    offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """List all work items with optional filters (requires auth)"""
+    """List all work items with optional filters (requires auth).
+
+    Supports pagination via ``limit`` (1..1000, default 500) and ``offset``
+    (default 0). Total row count is returned in the ``X-Total-Count`` response
+    header so the frontend can render a paginator without a second request.
+    """
     query = db.query(WorkItem).options(
         selectinload(WorkItem.assignee),
         selectinload(WorkItem.sprint),
@@ -225,7 +233,14 @@ def list_work_items(
     if assignee_id:
         query = query.filter(WorkItem.assignee_id == assignee_id)
 
-    items = query.all()
+    # Compute total BEFORE applying limit/offset so the header reflects the
+    # full filtered set, not just the current page.
+    total = query.with_entities(func.count(WorkItem.id)).scalar() or 0
+
+    items = query.order_by(WorkItem.updated_at.desc()).limit(limit).offset(offset).all()
+
+    if response is not None:
+        response.headers["X-Total-Count"] = str(total)
 
     # Pre-fetch parent/epic keys in one batch query
     all_lookup_ids = list(
@@ -288,6 +303,92 @@ def list_work_items(
         result.append(item_dict)
 
     return result
+
+
+class SlimWorkItem(BaseModel):
+    """Slim payload used by the Kanban board endpoint.
+
+    Excludes heavy fields (description, acceptance_criteria, started_at,
+    completed_at) that the board view never renders. Wire size is roughly
+    40-50% of the full row, which adds up fast on projects with hundreds
+    of items.
+    """
+
+    id: str
+    key: str
+    title: str
+    type: str
+    status: str
+    priority: str
+    assignee_id: int | None = None
+    assignee: str | None = None
+    sprint_id: int | None = None
+    parent_id: int | None = None
+    epic_id: int | None = None
+    parent_key: str | None = None
+    epic_key: str | None = None
+    story_points: int = 0
+    tags: list[str] = []
+    remaining_hours: int = 0
+    assigned_hours: int = 0
+    logged_hours: int = 0
+
+
+@router.get("/board", response_model=list[SlimWorkItem])
+def list_board_items(
+    project_id: int = Query(..., description="Required: project to fetch board items for"),
+    sprint_id: int | None = Query(None, description="Optional: filter to a single sprint"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Slim variant of ``GET /api/workitems/`` used by the Kanban board.
+
+    Skips the description/acceptance_criteria/date columns the board never
+    renders. The parent/epic key batch lookup mirrors ``list_work_items`` so
+    callers still see human-readable identifiers without per-row joins.
+    """
+    query = db.query(WorkItem).options(selectinload(WorkItem.assignee))
+    query = query.filter(WorkItem.project_id == project_id)
+    if sprint_id is not None:
+        query = query.filter(WorkItem.sprint_id == sprint_id)
+
+    items = query.all()
+
+    # Batch-fetch parent/epic keys in a single IN(...) query.
+    all_lookup_ids = list(
+        {
+            *(item.parent_id for item in items if item.parent_id),
+            *(item.epic_id for item in items if item.epic_id),
+        }
+    )
+    id_to_key: dict[int, str] = {}
+    if all_lookup_ids:
+        related = db.query(WorkItem.id, WorkItem.key).filter(WorkItem.id.in_(all_lookup_ids)).all()
+        id_to_key = {r.id: r.key for r in related}
+
+    return [
+        SlimWorkItem(
+            id=str(item.id),
+            key=item.key,
+            title=item.title,
+            type=item.type,
+            status=item.status,
+            priority=item.priority,
+            assignee_id=item.assignee_id,
+            assignee=item.assignee.name if item.assignee_id and item.assignee else None,
+            sprint_id=item.sprint_id,
+            parent_id=item.parent_id,
+            epic_id=item.epic_id,
+            parent_key=id_to_key.get(item.parent_id) if item.parent_id else None,
+            epic_key=id_to_key.get(item.epic_id) if item.epic_id else None,
+            story_points=item.story_points or 0,
+            tags=item.tags or [],
+            remaining_hours=item.remaining_hours or 0,
+            assigned_hours=item.estimated_hours or 0,
+            logged_hours=item.logged_hours or 0,
+        )
+        for item in items
+    ]
 
 
 @router.get("/my-tasks")
@@ -1387,15 +1488,15 @@ def list_project_sprints(
         agg_rows = (
             db.query(
                 WorkItem.sprint_id,
-                func.sum(
-                    case((WorkItem.status == WorkItemStatus.TODO.value, 1), else_=0)
-                ).label("todo"),
+                func.sum(case((WorkItem.status == WorkItemStatus.TODO.value, 1), else_=0)).label(
+                    "todo"
+                ),
                 func.sum(
                     case((WorkItem.status == WorkItemStatus.IN_PROGRESS.value, 1), else_=0)
                 ).label("in_progress"),
-                func.sum(
-                    case((WorkItem.status == WorkItemStatus.DONE.value, 1), else_=0)
-                ).label("done"),
+                func.sum(case((WorkItem.status == WorkItemStatus.DONE.value, 1), else_=0)).label(
+                    "done"
+                ),
                 func.sum(WorkItem.story_points).label("total_points"),
                 func.sum(
                     case(

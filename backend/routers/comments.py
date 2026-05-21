@@ -157,9 +157,7 @@ def create_comment(
     # Send email notifications to mentioned users (off the request thread)
     is_blocker = comment.comment_type == "blocker"
     if mentions:
-        mentioned_users = (
-            db.query(Developer).filter(Developer.id.in_(mentions)).all()
-        )
+        mentioned_users = db.query(Developer).filter(Developer.id.in_(mentions)).all()
         for mentioned_user in mentioned_users:
             if mentioned_user.email:
                 background_tasks.add_task(

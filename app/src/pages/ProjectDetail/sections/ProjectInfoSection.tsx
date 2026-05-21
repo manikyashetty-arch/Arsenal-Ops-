@@ -34,7 +34,7 @@ interface Project {
   github_repo_name?: string;
   created_at: string;
   end_date?: string;
-  developers: ProjectDeveloper[];
+  developers?: ProjectDeveloper[];
 }
 
 interface ProjectInfoSectionProps {
@@ -306,7 +306,7 @@ const ProjectInfoSection = ({ project, onSave }: ProjectInfoSectionProps) => {
               <Users className="w-5 h-5 text-[#E0B954]" />
             </div>
             <div>
-              <p className="text-2xl font-bold text-white">{project.developers.length}</p>
+              <p className="text-2xl font-bold text-white">{project.developers?.length ?? 0}</p>
               <p className="text-xs text-[#737373]">Developers</p>
             </div>
           </div>

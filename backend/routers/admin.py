@@ -94,9 +94,7 @@ def get_dashboard_stats(db: Session = Depends(get_db)):
     active_sprints = db.query(Sprint).filter(Sprint.status == "active").count()
 
     # Tickets by status (single GROUP BY replaces 5 separate COUNTs)
-    status_rows = (
-        db.query(WorkItem.status, func.count(WorkItem.id)).group_by(WorkItem.status).all()
-    )
+    status_rows = db.query(WorkItem.status, func.count(WorkItem.id)).group_by(WorkItem.status).all()
     status_counts = {s: c for s, c in status_rows}
     tickets_by_status = {
         s: int(status_counts.get(s, 0))

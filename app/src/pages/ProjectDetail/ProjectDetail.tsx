@@ -160,7 +160,7 @@ interface Project {
   github_repo_name?: string;
   created_at: string;
   end_date?: string;
-  developers: ProjectDeveloper[];
+  developers?: ProjectDeveloper[];
   selected_architecture?: Architecture;
   architectures: Architecture[];
 }
@@ -233,12 +233,19 @@ interface ProjectLink {
   created_at?: string;
 }
 
-interface CustomRestriction {
-  id: number;
-  name: string;
-  tab_name: string;
-  subsection: string;
-  created_at?: string;
+// Shape returned by GET /api/projects/{id}/overview — bundles 8 previously
+// separate hub queries into one round trip. Individual useQuery hooks are
+// kept as fallback (for cache priming + invalidation routing), but the
+// overview query primes their caches so they short-circuit on first paint.
+interface ProjectOverview {
+  project: Project;
+  sprints: Sprint[];
+  goals: Goal[];
+  milestones: Milestone[];
+  activities: ActivityItem[];
+  analytics: ProjectAnalytics;
+  prdAnalysis: PRDAnalysis;
+  links: ProjectLink[];
 }
 
 const ProjectDetail = () => {
@@ -282,6 +289,31 @@ const ProjectDetail = () => {
       cancelled = true;
     };
   }, [id]);
+
+  // ── react-query: project overview (B1) ──────────────────────────────────
+  // One round-trip that returns project + sprints + goals + milestones +
+  // activities + analytics + prdAnalysis + links. We keep the individual
+  // useQuery hooks below as fallback (low-risk migration) and seed their
+  // caches via setQueryData in an effect — they return immediately from
+  // cache on first paint instead of issuing 7 extra HTTP calls.
+  const overviewQuery = useQuery<ProjectOverview>({
+    queryKey: ['projectOverview', id],
+    queryFn: () => apiFetch<ProjectOverview>(`/api/projects/${id}/overview`),
+    enabled: !!id,
+  });
+
+  useEffect(() => {
+    const d = overviewQuery.data;
+    if (!d || !id) return;
+    queryClient.setQueryData(['project', id], d.project);
+    queryClient.setQueryData(['sprints', id], d.sprints);
+    queryClient.setQueryData(['hubData', id, 'goals'], d.goals);
+    queryClient.setQueryData(['hubData', id, 'milestones'], d.milestones);
+    queryClient.setQueryData(['hubData', id, 'activities'], d.activities);
+    queryClient.setQueryData(['hubData', id, 'analytics'], d.analytics);
+    queryClient.setQueryData(['hubData', id, 'prd'], d.prdAnalysis);
+    queryClient.setQueryData(['project', id, 'links'], d.links);
+  }, [overviewQuery.data, id, queryClient]);
 
   // ── react-query: project ────────────────────────────────────────────────
   const projectQuery = useQuery<Project>({
@@ -391,16 +423,6 @@ const ProjectDetail = () => {
   });
   const links = linksQuery.data ?? [];
   const linksLoading = linksQuery.isLoading;
-
-  // ── react-query: user restrictions ─────────────────────────────────────
-  const userRestrictionsQuery = useQuery<CustomRestriction[]>({
-    queryKey: ['userRestrictions'],
-    queryFn: async () => {
-      const data = await apiFetch<CustomRestriction[]>('/api/auth/me/custom-restrictions');
-      return data ?? [];
-    },
-  });
-  const userRestrictions = userRestrictionsQuery.data ?? [];
 
   // hubLoading: true until all hub sub-resources are done loading
   const hubLoading =
@@ -632,7 +654,7 @@ const ProjectDetail = () => {
   const isCurrentUserAdmin = () => {
     if (!user || !project) return false;
     const isSystemAdmin = user.role.includes('admin');
-    const isProjectAdmin = project.developers.some(
+    const isProjectAdmin = (project.developers ?? []).some(
       (dev) => dev.email === user.email && dev.is_admin,
     );
     return isSystemAdmin || isProjectAdmin;
@@ -793,7 +815,7 @@ const ProjectDetail = () => {
   const canAccessPMTab = () => {
     if (can('project.pm')) return true;
     if (!user || !project) return false;
-    return project.developers.some((dev) => dev.email === user.email && dev.is_admin);
+    return (project.developers ?? []).some((dev) => dev.email === user.email && dev.is_admin);
   };
   const canAccessPulseSettings = can('project.pulse.settings');
 
@@ -813,19 +835,8 @@ const ProjectDetail = () => {
 
   // Filter out developers already in project
   const availableDevelopers = allDevelopers.filter(
-    (d) => !project.developers.some((pd) => pd.id === d.id),
+    (d) => !(project.developers ?? []).some((pd) => pd.id === d.id),
   );
-
-  // Helper function to check if a subsection is restricted
-  // Accepts string (not just TabType) so legacy restriction rows that still
-  // reference renamed tabs (e.g. 'business' before it became 'pulse') keep working.
-  const isSubsectionRestricted = (tabName: string, subsectionName: string): boolean => {
-    return userRestrictions.some(
-      (r) =>
-        r.tab_name.toLowerCase() === tabName.toLowerCase() &&
-        r.subsection.toLowerCase() === subsectionName.toLowerCase(),
-    );
-  };
 
   return (
     <div className="min-h-screen bg-[#080808] text-[#F4F6FF]">
@@ -960,45 +971,38 @@ const ProjectDetail = () => {
               <ProjectInfoSection project={project} onSave={handleSaveEdit} />
 
               {/* PRD Analysis Section */}
-              {prdAnalysis && !isSubsectionRestricted('overview', 'prd analysis') && (
-                <PRDAnalysisSection prdAnalysis={prdAnalysis} />
-              )}
+              {prdAnalysis && <PRDAnalysisSection prdAnalysis={prdAnalysis} />}
 
               {/* Architecture Section */}
-              {project.selected_architecture &&
-                !isSubsectionRestricted('overview', 'architecture') && (
-                  <ArchitectureSection
-                    architecture={project.selected_architecture}
-                    onEdit={setEditingArchitecture}
-                    onOpenBoard={() => navigate(`/project/${project.id}/board`)}
-                  />
-                )}
-
-              {/* Team Section */}
-              {!isSubsectionRestricted('overview', 'team') && (
-                <TeamSection
-                  developers={project.developers}
-                  availableDevelopers={availableDevelopers}
-                  isCurrentUserAdmin={isCurrentUserAdmin()}
-                  onAddDeveloper={handleAddDeveloper}
-                  onRemoveDeveloper={handleRemoveDeveloper}
-                  onPromoteToAdmin={handlePromoteToAdmin}
-                  onDemoteFromAdmin={handleDemoteFromAdmin}
+              {project.selected_architecture && (
+                <ArchitectureSection
+                  architecture={project.selected_architecture}
+                  onEdit={setEditingArchitecture}
+                  onOpenBoard={() => navigate(`/project/${project.id}/board`)}
                 />
               )}
+
+              {/* Team Section */}
+              <TeamSection
+                developers={project.developers ?? []}
+                availableDevelopers={availableDevelopers}
+                isCurrentUserAdmin={isCurrentUserAdmin()}
+                onAddDeveloper={handleAddDeveloper}
+                onRemoveDeveloper={handleRemoveDeveloper}
+                onPromoteToAdmin={handlePromoteToAdmin}
+                onDemoteFromAdmin={handleDemoteFromAdmin}
+              />
             </div>
           ))}
         {/* Files/Links Section */}
-        {activeTab === 'overview' &&
-          !hubLoading &&
-          !isSubsectionRestricted('overview', 'resources') && (
-            <LinksSection
-              links={links}
-              isLoading={linksLoading}
-              onAddLink={handleAddLink}
-              onDeleteLink={handleDeleteLink}
-            />
-          )}
+        {activeTab === 'overview' && !hubLoading && (
+          <LinksSection
+            links={links}
+            isLoading={linksLoading}
+            onAddLink={handleAddLink}
+            onDeleteLink={handleDeleteLink}
+          />
+        )}
 
         <Suspense fallback={<div className="text-sm text-muted-foreground p-6">Loading...</div>}>
           {/* Project Tracker Tab */}
@@ -1009,7 +1013,6 @@ const ProjectDetail = () => {
               analytics={analytics}
               sprintsExpanded={sprintsExpanded}
               setSprintsExpanded={setSprintsExpanded}
-              isSubsectionRestricted={isSubsectionRestricted}
             />
           )}
 
@@ -1022,25 +1025,18 @@ const ProjectDetail = () => {
               goals={goals}
               projectStartDate={project.created_at}
               projectId={parseInt(id!)}
-              developers={project.developers.map((d) => ({
+              developers={(project.developers ?? []).map((d) => ({
                 id: d.id,
                 name: d.name,
                 email: d.email,
               }))}
               onTaskUpdate={handleTaskUpdate}
               onTaskCreate={handleTaskCreate}
-              isSubsectionRestricted={isSubsectionRestricted}
             />
           )}
 
           {/* Pulse Tab (was Business Review) */}
-          {activeTab === 'pulse' && (
-            <PulseTab
-              hubLoading={hubLoading}
-              pulseData={pulseData}
-              isSubsectionRestricted={isSubsectionRestricted}
-            />
-          )}
+          {activeTab === 'pulse' && <PulseTab hubLoading={hubLoading} pulseData={pulseData} />}
 
           {/* Pulse Settings Tab — gated on `project.pulse.settings` capability */}
           {activeTab === 'pulse_settings' &&
@@ -1052,21 +1048,12 @@ const ProjectDetail = () => {
 
           {/* Activity Tab */}
           {activeTab === 'activity' && (
-            <ActivityTab
-              hubLoading={hubLoading}
-              activities={activities}
-              isSubsectionRestricted={isSubsectionRestricted}
-            />
+            <ActivityTab hubLoading={hubLoading} activities={activities} />
           )}
 
           {/* Project Manager Tab — capability-gated; only renders when canAccessPMTab() is true */}
           {activeTab === 'project_manager' && canAccessPMTab() && (
-            <ProjectManagerTab
-              hubLoading={hubLoading}
-              projectId={id!}
-              sprints={sprints}
-              isSubsectionRestricted={isSubsectionRestricted}
-            />
+            <ProjectManagerTab hubLoading={hubLoading} projectId={id!} sprints={sprints} />
           )}
         </Suspense>
       </main>

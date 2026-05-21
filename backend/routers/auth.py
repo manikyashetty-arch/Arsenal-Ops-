@@ -8,8 +8,10 @@ import secrets
 import string
 import sys
 from datetime import datetime, timedelta
+from threading import Lock
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from cachetools import TTLCache
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import JWTError, jwt
 from pydantic import BaseModel
@@ -31,6 +33,26 @@ ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24  # 24 hours
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
+
+# In-process LRU cache for effective-capabilities responses. Keyed on
+# (user_id, sorted role_id tuple) so any role assignment change for the user
+# produces a different key and naturally bypasses the stale entry. Capability
+# *content* changes on existing roles do NOT change the key, so the mutation
+# endpoints below explicitly clear the cache.
+_caps_cache: TTLCache = TTLCache(maxsize=1000, ttl=60)
+_caps_lock = Lock()
+
+
+def _invalidate_caps_cache() -> None:
+    """Drop every entry in the effective-capabilities cache.
+
+    Called by every endpoint that can change either (a) the set of roles a
+    user holds, or (b) the capabilities attached to a role. We clear the
+    whole cache rather than try to be surgical because (i) the cache is
+    process-local and tiny, and (ii) mutations are rare relative to reads.
+    """
+    with _caps_lock:
+        _caps_cache.clear()
 
 
 # Pydantic models
@@ -336,6 +358,7 @@ def update_user_role(
 
     user.role = role_data.role
     db.commit()
+    _invalidate_caps_cache()
 
     return {
         "status": "success",
@@ -623,18 +646,41 @@ def _validate_grants_or_400(keys: list[str]) -> list[str]:
 
 
 @router.get("/capabilities")
-def list_capabilities(current_user: User = Depends(get_current_user)):
-    """Return the static capability registry. Used by the admin role-edit UI."""
+def list_capabilities(
+    response: Response,
+    current_user: User = Depends(get_current_user),
+):
+    """Return the static capability registry. Used by the admin role-edit UI.
+
+    The registry is process-static (defined in capabilities.py) so we mark the
+    response as cacheable in the user's browser for 5 minutes to avoid
+    repeated round-trips when the admin UI re-renders.
+    """
+    response.headers["Cache-Control"] = "private, max-age=300"
     return [{"key": k, "description": v} for k, v in CAPABILITIES.items()]
 
 
 @router.get("/me/capabilities")
 def get_my_capabilities(current_user: User = Depends(get_current_user)):
-    """Effective capability set for the calling user (union over their roles)."""
-    return {
+    """Effective capability set for the calling user (union over their roles).
+
+    Cached in-process for 60 seconds, keyed on user id + role id set, so the
+    frontend can poll this from the layout without pounding the DB. The cache
+    is cleared whenever a role mutation endpoint runs.
+    """
+    cache_key = (current_user.id, tuple(sorted(r.id for r in current_user.roles)))
+    with _caps_lock:
+        hit = _caps_cache.get(cache_key)
+    if hit is not None:
+        return hit
+
+    payload = {
         "roles": [r.name for r in current_user.roles],
         "capabilities": current_user.effective_capability_keys(),
     }
+    with _caps_lock:
+        _caps_cache[cache_key] = payload
+    return payload
 
 
 @router.get("/admin/roles")
@@ -674,6 +720,7 @@ def create_role(
     db.add(role)
     db.commit()
     db.refresh(role)
+    _invalidate_caps_cache()
     return _role_to_dict(role, user_count=0)
 
 
@@ -721,6 +768,7 @@ def update_role(
         for u in role.users:
             _sync_legacy_role_column(u)
         db.commit()
+        _invalidate_caps_cache()
 
     return _role_to_dict(role, user_count=len(role.users))
 
@@ -745,6 +793,7 @@ def delete_role(
         db.refresh(u)
         _sync_legacy_role_column(u)
     db.commit()
+    _invalidate_caps_cache()
 
     return {"message": "Role deleted"}
 
@@ -768,6 +817,7 @@ def replace_role_capabilities(
     role.capabilities = [RoleCapability(capability_key=k) for k in cleaned_keys]
     db.commit()
     db.refresh(role)
+    _invalidate_caps_cache()
     return _role_to_dict(role, user_count=len(role.users))
 
 
@@ -803,6 +853,7 @@ def assign_role_to_user(
     user.roles.append(role)
     _sync_legacy_role_column(user)
     db.commit()
+    _invalidate_caps_cache()
     return {"message": "Role assigned", "roles": [r.name for r in user.roles]}
 
 
@@ -826,4 +877,5 @@ def remove_role_from_user(
     user.roles.remove(role)
     _sync_legacy_role_column(user)
     db.commit()
+    _invalidate_caps_cache()
     return {"message": "Role removed", "roles": [r.name for r in user.roles]}

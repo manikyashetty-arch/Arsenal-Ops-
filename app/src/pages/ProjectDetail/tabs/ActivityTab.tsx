@@ -16,10 +16,9 @@ interface ActivityItem {
 interface ActivityTabProps {
   hubLoading: boolean;
   activities: ActivityItem[];
-  isSubsectionRestricted: (tabName: string, subsectionName: string) => boolean;
 }
 
-const ActivityTab = ({ hubLoading, activities, isSubsectionRestricted }: ActivityTabProps) => {
+const ActivityTab = ({ hubLoading, activities }: ActivityTabProps) => {
   if (hubLoading) {
     return (
       <div className="space-y-2 animate-pulse">
@@ -35,14 +34,6 @@ const ActivityTab = ({ hubLoading, activities, isSubsectionRestricted }: Activit
             </div>
           </div>
         ))}
-      </div>
-    );
-  }
-
-  if (isSubsectionRestricted('activity', 'activity feed')) {
-    return (
-      <div className="text-center py-12 text-[#737373]">
-        This section is restricted from your view.
       </div>
     );
   }

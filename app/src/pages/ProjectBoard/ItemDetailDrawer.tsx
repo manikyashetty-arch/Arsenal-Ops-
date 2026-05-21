@@ -208,6 +208,23 @@ const ItemDetailDrawer = ({
   });
   const comments = commentsQuery.data ?? [];
 
+  // Drawer-scoped query: full item detail. The board list endpoint
+  // (/api/workitems/board) returns a slim shape without description, sprint,
+  // epic name, due_date, etc. — fetch those on demand when the drawer opens.
+  // Same documented one-off exception pattern as commentsQuery.
+  const itemDetailQuery = useQuery<WorkItem>({
+    queryKey: ['workItem', selectedItem.id, 'detail'],
+    queryFn: () => apiFetch(`/api/workitems/${selectedItem.id}`),
+    enabled: !!selectedItem.id,
+  });
+  // Merge slim list shape with full detail; detail wins where present so
+  // freshly-saved edits (which optimistically update the list cache) aren't
+  // silently overwritten by stale detail data on first paint.
+  const itemDetail: WorkItem = useMemo(
+    () => ({ ...selectedItem, ...(itemDetailQuery.data ?? {}) }),
+    [selectedItem, itemDetailQuery.data],
+  );
+
   // Exclude IDs for the parent_id picker: subject + all descendants via parent_id chain.
   const parentExcludeIds = useMemo(() => {
     const excluded = new Set<number>();
@@ -438,7 +455,7 @@ const ItemDetailDrawer = ({
                   Description
                 </label>
                 <Textarea
-                  defaultValue={selectedItem.description}
+                  defaultValue={itemDetail.description}
                   onChange={(e) => setEditForm((f) => ({ ...f, description: e.target.value }))}
                   className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl min-h-[120px] resize-none whitespace-pre-wrap"
                 />
@@ -665,7 +682,7 @@ const ItemDetailDrawer = ({
               <div>
                 <label className="text-xs font-medium text-[#737373] block mb-1.5">Sprint</label>
                 <Input
-                  defaultValue={selectedItem.sprint}
+                  defaultValue={itemDetail.sprint}
                   onChange={(e) => setEditForm((f) => ({ ...f, sprint: e.target.value }))}
                   className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl"
                 />
@@ -762,7 +779,7 @@ const ItemDetailDrawer = ({
               <div>
                 <h2 className="text-xl font-bold text-white mb-3">{selectedItem.title}</h2>
                 <p className="text-sm text-[#a3a3a3] leading-relaxed whitespace-pre-wrap">
-                  {renderTextWithNewlines(selectedItem.description) || 'No description provided.'}
+                  {renderTextWithNewlines(itemDetail.description) || 'No description provided.'}
                 </p>
               </div>
 
@@ -787,10 +804,10 @@ const ItemDetailDrawer = ({
                   },
                   {
                     label: 'Due Date',
-                    value: selectedItem.due_date
-                      ? (parseLocalDate(selectedItem.due_date)?.toLocaleDateString() ?? 'Not set')
+                    value: itemDetail.due_date
+                      ? (parseLocalDate(itemDetail.due_date)?.toLocaleDateString() ?? 'Not set')
                       : 'Not set',
-                    color: selectedItem.due_date ? '#E0B954' : '#737373',
+                    color: itemDetail.due_date ? '#E0B954' : '#737373',
                   },
                   {
                     label: 'Status',
@@ -830,8 +847,8 @@ const ItemDetailDrawer = ({
               <div className="space-y-3">
                 {[
                   { label: 'Assignee', value: selectedItem.assignee },
-                  { label: 'Sprint', value: selectedItem.sprint },
-                  ...(selectedItem.epic ? [{ label: 'Epic', value: selectedItem.epic }] : []),
+                  { label: 'Sprint', value: itemDetail.sprint },
+                  ...(itemDetail.epic ? [{ label: 'Epic', value: itemDetail.epic }] : []),
                 ].map((m) => (
                   <div
                     key={m.label}

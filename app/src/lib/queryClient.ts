@@ -88,7 +88,19 @@ export const queryClient = new QueryClient({
       gcTime: 5 * 60_000,
       refetchOnMount: false,
       refetchOnWindowFocus: false,
-      retry: 1,
+      retry: (failureCount, error) => {
+        // Don't retry on 404 — the resource genuinely doesn't exist.
+        // Matches `ApiError` shape from `@/lib/api`.
+        if (
+          error &&
+          typeof error === 'object' &&
+          'status' in error &&
+          (error as { status: number }).status === 404
+        ) {
+          return false;
+        }
+        return failureCount < 1;
+      },
     },
     mutations: {
       retry: 0,

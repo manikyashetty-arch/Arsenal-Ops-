@@ -4,10 +4,9 @@ import { PulseData } from '@/components/ProjectHub/pulseData';
 interface PulseTabProps {
   hubLoading: boolean;
   pulseData: PulseData | null;
-  isSubsectionRestricted: (tabName: string, subsectionName: string) => boolean;
 }
 
-const PulseTab = ({ hubLoading, pulseData, isSubsectionRestricted }: PulseTabProps) => {
+const PulseTab = ({ hubLoading, pulseData }: PulseTabProps) => {
   if (hubLoading || !pulseData) {
     return (
       <div className="space-y-4 animate-pulse">
@@ -20,17 +19,6 @@ const PulseTab = ({ hubLoading, pulseData, isSubsectionRestricted }: PulseTabPro
             <div className="h-40 bg-[rgba(255,255,255,0.025)] rounded-xl" />
           </div>
         ))}
-      </div>
-    );
-  }
-
-  if (
-    isSubsectionRestricted('pulse', 'pulse') ||
-    isSubsectionRestricted('business', 'business review')
-  ) {
-    return (
-      <div className="text-center py-12 text-[#737373]">
-        This section is restricted from your view.
       </div>
     );
   }

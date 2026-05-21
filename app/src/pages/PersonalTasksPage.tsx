@@ -171,7 +171,6 @@ const PersonalTasksPage = () => {
         }),
       }),
     onSuccess: () => {
-      invalidateTasks();
       setNewTask({
         title: '',
         description: '',
@@ -185,6 +184,7 @@ const PersonalTasksPage = () => {
       toast.success('Task created!');
     },
     onError: () => toast.error('Failed to create task'),
+    onSettled: () => invalidateTasks(),
   });
 
   const updateMutation = useMutation({
@@ -199,21 +199,21 @@ const PersonalTasksPage = () => {
         }),
       }),
     onSuccess: () => {
-      invalidateTasks();
       resetForm();
       toast.success('Task updated!');
     },
     onError: () => toast.error('Failed to update task'),
+    onSettled: () => invalidateTasks(),
   });
 
   const deleteMutation = useMutation({
     mutationFn: (taskId: number) =>
       apiFetch<void>(`/api/personal-tasks/${taskId}`, { method: 'DELETE' }),
     onSuccess: () => {
-      invalidateTasks();
       toast.success('Task deleted');
     },
     onError: () => toast.error('Failed to delete task'),
+    onSettled: () => invalidateTasks(),
   });
 
   const convertMutation = useMutation({
@@ -245,9 +245,9 @@ const PersonalTasksPage = () => {
       setConvertAssigneeId('');
       setConvertEstimatedHours('');
       setMemberLookupProjectId('');
-      invalidateTasks();
     },
     onError: () => toast.error('Failed to convert'),
+    onSettled: () => invalidateTasks(),
   });
 
   const toggleTaskComplete = (task: PersonalTask) => {
