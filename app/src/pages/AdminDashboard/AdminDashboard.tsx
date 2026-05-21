@@ -124,15 +124,25 @@ const AdminDashboard = () => {
 
   const queryClient = useQueryClient();
 
+  // Admin queries override the global `refetchOnMount: false` because admin is
+  // a snapshot view — when the user opens this tab, they expect current data,
+  // not whatever's been sitting in the cache. With `refetchOnMount: 'always'`,
+  // every mount triggers a background refetch even if invalidation was missed
+  // by an upstream mutation. Endpoints are fast (Bucket A optimizations) so
+  // the cost is a brief refetch flicker on tab entry.
+  const ADMIN_REFETCH = { refetchOnMount: 'always' } as const;
+
   const statsQuery = useQuery<DashboardStats>({
     queryKey: ['admin', 'stats'],
     queryFn: () => apiFetch<DashboardStats>('/api/admin/stats'),
+    ...ADMIN_REFETCH,
   });
   const stats = statsQuery.data ?? null;
 
   const employeesQuery = useQuery<Employee[]>({
     queryKey: ['admin', 'employees'],
     queryFn: () => apiFetch<Employee[]>('/api/admin/employees'),
+    ...ADMIN_REFETCH,
   });
   // useMemo keeps the array reference stable across renders so the
   // useMemo hooks downstream (filtered/sorted views) don't bust their
@@ -142,30 +152,35 @@ const AdminDashboard = () => {
   const capacityQuery = useQuery<DeveloperCapacity[]>({
     queryKey: ['admin', 'developers-capacity'],
     queryFn: () => apiFetch<DeveloperCapacity[]>('/api/admin/developers/capacity'),
+    ...ADMIN_REFETCH,
   });
   const developerCapacities = useMemo(() => capacityQuery.data ?? [], [capacityQuery.data]);
 
   const projectsQuery = useQuery<Project[]>({
     queryKey: ['admin', 'projects'],
     queryFn: () => apiFetch<Project[]>('/api/admin/projects'),
+    ...ADMIN_REFETCH,
   });
   const projects = projectsQuery.data ?? [];
 
   const usersQuery = useQuery<User[]>({
     queryKey: ['admin', 'users'],
     queryFn: () => apiFetch<User[]>('/api/auth/admin/users'),
+    ...ADMIN_REFETCH,
   });
   const users = useMemo(() => usersQuery.data ?? [], [usersQuery.data]);
 
   const rolesQuery = useQuery<Role[]>({
     queryKey: ['admin', 'roles'],
     queryFn: () => apiFetch<Role[]>('/api/auth/admin/roles'),
+    ...ADMIN_REFETCH,
   });
   const roles = useMemo(() => rolesQuery.data ?? [], [rolesQuery.data]);
 
   const capabilitiesQuery = useQuery<Capability[]>({
     queryKey: ['admin', 'capabilities'],
     queryFn: () => apiFetch<Capability[]>('/api/auth/capabilities'),
+    ...ADMIN_REFETCH,
   });
   const capabilityRegistry = useMemo(() => capabilitiesQuery.data ?? [], [capabilitiesQuery.data]);
 
