@@ -4,33 +4,33 @@ import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import {
   PulseData,
-  PulseProjectMeta,
   PulseSummary,
   LedgerRow,
   MonthRow,
   PulseRisk,
-  PulseMilestone,
-  PulseUpdate,
-  FeatureForecastRow,
   IncludedServicesRow,
   savePulseData,
   resetPulseData,
 } from '../pulseData';
-import PulseProjectMetaSection from './sections/PulseProjectMetaSection';
 import PulseSummarySection from './sections/PulseSummarySection';
 import PulseBudgetSection from './sections/PulseBudgetSection';
 import PulseMonthlyBurnSection from './sections/PulseMonthlyBurnSection';
 import PulseServicesSection from './sections/PulseServicesSection';
 import PulseRisksSection from './sections/PulseRisksSection';
-import PulseMilestonesSection from './sections/PulseMilestonesSection';
-import PulseUpdatesSection from './sections/PulseUpdatesSection';
-import PulseFVASection, { FvaScope } from './sections/PulseFVASection';
 
 interface PulseSettingsViewProps {
   projectId: string | number;
   initial: PulseData;
   onChange: (data: PulseData) => void;
 }
+
+// Why: shared banner for sections now replaced by DB-derived values.
+const DerivedBanner: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <div className="rounded-lg border border-[#E0B954]/15 bg-[#E0B954]/5 px-4 py-2.5 text-xs text-[#a3a3a3] flex items-start gap-2">
+    <span className="text-[#E0B954] flex-shrink-0">●</span>
+    <span>{children}</span>
+  </div>
+);
 
 const PulseSettingsView: React.FC<PulseSettingsViewProps> = ({ projectId, initial, onChange }) => {
   const [data, setData] = useState<PulseData>(initial);
@@ -50,18 +50,13 @@ const PulseSettingsView: React.FC<PulseSettingsViewProps> = ({ projectId, initia
 
   const handleReset = async () => {
     resetPulseData(projectId);
-    // Lazy-load the fixture only when the user actually resets; keeps the
-    // dummy data out of the main bundle. (See pulseData.fixtures.ts.)
+    // Why: keep dummy fixture out of main bundle.
     const { DUMMY_PULSE_DATA } = await import('../pulseData.fixtures');
     setData(DUMMY_PULSE_DATA);
     onChange(DUMMY_PULSE_DATA);
     setIsDirty(false);
     toast.info('Reset to dummy data');
   };
-
-  // Project meta
-  const patchProject = (patch: Partial<PulseProjectMeta>) =>
-    update({ ...data, project: { ...data.project, ...patch } });
 
   // Summary
   const patchSummary = (patch: Partial<PulseSummary>) =>
@@ -134,76 +129,6 @@ const PulseSettingsView: React.FC<PulseSettingsViewProps> = ({ projectId, initia
   const removeRisk = (i: number) =>
     update({ ...data, risks: data.risks.filter((_, idx) => idx !== i) });
 
-  // Milestones
-  const updateMilestone = (i: number, patch: Partial<PulseMilestone>) =>
-    update({
-      ...data,
-      milestones: data.milestones.map((m, idx) => (idx === i ? { ...m, ...patch } : m)),
-    });
-  const addMilestone = () =>
-    update({
-      ...data,
-      milestones: [
-        ...data.milestones,
-        {
-          id: `m${Date.now()}`,
-          phase: 'New phase',
-          date: '',
-          status: 'upcoming',
-          budget: 0,
-          spent: 0,
-          pct: 0,
-        },
-      ],
-    });
-  const removeMilestone = (i: number) =>
-    update({ ...data, milestones: data.milestones.filter((_, idx) => idx !== i) });
-
-  // Updates
-  const updateUpdate = (i: number, patch: Partial<PulseUpdate>) =>
-    update({
-      ...data,
-      updates: data.updates.map((u, idx) => (idx === i ? { ...u, ...patch } : u)),
-    });
-  const addUpdate = () =>
-    update({
-      ...data,
-      updates: [...data.updates, { when: '', author: '', type: 'note', text: '' }],
-    });
-  const removeUpdate = (i: number) =>
-    update({ ...data, updates: data.updates.filter((_, idx) => idx !== i) });
-
-  // Forecast vs Actuals
-  const updateFva = (scope: FvaScope, i: number, patch: Partial<FeatureForecastRow>) =>
-    update({
-      ...data,
-      forecastVsActuals: {
-        ...data.forecastVsActuals,
-        [scope]: data.forecastVsActuals[scope].map((r, idx) =>
-          idx === i ? { ...r, ...patch } : r,
-        ),
-      },
-    });
-  const addFva = (scope: FvaScope) =>
-    update({
-      ...data,
-      forecastVsActuals: {
-        ...data.forecastVsActuals,
-        [scope]: [
-          ...data.forecastVsActuals[scope],
-          { feature: 'New feature', employee: '', fc: 0, act: 0 },
-        ],
-      },
-    });
-  const removeFva = (scope: FvaScope, i: number) =>
-    update({
-      ...data,
-      forecastVsActuals: {
-        ...data.forecastVsActuals,
-        [scope]: data.forecastVsActuals[scope].filter((_, idx) => idx !== i),
-      },
-    });
-
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -241,13 +166,22 @@ const PulseSettingsView: React.FC<PulseSettingsViewProps> = ({ projectId, initia
         </div>
       </div>
 
-      <PulseProjectMetaSection project={data.project} onPatch={patchProject} />
+      <DerivedBanner>
+        Project metadata (name, key prefix, contract dates, launch target) is now synced from
+        project settings.
+      </DerivedBanner>
+
+      <DerivedBanner>
+        Delivery counts, points, sprint counts, bugs, and overdue tallies sync from work items
+        automatically. Edit only narrative and risk-trend notes here.
+      </DerivedBanner>
 
       <PulseSummarySection
         summary={data.summary}
         currentMonthTrackedPct={data.currentMonthTrackedPct}
         onPatchSummary={patchSummary}
         onChangeCurrentMonthTrackedPct={setCurrentMonthTrackedPct}
+        editableFields={['narrative', 'risksTrendNote']}
       />
 
       <PulseBudgetSection
@@ -257,6 +191,11 @@ const PulseSettingsView: React.FC<PulseSettingsViewProps> = ({ projectId, initia
         onRemoveRow={removeLedger}
       />
 
+      <DerivedBanner>
+        Dev hours actual is now synced from logged time. Edit cost categories and dev-hours forecast
+        only.
+      </DerivedBanner>
+
       <PulseMonthlyBurnSection
         months={data.months}
         lastActualIdx={data.lastActualIdx}
@@ -264,13 +203,20 @@ const PulseSettingsView: React.FC<PulseSettingsViewProps> = ({ projectId, initia
         onAddRow={addMonth}
         onRemoveRow={removeMonth}
         onChangeLastActualIdx={setLastActualIdx}
+        hideDerivedColumns
       />
+
+      <DerivedBanner>
+        Hours used is synced from logged time. Edit contract total, billable, and invoice fields
+        only.
+      </DerivedBanner>
 
       <PulseServicesSection
         rows={data.includedServices}
         onUpdateRow={updateIncluded}
         onAddRow={addIncluded}
         onRemoveRow={removeIncluded}
+        hideDerivedColumns
       />
 
       <PulseRisksSection
@@ -280,26 +226,16 @@ const PulseSettingsView: React.FC<PulseSettingsViewProps> = ({ projectId, initia
         onRemoveRow={removeRisk}
       />
 
-      <PulseMilestonesSection
-        milestones={data.milestones}
-        onUpdateRow={updateMilestone}
-        onAddRow={addMilestone}
-        onRemoveRow={removeMilestone}
-      />
+      <DerivedBanner>
+        Milestone titles, dates, and status are now synced from project milestones. Financial
+        budget/spent fields will return in a future update — they are temporarily not editable here.
+      </DerivedBanner>
 
-      <PulseUpdatesSection
-        updates={data.updates}
-        onUpdateRow={updateUpdate}
-        onAddRow={addUpdate}
-        onRemoveRow={removeUpdate}
-      />
+      <DerivedBanner>Activity updates are now sourced from the project activity log.</DerivedBanner>
 
-      <PulseFVASection
-        forecastVsActuals={data.forecastVsActuals}
-        onUpdateRow={updateFva}
-        onAddRow={addFva}
-        onRemoveRow={removeFva}
-      />
+      <DerivedBanner>
+        Feature forecast-vs-actuals is now computed from epic estimates and logged hours.
+      </DerivedBanner>
 
       {/* Bottom save bar */}
       <div className="sticky bottom-4 flex justify-end gap-2">
