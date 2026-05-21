@@ -166,6 +166,7 @@ export interface ItemDetailDrawerProps {
   onDeleteItem: (itemId: string) => void;
   onStatusChange: (item: WorkItem, newStatus: string) => void;
   onLogHours: (item: WorkItem, hours: number) => void;
+  isLoggingHours: boolean;
   onMoveToSprint: (itemId: string, targetSprintId: number | null) => void;
   onSubmitComment: (content: string, type?: 'comment' | 'blocker' | 'business_review') => void;
   getNextSprint: (currentSprintId: number | null) => number | null;
@@ -186,6 +187,7 @@ const ItemDetailDrawer = ({
   onDeleteItem,
   onStatusChange,
   onLogHours,
+  isLoggingHours,
   onMoveToSprint,
   onSubmitComment,
   getNextSprint,
@@ -959,12 +961,15 @@ const ItemDetailDrawer = ({
                     type="number"
                     placeholder="Hours"
                     min="0"
+                    max="24"
                     className="w-24 h-9 bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl"
                     id="log-hours-input"
                   />
                   <Button
                     size="sm"
+                    disabled={isLoggingHours}
                     onClick={() => {
+                      if (isLoggingHours) return;
                       const input = document.getElementById('log-hours-input') as HTMLInputElement;
                       const hours = parseInt(input?.value || '0');
                       if (hours > 0) {
@@ -972,10 +977,10 @@ const ItemDetailDrawer = ({
                         input.value = '';
                       }
                     }}
-                    className="bg-[#E0B954] hover:bg-[#C79E3B] text-white rounded-xl h-9"
+                    className="bg-[#E0B954] hover:bg-[#C79E3B] text-white rounded-xl h-9 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <Clock className="w-3.5 h-3.5 mr-1.5" />
-                    Log Hours
+                    {isLoggingHours ? 'Logging…' : 'Log Hours'}
                   </Button>
                 </div>
                 <p className="text-[10px] text-[#737373] mt-2">

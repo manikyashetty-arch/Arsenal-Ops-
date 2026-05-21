@@ -2004,6 +2004,7 @@ const ProjectBoard = () => {
             onDeleteItem={handleDeleteItem}
             onStatusChange={handleStatusChange}
             onLogHours={handleLogHours}
+            isLoggingHours={logHoursMutation.isPending}
             onMoveToSprint={handleMoveToSprint}
             onSubmitComment={handleSubmitComment}
             getNextSprint={getNextSprint}

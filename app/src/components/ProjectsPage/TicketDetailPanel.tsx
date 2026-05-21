@@ -59,6 +59,7 @@ const TicketDetailPanel = ({
   const [showMentions, setShowMentions] = useState(false);
   const [mentionFilter, setMentionFilter] = useState('');
   const [allDevelopers, setAllDevelopers] = useState<Developer[]>([]);
+  const [isLoggingHours, setIsLoggingHours] = useState(false);
   const commentCache = useRef<Map<string, Comment[]>>(new Map());
 
   const startEdit = async () => {
@@ -138,6 +139,8 @@ const TicketDetailPanel = ({
   };
 
   const handleLogHours = async (hoursToLog: number) => {
+    if (isLoggingHours) return;
+    setIsLoggingHours(true);
     try {
       const res = await fetch(`${API_BASE_URL}/api/workitems/${task.id}/log-hours`, {
         method: 'POST',
@@ -158,6 +161,8 @@ const TicketDetailPanel = ({
       }
     } catch {
       toast.error('Failed to log hours');
+    } finally {
+      setIsLoggingHours(false);
     }
   };
 
@@ -690,12 +695,15 @@ const TicketDetailPanel = ({
                     type="number"
                     placeholder="Hours"
                     min="0"
+                    max="24"
                     className="w-24 h-9 bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl"
                     id="log-hours-input"
                   />
                   <Button
                     size="sm"
+                    disabled={isLoggingHours}
                     onClick={() => {
+                      if (isLoggingHours) return;
                       const input = document.getElementById('log-hours-input') as HTMLInputElement;
                       const hours = parseInt(input?.value || '0');
                       if (hours > 0) {
@@ -703,10 +711,10 @@ const TicketDetailPanel = ({
                         input.value = '';
                       }
                     }}
-                    className="bg-[#E0B954] hover:bg-[#C79E3B] text-white rounded-xl h-9"
+                    className="bg-[#E0B954] hover:bg-[#C79E3B] text-white rounded-xl h-9 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <Clock className="w-3.5 h-3.5 mr-1.5" />
-                    Log Hours
+                    {isLoggingHours ? 'Logging…' : 'Log Hours'}
                   </Button>
                 </div>
                 <p className="text-[10px] text-[#737373] mt-2">

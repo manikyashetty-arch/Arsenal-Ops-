@@ -641,6 +641,15 @@ def update_work_item(
 
     update_data = update.model_dump(exclude_unset=True)
 
+    # logged_hours and remaining_hours are derived columns — logged_hours
+    # is the SUM of TimeEntry rows; remaining_hours is estimated - logged.
+    # Allowing direct writes here was the #1 cause of rollup drift (PROJ-353,
+    # PROJ-357, PROJ-173, PROJ-222 etc. all got ghost-logged this way and
+    # had no TimeEntry rows backing the claim). Strip them silently — to set
+    # logged hours, callers must use POST /log-hours which creates a TimeEntry.
+    update_data.pop("logged_hours", None)
+    update_data.pop("remaining_hours", None)
+
     # Handle frontend compatibility: assigned_hours -> estimated_hours
     if "assigned_hours" in update_data:
         update_data["estimated_hours"] = update_data.pop("assigned_hours")
@@ -989,6 +998,16 @@ def log_hours(
     if request.hours <= 0:
         raise HTTPException(status_code=400, detail="Hours must be greater than 0")
 
+    # Sanity cap. One log call represents one work session. A 24h log is
+    # essentially always a typo (e.g., "22" instead of "2" — exactly how PROJ-333
+    # ended up with hours=22 on a 2h-estimated ticket). Callers who legitimately
+    # need to log more time should split it across sessions.
+    if request.hours > 24:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Hours per log ({request.hours}) exceeds the 24h sanity cap. Split into multiple log entries.",
+        )
+
     # Determine who to attribute the hours to
     developer = None
 
@@ -1007,6 +1026,31 @@ def log_hours(
         # Fallback: attribute to the person logging the time if no assignee
         developer = db.query(Developer).filter(Developer.email == current_user.email).first()
 
+    # Reject duplicate submissions within a short window — protects against
+    # rapid double-clicks on the "Log Hours" button creating duplicate TimeEntry
+    # rows (the historical cause of PROJ-333 accumulating 22h of identical 2h
+    # entries on a 2h-estimated ticket).
+    dev_id_for_dedupe = developer.id if developer else item.assignee_id
+    if dev_id_for_dedupe is not None:
+        from datetime import timedelta
+
+        dedupe_window_start = datetime.utcnow() - timedelta(seconds=5)
+        recent_duplicate = (
+            db.query(TimeEntry)
+            .filter(
+                TimeEntry.work_item_id == item_id,
+                TimeEntry.developer_id == dev_id_for_dedupe,
+                TimeEntry.hours == request.hours,
+                TimeEntry.logged_at >= dedupe_window_start,
+            )
+            .first()
+        )
+        if recent_duplicate is not None:
+            raise HTTPException(
+                status_code=429,
+                detail="Duplicate log-hours request detected. Please wait a moment before logging again.",
+            )
+
     # Create time entry
     time_entry = TimeEntry(
         work_item_id=item_id,
@@ -1015,10 +1059,18 @@ def log_hours(
         description=request.description,
     )
     db.add(time_entry)
+    db.flush()  # ensure the new TimeEntry is visible to the sum query below
 
-    # Update work item totals
-    item.logged_hours = (item.logged_hours or 0) + request.hours
-    # Calculate remaining as estimated - logged
+    # Recompute logged_hours from the live TimeEntry sum instead of `+=`.
+    # The naive accumulator drifts whenever ANYTHING else has touched the column
+    # (direct PUT writes, deleted entries, manual DB edits). Querying SUM each
+    # time keeps the rollup self-healing — `logged_hours` is always exactly the
+    # sum of its TimeEntry rows.
+    item.logged_hours = (
+        db.query(func.coalesce(func.sum(TimeEntry.hours), 0))
+        .filter(TimeEntry.work_item_id == item_id)
+        .scalar()
+    ) or 0
     item.remaining_hours = max(0, (item.estimated_hours or 0) - (item.logged_hours or 0))
     item.updated_at = datetime.utcnow()
 
