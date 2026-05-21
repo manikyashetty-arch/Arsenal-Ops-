@@ -6,6 +6,13 @@ services:
     region: oregon
     plan: free
     buildCommand: pip install -r requirements.txt
+    # TODO(perf B6): bump --workers 1 → --workers 2 once this service moves off
+    # the Render free tier. The Starter plan (>= 512 MB sustained) gives each
+    # gunicorn worker enough RAM headroom; on the free tier (~256 MB) a second
+    # worker will reliably OOM under modest concurrency. uvicorn[standard] is
+    # already pinned in requirements.txt so uvloop + httptools are picked up
+    # automatically by UvicornWorker — no requirements.txt change needed when
+    # the worker count is increased.
     startCommand: gunicorn main:app --workers 1 --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT --timeout 300 --graceful-timeout 30
     healthCheckPath: /api/health
     envVars:

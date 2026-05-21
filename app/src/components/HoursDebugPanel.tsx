@@ -1,8 +1,10 @@
 import { useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { API_BASE_URL } from '@/config/api';
+import { invalidateProjectScope, invalidateWorkItemScope } from '@/lib/invalidations';
 import {
   AlertTriangle,
   CheckCircle,
@@ -58,6 +60,7 @@ interface RepairResult {
 }
 
 export default function HoursDebugPanel({ projectId, token, isAdmin }: HoursDebugPanelProps) {
+  const queryClient = useQueryClient();
   const [debugData, setDebugData] = useState<DebugData | null>(null);
   const [repairResult, setRepairResult] = useState<RepairResult | null>(null);
   const [loading, setLoading] = useState(false);
@@ -92,6 +95,10 @@ export default function HoursDebugPanel({ projectId, token, isAdmin }: HoursDebu
       );
       if (res.ok) {
         setRepairResult(await res.json());
+        if (!dryRun) {
+          invalidateWorkItemScope(queryClient, projectId);
+          invalidateProjectScope(queryClient, projectId);
+        }
       }
     } catch (err) {
       console.error('Failed to run repair:', err);

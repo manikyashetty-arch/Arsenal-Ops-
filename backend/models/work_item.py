@@ -137,4 +137,7 @@ class WorkItem(Base):
         Index("idx_workitem_project_type", "project_id", "type"),
         Index("idx_workitem_assignee", "assignee_id", "status"),
         Index("idx_workitem_sprint", "sprint_id", "status"),
+        Index("idx_workitem_reporter", "reporter_id"),
+        Index("idx_workitem_proj_sprint", "project_id", "sprint_id"),
+        Index("idx_workitem_updated", "updated_at"),
     )

@@ -6,9 +6,9 @@ Production-ready database storage
 import sys
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Response
 from pydantic import BaseModel
-from sqlalchemy import func, text
+from sqlalchemy import case, func, text
 from sqlalchemy.orm import Session, selectinload
 
 sys.path.append("..")
@@ -63,30 +63,37 @@ def get_next_item_number(db: Session, key_prefix: str) -> int:
 
 def update_epic_hours(epic_id: int, db: Session):
     """
-    Calculate the total estimated_hours for an epic by summing all its work items.
-    Includes stories, tasks, and bugs. Updates the epic's estimated_hours field.
+    Roll up estimated_hours, logged_hours, and remaining_hours from all child work items
+    (stories, tasks, bugs) into the epic. Single GROUP-BY aggregate query.
 
-    Args:
-        epic_id: ID of the epic to update
-        db: Database session
+    Must be called whenever a child's hours change OR a child is added/removed/reparented:
+      - create_work_item (with epic_id)
+      - update_work_item (estimated_hours, logged_hours, remaining_hours, or epic_id changed)
+      - log_hours endpoint
+      - delete_work_item
     """
     epic = db.query(WorkItem).filter(WorkItem.id == epic_id).first()
     if not epic or epic.type != WorkItemType.EPIC.value:
         return
 
-    # Sum all work items' estimated_hours that belong to this epic (stories, tasks, bugs)
-    total_hours = (
-        db.query(func.coalesce(func.sum(WorkItem.estimated_hours), 0))
+    row = (
+        db.query(
+            func.coalesce(func.sum(WorkItem.estimated_hours), 0).label("est"),
+            func.coalesce(func.sum(WorkItem.logged_hours), 0).label("logged"),
+            func.coalesce(func.sum(WorkItem.remaining_hours), 0).label("remaining"),
+        )
         .filter(
             WorkItem.epic_id == epic_id,
             WorkItem.type.in_(
                 [WorkItemType.USER_STORY.value, WorkItemType.TASK.value, WorkItemType.BUG.value]
             ),
         )
-        .scalar()
+        .one()
     )
 
-    epic.estimated_hours = total_hours
+    epic.estimated_hours = row.est or 0
+    epic.logged_hours = row.logged or 0
+    epic.remaining_hours = row.remaining or 0
     epic.updated_at = datetime.utcnow()
 
 
@@ -201,15 +208,23 @@ class SprintCreate(BaseModel):
 
 @router.get("/")
 def list_work_items(
+    response: Response = None,
     project_id: int = None,
     status: str = None,
     type: str = None,
     sprint_id: int = None,
     assignee_id: int = None,
+    limit: int = Query(500, ge=1, le=1000),
+    offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """List all work items with optional filters (requires auth)"""
+    """List all work items with optional filters (requires auth).
+
+    Supports pagination via ``limit`` (1..1000, default 500) and ``offset``
+    (default 0). Total row count is returned in the ``X-Total-Count`` response
+    header so the frontend can render a paginator without a second request.
+    """
     query = db.query(WorkItem).options(
         selectinload(WorkItem.assignee),
         selectinload(WorkItem.sprint),
@@ -226,7 +241,14 @@ def list_work_items(
     if assignee_id:
         query = query.filter(WorkItem.assignee_id == assignee_id)
 
-    items = query.all()
+    # Compute total BEFORE applying limit/offset so the header reflects the
+    # full filtered set, not just the current page.
+    total = query.with_entities(func.count(WorkItem.id)).scalar() or 0
+
+    items = query.order_by(WorkItem.updated_at.desc()).limit(limit).offset(offset).all()
+
+    if response is not None:
+        response.headers["X-Total-Count"] = str(total)
 
     # Pre-fetch parent/epic keys in one batch query
     all_lookup_ids = list(
@@ -289,6 +311,92 @@ def list_work_items(
         result.append(item_dict)
 
     return result
+
+
+class SlimWorkItem(BaseModel):
+    """Slim payload used by the Kanban board endpoint.
+
+    Excludes heavy fields (description, acceptance_criteria, started_at,
+    completed_at) that the board view never renders. Wire size is roughly
+    40-50% of the full row, which adds up fast on projects with hundreds
+    of items.
+    """
+
+    id: str
+    key: str
+    title: str
+    type: str
+    status: str
+    priority: str
+    assignee_id: int | None = None
+    assignee: str | None = None
+    sprint_id: int | None = None
+    parent_id: int | None = None
+    epic_id: int | None = None
+    parent_key: str | None = None
+    epic_key: str | None = None
+    story_points: int = 0
+    tags: list[str] = []
+    remaining_hours: int = 0
+    assigned_hours: int = 0
+    logged_hours: int = 0
+
+
+@router.get("/board", response_model=list[SlimWorkItem])
+def list_board_items(
+    project_id: int = Query(..., description="Required: project to fetch board items for"),
+    sprint_id: int | None = Query(None, description="Optional: filter to a single sprint"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Slim variant of ``GET /api/workitems/`` used by the Kanban board.
+
+    Skips the description/acceptance_criteria/date columns the board never
+    renders. The parent/epic key batch lookup mirrors ``list_work_items`` so
+    callers still see human-readable identifiers without per-row joins.
+    """
+    query = db.query(WorkItem).options(selectinload(WorkItem.assignee))
+    query = query.filter(WorkItem.project_id == project_id)
+    if sprint_id is not None:
+        query = query.filter(WorkItem.sprint_id == sprint_id)
+
+    items = query.all()
+
+    # Batch-fetch parent/epic keys in a single IN(...) query.
+    all_lookup_ids = list(
+        {
+            *(item.parent_id for item in items if item.parent_id),
+            *(item.epic_id for item in items if item.epic_id),
+        }
+    )
+    id_to_key: dict[int, str] = {}
+    if all_lookup_ids:
+        related = db.query(WorkItem.id, WorkItem.key).filter(WorkItem.id.in_(all_lookup_ids)).all()
+        id_to_key = {r.id: r.key for r in related}
+
+    return [
+        SlimWorkItem(
+            id=str(item.id),
+            key=item.key,
+            title=item.title,
+            type=item.type,
+            status=item.status,
+            priority=item.priority,
+            assignee_id=item.assignee_id,
+            assignee=item.assignee.name if item.assignee_id and item.assignee else None,
+            sprint_id=item.sprint_id,
+            parent_id=item.parent_id,
+            epic_id=item.epic_id,
+            parent_key=id_to_key.get(item.parent_id) if item.parent_id else None,
+            epic_key=id_to_key.get(item.epic_id) if item.epic_id else None,
+            story_points=item.story_points or 0,
+            tags=item.tags or [],
+            remaining_hours=item.remaining_hours or 0,
+            assigned_hours=item.estimated_hours or 0,
+            logged_hours=item.logged_hours or 0,
+        )
+        for item in items
+    ]
 
 
 @router.get("/my-tasks")
@@ -380,6 +488,7 @@ def get_work_item(
 @router.post("/")
 def create_work_item(
     item: WorkItemCreate,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -467,10 +576,11 @@ def create_work_item(
         update_epic_hours(work_item.epic_id, db)
         db.commit()
 
-    # Send assignment notification if assignee is set
+    # Send assignment notification if assignee is set (off the request thread)
     if work_item.assignee_id and work_item.assignee:
         assignee = work_item.assignee
-        email_service.send_task_assignment_notification(
+        background_tasks.add_task(
+            email_service.send_task_assignment_notification,
             to_email=assignee.email,
             to_name=assignee.name,
             assigner_name=current_user.email,
@@ -518,6 +628,7 @@ def create_work_item(
 def update_work_item(
     item_id: int,
     update: WorkItemUpdate,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -535,7 +646,19 @@ def update_work_item(
     # Track old status before update for status change notification
     old_status = item.status
 
-    update_data = update.dict(exclude_unset=True)
+    # Track old epic_id so we can recompute the FORMER epic when an item is reparented
+    old_epic_id = item.epic_id
+
+    update_data = update.model_dump(exclude_unset=True)
+
+    # logged_hours and remaining_hours are derived columns — logged_hours
+    # is the SUM of TimeEntry rows; remaining_hours is estimated - logged.
+    # Allowing direct writes here was the #1 cause of rollup drift (PROJ-353,
+    # PROJ-357, PROJ-173, PROJ-222 etc. all got ghost-logged this way and
+    # had no TimeEntry rows backing the claim). Strip them silently — to set
+    # logged hours, callers must use POST /log-hours which creates a TimeEntry.
+    update_data.pop("logged_hours", None)
+    update_data.pop("remaining_hours", None)
 
     # Handle frontend compatibility: assigned_hours -> estimated_hours
     if "assigned_hours" in update_data:
@@ -643,11 +766,12 @@ def update_work_item(
             )
             db.add(activity)
 
-            # Send assignment notification to new assignee if newly assigned
+            # Send assignment notification to new assignee if newly assigned (off the request thread)
             if new_assignee_id and new_assignee_name != "Unassigned":
                 new_assignee = db.query(Developer).filter(Developer.id == new_assignee_id).first()
                 if new_assignee and new_assignee.email:
-                    email_service.send_task_assignment_notification(
+                    background_tasks.add_task(
+                        email_service.send_task_assignment_notification,
                         to_email=new_assignee.email,
                         to_name=new_assignee.name,
                         assigner_name=current_user.email,
@@ -690,11 +814,12 @@ def update_work_item(
         )
         notified_emails = set()  # Avoid sending duplicate emails
 
-        # Notify the assignee (if not the person making the change)
+        # Notify the assignee (if not the person making the change) — off thread
         if item.assignee_id and item.assignee and item.assignee.email:
             assignee_dev = item.assignee
             if assignee_dev.email != current_user.email:
-                email_service.send_status_change_notification(
+                background_tasks.add_task(
+                    email_service.send_status_change_notification,
                     to_email=assignee_dev.email,
                     to_name=assignee_dev.name,
                     changed_by=changer_name,
@@ -715,7 +840,8 @@ def update_work_item(
                 reporter_dev.email != current_user.email
                 and reporter_dev.email not in notified_emails
             ):
-                email_service.send_status_change_notification(
+                background_tasks.add_task(
+                    email_service.send_status_change_notification,
                     to_email=reporter_dev.email,
                     to_name=reporter_dev.name,
                     changed_by=changer_name,
@@ -732,20 +858,27 @@ def update_work_item(
     if "status" in update_data and item.epic_id:
         update_epic_status_from_stories(item.epic_id, db)
 
-    # Update epic hours if estimated_hours changed and item is linked to an epic
-    if "estimated_hours" in update_data and item.epic_id:
+    # Update epic hours when any of the child's hour fields changed
+    hour_fields_changed = any(
+        f in update_data for f in ("estimated_hours", "logged_hours", "remaining_hours")
+    )
+    if hour_fields_changed and item.epic_id:
         update_epic_hours(item.epic_id, db)
 
-    # Update epic if epic_id changed (moving item to a different epic)
-    # The item already has the new epic_id set from the setattr above
-    if "epic_id" in update_data and item.epic_id:
-        update_epic_hours(item.epic_id, db)
-        update_epic_status_from_stories(item.epic_id, db)
+    # Update epic if epic_id changed (moving item to a different epic).
+    # Recompute BOTH the new epic AND the previous epic — the old one lost a child.
+    if "epic_id" in update_data:
+        if item.epic_id:
+            update_epic_hours(item.epic_id, db)
+            update_epic_status_from_stories(item.epic_id, db)
+        if old_epic_id and old_epic_id != item.epic_id:
+            update_epic_hours(old_epic_id, db)
+            update_epic_status_from_stories(old_epic_id, db)
 
     # Final commit for any epic updates
-    if (
-        "status" in update_data or "estimated_hours" in update_data or "epic_id" in update_data
-    ) and item.epic_id:
+    if ("status" in update_data or hour_fields_changed or "epic_id" in update_data) and (
+        item.epic_id or old_epic_id
+    ):
         db.commit()
 
     # Return with assignee name
@@ -887,6 +1020,16 @@ def log_hours(
     if request.hours <= 0:
         raise HTTPException(status_code=400, detail="Hours must be greater than 0")
 
+    # Sanity cap. One log call represents one work session. A 24h log is
+    # essentially always a typo (e.g., "22" instead of "2" — exactly how PROJ-333
+    # ended up with hours=22 on a 2h-estimated ticket). Callers who legitimately
+    # need to log more time should split it across sessions.
+    if request.hours > 24:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Hours per log ({request.hours}) exceeds the 24h sanity cap. Split into multiple log entries.",
+        )
+
     # Determine who to attribute the hours to
     developer = None
 
@@ -905,6 +1048,31 @@ def log_hours(
         # Fallback: attribute to the person logging the time if no assignee
         developer = db.query(Developer).filter(Developer.email == current_user.email).first()
 
+    # Reject duplicate submissions within a short window — protects against
+    # rapid double-clicks on the "Log Hours" button creating duplicate TimeEntry
+    # rows (the historical cause of PROJ-333 accumulating 22h of identical 2h
+    # entries on a 2h-estimated ticket).
+    dev_id_for_dedupe = developer.id if developer else item.assignee_id
+    if dev_id_for_dedupe is not None:
+        from datetime import timedelta
+
+        dedupe_window_start = datetime.utcnow() - timedelta(seconds=5)
+        recent_duplicate = (
+            db.query(TimeEntry)
+            .filter(
+                TimeEntry.work_item_id == item_id,
+                TimeEntry.developer_id == dev_id_for_dedupe,
+                TimeEntry.hours == request.hours,
+                TimeEntry.logged_at >= dedupe_window_start,
+            )
+            .first()
+        )
+        if recent_duplicate is not None:
+            raise HTTPException(
+                status_code=429,
+                detail="Duplicate log-hours request detected. Please wait a moment before logging again.",
+            )
+
     # Create time entry
     time_entry = TimeEntry(
         work_item_id=item_id,
@@ -913,15 +1081,28 @@ def log_hours(
         description=request.description,
     )
     db.add(time_entry)
+    db.flush()  # ensure the new TimeEntry is visible to the sum query below
 
-    # Update work item totals
-    item.logged_hours = (item.logged_hours or 0) + request.hours
-    # Calculate remaining as estimated - logged
+    # Recompute logged_hours from the live TimeEntry sum instead of `+=`.
+    # The naive accumulator drifts whenever ANYTHING else has touched the column
+    # (direct PUT writes, deleted entries, manual DB edits). Querying SUM each
+    # time keeps the rollup self-healing — `logged_hours` is always exactly the
+    # sum of its TimeEntry rows.
+    item.logged_hours = (
+        db.query(func.coalesce(func.sum(TimeEntry.hours), 0))
+        .filter(TimeEntry.work_item_id == item_id)
+        .scalar()
+    ) or 0
     item.remaining_hours = max(0, (item.estimated_hours or 0) - (item.logged_hours or 0))
     item.updated_at = datetime.utcnow()
 
     db.commit()
     db.refresh(item)
+
+    # Roll up to parent epic so its logged/remaining stay in sync with children
+    if item.epic_id:
+        update_epic_hours(item.epic_id, db)
+        db.commit()
 
     # Return updated item
     return {
@@ -1374,80 +1555,83 @@ def list_project_sprints(
         db.query(Sprint).filter(Sprint.project_id == project_id).order_by(Sprint.start_date).all()
     )
 
-    # Auto-update sprint status based on current date
+    # Compute sprint status on-read (no DB mutation on GET)
     today = datetime.utcnow()
-    status_changed = False
-    for sprint in sprints:
+
+    def _computed_status(sprint: Sprint) -> str:
+        """Compute display status without mutating the row."""
         if (
             sprint.status in (SprintStatus.PLANNING.value, "planned")
             and sprint.start_date
             and sprint.end_date
         ):
             if sprint.start_date <= today <= sprint.end_date:
-                sprint.status = SprintStatus.ACTIVE.value
-                sprint.activated_at = sprint.activated_at or today
-                status_changed = True
-            elif today > sprint.end_date:
-                sprint.status = SprintStatus.COMPLETED.value
-                sprint.completed_at = sprint.completed_at or today
-                status_changed = True
+                return SprintStatus.ACTIVE.value
+            if today > sprint.end_date:
+                return SprintStatus.COMPLETED.value
         elif (
             sprint.status == SprintStatus.ACTIVE.value
             and sprint.end_date
             and today > sprint.end_date
         ):
-            sprint.status = SprintStatus.COMPLETED.value
-            sprint.completed_at = sprint.completed_at or today
-            status_changed = True
-    if status_changed:
-        db.commit()
+            return SprintStatus.COMPLETED.value
+        return sprint.status
+
+    # Single GROUP BY query for all sprint counts/sums (replaces 5N queries)
+    sprint_ids = [s.id for s in sprints]
+    counts_by_sprint: dict[int, dict] = {}
+    if sprint_ids:
+        agg_rows = (
+            db.query(
+                WorkItem.sprint_id,
+                func.sum(case((WorkItem.status == WorkItemStatus.TODO.value, 1), else_=0)).label(
+                    "todo"
+                ),
+                func.sum(
+                    case((WorkItem.status == WorkItemStatus.IN_PROGRESS.value, 1), else_=0)
+                ).label("in_progress"),
+                func.sum(case((WorkItem.status == WorkItemStatus.DONE.value, 1), else_=0)).label(
+                    "done"
+                ),
+                func.sum(WorkItem.story_points).label("total_points"),
+                func.sum(
+                    case(
+                        (WorkItem.status == WorkItemStatus.DONE.value, WorkItem.story_points),
+                        else_=0,
+                    )
+                ).label("completed_points"),
+            )
+            .filter(WorkItem.sprint_id.in_(sprint_ids))
+            .group_by(WorkItem.sprint_id)
+            .all()
+        )
+        for row in agg_rows:
+            counts_by_sprint[row.sprint_id] = {
+                "todo": int(row.todo or 0),
+                "in_progress": int(row.in_progress or 0),
+                "done": int(row.done or 0),
+                "total_points": int(row.total_points or 0),
+                "completed_points": int(row.completed_points or 0),
+            }
 
     result = []
     for sprint in sprints:
-        # Count items by status
-        todo_count = (
-            db.query(func.count(WorkItem.id))
-            .filter(WorkItem.sprint_id == sprint.id, WorkItem.status == WorkItemStatus.TODO.value)
-            .scalar()
-            or 0
+        stats = counts_by_sprint.get(
+            sprint.id,
+            {"todo": 0, "in_progress": 0, "done": 0, "total_points": 0, "completed_points": 0},
         )
-
-        in_progress_count = (
-            db.query(func.count(WorkItem.id))
-            .filter(
-                WorkItem.sprint_id == sprint.id, WorkItem.status == WorkItemStatus.IN_PROGRESS.value
-            )
-            .scalar()
-            or 0
-        )
-
-        done_count = (
-            db.query(func.count(WorkItem.id))
-            .filter(WorkItem.sprint_id == sprint.id, WorkItem.status == WorkItemStatus.DONE.value)
-            .scalar()
-            or 0
-        )
-
-        total_points = (
-            db.query(func.sum(WorkItem.story_points))
-            .filter(WorkItem.sprint_id == sprint.id)
-            .scalar()
-            or 0
-        )
-
-        completed_points = (
-            db.query(func.sum(WorkItem.story_points))
-            .filter(WorkItem.sprint_id == sprint.id, WorkItem.status == WorkItemStatus.DONE.value)
-            .scalar()
-            or 0
-        )
+        todo_count = stats["todo"]
+        in_progress_count = stats["in_progress"]
+        done_count = stats["done"]
+        total_points = stats["total_points"]
+        completed_points = stats["completed_points"]
 
         result.append(
             {
                 "id": sprint.id,
                 "name": sprint.name,
                 "goal": sprint.goal,
-                "status": sprint.status,
+                "status": _computed_status(sprint),
                 "start_date": sprint.start_date.isoformat() if sprint.start_date else None,
                 "end_date": sprint.end_date.isoformat() if sprint.end_date else None,
                 "capacity_hours": sprint.capacity_hours,
@@ -1503,25 +1687,25 @@ def get_project_analytics(
     sprints = (
         db.query(Sprint).filter(Sprint.project_id == project_id).order_by(Sprint.start_date).all()
     )
+    # Aggregate sprint points in-Python from already-loaded items (no extra DB queries)
+    points_by_sprint: dict[int, dict] = {}
+    for item in items:
+        if item.sprint_id is None:
+            continue
+        sp = item.story_points or 0
+        bucket = points_by_sprint.setdefault(item.sprint_id, {"total": 0, "completed": 0})
+        bucket["total"] += sp
+        if item.status == WorkItemStatus.DONE.value:
+            bucket["completed"] += sp
+
     velocity_data = []
     for sprint in sprints:
-        total_points = (
-            db.query(func.sum(WorkItem.story_points))
-            .filter(WorkItem.sprint_id == sprint.id)
-            .scalar()
-            or 0
-        )
-        completed_points = (
-            db.query(func.sum(WorkItem.story_points))
-            .filter(WorkItem.sprint_id == sprint.id, WorkItem.status == WorkItemStatus.DONE.value)
-            .scalar()
-            or 0
-        )
+        bucket = points_by_sprint.get(sprint.id, {"total": 0, "completed": 0})
         velocity_data.append(
             {
                 "sprint_name": sprint.name,
-                "committed": total_points,
-                "completed": completed_points,
+                "committed": bucket["total"],
+                "completed": bucket["completed"],
                 "start_date": sprint.start_date.isoformat() if sprint.start_date else None,
             }
         )
@@ -1614,31 +1798,24 @@ def get_hours_analytics(
         db.query(Sprint).filter(Sprint.project_id == project_id).order_by(Sprint.start_date).all()
     )
 
-    # Auto-update sprint status based on current date (same logic as list endpoint)
+    # Compute sprint status on-read (no DB mutation on GET) — same logic as list endpoint
     now = datetime.utcnow()
-    ha_changed = False
-    for sprint in sprints:
+
+    def _sprint_display_status(sprint: Sprint) -> str:
         if (
             sprint.status in (SprintStatus.PLANNING.value, "planned")
             and sprint.start_date
             and sprint.end_date
         ):
             if sprint.start_date <= now <= sprint.end_date:
-                sprint.status = SprintStatus.ACTIVE.value
-                sprint.activated_at = sprint.activated_at or now
-                ha_changed = True
-            elif now > sprint.end_date:
-                sprint.status = SprintStatus.COMPLETED.value
-                sprint.completed_at = sprint.completed_at or now
-                ha_changed = True
+                return SprintStatus.ACTIVE.value
+            if now > sprint.end_date:
+                return SprintStatus.COMPLETED.value
         elif (
             sprint.status == SprintStatus.ACTIVE.value and sprint.end_date and now > sprint.end_date
         ):
-            sprint.status = SprintStatus.COMPLETED.value
-            sprint.completed_at = sprint.completed_at or now
-            ha_changed = True
-    if ha_changed:
-        db.commit()
+            return SprintStatus.COMPLETED.value
+        return sprint.status
 
     # Get all developers assigned to this project
     developers = list(project.developers) if hasattr(project, "developers") else []
@@ -1664,7 +1841,7 @@ def get_hours_analytics(
             {
                 "sprint_id": sprint.id,
                 "sprint_name": sprint.name,
-                "status": sprint.status,
+                "status": _sprint_display_status(sprint),
                 "allocated_hours": allocated,
                 "logged_hours": logged,
                 "remaining_hours": remaining,

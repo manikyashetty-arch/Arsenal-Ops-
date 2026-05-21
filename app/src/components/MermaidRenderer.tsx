@@ -1,29 +1,18 @@
 import { useEffect, useRef, useState } from 'react';
-import mermaid from 'mermaid';
 import { ZoomIn, ZoomOut, Maximize2, RotateCcw } from 'lucide-react';
 
-interface MermaidRendererProps {
-  code: string;
-  className?: string;
-  showControls?: boolean;
-}
+// Lazy-loaded mermaid singleton — kept outside the component so the dynamic
+// import only happens once across all instances.
+let mermaidModule: typeof import('mermaid').default | null = null;
+let mermaidInitialized = false;
 
-// Generate unique ID counter
-let mermaidIdCounter = 0;
-
-const MermaidRenderer = ({ code, className = '', showControls = true }: MermaidRendererProps) => {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [svgContent, setSvgContent] = useState<string>('');
-  const [isRendering, setIsRendering] = useState(false);
-  const [scale, setScale] = useState(1);
-  const [position, setPosition] = useState({ x: 0, y: 0 });
-  const [isDragging, setIsDragging] = useState(false);
-  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
-
-  useEffect(() => {
-    // Initialize mermaid once
-    mermaid.initialize({
+const loadMermaid = async () => {
+  if (!mermaidModule) {
+    const mod = await import('mermaid');
+    mermaidModule = mod.default;
+  }
+  if (!mermaidInitialized) {
+    mermaidModule.initialize({
       startOnLoad: false,
       theme: 'dark',
       themeVariables: {
@@ -48,7 +37,29 @@ const MermaidRenderer = ({ code, className = '', showControls = true }: MermaidR
       },
       securityLevel: 'loose',
     });
-  }, []);
+    mermaidInitialized = true;
+  }
+  return mermaidModule;
+};
+
+interface MermaidRendererProps {
+  code: string;
+  className?: string;
+  showControls?: boolean;
+}
+
+// Generate unique ID counter
+let mermaidIdCounter = 0;
+
+const MermaidRenderer = ({ code, className = '', showControls = true }: MermaidRendererProps) => {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [svgContent, setSvgContent] = useState<string>('');
+  const [isRendering, setIsRendering] = useState(false);
+  const [scale, setScale] = useState(1);
+  const [position, setPosition] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
 
   useEffect(() => {
     const renderDiagram = async () => {
@@ -61,6 +72,10 @@ const MermaidRenderer = ({ code, className = '', showControls = true }: MermaidR
       setError(null);
 
       try {
+        // Lazy-load mermaid on first render — avoids dragging its ~550KB
+        // gzipped bundle into the initial JS payload.
+        const mermaid = await loadMermaid();
+
         // Clean the code - remove markdown code blocks if present
         let cleanCode = code.trim();
         if (cleanCode.startsWith('```mermaid')) {

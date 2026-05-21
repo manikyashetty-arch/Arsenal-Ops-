@@ -19,6 +19,16 @@ export default defineConfig(({ command }) => ({
     // Bump the warning ceiling — we manually-chunk the big libs below so they
     // load on demand instead of joining the initial bundle.
     chunkSizeWarningLimit: 800,
+    target: 'es2022',
+    minify: 'terser',
+    sourcemap: false,
+    terserOptions: {
+      compress: {
+        passes: 2,
+        drop_console: ['log', 'debug', 'info'],
+        drop_debugger: true,
+      },
+    },
     rollupOptions: {
       output: {
         // Only carve out the truly-heavy libraries. Everything else (incl. React,
