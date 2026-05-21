@@ -2,6 +2,7 @@ import { useState, useEffect, lazy, Suspense } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiFetch, ApiError } from '@/lib/api';
+import { invalidateProjectScope, invalidateWorkItemScope } from '@/lib/invalidations';
 import {
   ArrowLeft,
   Info,
@@ -444,7 +445,7 @@ const ProjectDetail = () => {
       toast.success('Link added!');
     },
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ['project', id, 'links'] });
+      invalidateProjectScope(queryClient, id);
     },
     onError: () => toast.error('Failed to add link'),
   });
@@ -457,7 +458,7 @@ const ProjectDetail = () => {
     },
     onError: () => toast.error('Error deleting link'),
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ['project', id, 'links'] });
+      invalidateProjectScope(queryClient, id);
     },
   });
 
@@ -479,8 +480,8 @@ const ProjectDetail = () => {
       }),
     onError: () => toast.error('Failed to update task'),
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ['workItems'] });
-      queryClient.invalidateQueries({ queryKey: ['myTasks'] });
+      invalidateWorkItemScope(queryClient, id);
+      invalidateProjectScope(queryClient, id);
     },
   });
 
@@ -495,8 +496,8 @@ const ProjectDetail = () => {
     },
     onError: () => toast.error('Failed to create task'),
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ['workItems'] });
-      queryClient.invalidateQueries({ queryKey: ['myTasks'] });
+      invalidateWorkItemScope(queryClient, id);
+      invalidateProjectScope(queryClient, id);
     },
   });
 
@@ -539,8 +540,10 @@ const ProjectDetail = () => {
       toast.error(err?.message || 'Failed to update project');
     },
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ['project', id] });
+      invalidateProjectScope(queryClient, id);
       queryClient.invalidateQueries({ queryKey: ['projects'] });
+      queryClient.invalidateQueries({ queryKey: ['admin', 'projects'] });
+      queryClient.invalidateQueries({ queryKey: ['admin', 'stats'] });
     },
   });
 
@@ -567,7 +570,7 @@ const ProjectDetail = () => {
     },
     onError: () => toast.error('Failed to add developer'),
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ['project', id] });
+      invalidateProjectScope(queryClient, id);
     },
   });
 
@@ -594,7 +597,7 @@ const ProjectDetail = () => {
     },
     onError: () => toast.error('Failed to remove developer'),
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ['project', id] });
+      invalidateProjectScope(queryClient, id);
     },
   });
 
@@ -618,7 +621,7 @@ const ProjectDetail = () => {
     },
     onError: (err: any) => toast.error(err?.message || 'Failed to promote developer'),
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ['project', id] });
+      invalidateProjectScope(queryClient, id);
     },
   });
 
@@ -634,7 +637,7 @@ const ProjectDetail = () => {
     },
     onError: (err: any) => toast.error(err?.message || 'Failed to demote developer'),
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ['project', id] });
+      invalidateProjectScope(queryClient, id);
     },
   });
 
@@ -679,7 +682,7 @@ const ProjectDetail = () => {
     },
     onError: () => toast.error('Failed to update architecture'),
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ['project', id] });
+      invalidateProjectScope(queryClient, id);
     },
   });
 

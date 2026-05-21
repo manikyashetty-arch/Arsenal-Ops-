@@ -45,6 +45,7 @@ import StatusDotMenu from '@/components/ProjectsPage/StatusDotMenu';
 import { useAuth, isProjectManager } from '@/contexts/AuthContext';
 import { buildEpicGroups } from '@/lib/hierarchy/buildEpicGroups';
 import { apiFetch } from '@/lib/api';
+import { invalidateProjectScope, invalidateWorkItemScope } from '@/lib/invalidations';
 import type { CreateItemFormValues } from './modals/CreateItemModal';
 // EditSprintModal's file also exports the CompleteSprintConfirm /
 // DeleteSprintConfirm confirmation modals as named exports, which must be
@@ -380,14 +381,13 @@ const ProjectBoard = () => {
   // full-shape view (description, sprint name, due_date) refreshes after a
   // save — the slim /board list doesn't carry those fields.
   const invalidateWorkItems = () => {
-    queryClient.invalidateQueries({ queryKey: ['workItems'] });
-    queryClient.invalidateQueries({ queryKey: ['myTasks'] });
+    invalidateWorkItemScope(queryClient, id);
     if (selectedItem) {
       queryClient.invalidateQueries({ queryKey: ['workItem', selectedItem.id, 'detail'] });
     }
   };
-  // Helper: invalidate project (stats)
-  const invalidateProject = () => queryClient.invalidateQueries({ queryKey: ['project', id] });
+  // Helper: invalidate project (stats + hub overview + sprints + goals/milestones/etc.)
+  const invalidateProject = () => invalidateProjectScope(queryClient, id);
 
   // Filtered items — memoized so KanbanCard React.memo + BoardColumn React.memo
   // can rely on stable array references when filters don't change.
@@ -639,7 +639,7 @@ const ProjectBoard = () => {
     onError: () => toast.error('Failed to move ticket'),
     onSettled: () => {
       invalidateWorkItems();
-      queryClient.invalidateQueries({ queryKey: ['sprints', id] });
+      invalidateProjectScope(queryClient, id);
     },
   });
 
@@ -682,7 +682,7 @@ const ProjectBoard = () => {
     },
     onError: () => toast.error('Failed to create sprint'),
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ['sprints', id] });
+      invalidateProjectScope(queryClient, id);
     },
   });
 
@@ -770,7 +770,7 @@ const ProjectBoard = () => {
     },
     onError: () => toast.error('Failed to update sprint'),
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ['sprints', id] });
+      invalidateProjectScope(queryClient, id);
     },
   });
 
@@ -836,7 +836,8 @@ const ProjectBoard = () => {
     },
     onError: () => toast.error('Failed to complete sprint'),
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ['sprints', id] });
+      invalidateProjectScope(queryClient, id);
+      invalidateWorkItemScope(queryClient, id);
     },
   });
 
@@ -856,7 +857,7 @@ const ProjectBoard = () => {
     onError: () => toast.error('Failed to delete sprint'),
     onSettled: () => {
       invalidateWorkItems();
-      queryClient.invalidateQueries({ queryKey: ['sprints', id] });
+      invalidateProjectScope(queryClient, id);
     },
   });
 
@@ -1053,7 +1054,6 @@ const ProjectBoard = () => {
   // Cache invalidation after AI flow commit (PRD or Roadmap).
   const handleAIPlanningCommitted = () => {
     invalidateWorkItems();
-    queryClient.invalidateQueries({ queryKey: ['sprints', id] });
     invalidateProject();
   };
 

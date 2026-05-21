@@ -33,6 +33,7 @@ import {
 } from '@/components/ui/select';
 import { useAuth } from '@/contexts/AuthContext';
 import { apiFetch } from '@/lib/api';
+import { invalidateProjectScope } from '@/lib/invalidations';
 
 // Helper function to parse YYYY-MM-DD string to local Date object (avoids UTC timezone issues)
 const parseLocalDate = (dateString: string | undefined): Date | undefined => {
@@ -247,7 +248,15 @@ const PersonalTasksPage = () => {
       setMemberLookupProjectId('');
     },
     onError: () => toast.error('Failed to convert'),
-    onSettled: () => invalidateTasks(),
+    onSettled: () => {
+      invalidateTasks();
+      queryClient.invalidateQueries({ queryKey: ['myTasks'] });
+      queryClient.invalidateQueries({ queryKey: ['workItems'] });
+      const pid = parseInt(convertProjectId);
+      if (!Number.isNaN(pid)) {
+        invalidateProjectScope(queryClient, pid);
+      }
+    },
   });
 
   const toggleTaskComplete = (task: PersonalTask) => {

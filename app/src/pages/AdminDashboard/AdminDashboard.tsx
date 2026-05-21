@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { toast, Toaster } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
 import { apiFetch } from '@/lib/api';
+import { invalidateProjectScope } from '@/lib/invalidations';
 import RoleModal from './modals/RoleModal';
 import EmployeeModal from './modals/EmployeeModal';
 import UserModal from './modals/UserModal';
@@ -239,7 +240,15 @@ const AdminDashboard = () => {
     [employees],
   );
 
-  useAuth(); // keeps auth guard active; token read from localStorage by apiFetch
+  const { user, refreshCapabilities } = useAuth(); // keeps auth guard active; token read from localStorage by apiFetch
+
+  // Refresh capabilities twice: once now, once after the backend LRU window
+  // expires for the most common case. Used after role mutations that may
+  // affect the current user's capabilities.
+  const refreshCapsTwice = () => {
+    refreshCapabilities();
+    setTimeout(() => refreshCapabilities(), 1500);
+  };
 
   // Role dropdown state (per-user role-edit modal trigger; modal lives at parent)
   const [openRoleDropdown, setOpenRoleDropdown] = useState<number | null>(null);
@@ -324,6 +333,7 @@ const AdminDashboard = () => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'employees'] });
       queryClient.invalidateQueries({ queryKey: ['admin', 'stats'] });
       queryClient.invalidateQueries({ queryKey: ['admin', 'developers-capacity'] });
+      queryClient.invalidateQueries({ queryKey: ['developers'] });
     },
   });
 
@@ -345,6 +355,7 @@ const AdminDashboard = () => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'employees'] });
       queryClient.invalidateQueries({ queryKey: ['admin', 'stats'] });
       queryClient.invalidateQueries({ queryKey: ['admin', 'developers-capacity'] });
+      queryClient.invalidateQueries({ queryKey: ['developers'] });
     },
   });
 
@@ -380,6 +391,8 @@ const AdminDashboard = () => {
     onError: () => toast.error('Failed to update GitHub settings'),
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'projects'] });
+      queryClient.invalidateQueries({ queryKey: ['projects'] });
+      invalidateProjectScope(queryClient, editingProject?.id);
     },
   });
 
@@ -452,8 +465,9 @@ const AdminDashboard = () => {
     },
     onError: (err: any) => toast.error(err?.message || 'Failed to add member'),
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ['project', selectedProjectForMembers?.id] });
       queryClient.invalidateQueries({ queryKey: ['admin', 'projects'] });
+      queryClient.invalidateQueries({ queryKey: ['projects'] });
+      invalidateProjectScope(queryClient, selectedProjectForMembers?.id);
     },
   });
 
@@ -479,8 +493,9 @@ const AdminDashboard = () => {
     },
     onError: (err: any) => toast.error(err?.message || 'Failed to remove member'),
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ['project', selectedProjectForMembers?.id] });
       queryClient.invalidateQueries({ queryKey: ['admin', 'projects'] });
+      queryClient.invalidateQueries({ queryKey: ['projects'] });
+      invalidateProjectScope(queryClient, selectedProjectForMembers?.id);
     },
   });
 
@@ -526,6 +541,9 @@ const AdminDashboard = () => {
       // tabs consistent on role mutations.
       queryClient.invalidateQueries({ queryKey: ['admin', 'employees'] });
       queryClient.invalidateQueries({ queryKey: ['admin', 'stats'] });
+      // Backend creates a Developer row when role includes 'developer' — keep
+      // the per-project add-developer dropdown in sync.
+      queryClient.invalidateQueries({ queryKey: ['developers'] });
     },
   });
 
@@ -557,7 +575,11 @@ const AdminDashboard = () => {
       const msg = err instanceof Error ? err.message : 'Failed to create role';
       toast.error(msg);
     },
-    onSettled: () => invalidateRoles(),
+    onSettled: () => {
+      invalidateRoles();
+      // Any role the current user holds could now have different caps.
+      refreshCapsTwice();
+    },
   });
 
   const updateRoleMetaMutation = useMutation({
@@ -566,6 +588,10 @@ const AdminDashboard = () => {
         method: 'PUT',
         body: JSON.stringify({ name: vars.name, description: vars.description }),
       }),
+    onSettled: () => {
+      invalidateRoles();
+      refreshCapsTwice();
+    },
   });
 
   const replaceRoleCapsMutation = useMutation({
@@ -574,6 +600,10 @@ const AdminDashboard = () => {
         method: 'PUT',
         body: JSON.stringify({ capability_keys: vars.capability_keys }),
       }),
+    onSettled: () => {
+      invalidateRoles();
+      refreshCapsTwice();
+    },
   });
 
   const deleteRoleMutation = useMutation({
@@ -585,7 +615,10 @@ const AdminDashboard = () => {
       const msg = err instanceof Error ? err.message : 'Failed to delete role';
       toast.error(msg);
     },
-    onSettled: () => invalidateRoles(),
+    onSettled: () => {
+      invalidateRoles();
+      refreshCapsTwice();
+    },
   });
 
   const assignUserRoleMutation = useMutation({
@@ -597,7 +630,12 @@ const AdminDashboard = () => {
       const msg = err instanceof Error ? err.message : 'Failed to assign role';
       toast.error(msg);
     },
-    onSettled: () => invalidateRoles(),
+    onSettled: (_data, _err, vars) => {
+      invalidateRoles();
+      if (vars && vars.userId === user?.id) {
+        refreshCapsTwice();
+      }
+    },
   });
 
   const removeUserRoleMutation = useMutation({
@@ -609,7 +647,12 @@ const AdminDashboard = () => {
       const msg = err instanceof Error ? err.message : 'Failed to remove role';
       toast.error(msg);
     },
-    onSettled: () => invalidateRoles(),
+    onSettled: (_data, _err, vars) => {
+      invalidateRoles();
+      if (vars && vars.userId === user?.id) {
+        refreshCapsTwice();
+      }
+    },
   });
 
   const isSavingRole =

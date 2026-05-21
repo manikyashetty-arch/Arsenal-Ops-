@@ -530,6 +530,8 @@ const ProjectsPage = () => {
     onError: () => toast.error('Failed to create project'),
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['projects'] });
+      queryClient.invalidateQueries({ queryKey: ['admin', 'projects'] });
+      queryClient.invalidateQueries({ queryKey: ['admin', 'stats'] });
     },
   });
 
@@ -540,8 +542,17 @@ const ProjectsPage = () => {
       toast.success('Project deleted');
     },
     onError: () => toast.error('Failed to delete project'),
-    onSettled: () => {
+    onSettled: (_data, _err, projectId) => {
       queryClient.invalidateQueries({ queryKey: ['projects'] });
+      queryClient.invalidateQueries({ queryKey: ['admin', 'projects'] });
+      queryClient.invalidateQueries({ queryKey: ['admin', 'stats'] });
+      // Evict per-project caches so a recreated id can't see stale data.
+      if (projectId !== undefined) {
+        queryClient.removeQueries({ queryKey: ['project', projectId] });
+        queryClient.removeQueries({ queryKey: ['projectOverview', projectId] });
+        queryClient.removeQueries({ queryKey: ['sprints', projectId] });
+        queryClient.removeQueries({ queryKey: ['hubData', projectId] });
+      }
     },
   });
 
