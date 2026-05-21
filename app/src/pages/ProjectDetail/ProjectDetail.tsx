@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { PulseData, loadPulseData } from '@/components/ProjectHub/pulseData';
+import { useMergedPulse } from '@/components/ProjectHub/usePulseData';
 import { toast, Toaster } from 'sonner';
 // ArchitectureEditor (modal) is lazy here at the parent since edit state lives at the parent.
 // MermaidRenderer is lazy-loaded inside ArchitectureSection.
@@ -294,6 +295,12 @@ const ProjectDetail = () => {
       cancelled = true;
     };
   }, [id]);
+
+  // DB-derived overlay on top of the manual localStorage `pulseData`. While the
+  // derived endpoint is loading or errors, `mergedPulseData === pulseData` so
+  // the Pulse view stays fully functional in the pure-manual path. The Pulse
+  // Settings tab still edits the raw manual data — derivation is read-only.
+  const { data: mergedPulseData } = useMergedPulse(id, pulseData);
 
   // ── react-query: project overview (B1) ──────────────────────────────────
   // One round-trip that returns project + sprints + goals + milestones +
@@ -1047,7 +1054,9 @@ const ProjectDetail = () => {
           )}
 
           {/* Pulse Tab (was Business Review) */}
-          {activeTab === 'pulse' && <PulseTab hubLoading={hubLoading} pulseData={pulseData} />}
+          {activeTab === 'pulse' && (
+            <PulseTab hubLoading={hubLoading} pulseData={mergedPulseData} />
+          )}
 
           {/* Pulse Settings Tab — gated on `project.pulse.settings` capability */}
           {activeTab === 'pulse_settings' &&

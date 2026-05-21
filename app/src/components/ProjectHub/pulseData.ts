@@ -216,6 +216,214 @@ export const resetPulseData = (projectId: string | number): void => {
   localStorage.removeItem(STORAGE_PREFIX + projectId);
 };
 
+// ───────────────────────────────────────────────────────────────────────────
+// DB-derived overlay types & merge helper
+//
+// `DerivedPulseData` mirrors the DB-derivable subset of `PulseData` that the
+// backend's `GET /api/projects/{id}/pulse-derived` endpoint returns. Anything
+// editorial (narrative copy, ledger, risks, dollar categories, billing) is
+// intentionally absent — those continue to live in localStorage `PulseData`
+// and are supplied by `mergePulseData` from the manual side.
+// ───────────────────────────────────────────────────────────────────────────
+
+/** DB-derived subset of `PulseProjectMeta`. */
+export interface DerivedPulseProjectMeta {
+  name?: string;
+  keyPrefix?: string;
+  contractStart?: string;
+  launchTarget?: string;
+  contractEnd?: string;
+}
+
+/** DB-derived subset of `PulseSummary`. Notably omits `narrative` and
+ *  `risksTrendNote`, which remain editorial. */
+export interface DerivedPulseSummary {
+  healthScore?: number;
+  healthStatus?: 'Healthy' | 'At Risk' | 'Critical';
+  deliveryPct?: number;
+  deliveryCompleted?: number;
+  deliveryTotal?: number;
+  overdueCount?: number;
+  openBugs?: number;
+  criticalOpen?: number;
+  overallCompletion?: number;
+  workItems?: number;
+  pointsCompleted?: number;
+  pointsTotal?: number;
+  activeSprints?: number;
+  monthLabel?: string;
+  monthIndex?: number;
+  totalMonths?: number;
+  peopleTrendNote?: string;
+}
+
+/** Derived row for the monthly burn table. Only includes the columns the
+ *  backend can compute from `time_entries`; cost-category dollars stay manual. */
+export interface DerivedMonthRow {
+  m: string;
+  devAct: number | null;
+  actual?: boolean;
+  partial?: boolean;
+}
+
+/** Derived row for the included-services table — cumulative hours used through
+ *  this month. Contract totals + billing fields stay manual. */
+export interface DerivedIncludedServicesRow {
+  month: string;
+  usedHours: number;
+}
+
+/** Derived milestone. Phase/date/status come from `project_milestones`;
+ *  budget/spent/pct continue to be edited by hand. */
+export interface DerivedPulseMilestone {
+  id: string;
+  phase: string;
+  date: string;
+  status: 'done' | 'in-progress' | 'upcoming';
+}
+
+export interface DerivedPulseData {
+  project?: DerivedPulseProjectMeta;
+  summary?: DerivedPulseSummary;
+  months?: DerivedMonthRow[];
+  lastActualIdx?: number;
+  currentMonthTrackedPct?: number;
+  includedServices?: DerivedIncludedServicesRow[];
+  milestones?: DerivedPulseMilestone[];
+  updates?: PulseUpdate[];
+  forecastVsActuals?: ForecastVsActuals;
+}
+
+/**
+ * Overlay DB-derived values onto the manually-edited localStorage `PulseData`.
+ *
+ * Contract:
+ *   - If `derived` is null/undefined, `manual` is returned unchanged. This is
+ *     the loading + error path; the Pulse view stays fully functional with
+ *     pure-manual data until the endpoint responds.
+ *   - For every field the derivation provides, derived wins. Anything derived
+ *     omits comes from `manual`.
+ *   - `ledger`, `risks`, narrative copy, dollar cost categories per month, and
+ *     contract/billing inputs always come from `manual`.
+ */
+export const mergePulseData = (
+  manual: PulseData,
+  derived: DerivedPulseData | null | undefined,
+): PulseData => {
+  if (!derived) return manual;
+
+  // Months: align by month label. Derived only supplies hours + flags, so we
+  // keep manual's cost categories (`dev`, `ad`, `gtm`, `ba`, `mgmt`) and
+  // `devFC` forecast on each row. If the project has no end_date the backend
+  // returns an empty months array — fall back to manual rather than wiping
+  // the chart.
+  let mergedMonths = manual.months;
+  if (derived.months && derived.months.length > 0) {
+    mergedMonths = derived.months.map((d) => {
+      const m = manual.months.find((row) => row.m === d.m);
+      if (m) {
+        return {
+          ...m,
+          m: d.m,
+          devAct: d.devAct,
+          actual: d.actual,
+          partial: d.partial,
+        };
+      }
+      // No manual row for this month yet — zero out cost categories. PM can
+      // backfill them in PulseSettings later.
+      return {
+        m: d.m,
+        devFC: 0,
+        devAct: d.devAct,
+        dev: 0,
+        ad: 0,
+        gtm: 0,
+        ba: 0,
+        mgmt: 0,
+        actual: d.actual,
+        partial: d.partial,
+      };
+    });
+  }
+
+  // Included services: align by `month` string. Derived only supplies
+  // `usedHours`; manual rows carry contract total + billing data.
+  let mergedIncludedServices = manual.includedServices;
+  if (derived.includedServices && derived.includedServices.length > 0) {
+    mergedIncludedServices = derived.includedServices.map((d) => {
+      const m = manual.includedServices.find((row) => row.month === d.month);
+      if (m) {
+        return { ...m, month: d.month, usedHours: d.usedHours };
+      }
+      return {
+        month: d.month,
+        totalHours: 0,
+        usedHours: d.usedHours,
+        billableAccrued: 0,
+        billableAccruedCost: 0,
+        billableInvoiced: 0,
+        invoiceCount: 0,
+        expectedRemaining: 0,
+      };
+    });
+  }
+
+  // Milestones: derived owns phase/date/status; manual owns budget/spent/pct.
+  // Align by `id`. If the derived milestone has no manual counterpart (e.g.
+  // a milestone created via the Roadmap tab that PM hasn't priced yet),
+  // budget/spent/pct default to 0.
+  let mergedMilestones = manual.milestones;
+  if (derived.milestones) {
+    mergedMilestones = derived.milestones.map((d) => {
+      const m = manual.milestones.find((row) => row.id === d.id);
+      if (m) {
+        return {
+          ...m,
+          id: d.id,
+          phase: d.phase,
+          date: d.date,
+          status: d.status,
+        };
+      }
+      return {
+        id: d.id,
+        phase: d.phase,
+        date: d.date,
+        status: d.status,
+        budget: 0,
+        spent: 0,
+        pct: 0,
+      };
+    });
+  }
+
+  return {
+    ...manual,
+    project: { ...manual.project, ...(derived.project ?? {}) },
+    // Summary: derived's keys overlay manual's, so `narrative` and
+    // `risksTrendNote` (which derived intentionally omits) survive.
+    summary: { ...manual.summary, ...(derived.summary ?? {}) },
+    months: mergedMonths,
+    lastActualIdx:
+      typeof derived.lastActualIdx === 'number' ? derived.lastActualIdx : manual.lastActualIdx,
+    currentMonthTrackedPct:
+      typeof derived.currentMonthTrackedPct === 'number'
+        ? derived.currentMonthTrackedPct
+        : manual.currentMonthTrackedPct,
+    includedServices: mergedIncludedServices,
+    milestones: mergedMilestones,
+    // Updates + forecastVsActuals are wholesale-replaced when derived
+    // supplies them. (The activity-log feed and epic-estimate rollup are
+    // entirely DB-sourced; there is nothing editorial to preserve.)
+    updates: derived.updates ?? manual.updates,
+    forecastVsActuals: derived.forecastVsActuals ?? manual.forecastVsActuals,
+    // ledger + risks are always manual.
+    ledger: manual.ledger,
+    risks: manual.risks,
+  };
+};
+
 export const computeDerived = (data: PulseData) => {
   const contractTotal = data.ledger
     .filter((l) => !l.included && !l.tbd)
