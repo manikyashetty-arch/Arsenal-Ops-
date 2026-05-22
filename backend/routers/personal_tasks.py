@@ -200,6 +200,18 @@ def convert_to_ticket(
     # Determine assignee: use explicitly chosen developer or fall back to current user
     if request.assignee_developer_id:
         assignee = db.query(Developer).filter(Developer.id == request.assignee_developer_id).first()
+        if not assignee:
+            raise HTTPException(status_code=404, detail="Assigned developer not found")
+
+        # P1-3: IDOR fix - verify assignee is in the target project
+        assignee_in_project = any(
+            dev.id == assignee.id for dev in project.developers
+        )
+        if not assignee_in_project:
+            raise HTTPException(
+                status_code=422,
+                detail="Assigned developer is not a member of the target project",
+            )
     else:
         assignee = db.query(Developer).filter(Developer.email == current_user.email).first()
 

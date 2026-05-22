@@ -87,7 +87,25 @@ def extract_mentions(content: str, db: Session) -> list[int]:
 def get_comments(
     work_item_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
 ):
-    """Get all comments for a work item (requires auth)"""
+    """Get all comments for a work item (requires auth and project access)"""
+    # Load work item and verify it exists
+    work_item = db.query(WorkItem).filter(WorkItem.id == work_item_id).first()
+    if not work_item:
+        raise HTTPException(status_code=404, detail="Work item not found")
+
+    # Check project access (P1-1: IDOR fix)
+    from models.project import Project
+
+    project = db.query(Project).filter(Project.id == work_item.project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    # Use has_project_access helper from projects router
+    from routers.projects import has_project_access
+
+    if not has_project_access(project, current_user):
+        raise HTTPException(status_code=404, detail="Work item not found")
+
     comments = (
         db.query(Comment)
         .filter(Comment.work_item_id == work_item_id)
@@ -125,10 +143,23 @@ def create_comment(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Create a new comment with @mentions (requires auth)"""
+    """Create a new comment with @mentions (requires auth and project access)"""
     # Verify work item exists
     work_item = db.query(WorkItem).filter(WorkItem.id == comment.work_item_id).first()
     if not work_item:
+        raise HTTPException(status_code=404, detail="Work item not found")
+
+    # Check project access (P1-2: IDOR fix)
+    from models.project import Project
+
+    project = db.query(Project).filter(Project.id == work_item.project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    # Use has_project_access helper from projects router
+    from routers.projects import has_project_access
+
+    if not has_project_access(project, current_user):
         raise HTTPException(status_code=404, detail="Work item not found")
 
     # Get author from current user

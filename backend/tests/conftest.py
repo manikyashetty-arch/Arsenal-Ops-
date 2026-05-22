@@ -209,11 +209,15 @@ def seed_project(db, name: str = "Test Project", num_developers: int = 2) -> Pro
     db.flush()  # Ensure project.id is set before adding developers
 
     developers = []
-    for i in range(num_developers):
+    # Ensure at least one developer even if num_developers is 0
+    total_devs = max(1, num_developers)
+    for i in range(total_devs):
+        # Use project ID in seed to ensure unique developers across projects
+        unique_id = f"{project.id}_{i+1}"
         dev = Developer(
-            name=f"Developer {i+1}",
-            email=f"seed-dev-{i+1}@test.local",
-            github_username=f"seed-dev-{i+1}",
+            name=f"Developer {unique_id}",
+            email=f"seed-dev-{unique_id}@test.local",
+            github_username=f"seed-dev-{unique_id}",
         )
         db.add(dev)
         db.flush()

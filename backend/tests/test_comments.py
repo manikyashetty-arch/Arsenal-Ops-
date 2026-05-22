@@ -35,6 +35,8 @@ from datetime import datetime
 def seed_project(db, name: str = "Test Project", num_developers: int = 2) -> Project:
     """Factory function: create a Project + N developers + admin assignment."""
     from models.developer import project_developers
+    import random
+    import string
 
     project = Project(
         name=name,
@@ -47,11 +49,15 @@ def seed_project(db, name: str = "Test Project", num_developers: int = 2) -> Pro
     db.flush()
 
     developers = []
-    for i in range(num_developers):
+    # Ensure at least one developer even if num_developers is 0
+    total_devs = max(1, num_developers)
+    # Use project ID in seed to ensure unique developers across projects
+    for i in range(total_devs):
+        unique_id = f"{project.id}_{i+1}"
         dev = Developer(
-            name=f"Developer {i+1}",
-            email=f"seed-dev-{i+1}@test.local",
-            github_username=f"seed-dev-{i+1}",
+            name=f"Developer {unique_id}",
+            email=f"seed-dev-{unique_id}@test.local",
+            github_username=f"seed-dev-{unique_id}",
         )
         db.add(dev)
         db.flush()
@@ -135,9 +141,20 @@ class TestCreateComment:
         project = seed_project(db, name="Test Project")
         item = create_work_item(db, project.id)
 
-        # Create a developer for the author
+        # Create a developer for the author and add to project
         dev = create_developer(db, "Dev User", "dev@test.local")
         user.email = dev.email  # Match the developer email
+        from models.developer import project_developers
+
+        db.execute(
+            project_developers.insert().values(
+                project_id=project.id,
+                developer_id=dev.id,
+                role="Developer",
+                responsibilities=None,
+                is_admin=False,
+            )
+        )
         db.commit()
 
         # POST comment
@@ -178,9 +195,20 @@ class TestCreateComment:
         devs = db.query(Developer).all()
         mentioned_dev = devs[0]
 
-        # Create a developer for the current user
+        # Create a developer for the current user and add to project
         current_dev = create_developer(db, "Current Dev", "dev@test.local")
         user.email = current_dev.email
+        from models.developer import project_developers
+
+        db.execute(
+            project_developers.insert().values(
+                project_id=project.id,
+                developer_id=current_dev.id,
+                role="Developer",
+                responsibilities=None,
+                is_admin=False,
+            )
+        )
         db.commit()
 
         # POST comment mentioning the first developer by name
@@ -213,6 +241,17 @@ class TestCreateComment:
         item = create_work_item(db, project.id)
         current_dev = create_developer(db, "Current Dev", "dev@test.local")
         user.email = current_dev.email
+        from models.developer import project_developers
+
+        db.execute(
+            project_developers.insert().values(
+                project_id=project.id,
+                developer_id=current_dev.id,
+                role="Developer",
+                responsibilities=None,
+                is_admin=False,
+            )
+        )
         db.commit()
 
         # POST comment mentioning nonexistent user
@@ -278,6 +317,17 @@ class TestCreateComment:
 
         current_dev = create_developer(db, "Current Dev", "dev@test.local")
         user.email = current_dev.email
+        from models.developer import project_developers
+
+        db.execute(
+            project_developers.insert().values(
+                project_id=project.id,
+                developer_id=current_dev.id,
+                role="Developer",
+                responsibilities=None,
+                is_admin=False,
+            )
+        )
         db.commit()
 
         # POST comment mentioning a developer
@@ -334,6 +384,17 @@ class TestGetComments:
         item = create_work_item(db, project.id)
         current_dev = create_developer(db, "Current Dev", "dev@test.local")
         user.email = current_dev.email
+        from models.developer import project_developers
+
+        db.execute(
+            project_developers.insert().values(
+                project_id=project.id,
+                developer_id=current_dev.id,
+                role="Developer",
+                responsibilities=None,
+                is_admin=False,
+            )
+        )
         db.commit()
 
         # Create 3 comments
@@ -377,6 +438,22 @@ class TestGetComments:
         project = seed_project(db, name="Test Project")
         item = create_work_item(db, project.id)
 
+        # Add current user to project as developer
+        current_dev = create_developer(db, "Current Dev", "dev@test.local")
+        user.email = current_dev.email
+        from models.developer import project_developers
+
+        db.execute(
+            project_developers.insert().values(
+                project_id=project.id,
+                developer_id=current_dev.id,
+                role="Developer",
+                responsibilities=None,
+                is_admin=False,
+            )
+        )
+        db.commit()
+
         response = test_client.get(
             f"/api/comments/workitem/{item.id}",
             headers={"Authorization": f"Bearer {token}"},
@@ -414,27 +491,17 @@ class TestCommentsIDOR:
     3. Update the comments to reflect the fixed behavior
     """
 
-    @pytest.mark.xfail(
-        reason="IDOR: user can read comments on projects they don't belong to. "
-        "After fix: assert 403/404 and remove xfail"
-    )
     def test_user_cannot_read_comments_on_unaffiliated_project(
         self, test_client, db, dev_user, admin_user
     ):
-        """Lock IDOR: dev_user can read comments on a project they're not in.
+        """Verify dev_user cannot read comments on a project they're not in.
 
         Setup:
         - admin_user creates project A (admin only, no dev_user)
         - Create work item + comment in project A
         - dev_user (not in project A) GETs comments via workitem endpoint
 
-        Current behavior (IDOR): returns 200 + comments
-        After fix: should return 403 or 404
-
-        To flip after fix:
-        1. Change assertion from 'assert response.status_code == 200' to 'assert response.status_code == 403'
-        2. Remove @pytest.mark.xfail
-        3. Update reason comment
+        Expected behavior (after IDOR fix): returns 404
         """
         admin, admin_token = admin_user
         dev, dev_token = dev_user
@@ -445,10 +512,15 @@ class TestCommentsIDOR:
         # Create a developer for admin and add to project
         admin_dev = create_developer(db, "Admin Dev", "admin@test.local")
         admin.email = admin_dev.email
+        from models.developer import project_developers
+
         db.execute(
-            "INSERT INTO project_developers (project_id, developer_id, role, is_admin) "
-            "VALUES (?, ?, ?, ?)",
-            (project_a.id, admin_dev.id, "Lead", True),
+            project_developers.insert().values(
+                project_id=project_a.id,
+                developer_id=admin_dev.id,
+                role="Lead",
+                is_admin=True,
+            )
         )
         db.commit()
 
@@ -465,38 +537,25 @@ class TestCommentsIDOR:
         db.commit()
 
         # dev_user (not in project A) tries to read comments
-        # CURRENT BEHAVIOR: returns 200 + comment (IDOR)
+        # Fixed behavior: returns 404
         response = test_client.get(
             f"/api/comments/workitem/{item.id}",
             headers={"Authorization": f"Bearer {dev_token}"},
         )
 
-        # Lock current behavior: assert 200 (the bug)
-        # After fix: change to assert 403 or 404
-        assert response.status_code == 200
-        assert len(response.json()) > 0
+        assert response.status_code == 404
 
-    @pytest.mark.xfail(
-        reason="IDOR: user can create comments on projects they don't belong to. "
-        "After fix: assert 403/404 and remove xfail"
-    )
     def test_user_cannot_create_comment_on_unaffiliated_project(
         self, test_client, db, dev_user, admin_user
     ):
-        """Lock IDOR: dev_user can create comments on a project they're not in.
+        """Verify dev_user cannot create comments on a project they're not in.
 
         Setup:
         - admin_user creates project A (admin only)
         - Create work item in project A
         - dev_user (not in project A) POSTs a comment to that work item
 
-        Current behavior (IDOR): returns 201 + comment created
-        After fix: should return 403 or 404
-
-        To flip after fix:
-        1. Change assertion from 'assert response.status_code == 201' to 'assert response.status_code == 403'
-        2. Remove @pytest.mark.xfail
-        3. Verify comment is NOT persisted
+        Expected behavior (after IDOR fix): returns 404 and comment is NOT persisted
         """
         admin, admin_token = admin_user
         dev, dev_token = dev_user
@@ -507,10 +566,15 @@ class TestCommentsIDOR:
         # Create a developer for admin
         admin_dev = create_developer(db, "Admin Dev", "admin@test.local")
         admin.email = admin_dev.email
+        from models.developer import project_developers
+
         db.execute(
-            "INSERT INTO project_developers (project_id, developer_id, role, is_admin) "
-            "VALUES (?, ?, ?, ?)",
-            (project_a.id, admin_dev.id, "Lead", True),
+            project_developers.insert().values(
+                project_id=project_a.id,
+                developer_id=admin_dev.id,
+                role="Lead",
+                is_admin=True,
+            )
         )
 
         # Create a developer for dev_user
@@ -522,7 +586,7 @@ class TestCommentsIDOR:
         item = create_work_item(db, project_a.id)
 
         # dev_user (not in project A) tries to create comment
-        # CURRENT BEHAVIOR: returns 201 + comment created (IDOR)
+        # Fixed behavior: returns 404
         response = test_client.post(
             "/api/comments/",
             headers={"Authorization": f"Bearer {dev_token}"},
@@ -533,9 +597,11 @@ class TestCommentsIDOR:
             },
         )
 
-        # Lock current behavior: assert 201 (the bug)
-        # After fix: change to assert 403 or 404
-        assert response.status_code == 200
+        assert response.status_code == 404
+
+        # Verify comment was NOT persisted
+        comment_count = db.query(Comment).filter(Comment.work_item_id == item.id).count()
+        assert comment_count == 0
 
 
 # ============= PUT /api/comments/{comment_id} - Update Comment =============

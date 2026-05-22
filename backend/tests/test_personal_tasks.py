@@ -386,22 +386,16 @@ class TestConvertToTicket:
         assert work_item is not None
         assert work_item.title == "Convert Me"
 
-    @pytest.mark.xfail(
-        reason="IDOR: convert_to_ticket does NOT validate assignee against project membership. "
-        "Assigning a developer outside the target project should fail but currently succeeds. "
-        "Fix: add project membership check before accepting assignee_developer_id."
-    )
     def test_convert_to_ticket_with_assignee_outside_project(
         self, test_client, dev_user, pm_user, db
     ):
-        """Verify IDOR: assignee outside target project is rejected.
+        """Verify assignee outside target project is rejected.
 
-        Creates personal task as dev_user, creates a separate project seeded with
+        Creates personal task as dev_user, creates a separate project with
         pm_user as assignee, then tries to convert to first project with pm_user's
-        developer_id. Audit says this currently SUCCEEDS (bug), should be rejected.
+        developer_id. Should be rejected with 422.
 
-        Expected after fix: 400/403 with message about project membership.
-        Current behavior (IDOR): 200, work_item created with cross-project assignee.
+        Expected behavior (after IDOR fix): 422 with message about project membership.
         """
         dev, dev_token = dev_user
         pm, pm_token = pm_user
@@ -452,6 +446,7 @@ class TestConvertToTicket:
         task_id = task_response.json()["id"]
 
         # Try to convert to project1 but assign to pm_dev (who is NOT in project1)
+        # Fixed behavior: returns 422 with project membership error
         convert_response = test_client.post(
             f"/api/personal-tasks/{task_id}/convert-to-ticket",
             headers={"Authorization": f"Bearer {dev_token}"},
@@ -462,9 +457,8 @@ class TestConvertToTicket:
             },
         )
 
-        # AUDIT CLAIM: This currently returns 200 (IDOR bug)
-        # Expected after fix: 400/403
-        assert convert_response.status_code in [400, 403]
+        assert convert_response.status_code == 422
+        assert "project" in convert_response.json()["detail"].lower()
 
     def test_convert_already_converted_task_fails(self, test_client, dev_user, db):
         """Verify converting an already-converted task returns 400.
