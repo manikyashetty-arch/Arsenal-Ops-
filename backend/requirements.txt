@@ -24,3 +24,13 @@ cachetools>=5.3
 # Lint / formatting — pinned because CI runs `ruff check` + `ruff format
 # --check` and version drift would cause spurious failures.
 ruff==0.15.12
+
+# Testing dependencies
+pytest>=7.4
+pytest-asyncio>=0.24
+pytest-cov>=5
+pytest-xdist>=3.6
+polyfactory>=2.18
+hypothesis>=6.115
+respx>=0.21
+freezegun>=1.5

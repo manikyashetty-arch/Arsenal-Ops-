@@ -1,0 +1,248 @@
+"""
+Pytest configuration and shared fixtures for the test suite.
+
+Provides:
+- `db` fixture: in-memory SQLite session with all tables created
+- `test_client` fixture: FastAPI TestClient with db dependency override
+- `make_token()` helper: creates valid JWT tokens matching auth.py's logic
+- `admin_user`, `pm_user`, `dev_user` fixtures: pre-built User instances with roles
+- `seed_project()` factory: creates Project + developers + admin assignment
+"""
+
+import os
+import sys
+from datetime import datetime, timedelta
+
+import pytest
+from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+
+from database import Base, get_db  # noqa: E402
+from main import app  # noqa: E402
+from models import (  # noqa: E402, F401
+    activity_log,
+    architecture,
+    developer,
+    market_insight,
+    persona,
+    personal_task,
+    project,
+    project_file,
+    project_goal,
+    project_link,
+    project_milestone,
+    sprint,
+    task,
+    task_dependency,
+    time_entry,
+    user,
+    user_story,
+    work_item,
+    work_item_assignment_history,
+)
+from models.developer import Developer  # noqa: E402
+from models.developer import project_developers  # noqa: E402
+from models.project import Project  # noqa: E402
+from models.user import User  # noqa: E402
+from routers.auth import ACCESS_TOKEN_EXPIRE_MINUTES, ALGORITHM, SECRET_KEY, create_access_token  # noqa: E402
+
+
+@pytest.fixture
+def db():
+    """In-memory SQLite session with all tables created.
+
+    Uses StaticPool to ensure the in-memory database persists across
+    all connections from both the test and the test_client's dependency
+    overrides. The session uses expire_on_commit=False to mirror how
+    route handlers fetch entities: attributes don't trigger lazy reloads
+    when accessed. Tests that count queries depend on this behavior.
+    """
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(bind=engine)
+    Session = sessionmaker(autocommit=False, autoflush=False, bind=engine, expire_on_commit=False)
+    session = Session()
+    yield session
+    session.close()
+
+
+@pytest.fixture
+def test_client(db):
+    """FastAPI TestClient with the db fixture overriding get_db dependency.
+
+    Clears overrides on teardown to avoid test pollution.
+    """
+
+    def override_get_db():
+        yield db
+
+    app.dependency_overrides[get_db] = override_get_db
+    client = TestClient(app)
+    yield client
+    app.dependency_overrides.clear()
+
+
+def make_token(user: User, expires_delta: timedelta | None = None) -> str:
+    """Create a valid JWT token for a User.
+
+    Uses the same create_access_token() function as auth.py so tokens
+    verify correctly against the live authentication logic.
+
+    Args:
+        user: User instance to encode into the token.
+        expires_delta: Optional expiration delta; defaults to ACCESS_TOKEN_EXPIRE_MINUTES.
+
+    Returns:
+        Signed JWT token as a string.
+    """
+    if expires_delta is None:
+        expires_delta = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+
+    return create_access_token(data={"sub": str(user.id)}, expires_delta=expires_delta)
+
+
+@pytest.fixture(name="make_token")
+def make_token_fixture():
+    """Fixture wrapper around make_token() so tests can request it by parameter name.
+
+    Usage:
+        def test_something(make_token, db):
+            user = User(...)
+            db.add(user); db.commit()
+            token = make_token(user)
+    """
+    return make_token
+
+
+@pytest.fixture
+def admin_user(db) -> tuple[User, str]:
+    """Create an admin User and return (user, token) tuple.
+
+    The User is committed to the db fixture and has role='admin'.
+    """
+    user = User(
+        email="admin@test.local",
+        name="Admin Test User",
+        role="admin",
+        is_active=True,
+        is_first_login=False,
+        hashed_password="test-hash",
+    )
+    db.add(user)
+    db.commit()
+
+    token = make_token(user)
+    return user, token
+
+
+@pytest.fixture
+def pm_user(db) -> tuple[User, str]:
+    """Create a project manager User and return (user, token) tuple.
+
+    The User is committed to the db fixture and has role='project_manager'.
+    """
+    user = User(
+        email="pm@test.local",
+        name="PM Test User",
+        role="project_manager",
+        is_active=True,
+        is_first_login=False,
+        hashed_password="test-hash",
+    )
+    db.add(user)
+    db.commit()
+
+    token = make_token(user)
+    return user, token
+
+
+@pytest.fixture
+def dev_user(db) -> tuple[User, str]:
+    """Create a developer User and return (user, token) tuple.
+
+    The User is committed to the db fixture and has role='developer'.
+    """
+    user = User(
+        email="dev@test.local",
+        name="Developer Test User",
+        role="developer",
+        is_active=True,
+        is_first_login=False,
+        hashed_password="test-hash",
+    )
+    db.add(user)
+    db.commit()
+
+    token = make_token(user)
+    return user, token
+
+
+def seed_project(db, name: str = "Test Project", num_developers: int = 2) -> Project:
+    """Factory function: create a Project + N developers + admin assignment.
+
+    Creates a new project with the given name, adds N developers to it,
+    and assigns the first developer as the admin.
+
+    Args:
+        db: SQLAlchemy session fixture.
+        name: Project name; defaults to "Test Project".
+        num_developers: Number of developers to add; defaults to 2.
+
+    Returns:
+        The created Project instance (committed to db).
+    """
+    project = Project(
+        name=name,
+        description=f"Description for {name}",
+        status="active",
+        github_repo_urls=[],
+        created_at=datetime.utcnow(),
+    )
+    db.add(project)
+    db.flush()  # Ensure project.id is set before adding developers
+
+    developers = []
+    for i in range(num_developers):
+        dev = Developer(
+            name=f"Developer {i+1}",
+            email=f"seed-dev-{i+1}@test.local",
+            github_username=f"seed-dev-{i+1}",
+        )
+        db.add(dev)
+        db.flush()
+        developers.append(dev)
+
+    # Assign developers to the project; the first one is the admin
+    db.execute(
+        project_developers.insert().values(
+            [
+                {
+                    "project_id": project.id,
+                    "developer_id": developers[0].id,
+                    "role": "Lead",
+                    "responsibilities": "Project lead",
+                    "is_admin": True,
+                },
+                *[
+                    {
+                        "project_id": project.id,
+                        "developer_id": dev.id,
+                        "role": "Developer",
+                        "responsibilities": None,
+                        "is_admin": False,
+                    }
+                    for dev in developers[1:]
+                ],
+            ]
+        )
+    )
+    db.commit()
+
+    return project
