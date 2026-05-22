@@ -12,7 +12,11 @@ interface PulseMonthlyBurnSectionProps {
   onAddRow: () => void;
   onRemoveRow: (i: number) => void;
   onChangeLastActualIdx: (n: number) => void;
-  // Why: devAct + actual/partial flags + lastActualIdx are now DB-derived.
+  /** When true, hide the `devAct` column, the actual/partial flag controls,
+   *  and the `lastActualIdx` selector — all now sourced from the derive
+   *  endpoint (sum of time_entries.hours by month + current date). The
+   *  editor passes this on the Settings tab; the read-only viewer's table
+   *  is a separate component path, so this prop is scoped to the editor. */
   hideDerivedColumns?: boolean;
 }
 

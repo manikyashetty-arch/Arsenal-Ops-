@@ -26,7 +26,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 // migration; reading refs during render is forbidden by react-hooks v6, but
 // reading them inside `useEffect` (where the migration fires) is fine.
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { apiFetch } from '@/lib/api';
+import { toast } from 'sonner';
+import { apiFetch, ApiError } from '@/lib/api';
 import { DerivedPulseData, PulseData, mergePulseData } from './pulseData';
 
 /** React-query key for the derived Pulse endpoint. Prefix-compatible with
@@ -67,13 +68,24 @@ export const useDerivedPulse = (projectId: string | number | null | undefined) =
 export const useMergedPulse = (
   projectId: string | number | null | undefined,
   manual: PulseData | null,
-): { data: PulseData | null; isLoading: boolean; isError: boolean } => {
+): {
+  data: PulseData | null;
+  isLoading: boolean;
+  isError: boolean;
+  degradedSections: string[];
+} => {
   const derivedQuery = useDerivedPulse(projectId);
-  return {
-    data: manual ? mergePulseData(manual, derivedQuery.data) : null,
-    isLoading: derivedQuery.isLoading,
-    isError: derivedQuery.isError,
-  };
+  // Why: callers consume `data` as a useMemo/useEffect dep — without memoising
+  // the wrapper object we'd re-fire on every render even when nothing changed.
+  return useMemo(
+    () => ({
+      data: manual ? mergePulseData(manual, derivedQuery.data) : null,
+      isLoading: derivedQuery.isLoading,
+      isError: derivedQuery.isError,
+      degradedSections: derivedQuery.data?._meta?.degraded_sections ?? [],
+    }),
+    [manual, derivedQuery.data, derivedQuery.isLoading, derivedQuery.isError],
+  );
 };
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -145,8 +157,18 @@ export const usePulseOverridesMutation = (projectId: string | number | null | un
       }));
       return { snapshot };
     },
-    onError: (_err, _vars, ctx) => {
+    onError: (err, _vars, ctx) => {
       if (ctx?.snapshot) queryClient.setQueryData(key, ctx.snapshot);
+      // Why: surface the most actionable failure modes — permission and
+      // payload-size — with targeted copy. Other failures fall through to
+      // whatever the caller's mutateAsync rejection handler does.
+      if (err instanceof ApiError) {
+        if (err.status === 403) {
+          toast.error("You don't have permission to edit Pulse settings.");
+        } else if (err.status === 413) {
+          toast.error('Pulse data is too large to save (>1MB). Trim some fields and retry.');
+        }
+      }
     },
     onSuccess: (response) => {
       // Server is the source of truth — overwrite cache with the response.
@@ -196,21 +218,40 @@ export const usePulseManualData = (
   // editor doesn't flash the fixture defaults before the server responds.
   const localCache = useMemo(() => readLocalCache(projectId), [projectId]);
 
-  // One-shot migration: if the server returned empty data and we have a
-  // localStorage blob, push it to the server. Guarded by a ref so we only
-  // fire once per (projectId, mount).
-  const migrationFiredRef = useRef<string | null>(null);
+  // One-shot migration: if the server has no override row AND we have a
+  // localStorage blob, push it to the server. Three states matter:
+  //   - in-flight: don't re-fire while the PUT is round-tripping.
+  //   - succeeded: lock so we never re-migrate on this mount.
+  //   - failed: reset so the next mount can retry; show a toast so the user
+  //     knows their local edits aren't yet on the server.
+  // Why distinguish by `updated_at` rather than just `data === {}`: an
+  // intentionally-empty server payload (PM saved an empty blob) returns
+  // `data: {}` AND `updated_at: <iso>`; we must NOT migrate over that.
+  const migrationStateRef = useRef<'idle' | 'in-flight' | 'succeeded'>('idle');
   useEffect(() => {
     if (!projectId) return;
     if (!overridesQuery.data) return;
-    if (migrationFiredRef.current === String(projectId)) return;
-    const serverEmpty =
-      !overridesQuery.data.data || Object.keys(overridesQuery.data.data).length === 0;
-    if (serverEmpty && localCache && Object.keys(localCache).length > 0) {
-      migrationFiredRef.current = String(projectId);
-      saveMutation.mutate({ data: localCache });
-    }
-  }, [overridesQuery.data, projectId, localCache, saveMutation]);
+    if (migrationStateRef.current !== 'idle') return;
+    const noServerRow = overridesQuery.data.updated_at === null;
+    const hasLocal = localCache !== null && Object.keys(localCache).length > 0;
+    if (!noServerRow || !hasLocal) return;
+    migrationStateRef.current = 'in-flight';
+    saveMutation
+      .mutateAsync({ data: localCache })
+      .then(() => {
+        migrationStateRef.current = 'succeeded';
+      })
+      .catch(() => {
+        // Reset so the next mount retries. The mutation's onError already
+        // toasted for 403/413; for everything else, surface a generic note.
+        migrationStateRef.current = 'idle';
+        toast.error("Couldn't migrate local Pulse data to server — will retry on next load.");
+      });
+    // Why omit `saveMutation` from deps: TanStack v5 mutation objects are
+    // stable across renders; listing it would cause spurious re-fires if a
+    // future TanStack version changes that contract.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [overridesQuery.data, projectId, localCache]);
 
   // `DUMMY_PULSE_DATA` lives in a lazy chunk to keep it out of the main
   // bundle — resolve once on mount, then memoise the merged result.
@@ -218,23 +259,21 @@ export const usePulseManualData = (
 
   const manual = useMemo<PulseData | null>(() => {
     if (!fixture) return null;
-    // Server has data → it wins.
-    const serverData = overridesQuery.data?.data;
-    if (serverData && Object.keys(serverData).length > 0) {
-      return mergeWithFixture(fixture, serverData);
+    // Server has a row (any contents, including intentionally empty) → it wins.
+    // Why `updated_at !== null` rather than checking `data` keys: a PM who
+    // deliberately saves an empty blob still owns the project's Pulse state;
+    // we must not silently re-migrate localStorage over their explicit save.
+    const serverHasRow = overridesQuery.data?.updated_at != null;
+    if (serverHasRow) {
+      return mergeWithFixture(fixture, overridesQuery.data!.data ?? {});
     }
     // Query still loading and we have a local cache → use it as placeholder.
     if (overridesQuery.isLoading && localCache && Object.keys(localCache).length > 0) {
       return mergeWithFixture(fixture, localCache);
     }
-    // Migration in-flight (server empty, localCache present) → render the
-    // parsed localStorage data optimistically while the PUT round-trips.
-    if (
-      overridesQuery.data &&
-      (!overridesQuery.data.data || Object.keys(overridesQuery.data.data).length === 0) &&
-      localCache &&
-      Object.keys(localCache).length > 0
-    ) {
+    // Migration in-flight or server-empty: render the local cache
+    // optimistically so the editor stays populated through the PUT round-trip.
+    if (overridesQuery.data && !serverHasRow && localCache && Object.keys(localCache).length > 0) {
       return mergeWithFixture(fixture, localCache);
     }
     // No data anywhere → fixture defaults.
@@ -263,8 +302,24 @@ const readLocalCache = (
     const raw = localStorage.getItem(STORAGE_PREFIX + projectId);
     if (!raw) return null;
     const parsed = JSON.parse(raw);
-    if (parsed && typeof parsed === 'object') return parsed as Partial<PulseData>;
-    return null;
+    // Why: defend against legacy payloads with totally wrong shape (e.g. a
+    // string, an array, or an object with none of our top-level keys) — they
+    // would pollute the merged result if cast blind to Partial<PulseData>.
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+    const expectedKeys: Array<keyof PulseData> = [
+      'project',
+      'summary',
+      'ledger',
+      'months',
+      'risks',
+      'milestones',
+      'includedServices',
+      'updates',
+      'forecastVsActuals',
+    ];
+    const hasAnyKey = expectedKeys.some((k) => k in (parsed as Record<string, unknown>));
+    if (!hasAnyKey) return null;
+    return parsed as Partial<PulseData>;
   } catch {
     return null;
   }

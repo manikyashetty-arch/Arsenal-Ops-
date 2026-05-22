@@ -1,4 +1,5 @@
 import React from 'react';
+import { Trash2 } from 'lucide-react';
 import { PulseMilestone } from '../../pulseData';
 import { Field, NumberInput, Section } from '../inputs';
 
@@ -12,9 +13,13 @@ interface PulseMilestonesFinancialSectionProps {
    *  shadow copy. Manual rows without a derived counterpart are still shown
    *  as "orphan" entries so they can be cleaned up. */
   derivedMilestones: PulseMilestone[];
-  /** Patch (or append-if-missing) a milestone by id. The parent handles the
-   *  upsert into the `data.milestones` array. */
-  onPatchById: (id: string, patch: Partial<PulseMilestone>, template: PulseMilestone) => void;
+  /** Patch (or append-if-missing) a milestone by id. The parent looks up the
+   *  seed (phase/date/status) from `derivedMilestones` — callers only need to
+   *  pass the financial patch. */
+  onPatchById: (id: string, patch: Partial<PulseMilestone>) => void;
+  /** Remove an orphan manual milestone by id. Only orphans expose a delete
+   *  affordance — derived rows would just re-appear on the next refresh. */
+  onRemoveOrphan: (id: string) => void;
 }
 
 /**
@@ -31,6 +36,7 @@ const PulseMilestonesFinancialSection: React.FC<PulseMilestonesFinancialSectionP
   manualMilestones,
   derivedMilestones,
   onPatchById,
+  onRemoveOrphan,
 }) => {
   // Build the union: every derived milestone, plus any manual milestone that
   // has no derived counterpart (so PMs can clean up stale rows). Lookup keyed
@@ -78,17 +84,29 @@ const PulseMilestonesFinancialSection: React.FC<PulseMilestonesFinancialSectionP
                 </div>
               </div>
               <Field label="Budget" className="col-span-2">
-                <NumberInput
-                  value={m.budget}
-                  onChange={(n) => onPatchById(m.id, { budget: n }, m)}
-                />
+                <NumberInput value={m.budget} onChange={(n) => onPatchById(m.id, { budget: n })} />
               </Field>
               <Field label="Spent" className="col-span-2">
-                <NumberInput value={m.spent} onChange={(n) => onPatchById(m.id, { spent: n }, m)} />
+                <NumberInput value={m.spent} onChange={(n) => onPatchById(m.id, { spent: n })} />
               </Field>
-              <Field label="Pct" className="col-span-3">
-                <NumberInput value={m.pct} onChange={(n) => onPatchById(m.id, { pct: n }, m)} />
+              <Field
+                label={orphan ? 'Pct' : 'Pct'}
+                className={orphan ? 'col-span-2' : 'col-span-3'}
+              >
+                <NumberInput value={m.pct} onChange={(n) => onPatchById(m.id, { pct: n })} />
               </Field>
+              {orphan && (
+                <div className="col-span-1 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => onRemoveOrphan(m.id)}
+                    aria-label={`Delete orphan milestone ${m.phase || m.id}`}
+                    className="p-1.5 rounded text-[#EF4444]/70 hover:text-[#EF4444] hover:bg-[#EF4444]/10"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
             </div>
           ))}
         </div>

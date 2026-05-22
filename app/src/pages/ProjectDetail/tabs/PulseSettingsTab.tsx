@@ -25,7 +25,13 @@ const PulseSettingsTab = ({
   onReset,
 }: PulseSettingsTabProps) => {
   return (
+    // Why `key={projectId}`: PulseSettingsView reads `initial` once into
+    // local state. Without the remount, navigating between projects would
+    // show project A's edits over project B's identity. The trade-off is
+    // that unsaved edits are dropped on project nav — accept this for now.
+    // TODO: add an unsaved-changes guard before remount.
     <PulseSettingsView
+      key={projectId}
       projectId={projectId}
       initial={pulseData}
       derivedMilestones={derivedMilestones}

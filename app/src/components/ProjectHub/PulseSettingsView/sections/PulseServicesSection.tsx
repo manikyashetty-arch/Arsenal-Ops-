@@ -10,7 +10,10 @@ interface PulseServicesSectionProps {
   onUpdateRow: (i: number, patch: Partial<IncludedServicesRow>) => void;
   onAddRow: () => void;
   onRemoveRow: (i: number) => void;
-  // Why: usedHours is now DB-derived from logged time.
+  /** When true, hide the `usedHours` column — it's now sourced from the
+   *  derive endpoint (sum of time_entries.hours) rather than typed in. The
+   *  editor passes this on the Settings tab; the read-only viewer's table is
+   *  a separate component path, so this prop is scoped to the editor. */
   hideDerivedColumns?: boolean;
 }
 

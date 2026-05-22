@@ -148,32 +148,6 @@ export const currentIncludedServices = (data: PulseData): IncludedServicesRow =>
 
 const STORAGE_PREFIX = 'pulse-data:';
 
-/**
- * Compatibility shim: returns the dummy fixture. Authoritative loading now
- * happens in `usePulseManualData` (see `usePulseData.ts`), which combines the
- * server-backed overrides with this fixture for defaults. This export is kept
- * for the reset-to-defaults flow and any non-hook caller that still wants the
- * baseline fixture without bundling it into the main chunk.
- */
-export const loadPulseData = async (_projectId: string | number): Promise<PulseData> => {
-  const { DUMMY_PULSE_DATA } = await import('./pulseData.fixtures');
-  return DUMMY_PULSE_DATA;
-};
-
-/**
- * Cache-only write to localStorage. The authoritative write now happens
- * through `usePulseOverridesMutation` (server PUT). This is kept as an
- * offline-fallback path and as a manual escape hatch for code paths that
- * still call into the old API.
- */
-export const savePulseData = (projectId: string | number, data: PulseData): void => {
-  try {
-    localStorage.setItem(STORAGE_PREFIX + projectId, JSON.stringify(data));
-  } catch {
-    /* localStorage may be unavailable (private mode, quota) — ignore. */
-  }
-};
-
 /** Clear the localStorage cache for a project. The server-side reset happens
  *  by issuing a PUT with the fixture payload from `usePulseManualData`. */
 export const resetPulseData = (projectId: string | number): void => {
@@ -250,6 +224,13 @@ export interface DerivedPulseMilestone {
   status: 'done' | 'in-progress' | 'upcoming';
 }
 
+/** Backend-supplied metadata about the derive run. `degraded_sections`
+ *  lists the snapshot sections that fell back to a default because their
+ *  underlying compute failed; an empty list means every section succeeded. */
+export interface DerivedPulseMeta {
+  degraded_sections: string[];
+}
+
 export interface DerivedPulseData {
   project?: DerivedPulseProjectMeta;
   summary?: DerivedPulseSummary;
@@ -260,6 +241,7 @@ export interface DerivedPulseData {
   milestones?: DerivedPulseMilestone[];
   updates?: PulseUpdate[];
   forecastVsActuals?: ForecastVsActuals;
+  _meta?: DerivedPulseMeta;
 }
 
 /**
@@ -341,8 +323,11 @@ export const mergePulseData = (
   // Align by `id`. If the derived milestone has no manual counterpart (e.g.
   // a milestone created via the Roadmap tab that PM hasn't priced yet),
   // budget/spent/pct default to 0.
+  // Empty-list fall-through rule: if the backend returns `[]` for milestones,
+  // treat it the same as "no derive" and keep the manual list. This matches
+  // the months / includedServices guards above and the doc-comment contract.
   let mergedMilestones = manual.milestones;
-  if (derived.milestones) {
+  if (derived.milestones && derived.milestones.length > 0) {
     mergedMilestones = derived.milestones.map((d) => {
       const m = manual.milestones.find((row) => row.id === d.id);
       if (m) {

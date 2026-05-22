@@ -297,7 +297,10 @@ const ProjectDetail = () => {
   // endpoint is loading or errors, `mergedPulseData === pulseData` so the
   // Pulse view stays fully functional in the pure-manual path. The Pulse
   // Settings tab still edits the raw manual data — derivation is read-only.
-  const { data: mergedPulseData } = useMergedPulse(id, pulseData);
+  const { data: mergedPulseData, degradedSections: pulseDegradedSections } = useMergedPulse(
+    id,
+    pulseData,
+  );
 
   // ── react-query: project overview (B1) ──────────────────────────────────
   // One round-trip that returns project + sprints + goals + milestones +
@@ -1052,7 +1055,11 @@ const ProjectDetail = () => {
 
           {/* Pulse Tab (was Business Review) */}
           {activeTab === 'pulse' && (
-            <PulseTab hubLoading={hubLoading} pulseData={mergedPulseData} />
+            <PulseTab
+              hubLoading={hubLoading}
+              pulseData={mergedPulseData}
+              degradedSections={pulseDegradedSections}
+            />
           )}
 
           {/* Pulse Settings Tab — gated on `project.pulse.settings` capability */}
@@ -1068,8 +1075,12 @@ const ProjectDetail = () => {
                   await pulseSaveMutation.mutateAsync({ data });
                 }}
                 onReset={async (fixture) => {
-                  resetPulseData(id);
+                  // Why server-first: if the PUT fails (e.g. 403 for a
+                  // non-admin), clearing localStorage first would leave the
+                  // user with no recoverable local copy of their data. Only
+                  // wipe the cache after the server confirms the reset.
                   await pulseSaveMutation.mutateAsync({ data: fixture });
+                  resetPulseData(id);
                 }}
               />
             ) : (
