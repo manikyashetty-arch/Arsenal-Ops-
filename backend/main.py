@@ -5,6 +5,7 @@ FastAPI backend with Jira-like project/work item management + AI generation
 
 import logging
 import os
+import uuid
 
 # Load environment variables
 from pathlib import Path
@@ -22,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 # Import routers (after load_dotenv so router-level env reads see the right values)
 from routers.admin import router as admin_router  # noqa: E402
-from routers.auth import router as auth_router  # noqa: E402
+from routers.auth import router as auth_router, dev_router as auth_dev_router  # noqa: E402
 from routers.comments import router as comments_router  # noqa: E402
 from routers.developers import router as developers_router  # noqa: E402
 from routers.overview import router as overview_router  # noqa: E402
@@ -111,8 +112,18 @@ app.add_middleware(PerfMiddleware)
 # Global exception handler to ensure CORS headers on errors
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
-    """Catch all unhandled exceptions and return JSON with proper CORS headers"""
-    logger.exception("[GLOBAL ERROR] %s %s", request.method, request.url.path)
+    """Catch all unhandled exceptions and return opaque error with correlation ID.
+
+    P0-7: Never leak stack traces or exception messages to clients.
+    Full exception (with traceback) is logged server-side for diagnostics.
+    Client receives only a correlation ID to reference in support tickets.
+    """
+    # Generate correlation ID for diagnostics (e.g., user reports "error: abc12345")
+    correlation_id = uuid.uuid4().hex[:8]
+
+    # Log full exception + traceback server-side (correlation ID in prefix for grep-ability)
+    logger.exception("[ERROR %s] %s %s", correlation_id, request.method, request.url.path)
+
     origin = request.headers.get("origin", "")
     headers = {}
     if origin in cors_origins:
@@ -120,15 +131,23 @@ async def global_exception_handler(request: Request, exc: Exception):
         headers["Access-Control-Allow-Credentials"] = "true"
         headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS, PATCH"
         headers["Access-Control-Allow-Headers"] = "*"
+
+    # Return opaque error response with correlation ID (no stack trace, no SQL, no secrets)
     return JSONResponse(
         status_code=500,
-        content={"detail": f"Internal server error: {str(exc)}"},
+        content={"detail": "Internal error", "request_id": correlation_id},
         headers=headers,
     )
 
 
 # Include routers
 app.include_router(auth_router)
+
+# Conditionally include dev-login endpoints (only when DEV_AUTH_BYPASS=1)
+if os.getenv("DEV_AUTH_BYPASS") == "1":
+    app.include_router(auth_dev_router)
+    logger.warning("DEV_AUTH_BYPASS=1; dev-login endpoints REGISTERED. Never enable in production.")
+
 app.include_router(projects_router)
 app.include_router(workitems_router)
 app.include_router(developers_router)
@@ -144,6 +163,19 @@ app.include_router(overview_router)
 @app.on_event("startup")
 async def startup_event():
     """Initialize database on startup"""
+    # P0-1: Validate SECRET_KEY is set and not a placeholder
+    secret_key = os.getenv("SECRET_KEY", "")
+    if (
+        not secret_key
+        or secret_key == "your-secret-key-change-in-production"
+        or secret_key == "secret"
+    ):
+        raise RuntimeError(
+            "FATAL: SECRET_KEY not set, empty, or using default placeholder. "
+            "Set a strong random value in the environment before startup. "
+            "Example: export SECRET_KEY=$(openssl rand -hex 32)"
+        )
+
     try:
         from database import SessionLocal, engine, init_db
 

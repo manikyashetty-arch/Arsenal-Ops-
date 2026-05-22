@@ -7,7 +7,7 @@ services:
     container_name: arsenal-ops-db
     environment:
       POSTGRES_USER: arsenalops
-      POSTGRES_PASSWORD: arsenal_ops_secret
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
       POSTGRES_DB: arsenalops
     volumes:
       - postgres_data:/var/lib/postgresql/data
@@ -26,7 +26,7 @@ services:
       dockerfile: Dockerfile
     container_name: arsenal-ops-api
     environment:
-      - DATABASE_URL=postgresql://arsenalops:arsenal_ops_secret@postgres:5432/arsenalops
+      - DATABASE_URL=postgresql://arsenalops:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}@postgres:5432/arsenalops
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - AZURE_OPENAI_ENDPOINT=${AZURE_OPENAI_ENDPOINT}
       - AZURE_OPENAI_API_KEY=${AZURE_OPENAI_API_KEY}

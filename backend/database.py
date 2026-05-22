@@ -15,16 +15,23 @@ if not DATABASE_URL:
     DATABASE_URL = "sqlite:///./productmind.db"
 
 # Configure connection pooling for Neon
-connect_args = {"check_same_thread": False} if "sqlite" in DATABASE_URL else {}
+is_sqlite = "sqlite" in DATABASE_URL
+connect_args = {"check_same_thread": False} if is_sqlite else {}
 
-engine = create_engine(
-    DATABASE_URL,
-    connect_args=connect_args,
-    pool_pre_ping=True,  # Verify connections before using
-    pool_recycle=300,  # Recycle every 5 minutes
-    pool_size=5,  # Max 5 connections
-    max_overflow=10,  # Allow 10 extra if needed
-)
+# Build engine kwargs — SQLite doesn't support pool_size/max_overflow
+engine_kwargs = {
+    "connect_args": connect_args,
+}
+if not is_sqlite:
+    # PostgreSQL/Neon pooling configuration
+    engine_kwargs.update({
+        "pool_pre_ping": True,  # Verify connections before using
+        "pool_recycle": 300,  # Recycle every 5 minutes
+        "pool_size": 5,  # Max 5 connections
+        "max_overflow": 10,  # Allow 10 extra if needed
+    })
+
+engine = create_engine(DATABASE_URL, **engine_kwargs)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 

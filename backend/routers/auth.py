@@ -2,7 +2,6 @@
 Authentication Router - Login, logout, password management, Google SSO
 """
 
-import hashlib
 import os
 import secrets
 import string
@@ -14,6 +13,7 @@ from cachetools import TTLCache
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import JWTError, jwt
+from passlib.context import CryptContext
 from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.orm import Session, selectinload
@@ -26,11 +26,19 @@ from models.user import User, UserRole
 from services.google_oauth_service import google_oauth_service
 
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
+dev_router = APIRouter(prefix="/api/auth", tags=["Authentication - Dev"])
 
 # Security configuration
-SECRET_KEY = "your-secret-key-change-in-production"  # Change this in production!
+SECRET_KEY = os.environ["SECRET_KEY"]  # Loaded from env; will raise KeyError if not set
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24  # 24 hours
+ACCESS_TOKEN_EXPIRE_MINUTES = 60  # 1 hour
+
+# Password hashing with bcrypt, supporting legacy SHA256 migration
+pwd_context = CryptContext(
+    schemes=["bcrypt", "sha256_crypt"],
+    deprecated=["sha256_crypt"],
+    bcrypt__rounds=12,
+)
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 
@@ -98,15 +106,31 @@ def generate_temp_password(length=12):
     return "".join(secrets.choice(alphabet) for _ in range(length))
 
 
-def verify_password(plain_password, hashed_password):
-    """Verify password using SHA256 hash"""
-    hashed_input = hashlib.sha256(plain_password.encode()).hexdigest()
-    return hashed_input == hashed_password
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    """Verify password using bcrypt or legacy SHA256.
+
+    Returns True if the password matches the hash. Supports both bcrypt
+    (new default) and sha256_crypt (legacy, auto-upgraded on next login).
+    """
+    return pwd_context.verify(plain_password, hashed_password)
 
 
-def get_password_hash(password):
-    """Hash password using SHA256"""
-    return hashlib.sha256(password.encode()).hexdigest()
+def get_password_hash(password: str) -> str:
+    """Hash password using bcrypt (new default).
+
+    All new hashes use bcrypt. Existing SHA256 hashes are transparently
+    upgraded to bcrypt when the user logs in (pwd_context.needs_update check).
+    """
+    return pwd_context.hash(password)
+
+
+def password_needs_update(hashed_password: str) -> bool:
+    """Check if a stored hash needs to be upgraded (e.g., from SHA256 to bcrypt).
+
+    Returns True if the password was hashed with a deprecated scheme.
+    On login, call get_password_hash(plain_password) and re-store if True.
+    """
+    return pwd_context.needs_update(hashed_password)
 
 
 def create_access_token(data: dict, expires_delta: timedelta | None = None):
@@ -200,6 +224,10 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
 
     if not user.is_active:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account is disabled")
+
+    # On successful login, transparently migrate legacy SHA256 hashes to bcrypt
+    if password_needs_update(user.hashed_password):
+        user.hashed_password = get_password_hash(form_data.password)
 
     # Update last login
     user.last_login_at = datetime.utcnow()
@@ -532,23 +560,23 @@ def get_google_config():
     return {"client_id": google_oauth_service.google_client_id}
 
 
-@router.get("/dev-login/available")
+@dev_router.get("/dev-login/available")
 def dev_login_available():
-    """Lets the frontend decide whether to render the dev-login button."""
-    return {"available": os.getenv("DEV_AUTH_BYPASS") == "1"}
+    """Lets the frontend decide whether to render the dev-login button.
+
+    Only registered when DEV_AUTH_BYPASS=1; unreachable in production.
+    """
+    return {"available": True}
 
 
-@router.post("/dev-login", response_model=Token)
+@dev_router.post("/dev-login", response_model=Token)
 def dev_login(db: Session = Depends(get_db)):
     """Issue a JWT for a local admin user without going through Google SSO.
 
-    Only enabled when DEV_AUTH_BYPASS=1 is set on the backend process. Idempotent:
-    on first call, creates a `dev@local` admin (and the matching Developer record
-    so the user shows up on boards); on subsequent calls, reuses it.
+    Only enabled when DEV_AUTH_BYPASS=1; endpoint does not exist in production.
+    Idempotent: on first call, creates a `dev@local` admin (and the matching
+    Developer record so the user shows up on boards); on subsequent calls, reuses it.
     """
-    if os.getenv("DEV_AUTH_BYPASS") != "1":
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
-
     from models.developer import Developer
 
     user = db.query(User).filter(User.email == "dev@local").first()

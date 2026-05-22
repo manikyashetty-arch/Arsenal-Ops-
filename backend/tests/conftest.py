@@ -12,12 +12,17 @@ Provides:
 import os
 import sys
 from datetime import datetime, timedelta
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
+
+# Load .env.test so SECRET_KEY is set before importing main
+from dotenv import load_dotenv
+load_dotenv(Path(__file__).parent.parent / ".env.test")
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -48,7 +53,7 @@ from models.developer import Developer  # noqa: E402
 from models.developer import project_developers  # noqa: E402
 from models.project import Project  # noqa: E402
 from models.user import User  # noqa: E402
-from routers.auth import ACCESS_TOKEN_EXPIRE_MINUTES, ALGORITHM, SECRET_KEY, create_access_token  # noqa: E402
+from routers.auth import ACCESS_TOKEN_EXPIRE_MINUTES, ALGORITHM, SECRET_KEY, create_access_token, get_password_hash  # noqa: E402
 
 
 @pytest.fixture
@@ -126,6 +131,7 @@ def admin_user(db) -> tuple[User, str]:
     """Create an admin User and return (user, token) tuple.
 
     The User is committed to the db fixture and has role='admin'.
+    Uses a bcrypt-hashed password for compatibility with new verify_password.
     """
     user = User(
         email="admin@test.local",
@@ -133,7 +139,7 @@ def admin_user(db) -> tuple[User, str]:
         role="admin",
         is_active=True,
         is_first_login=False,
-        hashed_password="test-hash",
+        hashed_password=get_password_hash("test-password"),
     )
     db.add(user)
     db.commit()
@@ -147,6 +153,7 @@ def pm_user(db) -> tuple[User, str]:
     """Create a project manager User and return (user, token) tuple.
 
     The User is committed to the db fixture and has role='project_manager'.
+    Uses a bcrypt-hashed password for compatibility with new verify_password.
     """
     user = User(
         email="pm@test.local",
@@ -154,7 +161,7 @@ def pm_user(db) -> tuple[User, str]:
         role="project_manager",
         is_active=True,
         is_first_login=False,
-        hashed_password="test-hash",
+        hashed_password=get_password_hash("test-password"),
     )
     db.add(user)
     db.commit()
@@ -168,6 +175,7 @@ def dev_user(db) -> tuple[User, str]:
     """Create a developer User and return (user, token) tuple.
 
     The User is committed to the db fixture and has role='developer'.
+    Uses a bcrypt-hashed password for compatibility with new verify_password.
     """
     user = User(
         email="dev@test.local",
@@ -175,7 +183,7 @@ def dev_user(db) -> tuple[User, str]:
         role="developer",
         is_active=True,
         is_first_login=False,
-        hashed_password="test-hash",
+        hashed_password=get_password_hash("test-password"),
     )
     db.add(user)
     db.commit()

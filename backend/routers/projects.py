@@ -3,11 +3,14 @@ Projects Router - CRUD operations for projects with work item stats
 """
 
 import os
+import re
 import sys
+import uuid
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from fastapi.responses import FileResponse
+from pathlib import Path
 from pydantic import BaseModel
 from sqlalchemy import insert, select
 from sqlalchemy.orm import Session
@@ -23,6 +26,43 @@ from routers.auth import get_current_user
 from services.github_service import GitHubService, github_service
 
 router = APIRouter(prefix="/api/projects", tags=["Projects"])
+
+# File upload constants and helpers
+MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024  # 10 MB
+ALLOWED_MIME_TYPES = {
+    "application/pdf",
+    "image/jpeg",
+    "image/png",
+    "image/gif",
+    "image/webp",
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.ms-excel",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+}
+
+
+def sanitize_filename(filename: str) -> str:
+    """
+    Sanitize filename by extracting basename and removing unsafe characters.
+
+    Strips any path components via pathlib.Path.name, removes leading dots,
+    and keeps only alphanumeric, dots, hyphens, and underscores.
+    """
+    # Extract basename (strips any path components like ../ etc.)
+    basename = Path(filename).name
+
+    # Remove leading dots to prevent hidden files
+    basename = basename.lstrip(".")
+
+    # Keep only safe characters: alphanumeric, dots, hyphens, underscores
+    basename = re.sub(r"[^A-Za-z0-9._-]", "", basename)
+
+    # If the result is empty, provide a default
+    if not basename:
+        basename = "file"
+
+    return basename
 
 
 def has_project_access(project: Project, user: User) -> bool:
@@ -1305,10 +1345,25 @@ async def upload_project_file(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Upload a file to a project"""
+    """Upload a file to a project
+
+    Validates:
+    - MIME type (whitelist: PDF, common images, Office docs)
+    - File size (max 10 MB)
+    - Filename sanitization (no path traversal, safe characters only)
+    - UUID-prefixed filename to prevent collisions
+    """
     from models.project_file import ProjectFile
 
     require_project_access(project_id, current_user, db)
+
+    # Validate MIME type
+    content_type = file.content_type or "application/octet-stream"
+    if content_type not in ALLOWED_MIME_TYPES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"File type '{content_type}' not allowed. Supported: PDF, images (JPEG, PNG, GIF, WebP), Office docs",
+        )
 
     # Create uploads directory if it doesn't exist
     upload_dir = "uploads/projects"
@@ -1318,24 +1373,43 @@ async def upload_project_file(
     project_upload_dir = os.path.join(upload_dir, str(project_id))
     os.makedirs(project_upload_dir, exist_ok=True)
 
-    # Save file
-    file_path = os.path.join(project_upload_dir, file.filename)
+    # Sanitize filename and generate unique name with UUID prefix
+    original_name = sanitize_filename(file.filename)
+    unique_name = f"{uuid.uuid4().hex}_{original_name}"
+    file_path = os.path.join(project_upload_dir, unique_name)
+
+    # Read file in chunks and enforce size cap
+    total_bytes = 0
     try:
         with open(file_path, "wb") as f:
-            content = await file.read()
-            f.write(content)
+            while True:
+                chunk = await file.read(8192)  # 8KB chunks
+                if not chunk:
+                    break
+                total_bytes += len(chunk)
+                if total_bytes > MAX_FILE_SIZE_BYTES:
+                    # Clean up partial file
+                    f.close()
+                    if os.path.exists(file_path):
+                        os.remove(file_path)
+                    raise HTTPException(
+                        status_code=413,
+                        detail=f"File too large. Maximum size is {MAX_FILE_SIZE_BYTES // (1024*1024)} MB",
+                    )
+                f.write(chunk)
+    except HTTPException:
+        raise
     except Exception as e:
+        if os.path.exists(file_path):
+            os.remove(file_path)
         raise HTTPException(status_code=500, detail=f"Failed to save file: {str(e)}") from e
 
-    # Get file size
-    file_size = os.path.getsize(file_path)
-
-    # Create database record
+    # Create database record with sanitized name (without UUID prefix for display)
     db_file = ProjectFile(
         project_id=project_id,
-        file_name=file.filename,
-        file_size=file_size,
-        file_type=file.content_type or "application/octet-stream",
+        file_name=original_name,
+        file_size=total_bytes,
+        file_type=content_type,
         file_url="",  # Will be set after commit to get the ID
         uploaded_by=current_user.id,
         uploaded_by_name=current_user.email,
@@ -1367,7 +1441,7 @@ def download_project_file(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Download a file from a project"""
+    """Download a file from a project (directory-traversal-safe)"""
     from models.project_file import ProjectFile
 
     require_project_access(project_id, current_user, db)
@@ -1381,17 +1455,33 @@ def download_project_file(
     if not db_file:
         raise HTTPException(status_code=404, detail="File not found")
 
-    # Build file path
+    # Build file path and search for UUID-prefixed files
+    # (files are stored as {uuid}_{original_name} but DB record has only the original name)
     upload_dir = "uploads/projects"
     project_dir = os.path.join(upload_dir, str(project_id))
-    file_path = os.path.join(project_dir, db_file.file_name)
 
-    # Check if file exists
-    if not os.path.exists(file_path):
+    # Find the actual file on disk by matching the start of the filename
+    # (database stores only original name; disk stores UUID-prefixed)
+    actual_file_path = None
+    if os.path.exists(project_dir):
+        for filename in os.listdir(project_dir):
+            # Match UUID-prefixed files that end with the original filename
+            if filename.endswith(db_file.file_name):
+                candidate = os.path.join(project_dir, filename)
+                # Verify it's a file and not a directory traversal attempt
+                if os.path.isfile(candidate) and os.path.abspath(candidate).startswith(
+                    os.path.abspath(project_dir)
+                ):
+                    actual_file_path = candidate
+                    break
+
+    if not actual_file_path or not os.path.exists(actual_file_path):
         raise HTTPException(status_code=404, detail="File not found on disk")
 
     # Return file with proper headers
-    return FileResponse(path=file_path, filename=db_file.file_name, media_type=db_file.file_type)
+    return FileResponse(
+        path=actual_file_path, filename=db_file.file_name, media_type=db_file.file_type
+    )
 
 
 @router.delete("/{project_id}/files/{file_id}")
