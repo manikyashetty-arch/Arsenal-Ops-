@@ -10,43 +10,31 @@ Living document. Bugs are added as they are surfaced (by the audit, by tests pin
 
 When a bug is fixed: change status to `fixed`, link the fix commit, and flip the pinning `xfail` to a regular assertion (drop the marker).
 
-**Last updated:** 2026-05-22 — Weeks 5+6+8 landed. 348 tests across stack (222 backend + 126 frontend), 2 E2E passing + 13 .fixme, schemathesis contract suite running in CI (108 failures = real schema drift, see P1-18).
+**Last updated:** 2026-05-22 — Tier A security/correctness sprint landed. 11 entries closed across two rounds (3 IDORs + 4 silent-errors + 3 P0 hardening + 1 token expiry). Backend 224 / 1 skip / 4 xfail (down from 7 — three xfails flipped to real passing assertions). Frontend 126 / 8 skip.
 
 ---
 
 ## P0 — Blockers (must fix before production traffic)
 
-### P0-1 — Hardcoded JWT signing secret
-- **Status:** open
+### P0-1 — Hardcoded JWT signing secret *(fixed)*
+- **Status:** fixed (commit `620284ea`)
 - **Source:** Audit (production-readiness review)
-- **Location:** [backend/routers/auth.py:31](../backend/routers/auth.py#L31) — `SECRET_KEY = "your-secret-key-change-in-production"`
-- **Impact:** Anyone with the source can forge valid JWTs.
-- **Pinned by:** not yet — would require a startup-guard test that the secret env var is set
-- **Fix plan:** Load from env, fail startup if unset or equals the default placeholder.
+- **Fix:** `SECRET_KEY = os.environ["SECRET_KEY"]` in [backend/routers/auth.py](../backend/routers/auth.py). Startup guard in [backend/main.py](../backend/main.py) raises `RuntimeError` if env var unset, empty, or equals "your-secret-key-change-in-production" / "secret".
 
-### P0-2 — Weak password hashing (unsalted SHA-256)
-- **Status:** open
+### P0-2 — Weak password hashing (unsalted SHA-256) *(fixed)*
+- **Status:** fixed (commit `620284ea`)
 - **Source:** Audit
-- **Location:** [backend/routers/auth.py:101-109](../backend/routers/auth.py#L101-L109). Note: `create_admin.py` correctly uses bcrypt; the login path doesn't.
-- **Impact:** Vulnerable to rainbow tables; no per-user salt.
-- **Pinned by:** auth tests (`test_auth.py`) currently exercise the SHA-256 path; they will keep passing if migrated to bcrypt via `passlib.CryptContext` + on-login rehash.
-- **Fix plan:** `passlib.CryptContext(schemes=["bcrypt"], deprecated=["sha256_crypt"])` with `needs_update` migration on successful login.
+- **Fix:** `passlib.CryptContext(schemes=["bcrypt", "sha256_crypt"], deprecated=["sha256_crypt"], bcrypt__rounds=12)`. New hashes are bcrypt. Existing SHA-256 hashes continue to verify and get transparently upgraded to bcrypt on next successful login via `password_needs_update()` + re-hash + commit. Locked by `test_bcrypt_migration_on_login` in [test_auth.py](../backend/tests/test_auth.py).
 
-### P0-3 — Dev-login endpoint always registered
-- **Status:** open
+### P0-3 — Dev-login endpoint always registered *(fixed)*
+- **Status:** fixed (commit `620284ea`)
 - **Source:** Audit
-- **Location:** [backend/routers/auth.py:535-589](../backend/routers/auth.py#L535-L589) — gated by `DEV_AUTH_BYPASS` env var at runtime; endpoint is always mounted.
-- **Impact:** One config slip = instant admin login in production.
-- **Pinned by:** `test_auth.py::TestDevLoginGating` confirms the env-gating works **when** `DEV_AUTH_BYPASS` is unset. Does NOT pin the success path (deliberately — that endpoint should disappear in the fix).
-- **Fix plan:** Gate at router-inclusion time in `main.py` rather than per-request env check, or strip the endpoint entirely in prod builds.
+- **Fix:** Dev-login endpoints moved to a separate `dev_router` in [backend/routers/auth.py](../backend/routers/auth.py); main.py only includes it when `DEV_AUTH_BYPASS=1`. In production the endpoints don't exist at all — FastAPI returns a router-level 404. Logger warning fires at startup when dev_router is registered.
 
-### P0-4 — Unsafe file upload (directory traversal)
-- **Status:** open
+### P0-4 — Unsafe file upload (directory traversal) *(fixed)*
+- **Status:** fixed (commit `620284ea`)
 - **Source:** Audit
-- **Location:** [backend/routers/projects.py:1322,1387-1394](../backend/routers/projects.py#L1322) — `file.filename` used directly in filesystem path; no MIME validation, no size cap, no sanitization.
-- **Impact:** Directory traversal trivially possible (`../../../etc/passwd`).
-- **Pinned by:** not yet
-- **Fix plan:** `pathlib.Path(filename).name` to strip path components; validate MIME via `python-magic`; enforce max size.
+- **Fix:** `sanitize_filename()` helper in [backend/routers/projects.py](../backend/routers/projects.py) strips path components, leading dots, and non-`[A-Za-z0-9._-]` chars. 10 MB size cap (HTTP 413 on overflow). MIME whitelist for PDFs/images/Office docs. Stored files use UUID-prefixed names to prevent collision. Download handler validates the resolved path stays within `project_dir`.
 
 ### P0-5 — JWT in `localStorage` (XSS-exposed)
 - **Status:** open
@@ -64,20 +52,15 @@ When a bug is fixed: change status to `fixed`, link the fix commit, and flip the
 - **Pinned by:** N/A (config, not runtime behavior)
 - **Fix plan:** Multi-stage build: `npm run build` → serve `/dist` via Nginx; add CSP, HSTS, X-Frame-Options.
 
-### P0-7 — Stack-trace leak via global 500 handler
-- **Status:** open
+### P0-7 — Stack-trace leak via global 500 handler *(fixed)*
+- **Status:** fixed (commit `620284ea`)
 - **Source:** Audit
-- **Location:** [backend/main.py:123-127](../backend/main.py#L123-L127) — returns `str(exc)` to clients.
-- **Impact:** Leaks SQL, file paths, internal exception messages.
-- **Pinned by:** not yet
-- **Fix plan:** Log full exception server-side; return opaque `{"detail": "Internal error"}` with a correlation ID.
+- **Fix:** [backend/main.py](../backend/main.py) `global_exception_handler` now generates an 8-char correlation ID, logs the full exception+traceback server-side (with the ID in the prefix for grep), and returns opaque `{"detail": "Internal error", "request_id": "<id>"}` to the client.
 
-### P0-8 — DB password hardcoded in docker-compose.yml
-- **Status:** open
+### P0-8 — DB password hardcoded in docker-compose.yml *(fixed)*
+- **Status:** fixed (commit `620284ea`)
 - **Source:** Audit
-- **Location:** [docker-compose.yml:10](../docker-compose.yml#L10) — `POSTGRES_PASSWORD: arsenal_ops_secret`
-- **Impact:** Even as a dev default it shouldn't be in source control.
-- **Fix plan:** Replace with `${POSTGRES_PASSWORD:?}`; document in `.env.example`.
+- **Fix:** `POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}` in [docker-compose.yml](../docker-compose.yml). Documented in [.env.example](../.env.example). Compose now fails with a clear error if the var is unset.
 
 ### P0-9 — No migration system (ad-hoc `migrate_*.py` scripts)
 - **Status:** open
@@ -91,29 +74,20 @@ When a bug is fixed: change status to `fixed`, link the fix commit, and flip the
 
 ## P1 — Production Fragility
 
-### P1-1 — IDOR: cross-project comment reads
-- **Status:** pinned
+### P1-1 — IDOR: cross-project comment reads *(fixed)*
+- **Status:** fixed (commit `a59d3ac1`)
 - **Source:** Audit (P1 #14) — confirmed by test
-- **Location:** [backend/routers/comments.py:86-96](../backend/routers/comments.py#L86-L96)
-- **Pinned by:** `backend/tests/test_comments.py::TestCommentsIDOR::test_user_cannot_read_comments_on_unaffiliated_project` (xfail; flip to assert 403/404 after fix)
-- **Impact:** Any authenticated user can read comments on work items in projects they aren't assigned to.
-- **Fix plan:** Load `work_item.project`, verify `has_project_access(project, current_user)` before returning comments.
+- **Fix:** GET handler in [backend/routers/comments.py](../backend/routers/comments.py) loads `work_item.project` and rejects with 404 (not 403, prevents enumeration) when the user isn't a project member or system admin. Reused existing `has_project_access()` helper from `routers/projects.py`. Test flipped from xfail to a regular pass.
 
-### P1-2 — IDOR: cross-project comment writes
-- **Status:** pinned
+### P1-2 — IDOR: cross-project comment writes *(fixed)*
+- **Status:** fixed (commit `a59d3ac1`)
 - **Source:** Audit (P1 #14) — confirmed by test
-- **Location:** [backend/routers/comments.py](../backend/routers/comments.py) (POST handler)
-- **Pinned by:** `backend/tests/test_comments.py::TestCommentsIDOR::test_user_cannot_create_comment_on_unaffiliated_project` (xfail)
-- **Impact:** Any authenticated user can post comments on work items in projects they aren't assigned to.
-- **Fix plan:** Same as P1-1 — guard before insert.
+- **Fix:** Same guard as P1-1 applied to the POST handler — verify project access before insert; 404 if denied. Test flipped from xfail to a regular pass that also asserts no comment was persisted on rejection.
 
-### P1-3 — IDOR: `convert_to_ticket` accepts cross-project assignee
-- **Status:** pinned
+### P1-3 — IDOR: `convert_to_ticket` accepts cross-project assignee *(fixed)*
+- **Status:** fixed (commit `a59d3ac1`)
 - **Source:** Audit (P1 #14) — confirmed by test
-- **Location:** [backend/routers/personal_tasks.py:200-204](../backend/routers/personal_tasks.py#L200-L204)
-- **Pinned by:** `backend/tests/test_personal_tasks.py::TestConvertToTicket::test_convert_to_ticket_with_assignee_outside_project` (xfail)
-- **Impact:** Tickets can be assigned to developers who aren't members of the target project, breaking project isolation and capacity accounting.
-- **Fix plan:** Before accepting `assignee_developer_id`, verify it appears in the target project's developer list.
+- **Fix:** `convert_to_ticket` handler in [backend/routers/personal_tasks.py](../backend/routers/personal_tasks.py) now validates `assignee_developer_id` against the target project's developer list before accepting. Returns 422 with a "developer not in project" message if not. Test flipped from xfail to regular pass asserting 422.
 
 ### P1-4 — Admin: `specialization` field accepted but not persisted
 - **Status:** pinned
@@ -179,11 +153,11 @@ When a bug is fixed: change status to `fixed`, link the fix commit, and flip the
 - **Pinned by:** `test_capacity_properties.py::test_transfer_conservation_invariant` (passing) would have caught it pre-incident. `test_log_hours_defenses.py` pins three defenses already.
 - **Fix plan:** Wrap critical section in explicit `SERIALIZABLE` isolation transaction.
 
-### P1-13 — Token expiry 24h, no refresh, no revocation
-- **Status:** open
+### P1-13 — Token expiry 24h, no refresh, no revocation *(partially fixed)*
+- **Status:** partially fixed (commit `620284ea`)
 - **Source:** Audit
-- **Location:** [backend/routers/auth.py:33](../backend/routers/auth.py#L33) — `ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24`
-- **Fix plan:** Reduce to 15–60 min; add refresh token endpoint with rotation; track issued tokens for revocation.
+- **Fix (partial):** `ACCESS_TOKEN_EXPIRE_MINUTES` reduced from 1440 (24h) to 60 (1h).
+- **Remaining:** Refresh-token endpoint with rotation; token revocation/blacklist. Deferred to a follow-up — the 1h expiry materially reduces the blast radius of a stolen token without requiring the bigger refresh-flow refactor.
 
 ### P1-14 — Logging on Render is unstructured stdout
 - **Status:** open
@@ -220,38 +194,25 @@ When a bug is fixed: change status to `fixed`, link the fix commit, and flip the
 - **Impact:** Non-admins see admin UI flash before backend rejections; bad UX, slight info leak.
 - **Fix plan:** Wrap `<AdminDashboard />` route with `<RequireRole role="admin">` redirect-to-`/` HOC.
 
-### P2-2 — ProjectBoard silently swallows API errors
-- **Status:** pinned (FIXME)
+### P2-2 — ProjectBoard silently swallows API errors *(fixed)*
+- **Status:** fixed (commit `760c9d95`)
 - **Source:** Test (`ProjectBoard.test.tsx`) — finding
-- **Location:** [app/src/pages/ProjectBoard/ProjectBoard.tsx](../app/src/pages/ProjectBoard/ProjectBoard.tsx)
-- **Pinned by:** `ProjectBoard.test.tsx` — FIXME comment + skipped error-state test
-- **Impact:** When `/api/workitems/board` returns 500, users see nothing — no toast, no retry, no error state.
-- **Fix plan:** Add a global `useQuery` `onError` handler (or route-level error boundary) that surfaces a toast and offers retry.
+- **Fix:** Closed as part of the unified silent-error PR. Global error handler wired into [app/src/lib/queryClient.ts](../app/src/lib/queryClient.ts) via `QueryCache` + `MutationCache` onError → sonner toast (skipping 401 since AuthContext handles those). Also added [app/src/components/RouteErrorBoundary.tsx](../app/src/components/RouteErrorBoundary.tsx) wrapping each top-level route in `App.tsx`.
 
-### P2-3 — ProjectsPage swallows API errors silently
-- **Status:** pinned (skipped)
+### P2-3 — ProjectsPage swallows API errors silently *(fixed)*
+- **Status:** fixed (commit `760c9d95`)
 - **Source:** Test (`ProjectsPage.test.tsx`) — Week 2 finding
-- **Location:** [app/src/pages/ProjectsPage.tsx](../app/src/pages/ProjectsPage.tsx)
-- **Pinned by:** `ProjectsPage.test.tsx` — error-state test skipped with FIXME
-- **Fix plan:** Same as P2-2.
+- **Fix:** Same global QueryCache/MutationCache onError handler as P2-2. Pinning test (`ProjectsPage.test.tsx`) updated to use the correct `{ detail: ... }` FastAPI error envelope. Test assertion is intentionally light ("page renders without crashing"); strengthening to assert toast appearance is a TODO follow-up.
 
-### P2-3a — ItemDetailDrawer silently fails on 500 errors
-- **Status:** pinned (FIXME)
+### P2-3a — ItemDetailDrawer silently fails on 500 errors *(fixed)*
+- **Status:** fixed (commit `760c9d95`)
 - **Source:** Test (`ItemDetailDrawer.test.tsx`) — Tier-2 batch finding
-- **Location:** [app/src/pages/ProjectBoard/ItemDetailDrawer.tsx](../app/src/pages/ProjectBoard/ItemDetailDrawer.tsx)
-- **Pinned by:** `ItemDetailDrawer.test.tsx` — test 7 documents the silent fallback to `selectedItem` prop on detail-fetch failure.
-- **Impact:** When `/api/workitems/:id` returns 500, the drawer silently uses stale prop data with no error indicator. User has no way to know the fresh fetch failed.
-- **Fix plan:** Same family as P2-2 — surface a toast + retry affordance. Single shared error-handling primitive would address P2-2, P2-3, and P2-3a together.
+- **Fix:** Global query error handler surfaces a toast on the 500. The drawer continues to render `selectedItem` prop as a fallback (intentional — better UX than blanking out), but the toast informs the user the fresh fetch failed.
 
-### P2-3b — ProjectDetail shows "Project not found" on any error
-- **Status:** pinned (FIXME)
+### P2-3b — ProjectDetail shows "Project not found" on any error *(fixed)*
+- **Status:** fixed (commit `760c9d95`)
 - **Source:** Test (`ProjectDetail.test.tsx`) — Tier-2 batch finding
-- **Location:** [app/src/pages/ProjectDetail/ProjectDetail.tsx](../app/src/pages/ProjectDetail/ProjectDetail.tsx)
-- **Pinned by:** `ProjectDetail.test.tsx` — 500 error test passes only because the page conflates 500 with 404, both rendering "Project not found".
-- **Impact:** A transient backend failure looks identical to a missing project, hiding genuine outages from users.
-- **Fix plan:** Distinguish error categories in the query's `error` handler; show a retry-able error state for 5xx vs the existing "not found" UI for 404. Companion to P2-2/P2-3/P2-3a.
-
-**Pattern observed:** P2-2, P2-3, P2-3a, P2-3b are all instances of the same systemic frontend gap — no shared error-handling primitive. A single PR introducing a `useApiErrorToast()` hook (wired via TanStack Query's `QueryClient` global `onError`) + a `<RouteErrorBoundary />` for non-recoverable cases would close all four.
+- **Fix:** [app/src/pages/ProjectDetail/ProjectDetail.tsx](../app/src/pages/ProjectDetail/ProjectDetail.tsx) now distinguishes 404 (renders "Project not found") from other errors (renders "Could not load project" with a Retry button). Uses `ApiError.status === 404` for the discriminator.
 
 ### P2-4 — 85 `any` types in frontend
 - **Status:** open
