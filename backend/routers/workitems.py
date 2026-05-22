@@ -316,10 +316,9 @@ def list_work_items(
 class SlimWorkItem(BaseModel):
     """Slim payload used by the Kanban board endpoint.
 
-    Excludes heavy fields (description, acceptance_criteria, started_at,
-    completed_at) that the board view never renders. Wire size is roughly
-    40-50% of the full row, which adds up fast on projects with hundreds
-    of items.
+    Excludes heavy fields (description, acceptance_criteria, started_at)
+    that the board view never renders. Wire size is roughly 40-50% of
+    the full row, which adds up fast on projects with hundreds of items.
     """
 
     id: str
@@ -340,6 +339,8 @@ class SlimWorkItem(BaseModel):
     remaining_hours: int = 0
     assigned_hours: int = 0
     logged_hours: int = 0
+    due_date: str | None = None
+    completed_at: str | None = None
 
 
 @router.get("/board", response_model=list[SlimWorkItem])
@@ -394,6 +395,8 @@ def list_board_items(
             remaining_hours=item.remaining_hours or 0,
             assigned_hours=item.estimated_hours or 0,
             logged_hours=item.logged_hours or 0,
+            due_date=item.due_date.isoformat() if item.due_date else None,
+            completed_at=item.completed_at.isoformat() if item.completed_at else None,
         )
         for item in items
     ]
