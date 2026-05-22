@@ -1,4 +1,4 @@
-import { ReactElement } from 'react'
+import React, { ReactElement } from 'react'
 import { render, RenderOptions } from '@testing-library/react'
 import { QueryClientProvider, QueryClient } from '@tanstack/react-query'
 import { MemoryRouter, MemoryRouterProps } from 'react-router-dom'
@@ -6,12 +6,14 @@ import { AuthProvider } from '@/contexts/AuthContext'
 
 interface RenderWithProvidersOptions extends Omit<RenderOptions, 'wrapper'> {
   routerProps?: Omit<MemoryRouterProps, 'children'>
+  initialPath?: string
 }
 
 export function renderWithProviders(
   ui: ReactElement,
   {
     routerProps = {},
+    initialPath,
     ...renderOptions
   }: RenderWithProvidersOptions = {},
 ) {
@@ -22,11 +24,15 @@ export function renderWithProviders(
     },
   })
 
-  function Wrapper({ children }: { children: ReactElement }) {
+  const finalRouterProps: Omit<MemoryRouterProps, 'children'> = initialPath
+    ? { initialEntries: [initialPath], ...routerProps }
+    : routerProps
+
+  function Wrapper({ children }: { children: React.ReactNode }) {
     return (
       <QueryClientProvider client={queryClient}>
-        <MemoryRouter {...routerProps}>
-          <AuthProvider>{children}</AuthProvider>
+        <MemoryRouter {...finalRouterProps}>
+          <AuthProvider>{children as ReactElement}</AuthProvider>
         </MemoryRouter>
       </QueryClientProvider>
     )
