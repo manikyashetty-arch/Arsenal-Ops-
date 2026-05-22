@@ -55,6 +55,11 @@ e2e:
 e2e-ui:
     cd app && npm run e2e:ui
 
+# Run Lighthouse CI locally (requires @lhci/cli; npx will install on first use)
+lighthouse:
+    cd app && npm run build
+    npx --yes @lhci/cli@latest autorun --config=../.lighthouserc.json
+
 # Install pre-commit hooks (run this once per clone)
 precommit-install:
     pre-commit install
