@@ -84,11 +84,23 @@ import { QueryClient } from '@tanstack/react-query';
 export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 30_000,
+      staleTime: 5 * 60_000,
       gcTime: 5 * 60_000,
       refetchOnMount: false,
-      refetchOnWindowFocus: true,
-      retry: 1,
+      refetchOnWindowFocus: false,
+      retry: (failureCount, error) => {
+        // Don't retry on 404 — the resource genuinely doesn't exist.
+        // Matches `ApiError` shape from `@/lib/api`.
+        if (
+          error &&
+          typeof error === 'object' &&
+          'status' in error &&
+          (error as { status: number }).status === 404
+        ) {
+          return false;
+        }
+        return failureCount < 1;
+      },
     },
     mutations: {
       retry: 0,

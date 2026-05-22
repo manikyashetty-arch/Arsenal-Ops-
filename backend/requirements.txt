@@ -13,11 +13,13 @@ PyPDF2>=3.0.0
 python-docx>=1.1.0
 python-multipart>=0.0.9
 openpyxl>=3.0.0
+orjson>=3.9
 python-jose[cryptography]>=3.3.0
 passlib==1.7.4
 bcrypt==3.2.2
 google-auth>=2.26.0
 google-auth-oauthlib>=1.2.0
+cachetools>=5.3
 
 # Lint / formatting — pinned because CI runs `ruff check` + `ruff format
 # --check` and version drift would cause spurious failures.

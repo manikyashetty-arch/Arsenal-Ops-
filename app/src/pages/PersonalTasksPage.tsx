@@ -33,6 +33,7 @@ import {
 } from '@/components/ui/select';
 import { useAuth } from '@/contexts/AuthContext';
 import { apiFetch } from '@/lib/api';
+import { invalidateProjectScope } from '@/lib/invalidations';
 
 // Helper function to parse YYYY-MM-DD string to local Date object (avoids UTC timezone issues)
 const parseLocalDate = (dateString: string | undefined): Date | undefined => {
@@ -171,7 +172,6 @@ const PersonalTasksPage = () => {
         }),
       }),
     onSuccess: () => {
-      invalidateTasks();
       setNewTask({
         title: '',
         description: '',
@@ -185,6 +185,7 @@ const PersonalTasksPage = () => {
       toast.success('Task created!');
     },
     onError: () => toast.error('Failed to create task'),
+    onSettled: () => invalidateTasks(),
   });
 
   const updateMutation = useMutation({
@@ -199,21 +200,21 @@ const PersonalTasksPage = () => {
         }),
       }),
     onSuccess: () => {
-      invalidateTasks();
       resetForm();
       toast.success('Task updated!');
     },
     onError: () => toast.error('Failed to update task'),
+    onSettled: () => invalidateTasks(),
   });
 
   const deleteMutation = useMutation({
     mutationFn: (taskId: number) =>
       apiFetch<void>(`/api/personal-tasks/${taskId}`, { method: 'DELETE' }),
     onSuccess: () => {
-      invalidateTasks();
       toast.success('Task deleted');
     },
     onError: () => toast.error('Failed to delete task'),
+    onSettled: () => invalidateTasks(),
   });
 
   const convertMutation = useMutation({
@@ -245,9 +246,17 @@ const PersonalTasksPage = () => {
       setConvertAssigneeId('');
       setConvertEstimatedHours('');
       setMemberLookupProjectId('');
-      invalidateTasks();
     },
     onError: () => toast.error('Failed to convert'),
+    onSettled: () => {
+      invalidateTasks();
+      queryClient.invalidateQueries({ queryKey: ['myTasks'] });
+      queryClient.invalidateQueries({ queryKey: ['workItems'] });
+      const pid = parseInt(convertProjectId);
+      if (!Number.isNaN(pid)) {
+        invalidateProjectScope(queryClient, pid);
+      }
+    },
   });
 
   const toggleTaskComplete = (task: PersonalTask) => {

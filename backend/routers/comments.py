@@ -4,7 +4,7 @@ import re
 import sys
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -46,30 +46,39 @@ class CommentResponse(BaseModel):
 
 
 def extract_mentions(content: str, db: Session) -> list[int]:
-    """Extract @mentioned user names from content. Format: @John Doe Smith"""
-    mentioned_ids = []
+    """Extract @mentioned user names from content. Format: @John Doe Smith.
 
-    print(content)
-    # Find all @mentions - text after @ until next space or @
-    for match in re.finditer(r"@([^@\s]+(?:\s+[^@\s]+)*)", content):
+    Performance: loads the developer roster ONCE per call (was N+1 — one query
+    per mention plus a full table scan as a fallback).
+    """
+    mentioned_ids: list[int] = []
+
+    matches = list(re.finditer(r"@([^@\s]+(?:\s+[^@\s]+)*)", content))
+    if not matches:
+        return mentioned_ids
+
+    # Cache the roster once. Keyed by exact name for the primary lookup;
+    # the same list is reused for the prefix fallback.
+    all_devs = db.query(Developer).all()
+    by_name = {d.name: d.id for d in all_devs}
+
+    for match in matches:
         mention_text = match.group(1).strip()
 
-        # Try to parse as ID first
         if mention_text.isdigit():
             mentioned_ids.append(int(mention_text))
-        else:
-            # Find developer by exact name match
-            dev = db.query(Developer).filter(Developer.name == mention_text).first()
-            if dev:
-                mentioned_ids.append(dev.id)
-            else:
-                # If no exact match, try to find by closest prefix match
-                # This handles cases where mention might have extra text after it
-                devs = db.query(Developer).all()
-                for d in devs:
-                    if mention_text.startswith(d.name):
-                        mentioned_ids.append(d.id)
-                        break
+            continue
+
+        exact_id = by_name.get(mention_text)
+        if exact_id is not None:
+            mentioned_ids.append(exact_id)
+            continue
+
+        # Prefix fallback — mention may have trailing text glued on
+        for d in all_devs:
+            if mention_text.startswith(d.name):
+                mentioned_ids.append(d.id)
+                break
 
     return mentioned_ids
 
@@ -112,6 +121,7 @@ def get_comments(
 @router.post("/", response_model=CommentResponse)
 def create_comment(
     comment: CommentCreate,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -144,22 +154,24 @@ def create_comment(
     # Get author name
     author_name = author.name if author else "Unknown"
 
-    # Send email notifications to mentioned users
+    # Send email notifications to mentioned users (off the request thread)
     is_blocker = comment.comment_type == "blocker"
-    for mentioned_id in mentions:
-        mentioned_user = db.query(Developer).filter(Developer.id == mentioned_id).first()
-        if mentioned_user and mentioned_user.email:
-            email_service.send_mention_notification(
-                to_email=mentioned_user.email,
-                to_name=mentioned_user.name,
-                author_name=author_name,
-                work_item_key=work_item.key,
-                work_item_title=work_item.title,
-                comment_content=comment.content,
-                project_id=work_item.project_id,
-                work_item_id=work_item.id,
-                is_blocker=is_blocker,
-            )
+    if mentions:
+        mentioned_users = db.query(Developer).filter(Developer.id.in_(mentions)).all()
+        for mentioned_user in mentioned_users:
+            if mentioned_user.email:
+                background_tasks.add_task(
+                    email_service.send_mention_notification,
+                    to_email=mentioned_user.email,
+                    to_name=mentioned_user.name,
+                    author_name=author_name,
+                    work_item_key=work_item.key,
+                    work_item_title=work_item.title,
+                    comment_content=comment.content,
+                    project_id=work_item.project_id,
+                    work_item_id=work_item.id,
+                    is_blocker=is_blocker,
+                )
 
     return CommentResponse(
         id=new_comment.id,

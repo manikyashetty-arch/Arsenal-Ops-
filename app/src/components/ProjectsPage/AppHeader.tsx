@@ -1,7 +1,7 @@
 import { Settings, LogOut } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/contexts/AuthContext';
-import arsenalOpsLogo from '@/assets/images/arsenal-ops-logo.png';
+import arsenalOpsLogo from '@/assets/images/arsenal-ops-logo.webp';
 
 interface AppHeaderProps {
   user: { name: string; role: string } | null;
@@ -14,7 +14,17 @@ const AppHeader = ({ user, onAdminClick, onLogout }: AppHeaderProps) => {
   return (
     <header className="border-b border-[rgba(255,255,255,0.05)] bg-[#080808]/90 backdrop-blur-xl sticky top-0 z-50">
       <div className="max-w-[1400px] mx-auto px-8 py-5 flex items-center justify-between">
-        <img src={arsenalOpsLogo} alt="Arsenal Ops" className="h-11 w-auto" />
+        <img
+          src={arsenalOpsLogo}
+          alt="Arsenal Ops"
+          className="h-11 w-auto"
+          width={1043}
+          height={198}
+          loading="eager"
+          // @ts-expect-error — fetchpriority is a valid HTML attr that React 18 lower-cases
+          fetchpriority="high"
+          decoding="async"
+        />
         <div className="flex items-center gap-3">
           {user && (
             <div className="flex items-center gap-2 mr-2">
