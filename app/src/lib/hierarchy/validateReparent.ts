@@ -9,6 +9,10 @@ export interface HierarchyItem {
   epic_id?: number | null;
 }
 
+// Canonical model (Story / Task / Bug are siblings under Epic; parent_id is
+// disabled for every type). The depth-1 / has-children plumbing stays in
+// place so the rule can be relaxed later (e.g. sub-tasks under Story) by
+// re-populating the parent_id row.
 const TYPE_PAIR_RULES: Record<RelationshipField, Partial<Record<WorkItemType, WorkItemType[]>>> = {
   epic_id: {
     user_story: ['epic'],
@@ -17,7 +21,7 @@ const TYPE_PAIR_RULES: Record<RelationshipField, Partial<Record<WorkItemType, Wo
     epic: [],
   },
   parent_id: {
-    task: ['task', 'user_story'],
+    task: [],
     user_story: [],
     bug: [],
     epic: [],

@@ -1,7 +1,13 @@
 """Tests for ``services.hierarchy.validate_hierarchy``.
 
 Mirrors the rules encoded on the frontend in
-``app/src/lib/hierarchy/validateReparent.ts`` plus the depth-1 cap.
+``app/src/lib/hierarchy/validateReparent.ts``.
+
+Per the current consensus model, Story / Task / Bug are siblings under Epic
+and ``parent_id`` is disabled for every type. The depth-1 / has-children
+plumbing in ``services.hierarchy`` stays for the day we re-enable sub-tasks;
+its tests will return at that point. While disabled, any non-null parent_id
+is rejected at the ``type_disallowed`` gate before reaching those checks.
 """
 
 import os
@@ -110,12 +116,8 @@ def test_create_story_under_epic_passes(db, seed):
     validate_hierarchy(db, item_type="user_story", project_id=1, parent_id=None, epic_id=10)
 
 
-def test_create_task_under_story_passes(db, seed):
-    validate_hierarchy(db, item_type="task", project_id=1, parent_id=11, epic_id=None)
-
-
-def test_create_task_under_task_passes(db, seed):
-    validate_hierarchy(db, item_type="task", project_id=1, parent_id=12, epic_id=None)
+def test_create_task_under_epic_passes(db, seed):
+    validate_hierarchy(db, item_type="task", project_id=1, parent_id=None, epic_id=10)
 
 
 def test_create_bug_under_epic_passes(db, seed):
@@ -166,33 +168,20 @@ def test_bug_cannot_have_parent_id(db, seed):
     assert exc.value.detail["code"] == "type_disallowed"
 
 
-def test_task_parent_must_be_task_or_story(db, seed):
+def test_task_cannot_have_parent_id(db, seed):
+    """Task is a sibling of Story/Bug under Epic; parent_id is disabled."""
     with pytest.raises(HTTPException) as exc:
-        validate_hierarchy(db, item_type="task", project_id=1, parent_id=13, epic_id=None)
-    assert exc.value.detail["code"] == "parent_type_invalid"
+        validate_hierarchy(db, item_type="task", project_id=1, parent_id=11, epic_id=None)
+    assert exc.value.detail["code"] == "type_disallowed"
 
 
-def test_task_parent_cannot_be_epic(db, seed):
+# ---------- Cross-cutting rules (exercised through epic_id while parent_id is disabled) ----------
+
+
+def test_epic_id_not_found(db, seed):
     with pytest.raises(HTTPException) as exc:
-        validate_hierarchy(db, item_type="task", project_id=1, parent_id=10, epic_id=None)
-    assert exc.value.detail["code"] == "parent_type_invalid"
-
-
-# ---------- Cross-cutting rules ----------
-
-
-def test_parent_must_exist(db, seed):
-    with pytest.raises(HTTPException) as exc:
-        validate_hierarchy(db, item_type="task", project_id=1, parent_id=9999, epic_id=None)
+        validate_hierarchy(db, item_type="user_story", project_id=1, parent_id=None, epic_id=9999)
     assert exc.value.detail["code"] == "parent_not_found"
-
-
-def test_parent_must_be_same_project(db, seed):
-    _add_item(db, id_=21, project_id=2, type_="user_story")
-    db.commit()
-    with pytest.raises(HTTPException) as exc:
-        validate_hierarchy(db, item_type="task", project_id=1, parent_id=21, epic_id=None)
-    assert exc.value.detail["code"] == "cross_project"
 
 
 def test_epic_id_must_be_same_project(db, seed):
@@ -201,47 +190,18 @@ def test_epic_id_must_be_same_project(db, seed):
     assert exc.value.detail["code"] == "cross_project"
 
 
-def test_self_parent_rejected(db, seed):
+def test_self_parent_rejected_for_epic_id(db, seed):
+    # A story can't point its own epic_id at itself.
     with pytest.raises(HTTPException) as exc:
         validate_hierarchy(
             db,
-            item_type="task",
+            item_type="user_story",
             project_id=1,
-            parent_id=12,
-            epic_id=None,
-            item_id=12,
+            parent_id=None,
+            epic_id=11,
+            item_id=11,
         )
     assert exc.value.detail["code"] == "self_parent"
-
-
-# ---------- Depth-1 cap ----------
-
-
-def test_depth_exceeded_when_parent_already_has_parent(db, seed):
-    # Task 14 is a child of Task 12 (which is itself standalone -> depth 1 OK).
-    _add_item(db, id_=14, project_id=1, type_="task", parent_id=12)
-    db.commit()
-    # Now creating Task 15 under Task 14 would be depth 2 -> reject.
-    with pytest.raises(HTTPException) as exc:
-        validate_hierarchy(db, item_type="task", project_id=1, parent_id=14, epic_id=None)
-    assert exc.value.detail["code"] == "depth_exceeded"
-
-
-def test_cannot_reparent_item_that_already_has_children(db, seed):
-    # Task 14 is a child of Task 12. So Task 12 has a child.
-    _add_item(db, id_=14, project_id=1, type_="task", parent_id=12)
-    db.commit()
-    # Trying to give Task 12 itself a parent would push 14 to depth 2.
-    with pytest.raises(HTTPException) as exc:
-        validate_hierarchy(
-            db,
-            item_type="task",
-            project_id=1,
-            parent_id=11,
-            epic_id=None,
-            item_id=12,
-        )
-    assert exc.value.detail["code"] == "has_children"
 
 
 # ---------- Clearing parents ----------

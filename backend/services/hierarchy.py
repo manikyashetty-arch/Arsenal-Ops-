@@ -5,15 +5,18 @@ Mirrors the rules encoded on the frontend in
 module is the enforcement layer that protects the API against direct callers
 that bypass the form.
 
-Canonical model (Task plays double duty as peer-of-Story/Bug AND only type
-that can have a parent_id):
+Canonical model (Story / Task / Bug are siblings directly under Epic):
 
     Epic            no epic_id, no parent_id
     User Story      epic_id -> Epic (optional), no parent_id
-    Task            epic_id -> Epic (optional), parent_id -> Story or Task
+    Task            epic_id -> Epic (optional), no parent_id
     Bug             epic_id -> Epic (optional), no parent_id
 
-Cross-cutting rules:
+The ``parent_id`` column is retained on the model so this rule can be relaxed
+later (e.g. sub-tasks under Story) by re-populating ALLOWED_PARENT_TYPES.
+While disabled, any non-null parent_id assignment is rejected with a 422.
+
+Cross-cutting rules (still applied to epic_id and any future parent_id use):
     - Parent must exist and live in the same project
     - No self-parent
     - Depth-1 cap: parent_id target must itself have no parent_id, and an
@@ -35,7 +38,7 @@ ALLOWED_PARENT_TYPES: dict[str, dict[str, tuple[str, ...]]] = {
         WorkItemType.EPIC.value: (),
     },
     "parent_id": {
-        WorkItemType.TASK.value: (WorkItemType.TASK.value, WorkItemType.USER_STORY.value),
+        WorkItemType.TASK.value: (),
         WorkItemType.USER_STORY.value: (),
         WorkItemType.BUG.value: (),
         WorkItemType.EPIC.value: (),

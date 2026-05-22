@@ -1,7 +1,9 @@
 """Audit existing work_items rows against the canonical hierarchy rules.
 
 Reports rows that would be rejected by ``services.hierarchy.validate_hierarchy``
-if they were submitted today.
+if they were submitted today. Under the current consensus model (Story / Task /
+Bug as siblings under Epic, no parent_id support), this will flag any legacy
+row with parent_id set; the --fix mode clears it.
 
 Modes:
     --dry-run   (default) Read-only. Prints violators.
