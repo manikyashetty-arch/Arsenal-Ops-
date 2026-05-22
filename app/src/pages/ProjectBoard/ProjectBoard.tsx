@@ -100,6 +100,7 @@ interface WorkItem {
   created_at?: string;
   updated_at?: string;
   due_date?: string | null;
+  completed_at?: string | null;
   estimated_hours?: number | null;
 }
 
@@ -1824,13 +1825,15 @@ const ProjectBoard = () => {
                       {!isCollapsed && (
                         <>
                           {/* Table header */}
-                          <div className="grid grid-cols-[120px_1fr_100px_100px_100px_120px] gap-4 px-5 py-3 border-t border-[rgba(255,255,255,0.05)] text-xs text-[#737373] font-semibold uppercase tracking-wider">
+                          <div className="grid grid-cols-[120px_1fr_120px_100px_80px_120px_110px_110px] gap-4 px-5 py-3 border-t border-[rgba(255,255,255,0.05)] text-xs text-[#737373] font-semibold uppercase tracking-wider">
                             {renderListSortHeader('Type', 'type')}
                             <span>Title</span>
                             {renderListSortHeader('Status', 'status')}
                             {renderListSortHeader('Priority', 'priority')}
                             <span>Points</span>
                             {renderListSortHeader('Assignee', 'assignee')}
+                            <span>Due Date</span>
+                            <span>Completed</span>
                           </div>
                           {/* Table rows. Default: hierarchy-aware (parent → child with
                               indent). When sorted, render flat at depth=0 since
@@ -1852,7 +1855,7 @@ const ProjectBoard = () => {
                                 onClick={() => {
                                   navigate(`/project/${id}/board/${item.id}`);
                                 }}
-                                className="grid grid-cols-[120px_1fr_100px_100px_100px_120px] gap-4 px-5 py-3.5 border-t border-[rgba(255,255,255,0.03)] hover:bg-[rgba(255,255,255,0.025)] cursor-pointer transition-colors group"
+                                className="grid grid-cols-[120px_1fr_120px_100px_80px_120px_110px_110px] gap-4 px-5 py-3.5 border-t border-[rgba(255,255,255,0.03)] hover:bg-[rgba(255,255,255,0.025)] cursor-pointer transition-colors group"
                               >
                                 <div className="flex items-center">
                                   <div
@@ -1907,6 +1910,20 @@ const ProjectBoard = () => {
                                 <div className="flex items-center">
                                   <span className="text-xs text-[#737373] truncate">
                                     {item.assignee}
+                                  </span>
+                                </div>
+                                <div className="flex items-center">
+                                  <span className="text-xs text-[#a3a3a3] truncate">
+                                    {item.due_date
+                                      ? parseLocalDate(item.due_date)?.toLocaleDateString()
+                                      : '—'}
+                                  </span>
+                                </div>
+                                <div className="flex items-center">
+                                  <span className="text-xs text-[#a3a3a3] truncate">
+                                    {item.completed_at
+                                      ? new Date(item.completed_at).toLocaleDateString()
+                                      : '—'}
                                   </span>
                                 </div>
                               </div>
