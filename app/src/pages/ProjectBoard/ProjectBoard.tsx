@@ -2102,9 +2102,7 @@ const ProjectBoard = () => {
                             const TypeIcon = typeInfo.icon;
                             const priorityStyle =
                               PRIORITY_COLORS[item.priority] || PRIORITY_COLORS.medium;
-                            const dueDate = item.due_date
-                              ? parseLocalDate(item.due_date)
-                              : null;
+                            const dueDate = item.due_date ? parseLocalDate(item.due_date) : null;
                             const todayMidnight = new Date();
                             todayMidnight.setHours(0, 0, 0, 0);
                             const isOverdue =
@@ -2151,8 +2149,7 @@ const ProjectBoard = () => {
                                       color: priorityStyle.hex,
                                     }}
                                   >
-                                    {item.priority.charAt(0).toUpperCase() +
-                                      item.priority.slice(1)}
+                                    {item.priority.charAt(0).toUpperCase() + item.priority.slice(1)}
                                   </span>
                                 </div>
                                 <div className="flex items-center">

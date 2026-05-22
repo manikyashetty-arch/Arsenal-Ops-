@@ -229,10 +229,7 @@ const CreateItemModal = ({
                     value={createForm.epic_id}
                     valueKey={null}
                     items={workItems}
-                    allowedTypes={getAllowedTargetTypes(
-                      createForm.type as WorkItemType,
-                      'epic_id',
-                    )}
+                    allowedTypes={getAllowedTargetTypes(createForm.type as WorkItemType, 'epic_id')}
                     onChange={(newId) => setCreateForm((f) => ({ ...f, epic_id: newId }))}
                     placeholder="No epic"
                   />

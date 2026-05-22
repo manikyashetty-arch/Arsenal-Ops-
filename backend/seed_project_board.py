@@ -15,7 +15,7 @@ import json
 import random
 import subprocess
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import requests
 
@@ -115,21 +115,33 @@ STATUSES = ["todo", "in_progress", "in_review", "done"]
 STATUS_WEIGHTS = [0.35, 0.25, 0.15, 0.25]
 
 TAGS_POOL = [
-    "frontend", "backend", "api", "database", "auth", "ui",
-    "performance", "security", "testing", "docs", "infra", "mobile",
+    "frontend",
+    "backend",
+    "api",
+    "database",
+    "auth",
+    "ui",
+    "performance",
+    "security",
+    "testing",
+    "docs",
+    "infra",
+    "mobile",
 ]
 
 SPRINT_NAMES = ["Sprint 1 — Foundation", "Sprint 2 — Core Features", "Sprint 3 — Polish & Launch"]
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
+
 def _mint_token(user_id: int) -> str:
     """Mint a HS256 JWT using stdlib only — no jose dependency."""
+
     def b64url(data: bytes) -> str:
         return base64.urlsafe_b64encode(data).rstrip(b"=").decode()
 
     header = b64url(json.dumps({"alg": "HS256", "typ": "JWT"}).encode())
-    exp = int((datetime.now(timezone.utc) + timedelta(hours=24)).timestamp())
+    exp = int((datetime.now(UTC) + timedelta(hours=24)).timestamp())
     payload = b64url(json.dumps({"sub": str(user_id), "exp": exp}).encode())
     signing_input = f"{header}.{payload}".encode()
     sig = b64url(hmac.new(_SECRET, signing_input, hashlib.sha256).digest())
@@ -139,11 +151,26 @@ def _mint_token(user_id: int) -> str:
 def login(email: str) -> str:
     sql = f"SELECT id FROM users WHERE email='{email}' LIMIT 1;"
     result = subprocess.run(
-        ["docker", "exec", DOCKER_CONTAINER, "psql", "-U", DOCKER_USER, "-d", DOCKER_DB, "-t", "-c", sql],
-        capture_output=True, text=True
+        [
+            "docker",
+            "exec",
+            DOCKER_CONTAINER,
+            "psql",
+            "-U",
+            DOCKER_USER,
+            "-d",
+            DOCKER_DB,
+            "-t",
+            "-c",
+            sql,
+        ],
+        capture_output=True,
+        text=True,
     )
     if result.returncode != 0:
-        sys.exit(f"[auth] docker exec failed: {result.stderr.strip()}\nIs the stack running? Try: docker compose up -d")
+        sys.exit(
+            f"[auth] docker exec failed: {result.stderr.strip()}\nIs the stack running? Try: docker compose up -d"
+        )
     user_id_str = result.stdout.strip()
     if not user_id_str:
         sys.exit(f"[auth] no user found with email {email!r} in the database")
@@ -215,6 +242,7 @@ def random_dates():
 
 # ── Main seeding logic ─────────────────────────────────────────────────────────
 
+
 def seed(token: str, project_id: int, sprint_ids: list[int], target_items: int):
     created = 0
 
@@ -223,16 +251,19 @@ def seed(token: str, project_id: int, sprint_ids: list[int], target_items: int):
     epic_ids = []
     epic_titles_used = random.sample(EPIC_TITLES, k=epic_count)
     for title in epic_titles_used:
-        item = create_work_item(token, {
-            "type": "epic",
-            "title": title,
-            "description": f"Epic covering all work related to: {title.lower()}.",
-            "status": pick(["todo", "in_progress", "done"], [0.3, 0.5, 0.2]),
-            "priority": pick(PRIORITIES, PRIORITY_WEIGHTS),
-            "project_id": project_id,
-            "story_points": random.choice([0, 13, 21, 34]),
-            "tags": random_tags(),
-        })
+        item = create_work_item(
+            token,
+            {
+                "type": "epic",
+                "title": title,
+                "description": f"Epic covering all work related to: {title.lower()}.",
+                "status": pick(["todo", "in_progress", "done"], [0.3, 0.5, 0.2]),
+                "priority": pick(PRIORITIES, PRIORITY_WEIGHTS),
+                "project_id": project_id,
+                "story_points": random.choice([0, 13, 21, 34]),
+                "tags": random_tags(),
+            },
+        )
         epic_ids.append(item["id"])
         created += 1
         print(f"    epic  [{created:>3}/{target_items}] {item['key']} – {title}")
@@ -249,22 +280,25 @@ def seed(token: str, project_id: int, sprint_ids: list[int], target_items: int):
         role = pick(ROLES)
         title = f"As a {role}, I want to {action} so that {benefit}"
         start_date, due_date = random_dates()
-        item = create_work_item(token, {
-            "type": "user_story",
-            "title": title[:255],
-            "description": f"Acceptance criteria will be defined during sprint planning.",
-            "status": pick(STATUSES, STATUS_WEIGHTS),
-            "priority": pick(PRIORITIES, PRIORITY_WEIGHTS),
-            "project_id": project_id,
-            "sprint_id": pick(sprint_ids + [None], [0.3, 0.3, 0.3, 0.1]),
-            "epic_id": pick(epic_ids + [None], [0.7] * len(epic_ids) + [0.3 * len(epic_ids)]),
-            "story_points": random.choice([1, 2, 3, 5, 8, 13]),
-            "estimated_hours": random.randint(2, 16),
-            "remaining_hours": random.randint(0, 12),
-            "tags": random_tags(),
-            "start_date": start_date,
-            "due_date": due_date,
-        })
+        item = create_work_item(
+            token,
+            {
+                "type": "user_story",
+                "title": title[:255],
+                "description": "Acceptance criteria will be defined during sprint planning.",
+                "status": pick(STATUSES, STATUS_WEIGHTS),
+                "priority": pick(PRIORITIES, PRIORITY_WEIGHTS),
+                "project_id": project_id,
+                "sprint_id": pick(sprint_ids + [None], [0.3, 0.3, 0.3, 0.1]),
+                "epic_id": pick(epic_ids + [None], [0.7] * len(epic_ids) + [0.3 * len(epic_ids)]),
+                "story_points": random.choice([1, 2, 3, 5, 8, 13]),
+                "estimated_hours": random.randint(2, 16),
+                "remaining_hours": random.randint(0, 12),
+                "tags": random_tags(),
+                "start_date": start_date,
+                "due_date": due_date,
+            },
+        )
         story_ids.append(item["id"])
         created += 1
         if created % 10 == 0:
@@ -281,23 +315,30 @@ def seed(token: str, project_id: int, sprint_ids: list[int], target_items: int):
         if i > len(TASK_TITLES) - 1:
             title = f"{title} (variant {i // len(TASK_TITLES) + 1})"
         start_date, due_date = random_dates()
-        parent_id = pick(story_ids + [None], [0.6] * len(story_ids) + [0.4 * len(story_ids)]) if story_ids else None
-        item = create_work_item(token, {
-            "type": "task",
-            "title": title[:255],
-            "description": "Technical implementation task.",
-            "status": pick(STATUSES, STATUS_WEIGHTS),
-            "priority": pick(PRIORITIES, PRIORITY_WEIGHTS),
-            "project_id": project_id,
-            "sprint_id": pick(sprint_ids + [None], [0.35, 0.35, 0.25, 0.05]),
-            "parent_id": parent_id,
-            "story_points": random.choice([0, 1, 2, 3]),
-            "estimated_hours": random.randint(1, 8),
-            "remaining_hours": random.randint(0, 6),
-            "tags": random_tags(),
-            "start_date": start_date,
-            "due_date": due_date,
-        })
+        parent_id = (
+            pick(story_ids + [None], [0.6] * len(story_ids) + [0.4 * len(story_ids)])
+            if story_ids
+            else None
+        )
+        item = create_work_item(
+            token,
+            {
+                "type": "task",
+                "title": title[:255],
+                "description": "Technical implementation task.",
+                "status": pick(STATUSES, STATUS_WEIGHTS),
+                "priority": pick(PRIORITIES, PRIORITY_WEIGHTS),
+                "project_id": project_id,
+                "sprint_id": pick(sprint_ids + [None], [0.35, 0.35, 0.25, 0.05]),
+                "parent_id": parent_id,
+                "story_points": random.choice([0, 1, 2, 3]),
+                "estimated_hours": random.randint(1, 8),
+                "remaining_hours": random.randint(0, 6),
+                "tags": random_tags(),
+                "start_date": start_date,
+                "due_date": due_date,
+            },
+        )
         created += 1
         if created % 10 == 0:
             print(f"    task  [{created:>3}/{target_items}] {item['key']}")
@@ -312,18 +353,23 @@ def seed(token: str, project_id: int, sprint_ids: list[int], target_items: int):
         title = bug_pool[i]
         if i >= len(BUG_TITLES):
             title = f"{title} (repro {i // len(BUG_TITLES) + 1})"
-        item = create_work_item(token, {
-            "type": "bug",
-            "title": title[:255],
-            "description": "Reported by QA. Needs triage.",
-            "status": pick(["todo", "in_progress", "in_review", "done"], [0.4, 0.25, 0.15, 0.2]),
-            "priority": pick(PRIORITIES, [0.1, 0.3, 0.4, 0.2]),
-            "project_id": project_id,
-            "sprint_id": pick(sprint_ids + [None], [0.3, 0.3, 0.2, 0.2]),
-            "story_points": random.choice([0, 1, 2]),
-            "estimated_hours": random.randint(1, 4),
-            "tags": random_tags() + ["bug"],
-        })
+        item = create_work_item(
+            token,
+            {
+                "type": "bug",
+                "title": title[:255],
+                "description": "Reported by QA. Needs triage.",
+                "status": pick(
+                    ["todo", "in_progress", "in_review", "done"], [0.4, 0.25, 0.15, 0.2]
+                ),
+                "priority": pick(PRIORITIES, [0.1, 0.3, 0.4, 0.2]),
+                "project_id": project_id,
+                "sprint_id": pick(sprint_ids + [None], [0.3, 0.3, 0.2, 0.2]),
+                "story_points": random.choice([0, 1, 2]),
+                "estimated_hours": random.randint(1, 4),
+                "tags": random_tags() + ["bug"],
+            },
+        )
         created += 1
         if created % 10 == 0:
             print(f"    bug   [{created:>3}/{target_items}] {item['key']}")
@@ -333,10 +379,21 @@ def seed(token: str, project_id: int, sprint_ids: list[int], target_items: int):
 
 def main():
     parser = argparse.ArgumentParser(description="Seed project board with placeholder data")
-    parser.add_argument("--email", required=True, help="Your login email (Google SSO — no password needed)")
-    parser.add_argument("--items", type=int, default=60, help="Total work items to create (default: 60)")
-    parser.add_argument("--project-id", type=int, default=None, help="Add to existing project instead of creating one")
-    parser.add_argument("--project-name", default="Seed Project — Board Scale Test", help="Name for new project")
+    parser.add_argument(
+        "--email", required=True, help="Your login email (Google SSO — no password needed)"
+    )
+    parser.add_argument(
+        "--items", type=int, default=60, help="Total work items to create (default: 60)"
+    )
+    parser.add_argument(
+        "--project-id",
+        type=int,
+        default=None,
+        help="Add to existing project instead of creating one",
+    )
+    parser.add_argument(
+        "--project-name", default="Seed Project — Board Scale Test", help="Name for new project"
+    )
     args = parser.parse_args()
 
     token = login(args.email)
