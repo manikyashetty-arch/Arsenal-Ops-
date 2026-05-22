@@ -2,11 +2,13 @@ import { BrowserRouter as Router, Routes, Route, useNavigate, useLocation } from
 import { useState, useEffect, lazy, Suspense } from 'react';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
+import { Toaster } from 'sonner';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { Login } from './components/Login';
 import { PasswordChange } from './components/PasswordChange';
 import { Button } from '@/components/ui/button';
 import { AlertTriangle, Clock } from 'lucide-react';
+import { RouteErrorBoundary } from '@/components/RouteErrorBoundary';
 import { queryClient } from '@/lib/queryClient';
 import './App.css';
 
@@ -148,15 +150,58 @@ function AuthenticatedRoutes() {
       {showWarning && (
         <IdleWarningModal onStay={dismissWarning} onLogout={logout} remainingSeconds={countdown} />
       )}
+      <Toaster position="top-right" theme="dark" richColors />
       <Suspense fallback={<RouteSpinner />}>
         <Routes>
           <Route path="/login" element={<Login />} />
-          <Route path="/" element={<ProjectsPage />} />
-          <Route path="/personal-tasks" element={<PersonalTasksPage />} />
-          <Route path="/project/:id" element={<ProjectDetail />} />
-          <Route path="/project/:id/board" element={<ProjectBoard />} />
-          <Route path="/project/:id/board/:ticketId" element={<ProjectBoard />} />
-          <Route path="/admin" element={<AdminDashboard />} />
+          <Route
+            path="/"
+            element={
+              <RouteErrorBoundary>
+                <ProjectsPage />
+              </RouteErrorBoundary>
+            }
+          />
+          <Route
+            path="/personal-tasks"
+            element={
+              <RouteErrorBoundary>
+                <PersonalTasksPage />
+              </RouteErrorBoundary>
+            }
+          />
+          <Route
+            path="/project/:id"
+            element={
+              <RouteErrorBoundary>
+                <ProjectDetail />
+              </RouteErrorBoundary>
+            }
+          />
+          <Route
+            path="/project/:id/board"
+            element={
+              <RouteErrorBoundary>
+                <ProjectBoard />
+              </RouteErrorBoundary>
+            }
+          />
+          <Route
+            path="/project/:id/board/:ticketId"
+            element={
+              <RouteErrorBoundary>
+                <ProjectBoard />
+              </RouteErrorBoundary>
+            }
+          />
+          <Route
+            path="/admin"
+            element={
+              <RouteErrorBoundary>
+                <AdminDashboard />
+              </RouteErrorBoundary>
+            }
+          />
         </Routes>
       </Suspense>
     </>

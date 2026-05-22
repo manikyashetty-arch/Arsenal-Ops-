@@ -12,6 +12,7 @@ import {
   Info,
   LayoutGrid,
   ShieldAlert,
+  AlertTriangle,
   Clock,
   DollarSign,
   TrendingUp,
@@ -329,6 +330,8 @@ const ProjectDetail = () => {
   const project = projectQuery.data ?? null;
   const isLoading = projectQuery.isLoading;
   const accessDenied = projectQuery.error instanceof ApiError && projectQuery.error.status === 403;
+  const isNotFound = projectQuery.error instanceof ApiError && projectQuery.error.status === 404;
+  const hasLoadError = projectQuery.error && !isNotFound && !accessDenied;
 
   // Show toast when 403 is encountered
   useEffect(() => {
@@ -806,7 +809,27 @@ const ProjectDetail = () => {
     );
   }
 
-  if (!project) {
+  if (hasLoadError) {
+    return (
+      <div className="min-h-screen bg-[#080808] flex flex-col items-center justify-center text-center p-4">
+        <div className="w-20 h-20 rounded-2xl bg-yellow-500/10 border border-yellow-500/20 flex items-center justify-center mb-6">
+          <AlertTriangle className="w-10 h-10 text-yellow-400" />
+        </div>
+        <h2 className="text-2xl font-bold text-white mb-2">Could not load project</h2>
+        <p className="text-[#737373] max-w-md mb-6">
+          We encountered an error loading this project. Please try again.
+        </p>
+        <Button
+          onClick={() => window.location.reload()}
+          className="bg-gradient-to-r from-[#E0B954] to-[#B8872A] text-white rounded-xl px-6"
+        >
+          Try Again
+        </Button>
+      </div>
+    );
+  }
+
+  if (isNotFound || !project) {
     return (
       <div className="min-h-screen bg-[#080808] flex flex-col items-center justify-center text-center">
         <h2 className="text-xl font-bold text-white mb-2">Project not found</h2>

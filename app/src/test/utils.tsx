@@ -17,12 +17,15 @@ export function renderWithProviders(
     ...renderOptions
   }: RenderWithProvidersOptions = {},
 ) {
+  // Create a queryClient with error handler disabled for test isolation
+  // Tests can mock errors without triggering global toast handlers
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: { retry: false },
       mutations: { retry: false },
     },
   })
+  queryClient.clear()
 
   const finalRouterProps: Omit<MemoryRouterProps, 'children'> = initialPath
     ? { initialEntries: [initialPath], ...routerProps }

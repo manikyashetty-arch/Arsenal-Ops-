@@ -79,9 +79,28 @@
  *  6. **Stabilize filter objects with useMemo** — query keys are compared by
  *     deep equality but closure stability still matters for callbacks.
  */
-import { QueryClient } from '@tanstack/react-query';
+import { QueryClient, QueryCache, MutationCache } from '@tanstack/react-query';
+import { toast } from 'sonner';
+import { ApiError } from './api';
+
+function reportError(err: unknown) {
+  if (err instanceof ApiError) {
+    // 401 is handled by AuthContext separately (token expiry, logout flow).
+    // Don't surface redundant toast for auth errors.
+    if (err.status === 401) return;
+    toast.error(err.detail || `Request failed (${err.status})`);
+    return;
+  }
+  toast.error('Network error — please try again');
+}
 
 export const queryClient = new QueryClient({
+  queryCache: new QueryCache({
+    onError: reportError,
+  }),
+  mutationCache: new MutationCache({
+    onError: reportError,
+  }),
   defaultOptions: {
     queries: {
       staleTime: 5 * 60_000,

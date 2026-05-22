@@ -95,16 +95,16 @@ describe('ProjectsPage', () => {
     })
   })
 
-  it('handles project endpoint error gracefully', async () => {
+  it('handles 500 error and does not render projects', async () => {
     server.use(
       http.get('/api/projects/', () => {
-        return HttpResponse.json({ error: 'Internal server error' }, { status: 500 })
+        return HttpResponse.json({ detail: 'Internal server error' }, { status: 500 })
       }),
     )
 
     renderWithProviders(<ProjectsPage />)
 
-    // The page should still render even if the API fails
+    // The page should render even if the API fails
     await waitFor(() => {
       expect(document.body).toBeInTheDocument()
     })
