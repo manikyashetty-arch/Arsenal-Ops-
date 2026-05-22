@@ -52,7 +52,7 @@ interface ListViewProps {
   onTaskClick?: (item: WorkItem) => void;
 }
 
-type SortField = 'title' | 'status' | 'priority' | 'due_date' | 'assignee';
+type SortField = 'title' | 'status' | 'priority' | 'due_date' | 'completed_at' | 'assignee';
 type SortDirection = 'asc' | 'desc';
 
 const TYPE_CONFIG: Record<
@@ -109,6 +109,11 @@ const ListView: React.FC<ListViewProps> = ({ workItems, onTaskClick }) => {
       if (sortField === 'due_date') {
         aVal = a.due_date ? new Date(a.due_date).getTime() : Infinity;
         bVal = b.due_date ? new Date(b.due_date).getTime() : Infinity;
+      }
+
+      if (sortField === 'completed_at') {
+        aVal = a.completed_at ? new Date(a.completed_at).getTime() : Infinity;
+        bVal = b.completed_at ? new Date(b.completed_at).getTime() : Infinity;
       }
 
       if (aVal === undefined || aVal === null) aVal = '';
@@ -309,9 +314,7 @@ const ListView: React.FC<ListViewProps> = ({ workItems, onTaskClick }) => {
                     <SortHeader field="priority" label="Priority" />
                     <SortHeader field="assignee" label="Assignee" />
                     <SortHeader field="due_date" label="Due Date" />
-                    <th className="text-left py-3 px-4 text-xs font-medium text-[#737373] uppercase">
-                      Completed
-                    </th>
+                    <SortHeader field="completed_at" label="Completed" />
                     <th className="text-left py-3 px-4 text-xs font-medium text-[#737373] uppercase">
                       Est / Logged
                     </th>
