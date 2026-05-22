@@ -16,6 +16,7 @@ import sys
 from datetime import datetime
 
 from sqlalchemy import JSON, Column, DateTime, ForeignKey, Integer
+from sqlalchemy.ext.mutable import MutableDict
 from sqlalchemy.orm import relationship
 
 sys.path.append("..")
@@ -30,7 +31,11 @@ class ProjectPulseOverride(Base):
         ForeignKey("projects.id", ondelete="CASCADE"),
         primary_key=True,
     )
-    data = Column(JSON, nullable=False, default=dict)
+    # MutableDict.as_mutable lets SQLAlchemy detect in-place mutations of the
+    # JSON blob (e.g. ``override.data["foo"] = "bar"``). Without this the ORM
+    # sees the column as unchanged and ``onupdate=datetime.utcnow`` never
+    # fires on the updated_at column.
+    data = Column(MutableDict.as_mutable(JSON), nullable=False, default=dict)
     updated_at = Column(
         DateTime,
         default=datetime.utcnow,
@@ -41,18 +46,3 @@ class ProjectPulseOverride(Base):
 
     project = relationship("Project")
     updated_by = relationship("User")
-
-    def to_dict(self):
-        return {
-            "data": self.data or {},
-            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
-            "updated_by": (
-                {
-                    "id": self.updated_by.id,
-                    "name": self.updated_by.name,
-                    "email": self.updated_by.email,
-                }
-                if self.updated_by
-                else None
-            ),
-        }

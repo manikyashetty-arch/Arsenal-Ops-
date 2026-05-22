@@ -49,6 +49,7 @@ from models import (  # noqa: E402, F401
 )
 from models.developer import Developer  # noqa: E402
 from models.project import Project  # noqa: E402
+from models.project_milestone import ProjectMilestone  # noqa: E402
 from models.time_entry import TimeEntry  # noqa: E402
 from models.user import User  # noqa: E402
 from models.work_item import WorkItem  # noqa: E402
@@ -96,6 +97,18 @@ def outsider_user(db):
     db.add(u)
     db.commit()
     return u
+
+
+def _freeze_pulse_utcnow(monkeypatch, fake_now: datetime) -> None:
+    """Pin the "now" used by every derivation helper to ``fake_now``.
+
+    ``pulse.py`` centralizes "now" in ``_utc_now()`` (a tiny module-level
+    helper introduced when we migrated off ``datetime.utcnow()``). Patching
+    that single symbol is more robust than swapping the ``datetime`` class
+    — it doesn't depend on subclass-method dispatch and covers every
+    deriver in one shot.
+    """
+    monkeypatch.setattr(pulse_module, "_utc_now", lambda: fake_now)
 
 
 def _make_project(db, *, created_at: datetime, end_date: datetime | None = None) -> Project:
@@ -359,15 +372,28 @@ class TestHealthScore:
         assert 80 <= score <= 99, f"expected small-issue project in 80-99, got {score}"
         assert result["summary"]["healthStatus"] == "Healthy"
 
-    def test_mid_issues_is_at_risk(self, db, admin_user):
-        """Multiple overdue, a few bugs, one critical → 60..79."""
-        now = datetime.utcnow()
+    def test_mid_issues_is_at_risk(self, db, admin_user, monkeypatch):
+        """Multiple overdue, a few bugs, one critical → exactly 64 (At Risk).
+
+        Uses fixed dates + a frozen ``utcnow`` so the schedule bonus is
+        deterministic. With created_at=2026-04-15, end_date=2026-06-15,
+        and "now" = 2026-05-21 the contract window enumerates to
+        [April, May, June] (3 months) with month_index=2 → expected_time_pct
+        = 66.67. delivery_pct=0 → schedule_bonus = clamp(-33.3, -15, 15) = -15.
+        deductions: 3 overdue (-9), 2 bugs (-4), 1 critical (-8) → -21.
+        score = 100 - 21 - 15 = 64.
+        """
+        frozen_now = datetime(2026, 5, 21, 12, 0, 0)
+        _freeze_pulse_utcnow(monkeypatch, frozen_now)
+
         proj = _make_project(
-            db, created_at=now - timedelta(days=30), end_date=now + timedelta(days=30)
+            db,
+            created_at=datetime(2026, 4, 15),
+            end_date=datetime(2026, 6, 15),
         )
-        past = now - timedelta(days=10)
+        past = datetime(2026, 5, 11)  # 10 days before frozen_now
         items = [
-            # 3 overdue (subtract 9)
+            # 3 overdue tasks → subtract 3*3 = 9
             WorkItem(
                 id=i,
                 project_id=proj.id,
@@ -380,7 +406,7 @@ class TestHealthScore:
             )
             for i in range(1, 4)
         ]
-        # 2 open bugs (subtract 4)
+        # 2 open bugs → subtract 2*2 = 4
         items.extend(
             [
                 WorkItem(
@@ -403,8 +429,7 @@ class TestHealthScore:
                 ),
             ]
         )
-        # 1 critical open (subtract 8) — total deductions = 21 → ~79.
-        # Subtract 15 schedule bonus (delivery 0% vs ~50% expected) → ~64.
+        # 1 critical open → subtract 8.
         items.append(
             WorkItem(
                 id=20,
@@ -420,7 +445,7 @@ class TestHealthScore:
         db.commit()
         result = get_pulse_derived(project_id=proj.id, db=db, current_user=admin_user)
         score = result["summary"]["healthScore"]
-        assert 60 <= score < 80, f"expected at-risk in 60-79, got {score}"
+        assert score == 64, f"expected exactly 64, got {score}"
         assert result["summary"]["healthStatus"] == "At Risk"
 
     def test_heavy_issues_is_critical(self, db, admin_user):
@@ -600,3 +625,239 @@ class TestMonthsAndForecast:
         assert row["act"] == 6  # 4 + 2 (cumulative logged_hours on descendants)
         # Current month MTD should at least include the 3-hour entry we logged.
         assert fva["current"][0]["act"] >= 3
+
+
+# ---------------------------------------------------------------------------
+# Response shape contracts (T1, T2)
+# ---------------------------------------------------------------------------
+
+
+class TestResponseShape:
+    """Pins the top-level keys and project-section keys verbatim. A refactor
+    that drops or renames a key fails this test loudly, which protects the
+    frontend merge layer from silent contract drift."""
+
+    EXPECTED_TOP_KEYS = {
+        "project",
+        "summary",
+        "months",
+        "lastActualIdx",
+        "currentMonthTrackedPct",
+        "includedServices",
+        "milestones",
+        "updates",
+        "forecastVsActuals",
+        "_meta",
+    }
+
+    EXPECTED_PROJECT_KEYS = {"name", "keyPrefix", "contractStart", "contractEnd", "launchTarget"}
+
+    def test_top_level_shape(self, db, admin_user):
+        proj = _make_project(
+            db,
+            created_at=datetime(2026, 4, 1),
+            end_date=datetime(2026, 7, 1),
+        )
+        result = get_pulse_derived(project_id=proj.id, db=db, current_user=admin_user)
+        assert set(result.keys()) == self.EXPECTED_TOP_KEYS
+        assert isinstance(result["_meta"]["degraded_sections"], list)
+
+    def test_project_section_keys_and_values(self, db, admin_user):
+        proj = _make_project(
+            db,
+            created_at=datetime(2026, 4, 1),
+            end_date=datetime(2026, 7, 1),
+        )
+        result = get_pulse_derived(project_id=proj.id, db=db, current_user=admin_user)
+        project_section = result["project"]
+        assert set(project_section.keys()) == self.EXPECTED_PROJECT_KEYS
+        assert project_section["name"] == "Pulse Project"
+        assert project_section["keyPrefix"] == "PP"
+        assert project_section["contractStart"] == proj.created_at.isoformat()
+        assert project_section["contractEnd"] == proj.end_date.isoformat()
+        # Without a matching milestone, launchTarget falls back to contractEnd.
+        assert project_section["launchTarget"] == proj.end_date.isoformat()
+
+    def test_launch_target_resolves_matching_milestone(self, db, admin_user):
+        """A milestone whose title matches /launch|go.?live|release/i should
+        win over the contract-end fallback."""
+        proj = _make_project(
+            db,
+            created_at=datetime(2026, 4, 1),
+            end_date=datetime(2026, 7, 1),
+        )
+        launch_date = datetime(2026, 6, 1)
+        db.add(
+            ProjectMilestone(
+                id=1,
+                project_id=proj.id,
+                title="Launch v1",
+                due_date=launch_date,
+            )
+        )
+        db.commit()
+        result = get_pulse_derived(project_id=proj.id, db=db, current_user=admin_user)
+        assert result["project"]["launchTarget"] == launch_date.isoformat()
+
+
+# ---------------------------------------------------------------------------
+# 404 for nonexistent project (T5)
+# ---------------------------------------------------------------------------
+
+
+class TestNotFound:
+    def test_nonexistent_project_raises_404(self, db, admin_user):
+        with pytest.raises(HTTPException) as exc:
+            get_pulse_derived(project_id=9999, db=db, current_user=admin_user)
+        assert exc.value.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# _safe() fault tolerance per section (T8)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "section,helper_name,fallback_check",
+    [
+        ("project", "_derive_project_meta", lambda v: v == {}),
+        ("summary", "_derive_summary", lambda v: v == {}),
+        ("includedServices", "_derive_included_services", lambda v: v == []),
+        ("milestones", "_derive_milestones", lambda v: v == []),
+        ("updates", "_derive_updates", lambda v: v == []),
+        (
+            "forecastVsActuals",
+            "_derive_forecast_vs_actuals",
+            lambda v: v == {"current": [], "last": [], "project": []},
+        ),
+    ],
+)
+def test_safe_isolates_each_section(
+    db, admin_user, monkeypatch, section, helper_name, fallback_check
+):
+    """Monkeypatch each deriver in turn to raise. The handler should still
+    return 200, the failed section's fallback should be served, and
+    `_meta.degraded_sections` should name the section."""
+    proj = _make_project(
+        db,
+        created_at=datetime(2026, 4, 1),
+        end_date=datetime(2026, 7, 1),
+    )
+
+    def _raise(*_args, **_kwargs):
+        raise RuntimeError(f"{helper_name} failed")
+
+    monkeypatch.setattr(pulse_module, helper_name, _raise)
+
+    result = get_pulse_derived(project_id=proj.id, db=db, current_user=admin_user)
+    assert section in result["_meta"]["degraded_sections"]
+    assert fallback_check(result[section]), f"unexpected fallback for {section}: {result[section]}"
+
+
+def test_safe_isolates_months_section(db, admin_user, monkeypatch):
+    """`_derive_months` returns a dict block that drives multiple top-level
+    fields (`months`, `lastActualIdx`, `currentMonthTrackedPct`). Verify that
+    when it fails, all three fall back to their defaults and "months" is
+    listed in degraded_sections."""
+    proj = _make_project(
+        db,
+        created_at=datetime(2026, 4, 1),
+        end_date=datetime(2026, 7, 1),
+    )
+
+    def _raise(*_args, **_kwargs):
+        raise RuntimeError("months failed")
+
+    monkeypatch.setattr(pulse_module, "_derive_months", _raise)
+    result = get_pulse_derived(project_id=proj.id, db=db, current_user=admin_user)
+    assert "months" in result["_meta"]["degraded_sections"]
+    assert result["months"] == []
+    assert result["lastActualIdx"] == 0
+    assert result["currentMonthTrackedPct"] == 0
+
+
+# ---------------------------------------------------------------------------
+# Bounded values (B2, B11)
+# ---------------------------------------------------------------------------
+
+
+class TestBoundedValues:
+    def test_overall_completion_is_clamped_at_100(self, db, admin_user):
+        """When logged_hours > estimated_hours, overallCompletion must not
+        exceed 100% — frontend progress bars assume 0..100."""
+        proj = _make_project(
+            db,
+            created_at=datetime(2026, 4, 1),
+            end_date=datetime(2026, 7, 1),
+        )
+        # Two items where logged > estimated by a wide margin.
+        db.add_all(
+            [
+                WorkItem(
+                    id=901,
+                    project_id=proj.id,
+                    type="task",
+                    title="overrun-1",
+                    status="in_progress",
+                    priority="medium",
+                    key="PP-901",
+                    estimated_hours=10,
+                    logged_hours=50,
+                ),
+                WorkItem(
+                    id=902,
+                    project_id=proj.id,
+                    type="task",
+                    title="overrun-2",
+                    status="in_progress",
+                    priority="medium",
+                    key="PP-902",
+                    estimated_hours=5,
+                    logged_hours=40,
+                ),
+            ]
+        )
+        db.commit()
+        result = get_pulse_derived(project_id=proj.id, db=db, current_user=admin_user)
+        assert result["summary"]["overallCompletion"] <= 100
+
+    def test_health_score_neutral_when_no_end_date(self, db, admin_user, monkeypatch):
+        """A project with no `end_date` has total_months=0, which would
+        otherwise make schedule_bonus always positive (always-favorable bug).
+        After B11, schedule_bonus is 0 in that case — the score reflects only
+        the issue deductions."""
+        # Freeze "now" so the no-end_date case is reproducible.
+        _freeze_pulse_utcnow(monkeypatch, datetime(2026, 5, 21, 12, 0, 0))
+        proj_no_end = _make_project(
+            db,
+            created_at=datetime(2026, 4, 15),
+            end_date=None,
+        )
+        # Two open bugs → -4
+        db.add_all(
+            [
+                WorkItem(
+                    id=701,
+                    project_id=proj_no_end.id,
+                    type="bug",
+                    title="bug-1",
+                    status="todo",
+                    priority="medium",
+                    key="PP-701",
+                ),
+                WorkItem(
+                    id=702,
+                    project_id=proj_no_end.id,
+                    type="bug",
+                    title="bug-2",
+                    status="todo",
+                    priority="medium",
+                    key="PP-702",
+                ),
+            ]
+        )
+        db.commit()
+        result = get_pulse_derived(project_id=proj_no_end.id, db=db, current_user=admin_user)
+        # totalMonths is 0 → schedule_bonus should be 0 → score = 100 - 4 = 96.
+        assert result["summary"]["totalMonths"] == 0
+        assert result["summary"]["healthScore"] == 96

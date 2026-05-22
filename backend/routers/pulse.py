@@ -27,18 +27,20 @@ Response shape (camelCase to match ``app/src/components/ProjectHub/pulseData.ts`
         "last":    [ ... ],
         "project": [ ... ],
       },
+      "_meta": { "degraded_sections": [ ... ] },
     }
 """
 
+import json
 import logging
 import re
 import sys
 from calendar import monthrange
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import func
+from sqlalchemy import case, func
 from sqlalchemy.orm import Session, selectinload
 
 sys.path.append("..")
@@ -52,23 +54,39 @@ from models.time_entry import TimeEntry
 from models.user import User
 from models.work_item import WorkItem, WorkItemPriority, WorkItemStatus, WorkItemType
 from routers.auth import get_current_user
-from routers.projects import require_project_access
+from routers.projects import is_project_admin, require_project_access
 
 router = APIRouter(prefix="/api/projects", tags=["Pulse"])
 logger = logging.getLogger(__name__)
 
 
-def _safe(label: str, fn, fallback):
+def _utc_now() -> datetime:
+    """Return a naive UTC datetime.
+
+    Most ORM datetimes in this codebase are timezone-naive (stored as UTC
+    by convention). We centralize ``datetime.utcnow()`` here so we can
+    swap to ``datetime.now(timezone.utc).replace(tzinfo=None)`` without
+    breaking comparisons against naive ORM rows. Using a single helper
+    also makes the deprecation easier to track if/when we go fully
+    tz-aware end-to-end.
+    """
+    return datetime.now(UTC).replace(tzinfo=None)
+
+
+def _safe(label: str, fn, fallback, degraded: list[str] | None = None):
     """Run ``fn`` and return its result; on any error, log and return ``fallback``.
 
     Mirrors the pattern in ``routers/overview.py`` so one broken section
     (e.g. a missing column on a stale DB schema) doesn't break the whole
-    Pulse view.
+    Pulse view. If ``degraded`` is provided, the ``label`` is appended to
+    it on failure so callers can surface partial-failure state.
     """
     try:
         return fn()
     except Exception:
-        logger.warning("[pulse] %s sub-fetch failed", label, exc_info=True)
+        logger.error("[pulse] %s sub-fetch failed", label, exc_info=True)
+        if degraded is not None:
+            degraded.append(label)
         return fallback
 
 
@@ -95,6 +113,12 @@ def _start_of_month(dt: datetime) -> datetime:
 
 
 def _end_of_month(dt: datetime) -> datetime:
+    """Return the last second of ``dt``'s month.
+
+    Prefer ``< _start_of_month(_add_month(dt))`` at call sites where an
+    exclusive upper bound is cleaner; this helper is kept for places that
+    want a representable "end" datetime.
+    """
     last_day = monthrange(dt.year, dt.month)[1]
     return datetime(dt.year, dt.month, last_day, 23, 59, 59)
 
@@ -110,6 +134,35 @@ def _enumerate_months(start: datetime, end: datetime) -> list[datetime]:
     while cursor <= end_first:
         out.append(cursor)
         cursor = _add_month(cursor)
+    return out
+
+
+def _time_entries_by_month(db: Session, project_id: int) -> dict[tuple[int, int], float]:
+    """Return ``{(year, month): total_hours}`` for all time entries on
+    work items in ``project_id``.
+
+    Uses ``func.extract`` so the query is portable across Postgres (prod
+    per ``render.yaml``) and SQLite (tests). Reused by both the per-month
+    bars and the cumulative "included services" view.
+    """
+    year_col = func.extract("year", TimeEntry.logged_at)
+    month_col = func.extract("month", TimeEntry.logged_at)
+    rows = (
+        db.query(
+            year_col.label("y"),
+            month_col.label("m"),
+            func.coalesce(func.sum(TimeEntry.hours), 0).label("hours"),
+        )
+        .join(WorkItem, WorkItem.id == TimeEntry.work_item_id)
+        .filter(WorkItem.project_id == project_id)
+        .group_by(year_col, month_col)
+        .all()
+    )
+    out: dict[tuple[int, int], float] = {}
+    for r in rows:
+        if r.y is None or r.m is None:
+            continue
+        out[(int(r.y), int(r.m))] = float(r.hours or 0)
     return out
 
 
@@ -153,7 +206,7 @@ def _derive_project_meta(project: Project, db: Session) -> dict:
 def _people_trend_note(project_id: int, db: Session) -> str:
     """``"{n} active contributor(s)"`` where n = distinct developer_ids
     with a TimeEntry on this project's work items in the last 30 days."""
-    since = datetime.utcnow() - timedelta(days=30)
+    since = _utc_now() - timedelta(days=30)
     n = (
         db.query(func.count(func.distinct(TimeEntry.developer_id)))
         .join(WorkItem, WorkItem.id == TimeEntry.work_item_id)
@@ -185,9 +238,16 @@ def _compute_health_score(
         status: >=80 Healthy, >=60 At Risk, else Critical
 
     where ``expectedTimePct = monthIndex / totalMonths * 100``.
+
+    When ``total_months`` is 0 (project has no end_date) the schedule
+    bonus is forced to 0 — otherwise the formula would always reward the
+    project, regardless of delivery progress.
     """
-    expected_time_pct = (month_index / total_months * 100) if total_months > 0 else 0
-    schedule_bonus = max(-15, min(15, (delivery_pct - expected_time_pct) / 2))
+    if total_months > 0:
+        expected_time_pct = month_index / total_months * 100
+        schedule_bonus = max(-15, min(15, (delivery_pct - expected_time_pct) / 2))
+    else:
+        schedule_bonus = 0
     raw = 100 - 3 * overdue_count - 8 * critical_open - 2 * open_bugs + schedule_bonus
     score = int(max(0, min(100, round(raw))))
     if score >= 80:
@@ -201,25 +261,61 @@ def _compute_health_score(
 
 def _derive_summary(project: Project, db: Session) -> dict:
     """Counts/sums over work items + sprints + a health-score roll-up."""
-    items = db.query(WorkItem).filter(WorkItem.project_id == project.id).all()
-
-    now = datetime.utcnow()
+    now = _utc_now()
     done_value = WorkItemStatus.DONE.value
     bug_value = WorkItemType.BUG.value
     critical_value = WorkItemPriority.CRITICAL.value
 
-    delivery_total = len(items)
-    delivery_completed = sum(1 for i in items if i.status == done_value)
-    delivery_pct = round(delivery_completed / delivery_total * 100) if delivery_total > 0 else 0
-
-    overdue_count = sum(
-        1 for i in items if i.due_date and i.due_date < now and i.status != done_value
+    # Single aggregate query — avoids loading every WorkItem just to count.
+    one_if_done = case((WorkItem.status == done_value, 1), else_=0)
+    one_if_overdue = case(
+        (
+            (WorkItem.due_date.isnot(None))
+            & (WorkItem.due_date < now)
+            & (WorkItem.status != done_value),
+            1,
+        ),
+        else_=0,
     )
-    open_bugs = sum(1 for i in items if i.type == bug_value and i.status != done_value)
-    critical_open = sum(1 for i in items if i.priority == critical_value and i.status != done_value)
+    one_if_open_bug = case(
+        ((WorkItem.type == bug_value) & (WorkItem.status != done_value), 1),
+        else_=0,
+    )
+    one_if_critical_open = case(
+        ((WorkItem.priority == critical_value) & (WorkItem.status != done_value), 1),
+        else_=0,
+    )
+    points = func.coalesce(WorkItem.story_points, 0)
+    points_done = case((WorkItem.status == done_value, points), else_=0)
+    estimated = func.coalesce(WorkItem.estimated_hours, 0)
+    logged = func.coalesce(WorkItem.logged_hours, 0)
 
-    points_total = sum(i.story_points or 0 for i in items)
-    points_completed = sum(i.story_points or 0 for i in items if i.status == done_value)
+    agg = (
+        db.query(
+            func.count(WorkItem.id).label("total"),
+            func.coalesce(func.sum(one_if_done), 0).label("done"),
+            func.coalesce(func.sum(one_if_overdue), 0).label("overdue"),
+            func.coalesce(func.sum(one_if_open_bug), 0).label("open_bugs"),
+            func.coalesce(func.sum(one_if_critical_open), 0).label("critical_open"),
+            func.coalesce(func.sum(points), 0).label("points_total"),
+            func.coalesce(func.sum(points_done), 0).label("points_done"),
+            func.coalesce(func.sum(estimated), 0).label("estimated"),
+            func.coalesce(func.sum(logged), 0).label("logged"),
+        )
+        .filter(WorkItem.project_id == project.id)
+        .one()
+    )
+
+    delivery_total = int(agg.total or 0)
+    delivery_completed = int(agg.done or 0)
+    delivery_pct = round(delivery_completed / delivery_total * 100) if delivery_total > 0 else 0
+    overdue_count = int(agg.overdue or 0)
+    open_bugs = int(agg.open_bugs or 0)
+    critical_open = int(agg.critical_open or 0)
+    points_total = int(agg.points_total or 0)
+    points_completed = int(agg.points_done or 0)
+    total_estimated = float(agg.estimated or 0)
+    total_logged = float(agg.logged or 0)
 
     active_sprints = (
         db.query(func.count(Sprint.id))
@@ -229,10 +325,10 @@ def _derive_summary(project: Project, db: Session) -> dict:
         or 0
     )
 
-    # Month math — uses created_at..end_date as the contract window proxy.
-    total_estimated = sum(i.estimated_hours or 0 for i in items)
-    total_logged = sum(i.logged_hours or 0 for i in items)
-    overall_completion = round(total_logged / total_estimated * 100) if total_estimated > 0 else 0
+    # Clamp at 100 — over-logged work items shouldn't surface as ">100%".
+    overall_completion = (
+        min(100, round(total_logged / total_estimated * 100)) if total_estimated > 0 else 0
+    )
 
     months = _enumerate_months(project.created_at, project.end_date) if project.end_date else []
     total_months = len(months)
@@ -293,37 +389,20 @@ def _derive_months(project: Project, db: Session) -> dict:
     if not months:
         return {"months": [], "lastActualIdx": 0, "currentMonthTrackedPct": 0}
 
-    # Hours per month (single GROUP BY against time_entries joined to this
-    # project's work_items).
-    rows = (
-        db.query(
-            func.strftime("%Y-%m", TimeEntry.logged_at).label("ym"),
-            func.coalesce(func.sum(TimeEntry.hours), 0).label("hours"),
-        )
-        .join(WorkItem, WorkItem.id == TimeEntry.work_item_id)
-        .filter(WorkItem.project_id == project.id)
-        .group_by("ym")
-        .all()
-    )
-    hours_by_ym: dict[str, int] = {}
-    for r in rows:
-        if r.ym:
-            hours_by_ym[r.ym] = int(r.hours or 0)
+    # Single GROUP BY against time_entries joined to this project's work_items.
+    # Aggregation uses ``func.extract`` so it runs on both Postgres (prod) and
+    # SQLite (tests).
+    hours_by_ym = _time_entries_by_month(db, project.id)
 
-    # Fallback for non-SQLite backends — date_trunc isn't portable, but the
-    # strftime above works for SQLite. For other dialects the query above
-    # will raise and ``_safe`` will short-circuit; that's acceptable for v1
-    # because production is on SQLite (productmind.db). Document for follow-up.
-
-    now = datetime.utcnow()
-    now_ym = now.strftime("%Y-%m")
+    now = _utc_now()
+    now_key = (now.year, now.month)
     last_actual_idx = 0
     out: list[dict] = []
     for idx, m in enumerate(months):
-        ym = m.strftime("%Y-%m")
-        dev_act = hours_by_ym.get(ym, 0)
-        is_actual = ym < now_ym
-        is_partial = ym == now_ym
+        key = (m.year, m.month)
+        dev_act = int(round(hours_by_ym.get(key, 0)))
+        is_actual = key < now_key
+        is_partial = key == now_key
         if is_actual or is_partial:
             last_actual_idx = idx
         out.append(
@@ -336,9 +415,10 @@ def _derive_months(project: Project, db: Session) -> dict:
         )
 
     # Percent of current month elapsed (for the "X% of month tracked" pill).
-    eom = _end_of_month(now)
+    # Exclusive upper bound avoids the 23:59:59 microsecond slop.
     som = _start_of_month(now)
-    total_seconds = (eom - som).total_seconds()
+    next_som = _add_month(som)
+    total_seconds = (next_som - som).total_seconds()
     elapsed = (now - som).total_seconds()
     current_month_tracked_pct = (
         int(round(elapsed / total_seconds * 100)) if total_seconds > 0 else 0
@@ -359,22 +439,12 @@ def _derive_included_services(project: Project, db: Session) -> list[dict]:
     if not months:
         return []
 
-    rows = (
-        db.query(
-            func.strftime("%Y-%m", TimeEntry.logged_at).label("ym"),
-            func.coalesce(func.sum(TimeEntry.hours), 0).label("hours"),
-        )
-        .join(WorkItem, WorkItem.id == TimeEntry.work_item_id)
-        .filter(WorkItem.project_id == project.id)
-        .group_by("ym")
-        .all()
-    )
-    hours_by_ym: dict[str, int] = {r.ym: int(r.hours or 0) for r in rows if r.ym}
+    hours_by_ym = _time_entries_by_month(db, project.id)
 
     out: list[dict] = []
     cumulative = 0
     for m in months:
-        cumulative += hours_by_ym.get(m.strftime("%Y-%m"), 0)
+        cumulative += int(round(hours_by_ym.get((m.year, m.month), 0)))
         out.append({"month": _month_label(m), "usedHours": cumulative})
     return out
 
@@ -396,7 +466,7 @@ def _derive_milestones(project: Project, db: Session) -> list[dict]:
         .order_by(ProjectMilestone.due_date)
         .all()
     )
-    now = datetime.utcnow()
+    now = _utc_now()
     return [
         {
             "id": str(m.id),
@@ -408,12 +478,16 @@ def _derive_milestones(project: Project, db: Session) -> list[dict]:
     ]
 
 
+# Word-boundary so we don't match "deprisk", "asterisk", etc.
+_RISK_RE = re.compile(r"\brisk\b", re.IGNORECASE)
+
+
 def _update_type_for(action: str | None, entity_type: str | None) -> str:
     """Map ``ActivityLog.action``/``entity_type`` to the frontend's
     ``"milestone" | "note" | "risk"`` tag. Defaults to ``note``."""
     if entity_type == "milestone":
         return "milestone"
-    if entity_type == "risk" or (action and "risk" in action.lower()):
+    if entity_type == "risk" or (action and _RISK_RE.search(action)):
         return "risk"
     return "note"
 
@@ -468,7 +542,8 @@ def _derive_forecast_vs_actuals(project: Project, db: Session) -> dict:
     direct_epic_of: dict[int, int | None] = {row.id: row.epic_id for row in all_items}
 
     def epic_for(item_id: int) -> int | None:
-        """Walk up parent chain until we find an item with epic_id set."""
+        """Walk parent chain via ``parent_id``; first epic ancestor wins.
+        Cycle-safe via a ``seen`` set."""
         seen: set[int] = set()
         cur: int | None = item_id
         while cur is not None and cur not in seen:
@@ -502,14 +577,14 @@ def _derive_forecast_vs_actuals(project: Project, db: Session) -> dict:
             proj_fc[ep_id] = proj_fc.get(ep_id, 0) + int(it.estimated_hours or 0)
             proj_act[ep_id] = proj_act.get(ep_id, 0) + int(it.logged_hours or 0)
 
-    # Month-scoped actuals from time_entries.
-    now = datetime.utcnow()
+    # Month-scoped actuals from time_entries. Use exclusive upper bounds
+    # (start-of-next-month) instead of 23:59:59 to avoid microsecond slop.
+    now = _utc_now()
     cur_start = _start_of_month(now)
-    cur_end = _end_of_month(now)
-    last_end = cur_start - timedelta(seconds=1)
-    last_start = _start_of_month(last_end)
+    next_start = _add_month(cur_start)
+    last_start = _start_of_month(cur_start - timedelta(days=1))
 
-    def _scoped_hours(start: datetime, end: datetime) -> dict[int, int]:
+    def _scoped_hours(start: datetime, end_exclusive: datetime) -> dict[int, int]:
         if not item_to_epic:
             return {}
         rows = (
@@ -519,7 +594,7 @@ def _derive_forecast_vs_actuals(project: Project, db: Session) -> dict:
             )
             .filter(TimeEntry.work_item_id.in_(item_to_epic.keys()))
             .filter(TimeEntry.logged_at >= start)
-            .filter(TimeEntry.logged_at <= end)
+            .filter(TimeEntry.logged_at < end_exclusive)
             .group_by(TimeEntry.work_item_id)
             .all()
         )
@@ -531,8 +606,8 @@ def _derive_forecast_vs_actuals(project: Project, db: Session) -> dict:
             out[ep_id] = out.get(ep_id, 0) + int(r.hours or 0)
         return out
 
-    cur_act = _scoped_hours(cur_start, cur_end)
-    last_act = _scoped_hours(last_start, last_end)
+    cur_act = _scoped_hours(cur_start, next_start)
+    last_act = _scoped_hours(last_start, cur_start)
 
     def _row(epic: WorkItem, act: int, fc: int) -> dict:
         return {
@@ -564,32 +639,43 @@ def get_pulse_derived(
 ):
     """Return DB-derived values aligned 1:1 with the frontend ``PulseData``
     shape. Each sub-section falls back to a sensible empty value on error
-    so the page still renders even if one computation breaks.
+    so the page still renders even if one computation breaks. The
+    ``_meta.degraded_sections`` list surfaces which (if any) sections fell
+    back so the frontend / ops can flag partial responses.
     """
     project = require_project_access(project_id, current_user, db)
+    degraded: list[str] = []
 
     months_block = _safe(
         "months",
         lambda: _derive_months(project, db),
         {"months": [], "lastActualIdx": 0, "currentMonthTrackedPct": 0},
+        degraded,
     )
 
     return {
-        "project": _safe("project", lambda: _derive_project_meta(project, db), {}),
-        "summary": _safe("summary", lambda: _derive_summary(project, db), {}),
+        "project": _safe("project", lambda: _derive_project_meta(project, db), {}, degraded),
+        "summary": _safe("summary", lambda: _derive_summary(project, db), {}, degraded),
         "months": months_block.get("months", []),
         "lastActualIdx": months_block.get("lastActualIdx", 0),
         "currentMonthTrackedPct": months_block.get("currentMonthTrackedPct", 0),
         "includedServices": _safe(
-            "includedServices", lambda: _derive_included_services(project, db), []
+            "includedServices",
+            lambda: _derive_included_services(project, db),
+            [],
+            degraded,
         ),
-        "milestones": _safe("milestones", lambda: _derive_milestones(project, db), []),
-        "updates": _safe("updates", lambda: _derive_updates(project, db), []),
+        "milestones": _safe("milestones", lambda: _derive_milestones(project, db), [], degraded),
+        "updates": _safe("updates", lambda: _derive_updates(project, db), [], degraded),
         "forecastVsActuals": _safe(
             "forecastVsActuals",
             lambda: _derive_forecast_vs_actuals(project, db),
             {"current": [], "last": [], "project": []},
+            degraded,
         ),
+        # Consistent shape — always present, even when empty, so the
+        # frontend doesn't need to guard for missing ``_meta``.
+        "_meta": {"degraded_sections": degraded},
     }
 
 
@@ -598,6 +684,11 @@ def get_pulse_derived(
 # categories, billing inputs, milestone budgets) stored as JSON. The frontend
 # ``PulseData`` types are the schema; the server stores the blob as-is.
 # ---------------------------------------------------------------------------
+
+# Max serialized payload size for the PUT override endpoint. The blob is
+# editorial text/JSON; 1 MB is well above anything we'd legitimately
+# expect, and well below anything that would OOM the API process.
+_MAX_OVERRIDE_BYTES = 1_000_000
 
 
 class PulseOverridePayload(BaseModel):
@@ -660,11 +751,36 @@ def put_pulse_overrides(
     contract and they evolve faster than the backend should. The PUT
     handler captures the calling user into ``updated_by_user_id`` so
     the UI can show "last edited by X".
+
+    Access control mirrors the frontend ``project.pulse.settings``
+    capability: only project admins (or system admins) can edit. Any
+    project member can still read via the GET handler above.
+
+    Note: last-write-wins; multi-PM editing is rare for editorial blobs
+    so we deliberately don't add optimistic locking here.
     """
+    # Reject oversized payloads early so we don't write 50 MB blobs to
+    # the DB by accident. ``json.dumps`` is the most accurate proxy for
+    # what we'll end up persisting.
+    try:
+        size = len(json.dumps(payload.data))
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail="Invalid pulse override payload") from exc
+    if size > _MAX_OVERRIDE_BYTES:
+        raise HTTPException(status_code=413, detail="Pulse override payload too large")
+
     require_project_access(project_id, current_user, db)
+    if not is_project_admin(project_id, current_user, db):
+        raise HTTPException(
+            status_code=403,
+            detail="Only project admins can edit pulse settings",
+        )
 
     override = (
-        db.query(ProjectPulseOverride).filter(ProjectPulseOverride.project_id == project_id).first()
+        db.query(ProjectPulseOverride)
+        .options(selectinload(ProjectPulseOverride.updated_by))
+        .filter(ProjectPulseOverride.project_id == project_id)
+        .first()
     )
     if override is None:
         override = ProjectPulseOverride(
@@ -679,15 +795,11 @@ def put_pulse_overrides(
         # ``onupdate=datetime.utcnow`` doesn't fire when only JSON contents
         # change (SQLAlchemy can't tell the dict was mutated in-place),
         # so set updated_at explicitly to be safe across drivers.
-        override.updated_at = datetime.utcnow()
+        override.updated_at = _utc_now()
 
     db.commit()
-    db.refresh(override)
-    # Re-query to eager-load updated_by for the response.
-    override = (
-        db.query(ProjectPulseOverride)
-        .options(selectinload(ProjectPulseOverride.updated_by))
-        .filter(ProjectPulseOverride.project_id == project_id)
-        .first()
-    )
+    # ``selectinload`` on the initial fetch (or after add() + flush) populates
+    # ``updated_by`` — refresh that relationship explicitly so the response
+    # reflects the just-committed updated_by_user_id without a re-query.
+    db.refresh(override, ["updated_at", "updated_by"])
     return _serialize_override(override)
