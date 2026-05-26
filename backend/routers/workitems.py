@@ -194,6 +194,26 @@ def update_parent_status_from_subtasks(parent_id: int, db: Session):
         parent.updated_at = datetime.utcnow()
 
 
+def refresh_parent_and_epic(parent: WorkItem, db: Session):
+    """
+    Recompute a Story/Task/Bug parent from its subtasks, then propagate the
+    result up to the grandparent epic (if linked).
+
+    Why the explicit flush: SessionLocal is configured with autoflush=False
+    (see database.py). After update_parent_hours_from_subtasks mutates
+    parent's hour columns in memory, those changes are still pending in the
+    session — a subsequent SUM query against the work_items table would read
+    the stale on-disk values and roll a stale parent value into the epic.
+    Flushing forces the parent writes to the DB before the epic SUM runs.
+    """
+    update_parent_hours_from_subtasks(parent.id, db)
+    update_parent_status_from_subtasks(parent.id, db)
+    if parent.epic_id is not None:
+        db.flush()
+        update_epic_hours(parent.epic_id, db)
+        update_epic_status_from_stories(parent.epic_id, db)
+
+
 def propagate_from_subtask(subtask: WorkItem, db: Session):
     """
     Helper: when a subtask changes, recompute its parent (Story/Task/Bug)
@@ -208,11 +228,7 @@ def propagate_from_subtask(subtask: WorkItem, db: Session):
     parent = db.query(WorkItem).filter(WorkItem.id == subtask.parent_id).first()
     if parent is None:
         return
-    update_parent_hours_from_subtasks(parent.id, db)
-    update_parent_status_from_subtasks(parent.id, db)
-    if parent.epic_id is not None:
-        update_epic_hours(parent.epic_id, db)
-        update_epic_status_from_stories(parent.epic_id, db)
+    refresh_parent_and_epic(parent, db)
 
 
 def update_epic_status_from_stories(epic_id: int, db: Session):
@@ -806,6 +822,62 @@ def update_work_item(
         if new_status and new_status != WorkItemStatus.DONE.value:
             item.completed_at = None
 
+    # Block manually marking a parent done while any child is still open.
+    # This applies in two directions:
+    #   - Epic: rejected if any of its stories/tasks/bugs aren't done.
+    #   - Story/Task/Bug: rejected if any of its subtasks aren't done.
+    # The rule is recursive by induction — to mark an Epic done you must first
+    # mark its children done, and to mark each child done its own subtasks
+    # must be done. So checking direct children is sufficient to cover all
+    # descendants.
+    if update_data.get("status") == WorkItemStatus.DONE.value:
+        if item.type == WorkItemType.EPIC.value:
+            open_child = (
+                db.query(WorkItem.id, WorkItem.key)
+                .filter(
+                    WorkItem.epic_id == item.id,
+                    WorkItem.type.in_(
+                        [
+                            WorkItemType.USER_STORY.value,
+                            WorkItemType.TASK.value,
+                            WorkItemType.BUG.value,
+                        ]
+                    ),
+                    WorkItem.status != WorkItemStatus.DONE.value,
+                )
+                .first()
+            )
+            if open_child is not None:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"Can't mark epic done — {open_child.key} is still open. "
+                        "Complete every story/task/bug under this epic first."
+                    ),
+                )
+        elif item.type in (
+            WorkItemType.USER_STORY.value,
+            WorkItemType.TASK.value,
+            WorkItemType.BUG.value,
+        ):
+            open_subtask = (
+                db.query(WorkItem.id, WorkItem.key)
+                .filter(
+                    WorkItem.parent_id == item.id,
+                    WorkItem.type == WorkItemType.SUBTASK.value,
+                    WorkItem.status != WorkItemStatus.DONE.value,
+                )
+                .first()
+            )
+            if open_subtask is not None:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"Can't mark this ticket done — subtask {open_subtask.key} "
+                        "is still open. Complete every subtask first."
+                    ),
+                )
+
     # Handle frontend compatibility: assigned_hours -> estimated_hours
     if "assigned_hours" in update_data:
         update_data["estimated_hours"] = update_data.pop("assigned_hours")
@@ -1017,11 +1089,7 @@ def update_work_item(
                     db.query(WorkItem).filter(WorkItem.id == old_parent_id).first()
                 )
                 if old_parent is not None:
-                    update_parent_hours_from_subtasks(old_parent.id, db)
-                    update_parent_status_from_subtasks(old_parent.id, db)
-                    if old_parent.epic_id is not None:
-                        update_epic_hours(old_parent.epic_id, db)
-                        update_epic_status_from_stories(old_parent.epic_id, db)
+                    refresh_parent_and_epic(old_parent, db)
             db.commit()
     else:
         # Story / task / bug / epic — existing single-level rollup to the epic.
@@ -1097,6 +1165,60 @@ def batch_update_status(
     """Batch update status for multiple work items (requires auth)"""
     items = db.query(WorkItem).filter(WorkItem.id.in_(update.item_ids)).all()
 
+    # Block marking a parent done while any of its descendants is still open
+    # (matches the single-item rule in update_work_item). Checked once per item
+    # before any writes so the whole batch is rejected atomically.
+    if update.status == WorkItemStatus.DONE.value:
+        for item in items:
+            if item.type == WorkItemType.EPIC.value:
+                open_child = (
+                    db.query(WorkItem.id, WorkItem.key)
+                    .filter(
+                        WorkItem.epic_id == item.id,
+                        WorkItem.type.in_(
+                            [
+                                WorkItemType.USER_STORY.value,
+                                WorkItemType.TASK.value,
+                                WorkItemType.BUG.value,
+                            ]
+                        ),
+                        WorkItem.status != WorkItemStatus.DONE.value,
+                        WorkItem.id.notin_(update.item_ids),
+                    )
+                    .first()
+                )
+                if open_child is not None:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=(
+                            f"Can't mark epic {item.key} done — {open_child.key} "
+                            "is still open."
+                        ),
+                    )
+            elif item.type in (
+                WorkItemType.USER_STORY.value,
+                WorkItemType.TASK.value,
+                WorkItemType.BUG.value,
+            ):
+                open_subtask = (
+                    db.query(WorkItem.id, WorkItem.key)
+                    .filter(
+                        WorkItem.parent_id == item.id,
+                        WorkItem.type == WorkItemType.SUBTASK.value,
+                        WorkItem.status != WorkItemStatus.DONE.value,
+                        WorkItem.id.notin_(update.item_ids),
+                    )
+                    .first()
+                )
+                if open_subtask is not None:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=(
+                            f"Can't mark {item.key} done — subtask {open_subtask.key} "
+                            "is still open."
+                        ),
+                    )
+
     # Collect epics that need updating
     epics_to_update = set()
 
@@ -1159,11 +1281,7 @@ def delete_work_item(
     if item_type == WorkItemType.SUBTASK.value and parent_id is not None:
         parent = db.query(WorkItem).filter(WorkItem.id == parent_id).first()
         if parent is not None:
-            update_parent_hours_from_subtasks(parent.id, db)
-            update_parent_status_from_subtasks(parent.id, db)
-            if parent.epic_id is not None:
-                update_epic_hours(parent.epic_id, db)
-                update_epic_status_from_stories(parent.epic_id, db)
+            refresh_parent_and_epic(parent, db)
             db.commit()
     elif epic_id:
         update_epic_hours(epic_id, db)
