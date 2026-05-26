@@ -418,11 +418,17 @@ const ItemDetailDrawer = ({
             <Button
               size="sm"
               variant="ghost"
+              disabled={selectedItem.status === 'done' && !isEditing}
+              title={
+                selectedItem.status === 'done' && !isEditing
+                  ? 'This ticket is done. Re-open it (Move to → any non-done status) before editing.'
+                  : undefined
+              }
               onClick={() => {
                 setIsEditing(!isEditing);
                 if (!isEditing) setEditForm(selectedItem);
               }}
-              className="text-[#737373] hover:text-white rounded-lg h-8 px-2.5"
+              className="text-[#737373] hover:text-white rounded-lg h-8 px-2.5 disabled:opacity-40 disabled:cursor-not-allowed"
             >
               <Pencil className="w-3.5 h-3.5 mr-1" />
               {isEditing ? 'Cancel' : 'Edit'}

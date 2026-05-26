@@ -663,6 +663,22 @@ def update_work_item(
     update_data.pop("logged_hours", None)
     update_data.pop("remaining_hours", None)
 
+    # Done tickets are frozen — only allowed mutation is a status change that
+    # re-opens them (any non-done status). Combined "re-open + edit other fields"
+    # in a single request is rejected: caller must re-open first, then edit.
+    if item.status == WorkItemStatus.DONE.value:
+        non_status_changes = [k for k in update_data if k != "status"]
+        if non_status_changes:
+            raise HTTPException(
+                status_code=403,
+                detail="This ticket is marked done. Re-open it before editing.",
+            )
+        # If status is being changed to a non-done value, clear completed_at so
+        # the audit trail reflects the new lifecycle.
+        new_status = update_data.get("status")
+        if new_status and new_status != WorkItemStatus.DONE.value:
+            item.completed_at = None
+
     # Handle frontend compatibility: assigned_hours -> estimated_hours
     if "assigned_hours" in update_data:
         update_data["estimated_hours"] = update_data.pop("assigned_hours")
@@ -1026,6 +1042,13 @@ def log_hours(
     item = db.query(WorkItem).filter(WorkItem.id == item_id).first()
     if not item:
         raise HTTPException(status_code=404, detail="Work item not found")
+
+    # Done tickets are frozen — re-open before logging more hours.
+    if item.status == WorkItemStatus.DONE.value:
+        raise HTTPException(
+            status_code=403,
+            detail="This ticket is marked done. Re-open it before logging hours.",
+        )
 
     # Assignee-only enforcement
     if not item.assignee_id:
@@ -1513,6 +1536,13 @@ def move_ticket_to_sprint(
     item = db.query(WorkItem).filter(WorkItem.id == item_id).first()
     if not item:
         raise HTTPException(status_code=404, detail="Work item not found")
+
+    # Done tickets are frozen — re-open before re-assigning to another sprint.
+    if item.status == WorkItemStatus.DONE.value:
+        raise HTTPException(
+            status_code=403,
+            detail="This ticket is marked done. Re-open it before moving sprints.",
+        )
 
     # If moving to backlog
     if request.target_sprint_id is None:
@@ -2306,6 +2336,13 @@ def add_item_dependency(
     if not item:
         raise HTTPException(status_code=404, detail="Work item not found")
 
+    # Done tickets are frozen — re-open before changing their dependency graph.
+    if item.status == WorkItemStatus.DONE.value:
+        raise HTTPException(
+            status_code=403,
+            detail="This ticket is marked done. Re-open it before adding dependencies.",
+        )
+
     depends_on = db.query(WorkItem).filter(WorkItem.id == dependency.depends_on_id).first()
     if not depends_on:
         raise HTTPException(status_code=404, detail="Dependent work item not found")
@@ -2371,6 +2408,13 @@ def remove_item_dependency(
         raise HTTPException(status_code=404, detail="Dependency not found")
 
     item = db.query(WorkItem).filter(WorkItem.id == item_id).first()
+
+    # Done tickets are frozen — re-open before changing their dependency graph.
+    if item and item.status == WorkItemStatus.DONE.value:
+        raise HTTPException(
+            status_code=403,
+            detail="This ticket is marked done. Re-open it before removing dependencies.",
+        )
 
     # Log activity
     activity = ActivityLog(
