@@ -19,6 +19,7 @@ from models.user import User
 from models.work_item import WorkItem, WorkItemStatus, WorkItemType
 from routers.auth import get_current_user
 from services.email_service import email_service
+from services.hierarchy import validate_hierarchy
 from services.llm_agent import llm_agent
 
 router = APIRouter(prefix="/api/workitems", tags=["Work Items"])
@@ -94,6 +95,140 @@ def update_epic_hours(epic_id: int, db: Session):
     epic.logged_hours = row.logged or 0
     epic.remaining_hours = row.remaining or 0
     epic.updated_at = datetime.utcnow()
+
+
+def update_parent_hours_from_subtasks(parent_id: int, db: Session):
+    """
+    Roll up estimated_hours, logged_hours, and remaining_hours from all
+    subtasks into their Story/Task/Bug parent. Mirrors update_epic_hours
+    but at the parent-with-subtasks level.
+
+    When a Story/Task/Bug has at least one subtask it becomes a pure
+    aggregator — its hour columns are overwritten with the SUM across its
+    subtasks. (Direct log_hours on parents-with-subtasks is rejected at the
+    endpoint to keep the aggregator invariant.) When there are no subtasks
+    the parent retains its own hour values; this function is a no-op in
+    that case.
+    """
+    parent = db.query(WorkItem).filter(WorkItem.id == parent_id).first()
+    if not parent:
+        return
+    if parent.type not in (
+        WorkItemType.USER_STORY.value,
+        WorkItemType.TASK.value,
+        WorkItemType.BUG.value,
+    ):
+        return
+
+    subtask_count = (
+        db.query(WorkItem.id)
+        .filter(
+            WorkItem.parent_id == parent_id,
+            WorkItem.type == WorkItemType.SUBTASK.value,
+        )
+        .count()
+    )
+    if subtask_count == 0:
+        # No subtasks: parent keeps its own direct hours. Don't touch.
+        return
+
+    row = (
+        db.query(
+            func.coalesce(func.sum(WorkItem.estimated_hours), 0).label("est"),
+            func.coalesce(func.sum(WorkItem.logged_hours), 0).label("logged"),
+            func.coalesce(func.sum(WorkItem.remaining_hours), 0).label("remaining"),
+        )
+        .filter(
+            WorkItem.parent_id == parent_id,
+            WorkItem.type == WorkItemType.SUBTASK.value,
+        )
+        .one()
+    )
+
+    parent.estimated_hours = row.est or 0
+    parent.logged_hours = row.logged or 0
+    parent.remaining_hours = row.remaining or 0
+    parent.updated_at = datetime.utcnow()
+
+
+def update_parent_status_from_subtasks(parent_id: int, db: Session):
+    """
+    Auto-update Story/Task/Bug status based on its subtasks. Mirrors
+    update_epic_status_from_stories.
+
+    - If ALL subtasks are done, mark the parent as done.
+    - If ANY subtask is not done and parent was done, reopen parent.
+    - If parent has no subtasks, do nothing (parent's own status governs).
+    """
+    parent = db.query(WorkItem).filter(WorkItem.id == parent_id).first()
+    if not parent:
+        return
+    if parent.type not in (
+        WorkItemType.USER_STORY.value,
+        WorkItemType.TASK.value,
+        WorkItemType.BUG.value,
+    ):
+        return
+
+    subtasks = (
+        db.query(WorkItem)
+        .filter(
+            WorkItem.parent_id == parent_id,
+            WorkItem.type == WorkItemType.SUBTASK.value,
+        )
+        .all()
+    )
+    if not subtasks:
+        return
+
+    all_done = all(s.status == WorkItemStatus.DONE.value for s in subtasks)
+
+    if all_done and parent.status != WorkItemStatus.DONE.value:
+        parent.status = WorkItemStatus.DONE.value
+        parent.completed_at = datetime.utcnow()
+        parent.updated_at = datetime.utcnow()
+    elif not all_done and parent.status == WorkItemStatus.DONE.value:
+        parent.status = WorkItemStatus.TODO.value
+        parent.completed_at = None
+        parent.started_at = None
+        parent.updated_at = datetime.utcnow()
+
+
+def refresh_parent_and_epic(parent: WorkItem, db: Session):
+    """
+    Recompute a Story/Task/Bug parent from its subtasks, then propagate the
+    result up to the grandparent epic (if linked).
+
+    Why the explicit flush: SessionLocal is configured with autoflush=False
+    (see database.py). After update_parent_hours_from_subtasks mutates
+    parent's hour columns in memory, those changes are still pending in the
+    session — a subsequent SUM query against the work_items table would read
+    the stale on-disk values and roll a stale parent value into the epic.
+    Flushing forces the parent writes to the DB before the epic SUM runs.
+    """
+    update_parent_hours_from_subtasks(parent.id, db)
+    update_parent_status_from_subtasks(parent.id, db)
+    if parent.epic_id is not None:
+        db.flush()
+        update_epic_hours(parent.epic_id, db)
+        update_epic_status_from_stories(parent.epic_id, db)
+
+
+def propagate_from_subtask(subtask: WorkItem, db: Session):
+    """
+    Helper: when a subtask changes, recompute its parent (Story/Task/Bug)
+    and then the grandparent epic (if the parent has an epic_id).
+
+    Use this from any mutation that touches a subtask's hours or status.
+    Centralising the two-level chain here avoids forgetting one side at a
+    call site.
+    """
+    if subtask.parent_id is None:
+        return
+    parent = db.query(WorkItem).filter(WorkItem.id == subtask.parent_id).first()
+    if parent is None:
+        return
+    refresh_parent_and_epic(parent, db)
 
 
 def update_epic_status_from_stories(epic_id: int, db: Session):
@@ -315,10 +450,9 @@ def list_work_items(
 class SlimWorkItem(BaseModel):
     """Slim payload used by the Kanban board endpoint.
 
-    Excludes heavy fields (description, acceptance_criteria, started_at,
-    completed_at) that the board view never renders. Wire size is roughly
-    40-50% of the full row, which adds up fast on projects with hundreds
-    of items.
+    Excludes heavy fields (description, acceptance_criteria, started_at)
+    that the board view never renders. Wire size is roughly 40-50% of
+    the full row, which adds up fast on projects with hundreds of items.
     """
 
     id: str
@@ -339,6 +473,8 @@ class SlimWorkItem(BaseModel):
     remaining_hours: int = 0
     assigned_hours: int = 0
     logged_hours: int = 0
+    due_date: str | None = None
+    completed_at: str | None = None
 
 
 @router.get("/board", response_model=list[SlimWorkItem])
@@ -393,6 +529,8 @@ def list_board_items(
             remaining_hours=item.remaining_hours or 0,
             assigned_hours=item.estimated_hours or 0,
             logged_hours=item.logged_hours or 0,
+            due_date=item.due_date.isoformat() if item.due_date else None,
+            completed_at=item.completed_at.isoformat() if item.completed_at else None,
         )
         for item in items
     ]
@@ -497,6 +635,15 @@ def create_work_item(
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
 
+    validate_hierarchy(
+        db,
+        item_type=item.type,
+        project_id=item.project_id,
+        parent_id=item.parent_id,
+        epic_id=item.epic_id,
+        item_id=None,
+    )
+
     # Generate key using project's key_prefix
     key_prefix = getattr(project, "key_prefix", None) or "PROJ"
 
@@ -561,8 +708,13 @@ def create_work_item(
     db.commit()
     db.refresh(work_item)
 
-    # Update epic hours if this work item is linked to an epic
-    if work_item.epic_id:
+    # Propagation on create:
+    # - For stories/tasks/bugs linked to an epic, refresh the epic's hours.
+    # - For a brand-new subtask, walk up the chain (parent → grandparent epic).
+    if work_item.type == WorkItemType.SUBTASK.value and work_item.parent_id:
+        propagate_from_subtask(work_item, db)
+        db.commit()
+    elif work_item.epic_id:
         update_epic_hours(work_item.epic_id, db)
         db.commit()
 
@@ -639,6 +791,10 @@ def update_work_item(
     # Track old epic_id so we can recompute the FORMER epic when an item is reparented
     old_epic_id = item.epic_id
 
+    # Track old parent_id so a re-parented subtask refreshes BOTH the old and
+    # new parent (and their respective epics).
+    old_parent_id = item.parent_id
+
     update_data = update.model_dump(exclude_unset=True)
 
     # logged_hours and remaining_hours are derived columns — logged_hours
@@ -650,9 +806,93 @@ def update_work_item(
     update_data.pop("logged_hours", None)
     update_data.pop("remaining_hours", None)
 
+    # Done tickets are frozen — only allowed mutation is a status change that
+    # re-opens them (any non-done status). Combined "re-open + edit other fields"
+    # in a single request is rejected: caller must re-open first, then edit.
+    if item.status == WorkItemStatus.DONE.value:
+        non_status_changes = [k for k in update_data if k != "status"]
+        if non_status_changes:
+            raise HTTPException(
+                status_code=403,
+                detail="This ticket is marked done. Re-open it before editing.",
+            )
+        # If status is being changed to a non-done value, clear completed_at so
+        # the audit trail reflects the new lifecycle.
+        new_status = update_data.get("status")
+        if new_status and new_status != WorkItemStatus.DONE.value:
+            item.completed_at = None
+
+    # Block manually marking a parent done while any child is still open.
+    # This applies in two directions:
+    #   - Epic: rejected if any of its stories/tasks/bugs aren't done.
+    #   - Story/Task/Bug: rejected if any of its subtasks aren't done.
+    # The rule is recursive by induction — to mark an Epic done you must first
+    # mark its children done, and to mark each child done its own subtasks
+    # must be done. So checking direct children is sufficient to cover all
+    # descendants.
+    if update_data.get("status") == WorkItemStatus.DONE.value:
+        if item.type == WorkItemType.EPIC.value:
+            open_child = (
+                db.query(WorkItem.id, WorkItem.key)
+                .filter(
+                    WorkItem.epic_id == item.id,
+                    WorkItem.type.in_(
+                        [
+                            WorkItemType.USER_STORY.value,
+                            WorkItemType.TASK.value,
+                            WorkItemType.BUG.value,
+                        ]
+                    ),
+                    WorkItem.status != WorkItemStatus.DONE.value,
+                )
+                .first()
+            )
+            if open_child is not None:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"Can't mark epic done — {open_child.key} is still open. "
+                        "Complete every story/task/bug under this epic first."
+                    ),
+                )
+        elif item.type in (
+            WorkItemType.USER_STORY.value,
+            WorkItemType.TASK.value,
+            WorkItemType.BUG.value,
+        ):
+            open_subtask = (
+                db.query(WorkItem.id, WorkItem.key)
+                .filter(
+                    WorkItem.parent_id == item.id,
+                    WorkItem.type == WorkItemType.SUBTASK.value,
+                    WorkItem.status != WorkItemStatus.DONE.value,
+                )
+                .first()
+            )
+            if open_subtask is not None:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"Can't mark this ticket done — subtask {open_subtask.key} "
+                        "is still open. Complete every subtask first."
+                    ),
+                )
+
     # Handle frontend compatibility: assigned_hours -> estimated_hours
     if "assigned_hours" in update_data:
         update_data["estimated_hours"] = update_data.pop("assigned_hours")
+
+    # Validate hierarchy if type / parent_id / epic_id is being touched.
+    # Compute the proposed post-update values so we validate the final shape.
+    if any(k in update_data for k in ("type", "parent_id", "epic_id")):
+        validate_hierarchy(
+            db,
+            item_type=update_data.get("type", item.type),
+            project_id=item.project_id,
+            parent_id=update_data.get("parent_id", item.parent_id),
+            epic_id=update_data.get("epic_id", item.epic_id),
+            item_id=item.id,
+        )
 
     # Handle date fields - parse ISO strings to datetime
     if "start_date" in update_data and update_data["start_date"]:
@@ -832,32 +1072,44 @@ def update_work_item(
                     role="creator",
                 )
 
-    # Update epic status if this item's status changed and it's linked to an epic
-    if "status" in update_data and item.epic_id:
-        update_epic_status_from_stories(item.epic_id, db)
-
-    # Update epic hours when any of the child's hour fields changed
     hour_fields_changed = any(
         f in update_data for f in ("estimated_hours", "logged_hours", "remaining_hours")
     )
-    if hour_fields_changed and item.epic_id:
-        update_epic_hours(item.epic_id, db)
 
-    # Update epic if epic_id changed (moving item to a different epic).
-    # Recompute BOTH the new epic AND the previous epic — the old one lost a child.
-    if "epic_id" in update_data:
-        if item.epic_id:
-            update_epic_hours(item.epic_id, db)
+    if item.type == WorkItemType.SUBTASK.value:
+        # Subtask changes propagate up to parent (story/task/bug) and then to
+        # the grandparent epic via the parent's epic_id.
+        status_or_hours_changed = "status" in update_data or hour_fields_changed
+        parent_changed = "parent_id" in update_data and item.parent_id != old_parent_id
+        if status_or_hours_changed or parent_changed:
+            propagate_from_subtask(item, db)
+            # If re-parented, refresh the FORMER parent too (it just lost a subtask).
+            if parent_changed and old_parent_id is not None:
+                old_parent = db.query(WorkItem).filter(WorkItem.id == old_parent_id).first()
+                if old_parent is not None:
+                    refresh_parent_and_epic(old_parent, db)
+            db.commit()
+    else:
+        # Story / task / bug / epic — existing single-level rollup to the epic.
+        if "status" in update_data and item.epic_id:
             update_epic_status_from_stories(item.epic_id, db)
-        if old_epic_id and old_epic_id != item.epic_id:
-            update_epic_hours(old_epic_id, db)
-            update_epic_status_from_stories(old_epic_id, db)
 
-    # Final commit for any epic updates
-    if ("status" in update_data or hour_fields_changed or "epic_id" in update_data) and (
-        item.epic_id or old_epic_id
-    ):
-        db.commit()
+        if hour_fields_changed and item.epic_id:
+            update_epic_hours(item.epic_id, db)
+
+        # epic_id changed (item moved between epics): refresh both ends.
+        if "epic_id" in update_data:
+            if item.epic_id:
+                update_epic_hours(item.epic_id, db)
+                update_epic_status_from_stories(item.epic_id, db)
+            if old_epic_id and old_epic_id != item.epic_id:
+                update_epic_hours(old_epic_id, db)
+                update_epic_status_from_stories(old_epic_id, db)
+
+        if ("status" in update_data or hour_fields_changed or "epic_id" in update_data) and (
+            item.epic_id or old_epic_id
+        ):
+            db.commit()
 
     # Return with assignee name
     assignee_name = "Unassigned"
@@ -911,6 +1163,59 @@ def batch_update_status(
     """Batch update status for multiple work items (requires auth)"""
     items = db.query(WorkItem).filter(WorkItem.id.in_(update.item_ids)).all()
 
+    # Block marking a parent done while any of its descendants is still open
+    # (matches the single-item rule in update_work_item). Checked once per item
+    # before any writes so the whole batch is rejected atomically.
+    if update.status == WorkItemStatus.DONE.value:
+        for item in items:
+            if item.type == WorkItemType.EPIC.value:
+                open_child = (
+                    db.query(WorkItem.id, WorkItem.key)
+                    .filter(
+                        WorkItem.epic_id == item.id,
+                        WorkItem.type.in_(
+                            [
+                                WorkItemType.USER_STORY.value,
+                                WorkItemType.TASK.value,
+                                WorkItemType.BUG.value,
+                            ]
+                        ),
+                        WorkItem.status != WorkItemStatus.DONE.value,
+                        WorkItem.id.notin_(update.item_ids),
+                    )
+                    .first()
+                )
+                if open_child is not None:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=(
+                            f"Can't mark epic {item.key} done — {open_child.key} is still open."
+                        ),
+                    )
+            elif item.type in (
+                WorkItemType.USER_STORY.value,
+                WorkItemType.TASK.value,
+                WorkItemType.BUG.value,
+            ):
+                open_subtask = (
+                    db.query(WorkItem.id, WorkItem.key)
+                    .filter(
+                        WorkItem.parent_id == item.id,
+                        WorkItem.type == WorkItemType.SUBTASK.value,
+                        WorkItem.status != WorkItemStatus.DONE.value,
+                        WorkItem.id.notin_(update.item_ids),
+                    )
+                    .first()
+                )
+                if open_subtask is not None:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=(
+                            f"Can't mark {item.key} done — subtask {open_subtask.key} "
+                            "is still open."
+                        ),
+                    )
+
     # Collect epics that need updating
     epics_to_update = set()
 
@@ -947,8 +1252,10 @@ def delete_work_item(
     if not item:
         raise HTTPException(status_code=404, detail="Work item not found")
 
-    # Store epic_id before deleting so we can update it
+    # Stash linkage fields before deletion so we know what to recompute
     epic_id = item.epic_id
+    parent_id = item.parent_id
+    item_type = item.type
 
     # Log activity before deletion
     from models.activity_log import ActivityLog
@@ -965,8 +1272,15 @@ def delete_work_item(
     db.delete(item)
     db.commit()
 
-    # Update epic hours and status if item was linked to an epic
-    if epic_id:
+    # Propagation on delete:
+    # - Subtask: walk up parent → grandparent epic
+    # - Story/task/bug linked to an epic: refresh that epic
+    if item_type == WorkItemType.SUBTASK.value and parent_id is not None:
+        parent = db.query(WorkItem).filter(WorkItem.id == parent_id).first()
+        if parent is not None:
+            refresh_parent_and_epic(parent, db)
+            db.commit()
+    elif epic_id:
         update_epic_hours(epic_id, db)
         update_epic_status_from_stories(epic_id, db)
         db.commit()
@@ -987,13 +1301,66 @@ def log_hours(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Log hours to a work item - creates time entry and updates totals (requires auth)"""
+    """
+    Log hours to a work item - creates time entry and updates totals.
+
+    Authorization: only the developer the ticket is assigned to may log hours
+    on it. The caller is matched to a Developer row by email; if that developer
+    isn't the assignee, the request is rejected. Tickets with no assignee
+    cannot be logged against by anyone.
+    """
     from models.developer import Developer
     from models.time_entry import TimeEntry
 
     item = db.query(WorkItem).filter(WorkItem.id == item_id).first()
     if not item:
         raise HTTPException(status_code=404, detail="Work item not found")
+
+    # Done tickets are frozen — re-open before logging more hours.
+    if item.status == WorkItemStatus.DONE.value:
+        raise HTTPException(
+            status_code=403,
+            detail="This ticket is marked done. Re-open it before logging hours.",
+        )
+
+    # Pure-aggregator rule: once a story/task/bug has subtasks, its hour
+    # columns are derived from those subtasks. Direct logging on the parent
+    # would be silently overwritten on the next rollup, so reject up front
+    # with a message pointing the user to the subtasks.
+    if item.type in (
+        WorkItemType.USER_STORY.value,
+        WorkItemType.TASK.value,
+        WorkItemType.BUG.value,
+    ):
+        has_subtasks = (
+            db.query(WorkItem.id)
+            .filter(
+                WorkItem.parent_id == item.id,
+                WorkItem.type == WorkItemType.SUBTASK.value,
+            )
+            .first()
+            is not None
+        )
+        if has_subtasks:
+            raise HTTPException(
+                status_code=403,
+                detail=(
+                    "This ticket has subtasks — log hours against one of the subtasks instead."
+                ),
+            )
+
+    # Assignee-only enforcement
+    if not item.assignee_id:
+        raise HTTPException(
+            status_code=403,
+            detail="This ticket has no assignee — hours can only be logged on assigned tickets.",
+        )
+    caller_dev = db.query(Developer).filter(Developer.email == current_user.email).first()
+    if not caller_dev or caller_dev.id != item.assignee_id:
+        raise HTTPException(
+            status_code=403,
+            detail="Only the ticket's assignee can log hours on it.",
+        )
 
     if request.hours <= 0:
         raise HTTPException(status_code=400, detail="Hours must be greater than 0")
@@ -1077,8 +1444,13 @@ def log_hours(
     db.commit()
     db.refresh(item)
 
-    # Roll up to parent epic so its logged/remaining stay in sync with children
-    if item.epic_id:
+    # Roll up:
+    # - Logging on a subtask propagates two levels (parent → grandparent epic).
+    # - Logging on a story/task/bug under an epic propagates one level.
+    if item.type == WorkItemType.SUBTASK.value and item.parent_id:
+        propagate_from_subtask(item, db)
+        db.commit()
+    elif item.epic_id:
         update_epic_hours(item.epic_id, db)
         db.commit()
 
@@ -1466,6 +1838,13 @@ def move_ticket_to_sprint(
     item = db.query(WorkItem).filter(WorkItem.id == item_id).first()
     if not item:
         raise HTTPException(status_code=404, detail="Work item not found")
+
+    # Done tickets are frozen — re-open before re-assigning to another sprint.
+    if item.status == WorkItemStatus.DONE.value:
+        raise HTTPException(
+            status_code=403,
+            detail="This ticket is marked done. Re-open it before moving sprints.",
+        )
 
     # If moving to backlog
     if request.target_sprint_id is None:
@@ -2259,6 +2638,13 @@ def add_item_dependency(
     if not item:
         raise HTTPException(status_code=404, detail="Work item not found")
 
+    # Done tickets are frozen — re-open before changing their dependency graph.
+    if item.status == WorkItemStatus.DONE.value:
+        raise HTTPException(
+            status_code=403,
+            detail="This ticket is marked done. Re-open it before adding dependencies.",
+        )
+
     depends_on = db.query(WorkItem).filter(WorkItem.id == dependency.depends_on_id).first()
     if not depends_on:
         raise HTTPException(status_code=404, detail="Dependent work item not found")
@@ -2324,6 +2710,13 @@ def remove_item_dependency(
         raise HTTPException(status_code=404, detail="Dependency not found")
 
     item = db.query(WorkItem).filter(WorkItem.id == item_id).first()
+
+    # Done tickets are frozen — re-open before changing their dependency graph.
+    if item and item.status == WorkItemStatus.DONE.value:
+        raise HTTPException(
+            status_code=403,
+            detail="This ticket is marked done. Re-open it before removing dependencies.",
+        )
 
     # Log activity
     activity = ActivityLog(

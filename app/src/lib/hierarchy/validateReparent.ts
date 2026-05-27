@@ -1,4 +1,4 @@
-export type WorkItemType = 'user_story' | 'task' | 'bug' | 'epic';
+export type WorkItemType = 'user_story' | 'task' | 'bug' | 'epic' | 'subtask';
 
 export type RelationshipField = 'epic_id' | 'parent_id';
 
@@ -9,18 +9,23 @@ export interface HierarchyItem {
   epic_id?: number | null;
 }
 
+// Canonical model: Epic → (Story | Task | Bug) → Subtask. Mirrors
+// backend/services/hierarchy.py::ALLOWED_PARENT_TYPES. Keep the two in sync.
 const TYPE_PAIR_RULES: Record<RelationshipField, Partial<Record<WorkItemType, WorkItemType[]>>> = {
   epic_id: {
     user_story: ['epic'],
     task: ['epic'],
     bug: ['epic'],
     epic: [],
+    // Subtasks reach the epic transitively through their parent — no direct link.
+    subtask: [],
   },
   parent_id: {
-    task: ['task', 'user_story'],
+    task: [],
     user_story: [],
     bug: [],
     epic: [],
+    subtask: ['user_story', 'task', 'bug'],
   },
 };
 
@@ -67,7 +72,33 @@ export function validateReparent(
     return { ok: false, reason: 'This would create a cycle' };
   }
 
+  // Depth-1 cap (matches backend services/hierarchy.py):
+  // - target itself must not already have a parent (would make subject depth-2)
+  // - subject must not already have children (would push them to depth-2)
+  if (field === 'parent_id') {
+    if (target.parent_id != null) {
+      return {
+        ok: false,
+        reason:
+          'That item is already a child of another item — can’t nest more than one level deep',
+      };
+    }
+    if (subjectHasChildren(subject, allItems)) {
+      return {
+        ok: false,
+        reason:
+          'This item already has children — giving it a parent would exceed the one-level nesting limit',
+      };
+    }
+  }
+
   return { ok: true };
+}
+
+export function subjectHasChildren(subject: HierarchyItem, allItems: HierarchyItem[]): boolean {
+  const subjectNumericId = Number(subject.id);
+  if (Number.isNaN(subjectNumericId)) return false;
+  return allItems.some((it) => it.parent_id === subjectNumericId);
 }
 
 export function wouldCreateCycle(
@@ -95,5 +126,6 @@ export function wouldCreateCycle(
 }
 
 function humanType(t: WorkItemType): string {
-  return t === 'user_story' ? 'story' : t;
+  if (t === 'user_story') return 'story';
+  return t;
 }

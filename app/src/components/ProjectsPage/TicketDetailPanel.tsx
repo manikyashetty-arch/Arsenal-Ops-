@@ -167,15 +167,30 @@ const TicketDetailPanel = ({
   };
 
   const handleStatusChange = async (newStatus: string) => {
-    const updated = { ...task, status: newStatus } as MyTask;
-    onTaskChanged(updated);
+    const previousStatus = task.status;
+    // Optimistic flip
+    onTaskChanged({ ...task, status: newStatus } as MyTask);
     try {
-      await fetch(`${API_BASE_URL}/api/workitems/${task.id}`, {
+      const res = await fetch(`${API_BASE_URL}/api/workitems/${task.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ status: newStatus }),
       });
+      if (!res.ok) {
+        // Revert optimistic flip and surface the backend's detail (e.g.
+        // "subtask still open" when marking a parent done).
+        onTaskChanged({ ...task, status: previousStatus } as MyTask);
+        let detail = 'Failed to update status';
+        try {
+          const body = await res.json();
+          if (body?.detail) detail = body.detail;
+        } catch {
+          // body wasn't JSON — keep the generic message
+        }
+        toast.error(detail);
+      }
     } catch {
+      onTaskChanged({ ...task, status: previousStatus } as MyTask);
       toast.error('Failed to update status');
     }
   };
@@ -882,7 +897,11 @@ const TicketDetailPanel = ({
         <div className="flex-shrink-0 p-4 border-t border-[rgba(255,255,255,0.05)] flex gap-3">
           <button
             onClick={() => startEdit()}
-            className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] text-white font-semibold text-sm hover:bg-[rgba(255,255,255,0.08)] transition-colors"
+            disabled={task.status === 'done'}
+            title={
+              task.status === 'done' ? 'This ticket is done. Re-open it before editing.' : undefined
+            }
+            className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] text-white font-semibold text-sm hover:bg-[rgba(255,255,255,0.08)] transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-[rgba(255,255,255,0.05)]"
           >
             <Edit2 className="w-4 h-4" />
             Edit

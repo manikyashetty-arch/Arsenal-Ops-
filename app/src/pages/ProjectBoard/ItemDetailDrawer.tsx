@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Pencil,
   Trash2,
@@ -23,6 +23,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { useAuth } from '@/contexts/AuthContext';
 import { Calendar as CalendarIcon } from '@/components/ui/calendar';
 import { toast } from 'sonner';
 import TicketContributors from '@/components/TicketContributors';
@@ -33,11 +34,13 @@ import {
   fieldSupportsType,
 } from '@/lib/hierarchy/validateReparent';
 import { apiFetch } from '@/lib/api';
+import { CALENDAR_CLASS_NAMES } from '@/components/ProjectsPage/constants';
+import { formatLocalDate } from '@/components/ProjectsPage/utils';
 
 interface WorkItem {
   id: string;
   key: string;
-  type: 'user_story' | 'task' | 'bug' | 'epic';
+  type: 'user_story' | 'task' | 'bug' | 'epic' | 'subtask';
   title: string;
   description: string;
   status: 'todo' | 'in_progress' | 'in_review' | 'done';
@@ -94,32 +97,11 @@ const TYPE_CONFIG = {
   task: { icon: ClipboardList, color: '#F59E0B', label: 'Task', bg: 'rgba(245,158,11,0.15)' },
   bug: { icon: Bug, color: '#EF4444', label: 'Bug', bg: 'rgba(239,68,68,0.15)' },
   epic: { icon: Target, color: '#A78BFA', label: 'Epic', bg: 'rgba(167,139,250,0.15)' },
-};
-
-const PRIORITY_COLORS = {
-  critical: {
-    border: 'border-[#EF4444]/60',
-    text: 'text-[#EF4444]',
-    bg: 'bg-[#EF4444]/10',
-    hex: '#EF4444',
-  },
-  high: {
-    border: 'border-[#F97316]/60',
-    text: 'text-[#F97316]',
-    bg: 'bg-[#F97316]/10',
-    hex: '#F97316',
-  },
-  medium: {
-    border: 'border-[#F59E0B]/50',
-    text: 'text-[#F59E0B]',
-    bg: 'bg-[#F59E0B]/10',
-    hex: '#F59E0B',
-  },
-  low: {
-    border: 'border-[#737373]/50',
-    text: 'text-[#737373]',
-    bg: 'bg-[#737373]/10',
-    hex: '#737373',
+  subtask: {
+    icon: ClipboardList,
+    color: '#FBBF24',
+    label: 'Subtask',
+    bg: 'rgba(251,191,36,0.15)',
   },
 };
 
@@ -193,6 +175,15 @@ const ItemDetailDrawer = ({
   getNextSprint,
 }: ItemDetailDrawerProps) => {
   const queryClient = useQueryClient();
+  const { user } = useAuth();
+  // Only the ticket's assignee may log hours (matches backend enforcement in
+  // routers/workitems.py::log_hours). Resolve the current user's developer id
+  // via project developers and compare against selectedItem.assignee_id.
+  const isAssignee = useMemo(() => {
+    if (!user?.email || !selectedItem.assignee_id) return false;
+    const myDev = allDevelopers.find((d) => d.email === user.email);
+    return !!myDev && myDev.id === selectedItem.assignee_id;
+  }, [user?.email, selectedItem.assignee_id, allDevelopers]);
   const [isEditing, setIsEditing] = useState(false);
   const [editForm, setEditForm] = useState<Partial<WorkItem>>({});
   const [newComment, setNewComment] = useState('');
@@ -227,9 +218,118 @@ const ItemDetailDrawer = ({
     [selectedItem, itemDetailQuery.data],
   );
 
-  // Exclude IDs for the parent_id picker: subject + all descendants via parent_id chain.
-  const parentExcludeIds = useMemo(() => {
+  // Subtasks of the current item — computed from the board's workItems list
+  // (no extra fetch). Subtasks sit one level below story/task/bug.
+  const subtasksOfCurrent = useMemo(() => {
+    const subjectId = Number(selectedItem.id);
+    if (Number.isNaN(subjectId)) return [];
+    return workItems.filter((wi) => wi.type === 'subtask' && wi.parent_id === subjectId);
+  }, [workItems, selectedItem.id]);
+
+  const canHaveSubtasks =
+    selectedItem.type === 'task' ||
+    selectedItem.type === 'user_story' ||
+    selectedItem.type === 'bug';
+
+  // Inline subtask creation: title + optional assignee/hours/due date.
+  // Kept as a single state object so resetting on success / cancel is one call.
+  interface NewSubtaskForm {
+    title: string;
+    assignee_id: number | null;
+    estimated_hours: string; // string for the input; parsed on submit
+    due_date: string; // YYYY-MM-DD or ''
+  }
+  const emptySubtaskForm: NewSubtaskForm = {
+    title: '',
+    assignee_id: null,
+    estimated_hours: '',
+    due_date: '',
+  };
+  const [newSubtask, setNewSubtask] = useState<NewSubtaskForm>(emptySubtaskForm);
+  const [showSubtaskDatePicker, setShowSubtaskDatePicker] = useState(false);
+  // Backwards-compatibility alias for the existing JSX that references the old
+  // `newSubtaskTitle` variable. Lets the smaller submitNewSubtask check stay
+  // tight without scattering reads across the form.
+  const newSubtaskTitle = newSubtask.title;
+  const setNewSubtaskTitle = (t: string) => setNewSubtask((f) => ({ ...f, title: t }));
+
+  // Look up the current item's parent (only meaningful when current item is a
+  // subtask itself — used to render the "Parent: <key>" backlink).
+  const parentOfCurrent = useMemo(() => {
+    if (selectedItem.type !== 'subtask' || selectedItem.parent_id == null) return null;
+    return workItems.find((wi) => Number(wi.id) === selectedItem.parent_id) ?? null;
+  }, [workItems, selectedItem.type, selectedItem.parent_id]);
+
+  const invalidateWorkItems = () => {
+    queryClient.invalidateQueries({ queryKey: ['workItems'] });
+    queryClient.invalidateQueries({ queryKey: ['myTasks'] });
+  };
+
+  const createSubtaskMutation = useMutation({
+    mutationFn: (form: NewSubtaskForm) => {
+      const projectId =
+        (selectedItem as unknown as { project_id?: number }).project_id ??
+        (id ? Number(id) : undefined);
+      if (!projectId) {
+        throw new Error('Missing project id for subtask creation');
+      }
+      const hoursRaw = form.estimated_hours.trim() ? Number(form.estimated_hours) : 0;
+      const estimated = Number.isFinite(hoursRaw) && hoursRaw > 0 ? Math.trunc(hoursRaw) : 0;
+      return apiFetch('/api/workitems/', {
+        method: 'POST',
+        body: JSON.stringify({
+          project_id: projectId,
+          type: 'subtask',
+          title: form.title,
+          parent_id: Number(selectedItem.id),
+          assignee_id: form.assignee_id,
+          estimated_hours: estimated,
+          // Match backend convention: remaining_hours seeded from estimated
+          // at create time so the parent rollup is correct on first render.
+          remaining_hours: estimated,
+          due_date: form.due_date ? form.due_date : null,
+        }),
+      });
+    },
+    onSuccess: () => {
+      setNewSubtask(emptySubtaskForm);
+      toast.success('Subtask added');
+    },
+    onError: (err: unknown) => {
+      const msg = err instanceof Error && err.message ? err.message : 'Failed to create subtask';
+      toast.error(msg);
+    },
+    onSettled: () => {
+      invalidateWorkItems();
+      queryClient.invalidateQueries({ queryKey: ['workItem', selectedItem.id, 'detail'] });
+    },
+  });
+
+  const submitNewSubtask = () => {
+    const t = newSubtaskTitle.trim();
+    if (!t) return;
+    createSubtaskMutation.mutate({ ...newSubtask, title: t });
+  };
+
+  // Depth-1 cap (matches backend services/hierarchy.py): an item that already
+  // has a parent cannot itself be picked as a parent — that would create a
+  // depth-2 chain.
+  const depth1ParentExclusions = useMemo(() => {
     const excluded = new Set<number>();
+    for (const wi of workItems) {
+      if (wi.parent_id != null) {
+        const n = Number(wi.id);
+        if (!Number.isNaN(n)) excluded.add(n);
+      }
+    }
+    return excluded;
+  }, [workItems]);
+
+  // Exclude IDs for the parent_id picker: subject + all descendants
+  // (cycle prevention) PLUS any item that's already a child of something else
+  // (depth-1 cap).
+  const parentExcludeIds = useMemo(() => {
+    const excluded = new Set<number>(depth1ParentExclusions);
     const subjectId = Number(selectedItem.id);
     if (Number.isNaN(subjectId)) return excluded;
     excluded.add(subjectId);
@@ -254,6 +354,14 @@ const ItemDetailDrawer = ({
       }
     }
     return excluded;
+  }, [depth1ParentExclusions, selectedItem, workItems]);
+
+  // If the subject already has children, giving it a parent would push them
+  // to depth-2. Lock the picker in that case.
+  const selectedItemHasChildren = useMemo(() => {
+    const n = Number(selectedItem.id);
+    if (Number.isNaN(n)) return false;
+    return workItems.some((wi) => wi.parent_id === n);
   }, [selectedItem, workItems]);
 
   const epicExcludeIds = useMemo(() => {
@@ -411,11 +519,17 @@ const ItemDetailDrawer = ({
             <Button
               size="sm"
               variant="ghost"
+              disabled={selectedItem.status === 'done' && !isEditing}
+              title={
+                selectedItem.status === 'done' && !isEditing
+                  ? 'This ticket is done. Re-open it (Move to → any non-done status) before editing.'
+                  : undefined
+              }
               onClick={() => {
                 setIsEditing(!isEditing);
                 if (!isEditing) setEditForm(selectedItem);
               }}
-              className="text-[#737373] hover:text-white rounded-lg h-8 px-2.5"
+              className="text-[#737373] hover:text-white rounded-lg h-8 px-2.5 disabled:opacity-40 disabled:cursor-not-allowed"
             >
               <Pencil className="w-3.5 h-3.5 mr-1" />
               {isEditing ? 'Cancel' : 'Edit'}
@@ -645,7 +759,12 @@ const ItemDetailDrawer = ({
                 'parent_id',
               ) && (
                 <div>
-                  <label className="text-xs font-medium text-[#737373] block mb-1.5">Parent</label>
+                  <label
+                    className="text-xs font-medium text-[#737373] block mb-1.5"
+                    title="This task is part of a larger story or task."
+                  >
+                    Belongs to
+                  </label>
                   <WorkItemCombobox
                     value={editForm.parent_id ?? selectedItem.parent_id ?? null}
                     valueKey={editForm.parent_key ?? selectedItem.parent_key ?? null}
@@ -655,6 +774,7 @@ const ItemDetailDrawer = ({
                       'parent_id',
                     )}
                     excludeIds={parentExcludeIds}
+                    disabled={selectedItemHasChildren}
                     onChange={(newId, newKey) => {
                       const target =
                         newId != null
@@ -679,6 +799,11 @@ const ItemDetailDrawer = ({
                     }}
                     placeholder="No parent"
                   />
+                  {selectedItemHasChildren && (
+                    <p className="text-[10px] text-[#737373] mt-1.5 leading-snug">
+                      This task already has child tasks, so it can’t be nested under another item.
+                    </p>
+                  )}
                 </div>
               )}
               <div>
@@ -862,78 +987,81 @@ const ItemDetailDrawer = ({
                 ))}
               </div>
 
-              {/* Hierarchy breadcrumb */}
-              {(selectedItem.epic_key || selectedItem.parent_key) &&
-                (() => {
-                  const parentItem = selectedItem.parent_id
-                    ? workItems.find((wi) => wi.id === selectedItem.parent_id?.toString())
-                    : null;
-                  const epicItem = selectedItem.epic_id
-                    ? workItems.find((wi) => wi.id === selectedItem.epic_id?.toString())
-                    : null;
-                  return (
-                    <div>
-                      <div className="text-xs text-[#737373] mb-2 font-medium">Hierarchy</div>
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        {selectedItem.epic_key && epicItem && (
-                          <a
-                            href={`/project/${id}/board/${epicItem.id}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="flex items-center gap-1 px-2 py-1 rounded-md bg-[rgba(167,139,250,0.12)] text-[#A78BFA] text-xs hover:bg-[rgba(167,139,250,0.2)] transition-colors cursor-pointer"
-                          >
-                            Epic: {selectedItem.epic_key} ({epicItem.title})
-                          </a>
-                        )}
-                        {selectedItem.epic_key && selectedItem.parent_key && (
-                          <span className="text-[#555] text-xs">›</span>
-                        )}
-                        {selectedItem.parent_key && parentItem && (
-                          <a
-                            href={`/project/${id}/board/${parentItem.id}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="flex items-center gap-1 px-2 py-1 rounded-md bg-[rgba(224,185,84,0.10)] text-[#E0B954] text-xs hover:bg-[rgba(224,185,84,0.2)] transition-colors cursor-pointer"
-                          >
-                            Parent: {selectedItem.parent_key} ({parentItem.title})
-                          </a>
+              {/* Hierarchy: Epic, Belongs to, Child Items — all in the row
+                  format used by Child Items, with empty states. */}
+              {(() => {
+                const subjectType = selectedItem.type as WorkItem['type'];
+                const subjectId = parseInt(selectedItem.id);
+                const showEpicSlot = fieldSupportsType(subjectType, 'epic_id');
+                const showParentSlot = fieldSupportsType(subjectType, 'parent_id');
+                // Bug is leaf-only, so don't show a child slot for bugs.
+                const showChildSlot = subjectType !== 'bug';
+                if (!showEpicSlot && !showParentSlot && !showChildSlot) return null;
+
+                const epicItem = selectedItem.epic_id
+                  ? workItems.find((wi) => wi.id === selectedItem.epic_id?.toString())
+                  : null;
+                const parentItem = selectedItem.parent_id
+                  ? workItems.find((wi) => wi.id === selectedItem.parent_id?.toString())
+                  : null;
+                // Epics roll up children via epic_id; everything else via parent_id.
+                const childItems = !showChildSlot
+                  ? []
+                  : subjectType === 'epic'
+                    ? workItems.filter((wi) => wi.epic_id === subjectId)
+                    : workItems.filter((wi) => wi.parent_id === subjectId);
+
+                const renderRow = (target: WorkItem) => (
+                  <div
+                    key={target.id}
+                    className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.04)] cursor-pointer hover:border-[rgba(255,255,255,0.08)] transition-colors"
+                    onClick={() => navigate(`/project/${id}/board/${target.id}`)}
+                  >
+                    <span className="text-xs font-mono text-[#737373] flex-shrink-0">
+                      {target.key}
+                    </span>
+                    <span className="text-sm text-[#a3a3a3] truncate flex-1">{target.title}</span>
+                    <span className="text-xs text-[#555] capitalize flex-shrink-0">
+                      {target.status.replace(/_/g, ' ')}
+                    </span>
+                  </div>
+                );
+
+                const renderEmpty = (label: string) => (
+                  <div className="flex items-center px-3 py-2 rounded-lg border border-dashed border-[rgba(255,255,255,0.06)] text-xs text-[#555] italic">
+                    {label}
+                  </div>
+                );
+
+                return (
+                  <div className="space-y-4">
+                    {showEpicSlot && (
+                      <div>
+                        <div className="text-xs text-[#737373] mb-2 font-medium">Epic</div>
+                        {epicItem ? renderRow(epicItem) : renderEmpty('No epic')}
+                      </div>
+                    )}
+                    {showParentSlot && (
+                      <div>
+                        <div className="text-xs text-[#737373] mb-2 font-medium">Belongs to</div>
+                        {parentItem ? renderRow(parentItem) : renderEmpty('No parent')}
+                      </div>
+                    )}
+                    {showChildSlot && (
+                      <div>
+                        <div className="text-xs text-[#737373] mb-2 font-medium">
+                          Child Items
+                          {childItems.length > 0 ? ` (${childItems.length})` : ''}
+                        </div>
+                        {childItems.length > 0 ? (
+                          <div className="space-y-1.5">{childItems.map(renderRow)}</div>
+                        ) : (
+                          renderEmpty('No child items')
                         )}
                       </div>
-                    </div>
-                  );
-                })()}
-
-              {/* Child items */}
-              {(() => {
-                const children = workItems.filter(
-                  (wi) => wi.parent_id === parseInt(selectedItem.id),
-                );
-                return children.length > 0 ? (
-                  <div>
-                    <div className="text-xs text-[#737373] mb-2 font-medium">
-                      Child Items ({children.length})
-                    </div>
-                    <div className="space-y-1.5">
-                      {children.map((child) => (
-                        <div
-                          key={child.id}
-                          className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.04)] cursor-pointer hover:border-[rgba(255,255,255,0.08)] transition-colors"
-                          onClick={() => navigate(`/project/${id}/board/${child.id}`)}
-                        >
-                          <span className="text-xs font-mono text-[#737373] flex-shrink-0">
-                            {child.key}
-                          </span>
-                          <span className="text-sm text-[#a3a3a3] truncate flex-1">
-                            {child.title}
-                          </span>
-                          <span className="text-xs text-[#555] capitalize flex-shrink-0">
-                            {child.status.replace(/_/g, ' ')}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
+                    )}
                   </div>
-                ) : null;
+                );
               })()}
 
               {/* Tags */}
@@ -953,41 +1081,45 @@ const ItemDetailDrawer = ({
                 </div>
               )}
 
-              {/* Log Hours Section */}
-              <div className="pt-4 border-t border-[rgba(255,255,255,0.05)]">
-                <div className="text-xs text-[#737373] mb-3 font-medium">Log Work Hours</div>
-                <div className="flex items-center gap-3">
-                  <Input
-                    type="number"
-                    placeholder="Hours"
-                    min="0"
-                    max="24"
-                    className="w-24 h-9 bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl"
-                    id="log-hours-input"
-                  />
-                  <Button
-                    size="sm"
-                    disabled={isLoggingHours}
-                    onClick={() => {
-                      if (isLoggingHours) return;
-                      const input = document.getElementById('log-hours-input') as HTMLInputElement;
-                      const hours = parseInt(input?.value || '0');
-                      if (hours > 0) {
-                        onLogHours(selectedItem, hours);
-                        input.value = '';
-                      }
-                    }}
-                    className="bg-[#E0B954] hover:bg-[#C79E3B] text-white rounded-xl h-9 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    <Clock className="w-3.5 h-3.5 mr-1.5" />
-                    {isLoggingHours ? 'Logging…' : 'Log Hours'}
-                  </Button>
+              {/* Log Hours Section — assignee-only (matches backend enforcement) */}
+              {isAssignee && (
+                <div className="pt-4 border-t border-[rgba(255,255,255,0.05)]">
+                  <div className="text-xs text-[#737373] mb-3 font-medium">Log Work Hours</div>
+                  <div className="flex items-center gap-3">
+                    <Input
+                      type="number"
+                      placeholder="Hours"
+                      min="0"
+                      max="24"
+                      className="w-24 h-9 bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl"
+                      id="log-hours-input"
+                    />
+                    <Button
+                      size="sm"
+                      disabled={isLoggingHours}
+                      onClick={() => {
+                        if (isLoggingHours) return;
+                        const input = document.getElementById(
+                          'log-hours-input',
+                        ) as HTMLInputElement;
+                        const hours = parseInt(input?.value || '0');
+                        if (hours > 0) {
+                          onLogHours(selectedItem, hours);
+                          input.value = '';
+                        }
+                      }}
+                      className="bg-[#E0B954] hover:bg-[#C79E3B] text-white rounded-xl h-9 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <Clock className="w-3.5 h-3.5 mr-1.5" />
+                      {isLoggingHours ? 'Logging…' : 'Log Hours'}
+                    </Button>
+                  </div>
+                  <p className="text-[10px] text-[#737373] mt-2">
+                    Current: {selectedItem.logged_hours || 0}h logged ·{' '}
+                    {selectedItem.remaining_hours}h remaining
+                  </p>
                 </div>
-                <p className="text-[10px] text-[#737373] mt-2">
-                  Current: {selectedItem.logged_hours || 0}h logged · {selectedItem.remaining_hours}
-                  h remaining
-                </p>
-              </div>
+              )}
 
               {/* Contributors (only renders when 2+ people have logged hours) */}
               <TicketContributors workItemId={selectedItem.id} token={token || ''} />
@@ -1078,79 +1210,177 @@ const ItemDetailDrawer = ({
                 </div>
               )}
 
-              {/* Child Items (if this is an Epic) */}
-              {selectedItem.type === 'epic' &&
-                (() => {
-                  const childItems = workItems.filter(
-                    (wi) => wi.epic_id === parseInt(selectedItem.id),
-                  );
-                  return childItems.length > 0 ? (
-                    <div className="pt-4 border-t border-[rgba(255,255,255,0.05)]">
-                      <div className="text-xs text-[#737373] mb-3 font-medium">
-                        Child Items ({childItems.length})
-                      </div>
-                      <div className="space-y-2 max-h-96 overflow-y-auto">
-                        {childItems.map((child) => {
-                          const childTypeInfo = TYPE_CONFIG[child.type] || TYPE_CONFIG.task;
-                          const childPriorityStyle =
-                            PRIORITY_COLORS[child.priority] || PRIORITY_COLORS.medium;
-                          return (
-                            <a
-                              key={child.id}
-                              href={`/project/${id}/board/${child.id}`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="block p-3 rounded-lg border border-[rgba(255,255,255,0.05)] bg-[rgba(255,255,255,0.01)] hover:bg-[rgba(255,255,255,0.03)] hover:border-[rgba(244,246,255,0.15)] cursor-pointer transition-all"
-                            >
-                              <div className="flex items-start justify-between gap-2 mb-1.5">
-                                <div className="flex items-center gap-2 flex-1">
-                                  <div
-                                    className="flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium flex-shrink-0"
-                                    style={{
-                                      backgroundColor: childTypeInfo.bg,
-                                      color: childTypeInfo.color,
-                                    }}
-                                  >
-                                    <childTypeInfo.icon className="w-2.5 h-2.5" />
-                                    {childTypeInfo.label}
-                                  </div>
-                                  <span className="text-[9px] text-[#E0B954] font-mono">
-                                    {child.key}
-                                  </span>
-                                </div>
-                                <span
-                                  className="text-[9px] px-1.5 py-0.5 rounded font-medium flex-shrink-0"
-                                  style={{
-                                    backgroundColor: childPriorityStyle.hex + '33',
-                                    color: childPriorityStyle.hex,
-                                  }}
-                                >
-                                  {child.priority.charAt(0).toUpperCase() + child.priority.slice(1)}
-                                </span>
-                              </div>
-                              <p className="text-xs text-[#a3a3a3] line-clamp-1 mb-1.5">
-                                {child.title}
-                              </p>
-                              <div className="flex items-center justify-between text-[9px] text-[#737373]">
-                                <span>{child.remaining_hours}h left</span>
-                                <span
-                                  className="px-1.5 py-0.5 rounded text-[9px]"
-                                  style={{
-                                    backgroundColor: `${(STATUS_CONFIG[child.status] || STATUS_CONFIG.todo).color}22`,
-                                    color: (STATUS_CONFIG[child.status] || STATUS_CONFIG.todo)
-                                      .color,
-                                  }}
-                                >
-                                  {(STATUS_CONFIG[child.status] || STATUS_CONFIG.todo).label}
-                                </span>
-                              </div>
-                            </a>
-                          );
-                        })}
-                      </div>
+              {/* Subtasks panel — only shown for story/task/bug. Subtasks themselves
+                  show a "Parent" backlink instead (see below). */}
+              {canHaveSubtasks && (
+                <div className="pt-4 border-t border-[rgba(255,255,255,0.05)]">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="text-xs text-[#737373] font-medium">
+                      Subtasks
+                      {subtasksOfCurrent.length > 0 && (
+                        <span className="ml-1.5 text-[#525252]">({subtasksOfCurrent.length})</span>
+                      )}
                     </div>
-                  ) : null;
-                })()}
+                  </div>
+
+                  {subtasksOfCurrent.length > 0 && (
+                    <ul className="space-y-1.5 mb-3">
+                      {subtasksOfCurrent.map((st) => {
+                        const stConf = STATUS_CONFIG[st.status as keyof typeof STATUS_CONFIG];
+                        return (
+                          <li
+                            key={st.id}
+                            className="flex items-center gap-2 text-sm px-2.5 py-1.5 rounded-lg bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.05)]"
+                          >
+                            <span
+                              className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded"
+                              style={{
+                                color: stConf?.color ?? '#737373',
+                                background: `${stConf?.color ?? '#737373'}1a`,
+                              }}
+                            >
+                              {stConf?.label ?? st.status}
+                            </span>
+                            <span className="text-[11px] text-[#737373] font-mono">{st.key}</span>
+                            <span className="text-sm text-white truncate flex-1">{st.title}</span>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <Input
+                        value={newSubtaskTitle}
+                        onChange={(e) => setNewSubtaskTitle(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && !e.shiftKey) {
+                            e.preventDefault();
+                            submitNewSubtask();
+                          }
+                        }}
+                        placeholder="Add a subtask…"
+                        disabled={createSubtaskMutation.isPending}
+                        className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl h-9 text-sm flex-1"
+                      />
+                      <Button
+                        size="sm"
+                        onClick={submitNewSubtask}
+                        disabled={createSubtaskMutation.isPending || !newSubtaskTitle.trim()}
+                        className="bg-[#E0B954] hover:bg-[#C79E3B] text-[#080808] rounded-xl h-9 px-3 disabled:opacity-50"
+                      >
+                        <Plus className="w-3.5 h-3.5 mr-1" />
+                        {createSubtaskMutation.isPending ? 'Adding…' : 'Add'}
+                      </Button>
+                    </div>
+
+                    {/* Compact field row: assignee · hours · due date. Uses the
+                        same look as the main edit form so the controls feel
+                        familiar. Hours and date are optional. */}
+                    <div className="grid grid-cols-3 gap-2">
+                      <select
+                        value={newSubtask.assignee_id ?? ''}
+                        onChange={(e) =>
+                          setNewSubtask((f) => ({
+                            ...f,
+                            assignee_id: e.target.value ? parseInt(e.target.value) : null,
+                          }))
+                        }
+                        disabled={createSubtaskMutation.isPending}
+                        title="Assignee"
+                        className="h-9 bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl px-2 text-xs"
+                      >
+                        <option value="">Unassigned</option>
+                        {(project?.developers ?? []).map((dev) => (
+                          <option key={dev.id} value={dev.id}>
+                            {dev.name}
+                          </option>
+                        ))}
+                      </select>
+
+                      <Input
+                        type="number"
+                        min={0}
+                        max={999}
+                        value={newSubtask.estimated_hours}
+                        onChange={(e) =>
+                          setNewSubtask((f) => ({ ...f, estimated_hours: e.target.value }))
+                        }
+                        disabled={createSubtaskMutation.isPending}
+                        placeholder="Hours"
+                        title="Estimated hours"
+                        className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl h-9 text-xs"
+                      />
+
+                      <Popover open={showSubtaskDatePicker} onOpenChange={setShowSubtaskDatePicker}>
+                        <PopoverTrigger asChild>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            disabled={createSubtaskMutation.isPending}
+                            className="h-9 w-full justify-start text-left font-normal bg-[#0A0A14] border-[rgba(255,255,255,0.08)] text-white hover:bg-[#0A0A14] hover:text-white rounded-xl px-2 text-xs"
+                          >
+                            <Calendar className="w-3.5 h-3.5 mr-1.5 flex-shrink-0" />
+                            <span className="truncate">
+                              {newSubtask.due_date
+                                ? parseLocalDate(newSubtask.due_date)?.toLocaleDateString()
+                                : 'Pick a date'}
+                            </span>
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent
+                          side="bottom"
+                          align="start"
+                          className="w-auto p-3 bg-[#0d0d0d] border border-[rgba(224,185,84,0.2)]"
+                        >
+                          <CalendarIcon
+                            mode="single"
+                            selected={parseLocalDate(newSubtask.due_date || undefined)}
+                            onSelect={(date) => {
+                              if (date) {
+                                setNewSubtask((f) => ({ ...f, due_date: formatLocalDate(date) }));
+                                setShowSubtaskDatePicker(false);
+                              }
+                            }}
+                            disabled={(date) => date < new Date(new Date().setHours(0, 0, 0, 0))}
+                            classNames={CALENDAR_CLASS_NAMES}
+                          />
+                          {newSubtask.due_date && (
+                            <div className="pt-2 mt-2 border-t border-[rgba(255,255,255,0.05)]">
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => {
+                                  setNewSubtask((f) => ({ ...f, due_date: '' }));
+                                  setShowSubtaskDatePicker(false);
+                                }}
+                                className="w-full text-xs text-[#737373] hover:text-white"
+                              >
+                                Clear date
+                              </Button>
+                            </div>
+                          )}
+                        </PopoverContent>
+                      </Popover>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* If this IS a subtask, show a backlink to its parent so users
+                  can navigate up the chain. */}
+              {selectedItem.type === 'subtask' && parentOfCurrent && (
+                <div className="pt-4 border-t border-[rgba(255,255,255,0.05)]">
+                  <div className="text-xs text-[#737373] mb-2 font-medium">Parent</div>
+                  <div className="flex items-center gap-2 text-sm px-2.5 py-1.5 rounded-lg bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.05)]">
+                    <span className="text-[11px] text-[#737373] font-mono">
+                      {parentOfCurrent.key}
+                    </span>
+                    <span className="text-sm text-white truncate">{parentOfCurrent.title}</span>
+                  </div>
+                </div>
+              )}
 
               {/* Comments Section */}
               <div className="pt-4 border-t border-[rgba(255,255,255,0.05)]">

@@ -35,6 +35,8 @@ import {
   EyeOff,
   ChevronDown,
   ChevronRight,
+  ChevronUp,
+  ChevronsUpDown,
   ListFilter,
   Check,
 } from 'lucide-react';
@@ -44,7 +46,7 @@ import { toast, Toaster } from 'sonner';
 import StatusDotMenu from '@/components/ProjectsPage/StatusDotMenu';
 import { useAuth, isProjectManager } from '@/contexts/AuthContext';
 import { buildEpicGroups } from '@/lib/hierarchy/buildEpicGroups';
-import { apiFetch } from '@/lib/api';
+import { apiFetch, ApiError } from '@/lib/api';
 import { invalidateProjectScope, invalidateWorkItemScope } from '@/lib/invalidations';
 import type { CreateItemFormValues } from './modals/CreateItemModal';
 // EditSprintModal's file also exports the CompleteSprintConfirm /
@@ -72,10 +74,33 @@ const parseLocalDate = (dateString: string | undefined): Date | undefined => {
   return new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
 };
 
+// Returns YYYY-MM-DD for the Monday of the week containing `d`, in local time.
+const getWeekStart = (d: Date): string => {
+  const date = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const day = date.getDay(); // 0=Sun, 1=Mon, ..., 6=Sat
+  date.setDate(date.getDate() + (day === 0 ? -6 : 1 - day));
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const dd = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${dd}`;
+};
+
+const formatWeekRange = (weekStart: string): string => {
+  const start = parseLocalDate(weekStart);
+  if (!start) return weekStart;
+  const end = new Date(start);
+  end.setDate(end.getDate() + 6);
+  const sameMonth = start.getMonth() === end.getMonth();
+  if (sameMonth) {
+    return `${start.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} – ${end.getDate()}`;
+  }
+  return `${start.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} – ${end.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`;
+};
+
 interface WorkItem {
   id: string;
   key: string; // Ticket key like PROJ-123
-  type: 'user_story' | 'task' | 'bug' | 'epic';
+  type: 'user_story' | 'task' | 'bug' | 'epic' | 'subtask';
   title: string;
   description: string;
   status: 'todo' | 'in_progress' | 'in_review' | 'done';
@@ -98,6 +123,7 @@ interface WorkItem {
   created_at?: string;
   updated_at?: string;
   due_date?: string | null;
+  completed_at?: string | null;
   estimated_hours?: number | null;
 }
 
@@ -183,6 +209,12 @@ const TYPE_CONFIG = {
   task: { icon: ClipboardList, color: '#F59E0B', label: 'Task', bg: 'rgba(245,158,11,0.15)' },
   bug: { icon: Bug, color: '#EF4444', label: 'Bug', bg: 'rgba(239,68,68,0.15)' },
   epic: { icon: Target, color: '#A78BFA', label: 'Epic', bg: 'rgba(167,139,250,0.15)' },
+  subtask: {
+    icon: ClipboardList,
+    color: '#FBBF24',
+    label: 'Subtask',
+    bg: 'rgba(251,191,36,0.15)',
+  },
 };
 
 const PRIORITY_COLORS = {
@@ -212,6 +244,29 @@ const PRIORITY_COLORS = {
   },
 };
 
+// Canonical orderings for the sortable list-view columns.
+const LIST_SORT_TYPE_ORDER: Record<string, number> = {
+  epic: 0,
+  user_story: 1,
+  task: 2,
+  bug: 3,
+};
+const LIST_SORT_STATUS_ORDER: Record<string, number> = {
+  backlog: 0,
+  todo: 1,
+  in_progress: 2,
+  in_review: 3,
+  done: 4,
+};
+const LIST_SORT_PRIORITY_ORDER: Record<string, number> = {
+  critical: 0,
+  high: 1,
+  medium: 2,
+  low: 3,
+};
+
+type ListSortKey = 'type' | 'status' | 'priority' | 'assignee' | 'due_date' | 'completed_at';
+
 const ProjectBoard = () => {
   const { id, ticketId } = useParams<{ id: string; ticketId?: string }>();
   const navigate = useNavigate();
@@ -224,11 +279,12 @@ const ProjectBoard = () => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [viewMode, setViewMode] = useState<'board' | 'list'>('board');
-  const [listGroupBy, setListGroupBy] = useState<'sprint' | 'epic'>(() => {
+  const [listGroupBy, setListGroupBy] = useState<'sprint' | 'epic' | 'week'>(() => {
     if (typeof window === 'undefined') return 'sprint';
     try {
       const stored = window.localStorage.getItem(`projectBoard.listGroupBy.${id ?? ''}`);
-      return stored === 'epic' ? 'epic' : 'sprint';
+      if (stored === 'epic' || stored === 'week') return stored;
+      return 'sprint';
     } catch {
       return 'sprint';
     }
@@ -253,6 +309,78 @@ const ProjectBoard = () => {
   const sprintMenuRef = useRef<HTMLDivElement>(null);
   const [draggedItem, setDraggedItem] = useState<string | null>(null);
   const [dragOverColumn, setDragOverColumn] = useState<string | null>(null);
+
+  // Shared sort state for the By Sprint / By Epic list views. Applies within
+  // each group; doesn't reorder groups themselves. Null = group's natural
+  // order (preserves the parent→child clustering in the By Epic view).
+  const [listSortKey, setListSortKey] = useState<ListSortKey | null>(null);
+  const [listSortDir, setListSortDir] = useState<'asc' | 'desc'>('asc');
+  const handleListSort = (key: ListSortKey) => {
+    if (listSortKey === key) {
+      if (listSortDir === 'asc') setListSortDir('desc');
+      else setListSortKey(null);
+    } else {
+      setListSortKey(key);
+      setListSortDir('asc');
+    }
+  };
+  const listItemComparator = useMemo(() => {
+    if (!listSortKey) return null;
+    const dir = listSortDir === 'asc' ? 1 : -1;
+    return (a: WorkItem, b: WorkItem) => {
+      let cmp = 0;
+      switch (listSortKey) {
+        case 'type':
+          cmp = (LIST_SORT_TYPE_ORDER[a.type] ?? 99) - (LIST_SORT_TYPE_ORDER[b.type] ?? 99);
+          break;
+        case 'status':
+          cmp = (LIST_SORT_STATUS_ORDER[a.status] ?? 99) - (LIST_SORT_STATUS_ORDER[b.status] ?? 99);
+          break;
+        case 'priority':
+          cmp =
+            (LIST_SORT_PRIORITY_ORDER[a.priority] ?? 99) -
+            (LIST_SORT_PRIORITY_ORDER[b.priority] ?? 99);
+          break;
+        case 'assignee': {
+          const aa = a.assignee_id ? (a.assignee || '').toLowerCase() : '￿';
+          const bb = b.assignee_id ? (b.assignee || '').toLowerCase() : '￿';
+          cmp = aa.localeCompare(bb);
+          break;
+        }
+        case 'due_date':
+        case 'completed_at': {
+          // Null/missing values always sort to the bottom, regardless of dir,
+          // so toggling asc/desc reorders the populated rows without flipping
+          // the empty ones to the top.
+          const av = a[listSortKey] ? new Date(a[listSortKey] as string).getTime() : null;
+          const bv = b[listSortKey] ? new Date(b[listSortKey] as string).getTime() : null;
+          if (av === null && bv === null) return 0;
+          if (av === null) return 1;
+          if (bv === null) return -1;
+          cmp = av - bv;
+          break;
+        }
+      }
+      return cmp * dir;
+    };
+  }, [listSortKey, listSortDir]);
+  const renderListSortHeader = (label: string, key: ListSortKey) => {
+    const active = listSortKey === key;
+    const Icon = active ? (listSortDir === 'asc' ? ChevronUp : ChevronDown) : ChevronsUpDown;
+    return (
+      <button
+        type="button"
+        onClick={() => handleListSort(key)}
+        className={`flex items-center gap-1 text-left uppercase tracking-wider hover:text-white transition-colors ${
+          active ? 'text-[#E0B954]' : ''
+        }`}
+        aria-sort={active ? (listSortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
+      >
+        {label}
+        <Icon className="w-3 h-3 shrink-0" aria-hidden />
+      </button>
+    );
+  };
 
   // AI Planning flow — only the top-level open + architectures (shared with
   // ArchitectureEditor wrapper) stay at the parent. Multi-step + PRD/Roadmap
@@ -509,6 +637,64 @@ const ProjectBoard = () => {
 
   const listViewEpicGroups = buildEpicGroups(filteredItems, workItems).groups;
 
+  // Group items into ISO weeks by their "relevant date":
+  //   completed → completed_at (the week the work actually finished)
+  //   not completed + due_date → due_date (lands in past weeks when overdue,
+  //                                        future weeks when upcoming)
+  //   neither → Unscheduled bucket
+  // Result: past weeks read as "what got done + what slipped", current/future
+  // weeks read as "what's coming due".
+  const listViewWeekGroups = useMemo(() => {
+    const todayWeekStart = getWeekStart(new Date());
+    const buckets = new Map<string, WorkItem[]>();
+    for (const item of filteredItems) {
+      let weekKey: string | null = null;
+      if (item.completed_at) {
+        weekKey = getWeekStart(new Date(item.completed_at));
+      } else if (item.due_date) {
+        const d = parseLocalDate(item.due_date);
+        if (d) weekKey = getWeekStart(d);
+      }
+      const key = weekKey ?? '__unscheduled__';
+      const existing = buckets.get(key);
+      if (existing) existing.push(item);
+      else buckets.set(key, [item]);
+    }
+    const dated = [...buckets.keys()].filter((k) => k !== '__unscheduled__').sort();
+    const todayMs = parseLocalDate(todayWeekStart)?.getTime() ?? 0;
+    const groups = dated.map((weekStart) => {
+      let label: string;
+      if (weekStart === todayWeekStart) {
+        label = 'This Week';
+      } else {
+        const ws = parseLocalDate(weekStart)?.getTime() ?? 0;
+        const weeksAway = Math.round((ws - todayMs) / (7 * 86400000));
+        if (weeksAway === -1) label = 'Last Week';
+        else if (weeksAway === 1) label = 'Next Week';
+        else label = formatWeekRange(weekStart);
+      }
+      return {
+        key: `week:${weekStart}`,
+        weekStart,
+        label,
+        isCurrent: weekStart === todayWeekStart,
+        isPast: weekStart < todayWeekStart,
+        items: buckets.get(weekStart) ?? [],
+      };
+    });
+    if (buckets.has('__unscheduled__')) {
+      groups.push({
+        key: 'week:unscheduled',
+        weekStart: '',
+        label: 'Unscheduled',
+        isCurrent: false,
+        isPast: false,
+        items: buckets.get('__unscheduled__') ?? [],
+      });
+    }
+    return groups;
+  }, [filteredItems]);
+
   const toggleSprintCollapse = (key: string) => {
     setCollapsedSprints((prev) => {
       const next = new Set(prev);
@@ -558,10 +744,14 @@ const ProjectBoard = () => {
       );
       return { previous };
     },
-    onError: (_err, _vars, ctx) => {
+    onError: (err, _vars, ctx) => {
       if (ctx?.previous)
         queryClient.setQueryData(['workItems', workItemFilters, 'board'], ctx.previous);
-      toast.error('Failed to move ticket');
+      // Surface backend validation errors (e.g. "subtask still open" when
+      // marking a parent done) so the user knows why the move was rejected
+      // instead of seeing a generic toast.
+      const detail = err instanceof ApiError ? err.message : 'Failed to move ticket';
+      toast.error(detail);
     },
     onSettled: () => {
       invalidateWorkItems();
@@ -636,7 +826,10 @@ const ProjectBoard = () => {
     onSuccess: (_data, { targetSprintId }) => {
       toast.success(targetSprintId ? 'Moved to sprint' : 'Moved to backlog');
     },
-    onError: () => toast.error('Failed to move ticket'),
+    onError: (err) => {
+      const detail = err instanceof ApiError ? err.message : 'Failed to move ticket';
+      toast.error(detail);
+    },
     onSettled: () => {
       invalidateWorkItems();
       invalidateProjectScope(queryClient, id);
@@ -1662,6 +1855,15 @@ const ProjectBoard = () => {
                 >
                   By Epic
                 </button>
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={listGroupBy === 'week'}
+                  onClick={() => setListGroupBy('week')}
+                  className={`px-2.5 h-6 text-[11px] rounded-md transition-colors ${listGroupBy === 'week' ? 'bg-[#E0B954] text-[#080808] font-medium' : 'text-[#737373] hover:text-white'}`}
+                >
+                  By Week
+                </button>
               </div>
               {listGroupBy === 'sprint' && (
                 <button
@@ -1740,16 +1942,25 @@ const ProjectBoard = () => {
                       {!isCollapsed && (
                         <>
                           {/* Table header */}
-                          <div className="grid grid-cols-[1fr_120px_100px_100px_100px_120px] gap-4 px-5 py-3 border-t border-[rgba(255,255,255,0.05)] text-xs text-[#737373] font-semibold uppercase tracking-wider">
+                          <div className="grid grid-cols-[120px_1fr_120px_100px_80px_120px_110px_110px] gap-4 px-5 py-3 border-t border-[rgba(255,255,255,0.05)] text-xs text-[#737373] font-semibold uppercase tracking-wider">
+                            {renderListSortHeader('Type', 'type')}
                             <span>Title</span>
-                            <span>Type</span>
-                            <span>Status</span>
-                            <span>Priority</span>
+                            {renderListSortHeader('Status', 'status')}
+                            {renderListSortHeader('Priority', 'priority')}
                             <span>Points</span>
-                            <span>Assignee</span>
+                            {renderListSortHeader('Assignee', 'assignee')}
+                            {renderListSortHeader('Due Date', 'due_date')}
+                            {renderListSortHeader('Completed', 'completed_at')}
                           </div>
-                          {/* Table rows with subtask indent */}
-                          {group.rows.map(({ item, depth }) => {
+                          {/* Table rows. Default: hierarchy-aware (parent → child with
+                              indent). When sorted, render flat at depth=0 since
+                              cross-hierarchy ordering breaks the parent/child grouping. */}
+                          {(listItemComparator
+                            ? [...group.rows]
+                                .sort((a, b) => listItemComparator(a.item, b.item))
+                                .map((r) => ({ item: r.item, depth: 0 }))
+                            : group.rows
+                          ).map(({ item, depth }) => {
                             const typeInfo = TYPE_CONFIG[item.type] || TYPE_CONFIG.task;
                             const TypeIcon = typeInfo.icon;
                             const priorityStyle =
@@ -1761,8 +1972,17 @@ const ProjectBoard = () => {
                                 onClick={() => {
                                   navigate(`/project/${id}/board/${item.id}`);
                                 }}
-                                className="grid grid-cols-[1fr_120px_100px_100px_100px_120px] gap-4 px-5 py-3.5 border-t border-[rgba(255,255,255,0.03)] hover:bg-[rgba(255,255,255,0.025)] cursor-pointer transition-colors group"
+                                className="grid grid-cols-[120px_1fr_120px_100px_80px_120px_110px_110px] gap-4 px-5 py-3.5 border-t border-[rgba(255,255,255,0.03)] hover:bg-[rgba(255,255,255,0.025)] cursor-pointer transition-colors group"
                               >
+                                <div className="flex items-center">
+                                  <div
+                                    className="flex items-center gap-1.5 px-2 py-1 rounded-md text-xs"
+                                    style={{ backgroundColor: typeInfo.bg, color: typeInfo.color }}
+                                  >
+                                    <TypeIcon className="w-3 h-3" />
+                                    {typeInfo.label}
+                                  </div>
+                                </div>
                                 <div
                                   className="flex items-center gap-3 min-w-0"
                                   style={{ paddingLeft: depth === 1 ? 24 : 0 }}
@@ -1781,15 +2001,6 @@ const ProjectBoard = () => {
                                   <span className="text-sm text-[#f5f5f5] truncate group-hover:text-white transition-colors">
                                     {item.title}
                                   </span>
-                                </div>
-                                <div className="flex items-center">
-                                  <div
-                                    className="flex items-center gap-1.5 px-2 py-1 rounded-md text-xs"
-                                    style={{ backgroundColor: typeInfo.bg, color: typeInfo.color }}
-                                  >
-                                    <TypeIcon className="w-3 h-3" />
-                                    {typeInfo.label}
-                                  </div>
                                 </div>
                                 <div className="flex items-center">
                                   <StatusDotMenu
@@ -1816,6 +2027,172 @@ const ProjectBoard = () => {
                                 <div className="flex items-center">
                                   <span className="text-xs text-[#737373] truncate">
                                     {item.assignee}
+                                  </span>
+                                </div>
+                                <div className="flex items-center">
+                                  <span className="text-xs text-[#a3a3a3] truncate">
+                                    {item.due_date
+                                      ? parseLocalDate(item.due_date)?.toLocaleDateString()
+                                      : '—'}
+                                  </span>
+                                </div>
+                                <div className="flex items-center">
+                                  <span className="text-xs text-[#a3a3a3] truncate">
+                                    {item.completed_at
+                                      ? new Date(item.completed_at).toLocaleDateString()
+                                      : '—'}
+                                  </span>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </>
+                      )}
+                    </div>
+                  );
+                })
+              )
+            ) : listGroupBy === 'week' ? (
+              listViewWeekGroups.length === 0 ? (
+                <div className="py-16 text-center text-[#737373] text-sm">No items found</div>
+              ) : (
+                listViewWeekGroups.map((group) => {
+                  const isCollapsed = collapsedSprints.has(group.key);
+                  return (
+                    <div
+                      key={group.key}
+                      className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-2xl overflow-hidden"
+                    >
+                      {/* Week group header */}
+                      <div className="flex items-center gap-2.5 px-5 py-3.5 hover:bg-[rgba(255,255,255,0.02)] transition-colors">
+                        <button
+                          onClick={() => toggleSprintCollapse(group.key)}
+                          className="flex items-center gap-2.5 flex-1 text-left min-w-0"
+                        >
+                          {isCollapsed ? (
+                            <ChevronRight className="w-3.5 h-3.5 text-[#737373] shrink-0" />
+                          ) : (
+                            <ChevronDown className="w-3.5 h-3.5 text-[#737373] shrink-0" />
+                          )}
+                          <span className="text-sm font-semibold text-[#f5f5f5]">
+                            {group.label}
+                          </span>
+                          {group.weekStart && group.label !== formatWeekRange(group.weekStart) && (
+                            <span className="text-[10px] text-[#555555]">
+                              {formatWeekRange(group.weekStart)}
+                            </span>
+                          )}
+                          {group.isCurrent && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-[rgba(224,185,84,0.12)] text-[#E0B954]">
+                              Current
+                            </span>
+                          )}
+                          <span className="text-xs text-[#737373]">
+                            {group.items.length} item{group.items.length !== 1 ? 's' : ''}
+                          </span>
+                        </button>
+                      </div>
+
+                      {!isCollapsed && (
+                        <>
+                          {/* Table header */}
+                          <div className="grid grid-cols-[120px_1fr_120px_100px_80px_120px_110px_110px] gap-4 px-5 py-3 border-t border-[rgba(255,255,255,0.05)] text-xs text-[#737373] font-semibold uppercase tracking-wider">
+                            {renderListSortHeader('Type', 'type')}
+                            <span>Title</span>
+                            {renderListSortHeader('Status', 'status')}
+                            {renderListSortHeader('Priority', 'priority')}
+                            <span>Points</span>
+                            {renderListSortHeader('Assignee', 'assignee')}
+                            {renderListSortHeader('Due Date', 'due_date')}
+                            {renderListSortHeader('Completed', 'completed_at')}
+                          </div>
+                          {/* Table rows */}
+                          {(listItemComparator
+                            ? [...group.items].sort(listItemComparator)
+                            : group.items
+                          ).map((item) => {
+                            const typeInfo = TYPE_CONFIG[item.type] || TYPE_CONFIG.task;
+                            const TypeIcon = typeInfo.icon;
+                            const priorityStyle =
+                              PRIORITY_COLORS[item.priority] || PRIORITY_COLORS.medium;
+                            const dueDate = item.due_date ? parseLocalDate(item.due_date) : null;
+                            const todayMidnight = new Date();
+                            todayMidnight.setHours(0, 0, 0, 0);
+                            const isOverdue =
+                              !!dueDate &&
+                              !item.completed_at &&
+                              dueDate.getTime() < todayMidnight.getTime();
+                            return (
+                              <div
+                                key={item.id}
+                                onMouseEnter={() => prefetchComments(item.id)}
+                                onClick={() => {
+                                  navigate(`/project/${id}/board/${item.id}`);
+                                }}
+                                className="grid grid-cols-[120px_1fr_120px_100px_80px_120px_110px_110px] gap-4 px-5 py-3.5 border-t border-[rgba(255,255,255,0.03)] hover:bg-[rgba(255,255,255,0.025)] cursor-pointer transition-colors group"
+                              >
+                                <div className="flex items-center">
+                                  <div
+                                    className="flex items-center gap-1.5 px-2 py-1 rounded-md text-xs"
+                                    style={{ backgroundColor: typeInfo.bg, color: typeInfo.color }}
+                                  >
+                                    <TypeIcon className="w-3 h-3" />
+                                    {typeInfo.label}
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-3 min-w-0">
+                                  <span className="text-[10px] text-[#E0B954] font-mono font-medium shrink-0">
+                                    {item.key}
+                                  </span>
+                                  <span className="text-sm text-[#f5f5f5] truncate group-hover:text-white transition-colors">
+                                    {item.title}
+                                  </span>
+                                </div>
+                                <div className="flex items-center">
+                                  <StatusDotMenu
+                                    status={item.status}
+                                    onChange={(newStatus) => handleStatusChange(item, newStatus)}
+                                  />
+                                </div>
+                                <div className="flex items-center">
+                                  <span
+                                    className="text-[10px] px-1.5 py-0.5 rounded font-medium"
+                                    style={{
+                                      backgroundColor: priorityStyle.hex + '33',
+                                      color: priorityStyle.hex,
+                                    }}
+                                  >
+                                    {item.priority.charAt(0).toUpperCase() + item.priority.slice(1)}
+                                  </span>
+                                </div>
+                                <div className="flex items-center">
+                                  <span className="text-sm font-semibold text-[#E0B954]">
+                                    {item.story_points}
+                                  </span>
+                                </div>
+                                <div className="flex items-center">
+                                  <span className="text-xs text-[#737373] truncate">
+                                    {item.assignee}
+                                  </span>
+                                </div>
+                                <div className="flex items-center">
+                                  <span
+                                    className={`text-xs truncate ${
+                                      isOverdue ? 'text-[#EF4444]' : 'text-[#a3a3a3]'
+                                    }`}
+                                  >
+                                    {dueDate ? dueDate.toLocaleDateString() : '—'}
+                                  </span>
+                                </div>
+                                <div className="flex items-center">
+                                  <span
+                                    className={`text-xs truncate ${
+                                      item.completed_at ? 'text-[#E0B954]' : 'text-[#a3a3a3]'
+                                    }`}
+                                  >
+                                    {item.completed_at
+                                      ? new Date(item.completed_at).toLocaleDateString()
+                                      : '—'}
                                   </span>
                                 </div>
                               </div>
@@ -1905,16 +2282,21 @@ const ProjectBoard = () => {
                     {!isCollapsed && (
                       <>
                         {/* Table header */}
-                        <div className="grid grid-cols-[1fr_120px_100px_100px_100px_120px] gap-4 px-5 py-3 border-t border-[rgba(255,255,255,0.05)] text-xs text-[#737373] font-semibold uppercase tracking-wider">
+                        <div className="grid grid-cols-[120px_1fr_120px_100px_80px_120px_110px_110px] gap-4 px-5 py-3 border-t border-[rgba(255,255,255,0.05)] text-xs text-[#737373] font-semibold uppercase tracking-wider">
+                          {renderListSortHeader('Type', 'type')}
                           <span>Title</span>
-                          <span>Type</span>
-                          <span>Status</span>
-                          <span>Priority</span>
+                          {renderListSortHeader('Status', 'status')}
+                          {renderListSortHeader('Priority', 'priority')}
                           <span>Points</span>
-                          <span>Assignee</span>
+                          {renderListSortHeader('Assignee', 'assignee')}
+                          {renderListSortHeader('Due Date', 'due_date')}
+                          {renderListSortHeader('Completed', 'completed_at')}
                         </div>
                         {/* Table rows */}
-                        {group.items.map((item) => {
+                        {(listItemComparator
+                          ? [...group.items].sort(listItemComparator)
+                          : group.items
+                        ).map((item) => {
                           const typeInfo = TYPE_CONFIG[item.type] || TYPE_CONFIG.task;
                           const TypeIcon = typeInfo.icon;
                           const priorityStyle =
@@ -1926,16 +2308,8 @@ const ProjectBoard = () => {
                               onClick={() => {
                                 navigate(`/project/${id}/board/${item.id}`);
                               }}
-                              className="grid grid-cols-[1fr_120px_100px_100px_100px_120px] gap-4 px-5 py-3.5 border-t border-[rgba(255,255,255,0.03)] hover:bg-[rgba(255,255,255,0.025)] cursor-pointer transition-colors group"
+                              className="grid grid-cols-[120px_1fr_120px_100px_80px_120px_110px_110px] gap-4 px-5 py-3.5 border-t border-[rgba(255,255,255,0.03)] hover:bg-[rgba(255,255,255,0.025)] cursor-pointer transition-colors group"
                             >
-                              <div className="flex items-center gap-3 min-w-0">
-                                <span className="text-[10px] text-[#E0B954] font-mono font-medium shrink-0">
-                                  {item.key}
-                                </span>
-                                <span className="text-sm text-[#f5f5f5] truncate group-hover:text-white transition-colors">
-                                  {item.title}
-                                </span>
-                              </div>
                               <div className="flex items-center">
                                 <div
                                   className="flex items-center gap-1.5 px-2 py-1 rounded-md text-xs"
@@ -1944,6 +2318,14 @@ const ProjectBoard = () => {
                                   <TypeIcon className="w-3 h-3" />
                                   {typeInfo.label}
                                 </div>
+                              </div>
+                              <div className="flex items-center gap-3 min-w-0">
+                                <span className="text-[10px] text-[#E0B954] font-mono font-medium shrink-0">
+                                  {item.key}
+                                </span>
+                                <span className="text-sm text-[#f5f5f5] truncate group-hover:text-white transition-colors">
+                                  {item.title}
+                                </span>
                               </div>
                               <div className="flex items-center">
                                 <StatusDotMenu
@@ -1970,6 +2352,20 @@ const ProjectBoard = () => {
                               <div className="flex items-center">
                                 <span className="text-xs text-[#737373] truncate">
                                   {item.assignee}
+                                </span>
+                              </div>
+                              <div className="flex items-center">
+                                <span className="text-xs text-[#a3a3a3] truncate">
+                                  {item.due_date
+                                    ? parseLocalDate(item.due_date)?.toLocaleDateString()
+                                    : '—'}
+                                </span>
+                              </div>
+                              <div className="flex items-center">
+                                <span className="text-xs text-[#a3a3a3] truncate">
+                                  {item.completed_at
+                                    ? new Date(item.completed_at).toLocaleDateString()
+                                    : '—'}
                                 </span>
                               </div>
                             </div>
