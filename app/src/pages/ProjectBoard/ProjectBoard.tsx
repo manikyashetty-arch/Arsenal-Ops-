@@ -1279,14 +1279,20 @@ const ProjectBoard = () => {
       );
       return { previous };
     },
-    onError: (_err, _vars, ctx) => {
+    onError: (err, _vars, ctx) => {
       if (ctx?.previous)
         queryClient.setQueryData(['workItems', workItemFilters, 'board'], ctx.previous);
-      toast.error('Failed to update status');
+      // Surface backend validation messages (e.g. "subtask still open" when
+      // marking a parent done) instead of the generic toast.
+      const detail = err instanceof ApiError ? err.message : 'Failed to update status';
+      toast.error(detail);
     },
-    onSettled: () => {
+    onSettled: (_data, _err, { itemId }) => {
       invalidateWorkItems();
       invalidateProject();
+      // Backend writes a "Moved to <Status>" auto-comment on every status
+      // change — keep this item's comments in sync.
+      queryClient.invalidateQueries({ queryKey: ['workItem', itemId, 'comments'] });
     },
   });
 

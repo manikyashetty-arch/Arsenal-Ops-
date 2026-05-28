@@ -134,6 +134,9 @@ const CreateItemModal = ({
                   type: newType,
                   epic_id: fieldSupportsType(newType, 'epic_id') ? f.epic_id : null,
                   parent_id: fieldSupportsType(newType, 'parent_id') ? f.parent_id : null,
+                  // Epics aggregate hours from descendants — don't carry over a
+                  // value the user typed for a different type.
+                  estimated_hours: newType === 'epic' ? '' : f.estimated_hours,
                 }));
               }}
               className="w-full h-10 bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.07)] text-[#f5f5f5] rounded-xl px-3 text-sm"
@@ -356,8 +359,15 @@ const CreateItemModal = ({
               )}
             </div>
           )}
-          {/* Due Date and Estimated Hours */}
-          <div className="grid grid-cols-2 gap-3">
+          {/* Due Date and Estimated Hours. Epics don't show Est. Hours — their
+              hours are aggregated from descendant stories/tasks/bugs and the
+              subtasks underneath those, so accepting a manual estimate on an
+              epic would be misleading. */}
+          <div
+            className={
+              createForm.type === 'epic' ? 'grid grid-cols-1 gap-3' : 'grid grid-cols-2 gap-3'
+            }
+          >
             <div>
               <label className="text-xs font-medium text-[#737373] block mb-1.5">
                 Due Date (optional)
@@ -424,17 +434,23 @@ const CreateItemModal = ({
                 </PopoverContent>
               </Popover>
             </div>
-            <div>
-              <label className="text-xs font-medium text-[#737373] block mb-1.5">Est. Hours</label>
-              <Input
-                type="number"
-                min="1"
-                value={createForm.estimated_hours}
-                onChange={(e) => setCreateForm((f) => ({ ...f, estimated_hours: e.target.value }))}
-                placeholder="Hours"
-                className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl h-10"
-              />
-            </div>
+            {createForm.type !== 'epic' && (
+              <div>
+                <label className="text-xs font-medium text-[#737373] block mb-1.5">
+                  Est. Hours
+                </label>
+                <Input
+                  type="number"
+                  min="1"
+                  value={createForm.estimated_hours}
+                  onChange={(e) =>
+                    setCreateForm((f) => ({ ...f, estimated_hours: e.target.value }))
+                  }
+                  placeholder="Hours"
+                  className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl h-10"
+                />
+              </div>
+            )}
           </div>
         </div>
         <div className="flex justify-end gap-3 p-5 border-t border-[rgba(255,255,255,0.05)] flex-shrink-0">

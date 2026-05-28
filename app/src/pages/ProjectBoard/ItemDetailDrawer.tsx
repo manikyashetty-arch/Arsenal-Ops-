@@ -625,7 +625,11 @@ const ItemDetailDrawer = ({
                   </select>
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div
+                className={
+                  selectedItem.type === 'epic' ? 'grid grid-cols-1 gap-3' : 'grid grid-cols-2 gap-3'
+                }
+              >
                 <div>
                   <label className="text-xs font-medium text-[#737373] block mb-1.5">
                     Story Points
@@ -642,22 +646,26 @@ const ItemDetailDrawer = ({
                     className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl"
                   />
                 </div>
-                <div>
-                  <label className="text-xs font-medium text-[#737373] block mb-1.5">
-                    Allocated Hours
-                  </label>
-                  <Input
-                    type="number"
-                    defaultValue={selectedItem.assigned_hours}
-                    onChange={(e) =>
-                      setEditForm((f) => ({
-                        ...f,
-                        assigned_hours: parseInt(e.target.value) || 0,
-                      }))
-                    }
-                    className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl"
-                  />
-                </div>
+                {/* Epics' allocated/logged hours are aggregated from descendant
+                    stories/tasks/bugs and their subtasks — not user-editable. */}
+                {selectedItem.type !== 'epic' && (
+                  <div>
+                    <label className="text-xs font-medium text-[#737373] block mb-1.5">
+                      Allocated Hours
+                    </label>
+                    <Input
+                      type="number"
+                      defaultValue={selectedItem.assigned_hours}
+                      onChange={(e) =>
+                        setEditForm((f) => ({
+                          ...f,
+                          assigned_hours: parseInt(e.target.value) || 0,
+                        }))
+                      }
+                      className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl"
+                    />
+                  </div>
+                )}
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
