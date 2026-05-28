@@ -63,12 +63,18 @@ def get_next_item_number(db: Session, key_prefix: str) -> int:
 
 def update_epic_hours(epic_id: int, db: Session):
     """
-    Roll up estimated_hours, logged_hours, and remaining_hours from all child work items
-    (stories, tasks, bugs) into the epic. Single GROUP-BY aggregate query.
+    Roll up estimated_hours, logged_hours, and remaining_hours into the epic
+    from BOTH levels below:
+      - 2nd level: stories/tasks/bugs whose epic_id == this epic (their own,
+        independent hour columns — NOT a rollup of their subtasks)
+      - 3rd level: subtasks whose parent is one of those stories/tasks/bugs
 
-    Must be called whenever a child's hours change OR a child is added/removed/reparented:
-      - create_work_item (with epic_id)
-      - update_work_item (estimated_hours, logged_hours, remaining_hours, or epic_id changed)
+    Story/Task/Bug parents keep their own direct hours independent of their
+    subtasks. The epic is the only level that aggregates across the tree.
+
+    Called whenever any descendant's hours change OR the hierarchy shifts:
+      - create_work_item (with epic_id or subtask under a parent linked to an epic)
+      - update_work_item (hours change, status change, epic_id/parent_id reparent)
       - log_hours endpoint
       - delete_work_item
     """
@@ -76,89 +82,58 @@ def update_epic_hours(epic_id: int, db: Session):
     if not epic or epic.type != WorkItemType.EPIC.value:
         return
 
-    row = (
-        db.query(
-            func.coalesce(func.sum(WorkItem.estimated_hours), 0).label("est"),
-            func.coalesce(func.sum(WorkItem.logged_hours), 0).label("logged"),
-            func.coalesce(func.sum(WorkItem.remaining_hours), 0).label("remaining"),
-        )
+    # 2nd level: direct children's own hour columns
+    direct_children_ids_subq = (
+        db.query(WorkItem.id)
         .filter(
             WorkItem.epic_id == epic_id,
             WorkItem.type.in_(
                 [WorkItemType.USER_STORY.value, WorkItemType.TASK.value, WorkItemType.BUG.value]
             ),
         )
+        .subquery()
+    )
+
+    direct = (
+        db.query(
+            func.coalesce(func.sum(WorkItem.estimated_hours), 0).label("est"),
+            func.coalesce(func.sum(WorkItem.logged_hours), 0).label("logged"),
+            func.coalesce(func.sum(WorkItem.remaining_hours), 0).label("remaining"),
+        )
+        .filter(WorkItem.id.in_(db.query(direct_children_ids_subq.c.id)))
         .one()
     )
 
-    epic.estimated_hours = row.est or 0
-    epic.logged_hours = row.logged or 0
-    epic.remaining_hours = row.remaining or 0
-    epic.updated_at = datetime.utcnow()
-
-
-def update_parent_hours_from_subtasks(parent_id: int, db: Session):
-    """
-    Roll up estimated_hours, logged_hours, and remaining_hours from all
-    subtasks into their Story/Task/Bug parent. Mirrors update_epic_hours
-    but at the parent-with-subtasks level.
-
-    When a Story/Task/Bug has at least one subtask it becomes a pure
-    aggregator — its hour columns are overwritten with the SUM across its
-    subtasks. (Direct log_hours on parents-with-subtasks is rejected at the
-    endpoint to keep the aggregator invariant.) When there are no subtasks
-    the parent retains its own hour values; this function is a no-op in
-    that case.
-    """
-    parent = db.query(WorkItem).filter(WorkItem.id == parent_id).first()
-    if not parent:
-        return
-    if parent.type not in (
-        WorkItemType.USER_STORY.value,
-        WorkItemType.TASK.value,
-        WorkItemType.BUG.value,
-    ):
-        return
-
-    subtask_count = (
-        db.query(WorkItem.id)
-        .filter(
-            WorkItem.parent_id == parent_id,
-            WorkItem.type == WorkItemType.SUBTASK.value,
-        )
-        .count()
-    )
-    if subtask_count == 0:
-        # No subtasks: parent keeps its own direct hours. Don't touch.
-        return
-
-    row = (
+    # 3rd level: subtasks whose parent is one of the direct children
+    subtasks = (
         db.query(
             func.coalesce(func.sum(WorkItem.estimated_hours), 0).label("est"),
             func.coalesce(func.sum(WorkItem.logged_hours), 0).label("logged"),
             func.coalesce(func.sum(WorkItem.remaining_hours), 0).label("remaining"),
         )
         .filter(
-            WorkItem.parent_id == parent_id,
             WorkItem.type == WorkItemType.SUBTASK.value,
+            WorkItem.parent_id.in_(db.query(direct_children_ids_subq.c.id)),
         )
         .one()
     )
 
-    parent.estimated_hours = row.est or 0
-    parent.logged_hours = row.logged or 0
-    parent.remaining_hours = row.remaining or 0
-    parent.updated_at = datetime.utcnow()
+    epic.estimated_hours = (direct.est or 0) + (subtasks.est or 0)
+    epic.logged_hours = (direct.logged or 0) + (subtasks.logged or 0)
+    epic.remaining_hours = (direct.remaining or 0) + (subtasks.remaining or 0)
+    epic.updated_at = datetime.utcnow()
 
 
 def update_parent_status_from_subtasks(parent_id: int, db: Session):
     """
-    Auto-update Story/Task/Bug status based on its subtasks. Mirrors
-    update_epic_status_from_stories.
+    Reopen a Story/Task/Bug if it was previously marked done but one of its
+    subtasks has just been reopened.
 
-    - If ALL subtasks are done, mark the parent as done.
-    - If ANY subtask is not done and parent was done, reopen parent.
-    - If parent has no subtasks, do nothing (parent's own status governs).
+    Auto-completion was intentionally removed: parents are marked done
+    EXPLICITLY by the user (the API blocks the transition if any subtask is
+    still open via the rule in update_work_item). This function only handles
+    the reverse direction — keeping a parent's "done" status from drifting
+    into an inconsistent state when a descendant is reopened.
     """
     parent = db.query(WorkItem).filter(WorkItem.id == parent_id).first()
     if not parent:
@@ -168,6 +143,9 @@ def update_parent_status_from_subtasks(parent_id: int, db: Session):
         WorkItemType.TASK.value,
         WorkItemType.BUG.value,
     ):
+        return
+    if parent.status != WorkItemStatus.DONE.value:
+        # Parent isn't done — nothing to reopen.
         return
 
     subtasks = (
@@ -181,13 +159,8 @@ def update_parent_status_from_subtasks(parent_id: int, db: Session):
     if not subtasks:
         return
 
-    all_done = all(s.status == WorkItemStatus.DONE.value for s in subtasks)
-
-    if all_done and parent.status != WorkItemStatus.DONE.value:
-        parent.status = WorkItemStatus.DONE.value
-        parent.completed_at = datetime.utcnow()
-        parent.updated_at = datetime.utcnow()
-    elif not all_done and parent.status == WorkItemStatus.DONE.value:
+    any_open = any(s.status != WorkItemStatus.DONE.value for s in subtasks)
+    if any_open:
         parent.status = WorkItemStatus.TODO.value
         parent.completed_at = None
         parent.started_at = None
@@ -196,19 +169,23 @@ def update_parent_status_from_subtasks(parent_id: int, db: Session):
 
 def refresh_parent_and_epic(parent: WorkItem, db: Session):
     """
-    Recompute a Story/Task/Bug parent from its subtasks, then propagate the
-    result up to the grandparent epic (if linked).
+    Re-evaluate a Story/Task/Bug parent and its grandparent epic after a
+    subtask change.
 
-    Why the explicit flush: SessionLocal is configured with autoflush=False
-    (see database.py). After update_parent_hours_from_subtasks mutates
-    parent's hour columns in memory, those changes are still pending in the
-    session — a subsequent SUM query against the work_items table would read
-    the stale on-disk values and roll a stale parent value into the epic.
-    Flushing forces the parent writes to the DB before the epic SUM runs.
+    Hours are NOT rolled up from subtasks to the parent — Story/Task/Bug rows
+    keep their own direct estimate / logged / remaining values. The epic is
+    the only level that aggregates across subtasks (it sums both 2nd and 3rd
+    level items via update_epic_hours).
+
+    What we still do at the parent level: status auto-update (all subtasks
+    done → parent done, any subtask reopened → parent reopens). That rule is
+    independent of hours and remains useful.
     """
-    update_parent_hours_from_subtasks(parent.id, db)
     update_parent_status_from_subtasks(parent.id, db)
     if parent.epic_id is not None:
+        # update_epic_hours queries the database directly; flush any pending
+        # parent status writes from the call above so the epic's status rollup
+        # (which depends on parent status) sees them.
         db.flush()
         update_epic_hours(parent.epic_id, db)
         update_epic_status_from_stories(parent.epic_id, db)
@@ -216,12 +193,13 @@ def refresh_parent_and_epic(parent: WorkItem, db: Session):
 
 def propagate_from_subtask(subtask: WorkItem, db: Session):
     """
-    Helper: when a subtask changes, recompute its parent (Story/Task/Bug)
-    and then the grandparent epic (if the parent has an epic_id).
+    Helper: when a subtask changes, run the parent's status rollup and then
+    the grandparent epic's hours + status rollup.
 
-    Use this from any mutation that touches a subtask's hours or status.
-    Centralising the two-level chain here avoids forgetting one side at a
-    call site.
+    Hours go DIRECTLY from the subtask to the epic via update_epic_hours
+    (which sums both 2nd and 3rd level descendants). The 2nd-level parent's
+    own hour columns are not touched — by design, parents keep their own
+    independent hours.
     """
     if subtask.parent_id is None:
         return
@@ -233,9 +211,14 @@ def propagate_from_subtask(subtask: WorkItem, db: Session):
 
 def update_epic_status_from_stories(epic_id: int, db: Session):
     """
-    Auto-update epic status based on all linked work items (stories/tasks/bugs).
-    - If ALL work items are done, mark epic as done
-    - If ANY work item is not done, reopen epic if it was done
+    Reopen an epic if it was previously marked done but one of its
+    stories/tasks/bugs has just been reopened.
+
+    Auto-completion was intentionally removed: epics are marked done
+    EXPLICITLY by the user (the API blocks the transition if any child is
+    still open via the rule in update_work_item). This function only handles
+    the reverse direction — keeping the epic's "done" status from drifting
+    into an inconsistent state when a child is reopened.
 
     Args:
         epic_id: ID of the epic to check
@@ -243,6 +226,9 @@ def update_epic_status_from_stories(epic_id: int, db: Session):
     """
     epic = db.query(WorkItem).filter(WorkItem.id == epic_id).first()
     if not epic or epic.type != WorkItemType.EPIC.value:
+        return
+    if epic.status != WorkItemStatus.DONE.value:
+        # Epic isn't done — nothing to reopen.
         return
 
     # Get all work items linked to this epic
@@ -261,16 +247,9 @@ def update_epic_status_from_stories(epic_id: int, db: Session):
         # No work items under this epic, don't auto-update status
         return
 
-    # Check if ALL items are done
-    all_done = all(item.status == "done" for item in items)
-
-    if all_done and epic.status != "done":
-        epic.status = "done"
-        epic.completed_at = datetime.utcnow()
-        epic.updated_at = datetime.utcnow()
-    elif not all_done and epic.status == "done":
-        # Reopen epic if one of its items is reopened
-        epic.status = "todo"
+    any_open = any(item.status != WorkItemStatus.DONE.value for item in items)
+    if any_open:
+        epic.status = WorkItemStatus.TODO.value
         epic.completed_at = None
         epic.started_at = None
         epic.updated_at = datetime.utcnow()
@@ -1351,32 +1330,6 @@ def log_hours(
             detail="This ticket is marked done. Re-open it before logging hours.",
         )
 
-    # Pure-aggregator rule: once a story/task/bug has subtasks, its hour
-    # columns are derived from those subtasks. Direct logging on the parent
-    # would be silently overwritten on the next rollup, so reject up front
-    # with a message pointing the user to the subtasks.
-    if item.type in (
-        WorkItemType.USER_STORY.value,
-        WorkItemType.TASK.value,
-        WorkItemType.BUG.value,
-    ):
-        has_subtasks = (
-            db.query(WorkItem.id)
-            .filter(
-                WorkItem.parent_id == item.id,
-                WorkItem.type == WorkItemType.SUBTASK.value,
-            )
-            .first()
-            is not None
-        )
-        if has_subtasks:
-            raise HTTPException(
-                status_code=403,
-                detail=(
-                    "This ticket has subtasks — log hours against one of the subtasks instead."
-                ),
-            )
-
     # Assignee-only enforcement
     if not item.assignee_id:
         raise HTTPException(
@@ -2294,8 +2247,25 @@ def get_hours_analytics(
         ]
         logged = sum(te.hours for te in dev_time_entries)
 
-        # Allocated = total estimated hours on all currently-assigned tickets
-        allocated = sum(item.estimated_hours or 0 for item in dev_items)
+        # Allocated = estimated hours on currently-assigned tickets, minus hours
+        # already logged by OTHER developers on those tickets. Previous assignees'
+        # work shouldn't show up on the new assignee's plate after a transfer:
+        # a 6h ticket with 3h already logged before takeover becomes 3h allocated.
+        # Per-ticket: total logged on the ticket minus this dev's own logs on it
+        # gives "others' logs on this ticket". Subtract from the estimate.
+        my_hours_per_item: dict[int, float] = {}
+        for te in dev_time_entries:
+            my_hours_per_item[te.work_item_id] = my_hours_per_item.get(te.work_item_id, 0.0) + (
+                te.hours or 0
+            )
+        allocated = sum(
+            max(
+                0,
+                (item.estimated_hours or 0)
+                - max(0, (item.logged_hours or 0) - my_hours_per_item.get(item.id, 0.0)),
+            )
+            for item in dev_items
+        )
 
         # Remaining = pending work on currently-assigned non-done tickets.
         # Use per-ticket (estimate - cumulative-logged), so:

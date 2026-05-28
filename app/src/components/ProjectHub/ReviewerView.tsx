@@ -180,9 +180,18 @@ const ReviewerView: React.FC<ReviewerViewProps> = ({
         toast.success('Marked as done');
         onTaskUpdate?.(itemId, { status: 'done' });
       } else {
-        toast.error('Failed to update status');
+        // Surface backend validation messages (e.g. "subtask still open"
+        // when marking a parent done) instead of a generic toast.
+        let detail = 'Failed to update status';
+        try {
+          const body = await res.json();
+          if (body?.detail) detail = body.detail;
+        } catch {
+          // body wasn't JSON — keep the generic message
+        }
+        toast.error(detail);
       }
-    } catch (err) {
+    } catch {
       toast.error('Failed to update status');
     } finally {
       setLoading((prev) => ({ ...prev, [`done-${itemId}`]: false }));
