@@ -80,11 +80,8 @@ const MyCapacityCard = () => {
 
   const used = data?.this_week_capacity_used ?? 0;
   const remaining = data?.this_week_remaining_capacity ?? WEEKLY_CAPACITY;
-  const status: 'Available' | 'Moderate' | 'Busy' = remaining >= 10
-    ? 'Available'
-    : remaining > 0
-      ? 'Moderate'
-      : 'Busy';
+  const status: 'Available' | 'Moderate' | 'Busy' =
+    remaining >= 10 ? 'Available' : remaining > 0 ? 'Moderate' : 'Busy';
   const statusColor =
     status === 'Available' ? '#34D399' : status === 'Moderate' ? '#F59E0B' : '#EF4444';
 
