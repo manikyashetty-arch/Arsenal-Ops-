@@ -55,6 +55,7 @@ export interface CreateItemModalProps {
   isCreatingItem: boolean;
   onClose: () => void;
   onSubmit: (form: CreateItemFormValues) => void;
+  initialType?: string;
 }
 
 const CreateItemModal = ({
@@ -65,9 +66,10 @@ const CreateItemModal = ({
   isCreatingItem,
   onClose,
   onSubmit,
+  initialType,
 }: CreateItemModalProps) => {
   const [createForm, setCreateForm] = useState<CreateItemFormValues>({
-    type: 'user_story',
+    type: initialType ?? 'user_story',
     title: '',
     description: '',
     priority: 'medium',
@@ -144,7 +146,6 @@ const CreateItemModal = ({
               <option value="user_story">User Story</option>
               <option value="task">Task</option>
               <option value="bug">Bug</option>
-              <option value="epic">Epic</option>
             </select>
           </div>
           <div>
