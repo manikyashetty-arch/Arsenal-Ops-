@@ -2256,7 +2256,6 @@ def get_hours_analytics(
                 existing_ids.add(dev_id)
 
     # Build maps for quick lookup
-    work_item_assignee_map = {item.id: item.assignee_id for item in items}
     work_item_map = {item.id: item for item in items}
     dev_map = {d.id: d for d in developers}
 
@@ -2268,14 +2267,11 @@ def get_hours_analytics(
             if item.assignee_id == dev.id and item.type != WorkItemType.EPIC.value
         ]
 
-        # Hours logged BY this developer (their own time entries where developer_id = dev.id)
-        # OR if developer_id is NULL, fall back to ticket assignee attribution
-        dev_time_entries = [
-            te
-            for te in all_time_entries
-            if te.developer_id == dev.id
-            or (te.developer_id is None and work_item_assignee_map.get(te.work_item_id) == dev.id)
-        ]
+        # Hours logged BY this developer — only entries with an explicit
+        # developer_id. Kept consistent with /api/admin/developers/capacity so
+        # both views report the same numbers. Legacy NULL-developer rows are
+        # ignored everywhere (run a one-off backfill if you want them counted).
+        dev_time_entries = [te for te in all_time_entries if te.developer_id == dev.id]
         logged = sum(te.hours for te in dev_time_entries)
 
         # Allocated = estimated hours on currently-assigned tickets, minus hours
@@ -2329,6 +2325,33 @@ def get_hours_analytics(
             for te in dev_time_entries
             if te.logged_at and current_week_start <= te.logged_at <= current_week_end
         )
+
+        # Weekly logged history — aggregate this developer's time entries by
+        # Sat→Fri UTC week so the PM tab can drill into "Total Logged" and see
+        # the full breakdown going back to the earliest available entry.
+        from collections import defaultdict as _dd
+        from datetime import timedelta as _td
+
+        _weekly_bucket: dict = _dd(int)
+        for te in dev_time_entries:
+            if not te.logged_at:
+                continue
+            _days_back = (te.logged_at.weekday() + 2) % 7  # Sat=5 → 0
+            _ws = (te.logged_at - _td(days=_days_back)).replace(
+                hour=0, minute=0, second=0, microsecond=0
+            )
+            _weekly_bucket[_ws] += te.hours or 0
+
+        weekly_logged_history = [
+            {
+                "week_start": _ws.isoformat(),
+                "week_end": (
+                    _ws + _td(days=6, hours=23, minutes=59, seconds=59)
+                ).isoformat(),
+                "hours": _hrs,
+            }
+            for _ws, _hrs in sorted(_weekly_bucket.items(), reverse=True)
+        ]
 
         # Status-based weekly capacity breakdown for THIS developer scoped to THIS project.
         # Mirrors /api/admin/developers/capacity but filtered to the current project.
@@ -2396,6 +2419,7 @@ def get_hours_analytics(
                 "logged_hours": logged,
                 "remaining_hours": remaining,
                 "current_week_logged": current_week_logged,
+                "weekly_logged_history": weekly_logged_history,
                 "in_progress_remaining": in_progress_remaining,
                 "total_items": len(dev_items),
                 "completed_items": len(completed_items),

@@ -12,6 +12,7 @@ import {
   getAllowedTargetTypes,
   type WorkItemType,
 } from '@/lib/hierarchy/validateReparent';
+import { clampNonNegInt, blockNegativeKey } from '@/lib/inputUtils';
 
 export interface CreateItemFormValues {
   type: string;
@@ -188,11 +189,13 @@ const CreateItemModal = ({
                 <label className="text-xs font-medium text-[#737373] block mb-1.5">Points</label>
                 <Input
                   type="number"
+                  min="0"
                   value={createForm.story_points}
+                  onKeyDown={blockNegativeKey}
                   onChange={(e) =>
                     setCreateForm((f) => ({
                       ...f,
-                      story_points: parseInt(e.target.value) || 0,
+                      story_points: clampNonNegInt(e.target.value),
                     }))
                   }
                   className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl h-10"
@@ -441,10 +444,15 @@ const CreateItemModal = ({
                 </label>
                 <Input
                   type="number"
-                  min="1"
+                  min="0"
                   value={createForm.estimated_hours}
+                  onKeyDown={blockNegativeKey}
                   onChange={(e) =>
-                    setCreateForm((f) => ({ ...f, estimated_hours: e.target.value }))
+                    setCreateForm((f) => ({
+                      ...f,
+                      estimated_hours:
+                        e.target.value === '' ? '' : String(clampNonNegInt(e.target.value)),
+                    }))
                   }
                   placeholder="Hours"
                   className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl h-10"

@@ -165,6 +165,11 @@ def get_developers_capacity(db: Session = Depends(get_db)):
     Response embeds a per-ticket breakdown so the UI can drill down without a
     second round-trip.
     """
+    from collections import defaultdict
+    from datetime import timedelta
+
+    from models.project import Project
+    from models.time_entry import TimeEntry
     from services.capacity_service import compute_capacity_breakdown, week_boundaries
 
     week_start, week_end = week_boundaries()
@@ -179,6 +184,78 @@ def get_developers_capacity(db: Session = Depends(get_db)):
         )
         .all()
     )
+
+    # Pull every time entry for every developer in a single query — used below
+    # to build a per-dev weekly-logged-hours history across ALL projects, split
+    # by project per week.
+    all_entries = (
+        db.query(TimeEntry)
+        .filter(TimeEntry.developer_id.isnot(None))
+        .filter(TimeEntry.logged_at.isnot(None))
+        .all()
+    )
+    entries_by_dev: dict[int, list[TimeEntry]] = defaultdict(list)
+    for te in all_entries:
+        entries_by_dev[te.developer_id].append(te)
+
+    # Resolve work_item → project_id and project_id → project_name in two cheap lookups.
+    wi_ids = {te.work_item_id for te in all_entries}
+    wi_to_project = (
+        dict(db.query(WorkItem.id, WorkItem.project_id).filter(WorkItem.id.in_(wi_ids)).all())
+        if wi_ids
+        else {}
+    )
+    project_ids = {pid for pid in wi_to_project.values() if pid is not None}
+    project_names = (
+        dict(db.query(Project.id, Project.name).filter(Project.id.in_(project_ids)).all())
+        if project_ids
+        else {}
+    )
+
+    def _weekly_history_for(dev_id: int) -> list[dict]:
+        """Bucket this dev's time entries into Sat→Fri UTC weeks across all projects,
+        with a per-project split per week."""
+        # (week_start, project_id) → hours
+        proj_bucket: dict = defaultdict(int)
+        week_totals: dict = defaultdict(int)
+        weeks: set = set()
+        for te in entries_by_dev.get(dev_id, []):
+            if not te.logged_at:
+                continue
+            days_back = (te.logged_at.weekday() + 2) % 7  # Sat=5 → 0
+            ws = (te.logged_at - timedelta(days=days_back)).replace(
+                hour=0, minute=0, second=0, microsecond=0
+            )
+            pid = wi_to_project.get(te.work_item_id)
+            proj_bucket[(ws, pid)] += te.hours or 0
+            week_totals[ws] += te.hours or 0
+            weeks.add(ws)
+
+        out = []
+        for ws in sorted(weeks, reverse=True):
+            projects_in_week = [
+                {
+                    "project_id": pid,
+                    "project_name": project_names.get(pid, "Unknown")
+                    if pid is not None
+                    else "Unknown",
+                    "hours": hrs,
+                }
+                for (w, pid), hrs in proj_bucket.items()
+                if w == ws
+            ]
+            projects_in_week.sort(key=lambda p: -p["hours"])
+            out.append(
+                {
+                    "week_start": ws.isoformat(),
+                    "week_end": (
+                        ws + timedelta(days=6, hours=23, minutes=59, seconds=59)
+                    ).isoformat(),
+                    "hours": week_totals[ws],
+                    "projects": projects_in_week,
+                }
+            )
+        return out
 
     result = []
     for dev in developers:
@@ -198,6 +275,7 @@ def get_developers_capacity(db: Session = Depends(get_db)):
                 "week_start": week_start.isoformat(),
                 "week_end": week_end.isoformat(),
                 "specialization": getattr(dev, "specialization", None),
+                "weekly_logged_history": _weekly_history_for(dev.id),
                 **breakdown,
             }
         )
