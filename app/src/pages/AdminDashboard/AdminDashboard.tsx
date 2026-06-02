@@ -261,7 +261,17 @@ const AdminDashboard = () => {
     [employees],
   );
 
-  const { user, refreshCapabilities } = useAuth(); // keeps auth guard active; token read from localStorage by apiFetch
+  const { user, refreshCapabilities, can } = useAuth(); // keeps auth guard active; token read from localStorage by apiFetch
+
+  // Per-tab capability gates. The /admin route guard in App.tsx already
+  // ensures the user holds at least one admin.* capability before this
+  // component mounts; these gates control which tabs they actually see
+  // and protect against URL-direct access (?tab=users) for caps the user lacks.
+  const canSeeDashboard = can('admin.dashboard');
+  const canSeeEmployees = can('admin.employees');
+  const canSeeProjects = can('admin.projects');
+  const canSeeUsers = can('admin.users');
+  const canSeeRoles = can('admin.roles');
 
   // Refresh capabilities twice: once now, once after the backend LRU window
   // expires for the most common case. Used after role mutations that may
@@ -944,11 +954,15 @@ const AdminDashboard = () => {
         <div className="max-w-7xl mx-auto px-6">
           <div className="flex gap-1 overflow-x-auto pb-2">
             {[
-              { id: 'dashboard', label: 'Dashboard', icon: BarChart3 },
-              { id: 'employees', label: 'Employees', icon: Users },
-              { id: 'projects', label: 'Projects', icon: FolderKanban },
-              { id: 'users', label: 'Users', icon: Shield },
-              { id: 'roles', label: 'Roles', icon: KeyRound },
+              ...(canSeeDashboard
+                ? [{ id: 'dashboard', label: 'Dashboard', icon: BarChart3 }]
+                : []),
+              ...(canSeeEmployees ? [{ id: 'employees', label: 'Employees', icon: Users }] : []),
+              ...(canSeeProjects
+                ? [{ id: 'projects', label: 'Projects', icon: FolderKanban }]
+                : []),
+              ...(canSeeUsers ? [{ id: 'users', label: 'Users', icon: Shield }] : []),
+              ...(canSeeRoles ? [{ id: 'roles', label: 'Roles', icon: KeyRound }] : []),
             ].map((tab) => (
               <button
                 key={tab.id}
@@ -975,55 +989,70 @@ const AdminDashboard = () => {
           </div>
         ) : (
           <>
-            {/* Dashboard Tab */}
-            {activeTab === 'dashboard' && stats && (
-              <DashboardTab stats={stats} setActiveTab={setActiveTab} />
-            )}
+            {/* Dashboard Tab — gated on admin.dashboard */}
+            {activeTab === 'dashboard' &&
+              (canSeeDashboard ? (
+                stats && <DashboardTab stats={stats} setActiveTab={setActiveTab} />
+              ) : (
+                <div className="text-center py-12 text-[#737373]">This section is restricted.</div>
+              ))}
 
-            {/* Employees Tab */}
-            {activeTab === 'employees' && (
-              <EmployeesTab
-                employees={employees}
-                developerCapacities={developerCapacities}
-                teamCapacity={teamCapacity}
-                availableSpecs={availableSpecs}
-                onEditEmployee={handleEditEmployee}
-                onDeleteEmployee={handleDeleteEmployee}
-              />
-            )}
+            {/* Employees Tab — gated on admin.employees */}
+            {activeTab === 'employees' &&
+              (canSeeEmployees ? (
+                <EmployeesTab
+                  employees={employees}
+                  developerCapacities={developerCapacities}
+                  teamCapacity={teamCapacity}
+                  availableSpecs={availableSpecs}
+                  onEditEmployee={handleEditEmployee}
+                  onDeleteEmployee={handleDeleteEmployee}
+                />
+              ) : (
+                <div className="text-center py-12 text-[#737373]">This section is restricted.</div>
+              ))}
 
-            {/* Projects Tab */}
-            {activeTab === 'projects' && (
-              <ProjectsTab
-                projects={projects}
-                invitingProjectId={invitingProjectId}
-                onEditGitHubSettings={handleEditGitHubSettings}
-                onSendGitHubInvites={handleSendGitHubInvites}
-                onOpenProjectMembers={handleOpenProjectMembers}
-              />
-            )}
+            {/* Projects Tab — gated on admin.projects */}
+            {activeTab === 'projects' &&
+              (canSeeProjects ? (
+                <ProjectsTab
+                  projects={projects}
+                  invitingProjectId={invitingProjectId}
+                  onEditGitHubSettings={handleEditGitHubSettings}
+                  onSendGitHubInvites={handleSendGitHubInvites}
+                  onOpenProjectMembers={handleOpenProjectMembers}
+                />
+              ) : (
+                <div className="text-center py-12 text-[#737373]">This section is restricted.</div>
+              ))}
 
-            {/* Users Tab */}
-            {activeTab === 'users' && (
-              <UsersTab
-                users={users}
-                onEditUserRoles={setOpenRoleDropdown}
-                onAddUser={() => setShowUserModal(true)}
-                onDeleteUser={handleDeleteUser}
-                onEditUser={handleOpenEditUser}
-              />
-            )}
+            {/* Users Tab — gated on admin.users */}
+            {activeTab === 'users' &&
+              (canSeeUsers ? (
+                <UsersTab
+                  users={users}
+                  onEditUserRoles={setOpenRoleDropdown}
+                  onAddUser={() => setShowUserModal(true)}
+                  onDeleteUser={handleDeleteUser}
+                  onEditUser={handleOpenEditUser}
+                />
+              ) : (
+                <div className="text-center py-12 text-[#737373]">This section is restricted.</div>
+              ))}
 
-            {/* Roles Tab */}
-            {activeTab === 'roles' && (
-              <RolesTab
-                roles={roles}
-                isDeletingRole={deleteRoleMutation.isPending}
-                onCreateRole={handleOpenCreateRole}
-                onEditRole={handleOpenEditRole}
-                onDeleteRole={handleDeleteRole}
-              />
-            )}
+            {/* Roles Tab — gated on admin.roles */}
+            {activeTab === 'roles' &&
+              (canSeeRoles ? (
+                <RolesTab
+                  roles={roles}
+                  isDeletingRole={deleteRoleMutation.isPending}
+                  onCreateRole={handleOpenCreateRole}
+                  onEditRole={handleOpenEditRole}
+                  onDeleteRole={handleDeleteRole}
+                />
+              ) : (
+                <div className="text-center py-12 text-[#737373]">This section is restricted.</div>
+              ))}
           </>
         )}
       </div>

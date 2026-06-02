@@ -190,7 +190,7 @@ const CreateItemModal = ({
                 <Input
                   type="number"
                   min="0"
-                  value={createForm.story_points}
+                  value={createForm.story_points || ''}
                   onKeyDown={blockNegativeKey}
                   onChange={(e) =>
                     setCreateForm((f) => ({
