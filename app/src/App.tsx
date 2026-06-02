@@ -1,5 +1,12 @@
-import { BrowserRouter as Router, Routes, Route, useNavigate, useLocation } from 'react-router-dom';
-import { useState, useEffect, lazy, Suspense } from 'react';
+import {
+  BrowserRouter as Router,
+  Routes,
+  Route,
+  Navigate,
+  useNavigate,
+  useLocation,
+} from 'react-router-dom';
+import { useState, useEffect, lazy, Suspense, type ReactNode } from 'react';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
@@ -23,6 +30,31 @@ const RouteSpinner = () => (
     <div className="w-10 h-10 border-2 border-[#E0B954]/30 border-t-[#E0B954] rounded-full animate-spin" />
   </div>
 );
+
+// The admin capability registry (mirrors backend/capabilities.py). A user
+// reaching /admin needs at least ONE of these to see anything useful, so
+// the route guard redirects to / if the user holds none.
+const ADMIN_CAPABILITIES = [
+  'admin.dashboard',
+  'admin.employees',
+  'admin.projects',
+  'admin.users',
+  'admin.roles',
+  'admin.developers_capacity',
+  'admin.restrictions',
+] as const;
+
+/**
+ * Route guard for /admin. Renders children only when the user holds at least
+ * one admin.* capability. Otherwise redirects to the projects home so users
+ * can't see the admin shell at all. Backend endpoints are independently
+ * gated, so this is defense-in-depth on the client.
+ */
+function RequireAnyAdminCapability({ children }: { children: ReactNode }) {
+  const { can } = useAuth();
+  if (ADMIN_CAPABILITIES.some((cap) => can(cap))) return <>{children}</>;
+  return <Navigate to="/" replace />;
+}
 
 function IdleWarningModal({
   onStay,
@@ -156,7 +188,14 @@ function AuthenticatedRoutes() {
           <Route path="/project/:id" element={<ProjectDetail />} />
           <Route path="/project/:id/board" element={<ProjectBoard />} />
           <Route path="/project/:id/board/:ticketId" element={<ProjectBoard />} />
-          <Route path="/admin" element={<AdminDashboard />} />
+          <Route
+            path="/admin"
+            element={
+              <RequireAnyAdminCapability>
+                <AdminDashboard />
+              </RequireAnyAdminCapability>
+            }
+          />
         </Routes>
       </Suspense>
     </>
