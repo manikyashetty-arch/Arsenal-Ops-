@@ -34,6 +34,7 @@ import {
   fieldSupportsType,
 } from '@/lib/hierarchy/validateReparent';
 import { apiFetch } from '@/lib/api';
+import { clampNonNegInt, blockNegativeKey } from '@/lib/inputUtils';
 import { CALENDAR_CLASS_NAMES } from '@/components/ProjectsPage/constants';
 import { formatLocalDate } from '@/components/ProjectsPage/utils';
 
@@ -637,11 +638,13 @@ const ItemDetailDrawer = ({
                   </label>
                   <Input
                     type="number"
+                    min="0"
                     defaultValue={selectedItem.story_points}
+                    onKeyDown={blockNegativeKey}
                     onChange={(e) =>
                       setEditForm((f) => ({
                         ...f,
-                        story_points: parseInt(e.target.value) || 0,
+                        story_points: clampNonNegInt(e.target.value),
                       }))
                     }
                     className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl"
@@ -656,11 +659,13 @@ const ItemDetailDrawer = ({
                     </label>
                     <Input
                       type="number"
+                      min="0"
                       defaultValue={selectedItem.assigned_hours}
+                      onKeyDown={blockNegativeKey}
                       onChange={(e) =>
                         setEditForm((f) => ({
                           ...f,
-                          assigned_hours: parseInt(e.target.value) || 0,
+                          assigned_hours: clampNonNegInt(e.target.value),
                         }))
                       }
                       className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl"
@@ -675,11 +680,13 @@ const ItemDetailDrawer = ({
                   </label>
                   <Input
                     type="number"
+                    min="0"
                     defaultValue={selectedItem.logged_hours || 0}
+                    onKeyDown={blockNegativeKey}
                     onChange={(e) =>
                       setEditForm((f) => ({
                         ...f,
-                        logged_hours: parseInt(e.target.value) || 0,
+                        logged_hours: clampNonNegInt(e.target.value),
                       }))
                     }
                     className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl"
@@ -691,11 +698,13 @@ const ItemDetailDrawer = ({
                   </label>
                   <Input
                     type="number"
+                    min="0"
                     defaultValue={selectedItem.remaining_hours}
+                    onKeyDown={blockNegativeKey}
                     onChange={(e) =>
                       setEditForm((f) => ({
                         ...f,
-                        remaining_hours: parseInt(e.target.value) || 0,
+                        remaining_hours: clampNonNegInt(e.target.value),
                       }))
                     }
                     className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl"
@@ -1103,6 +1112,7 @@ const ItemDetailDrawer = ({
                       placeholder="Hours"
                       min="0"
                       max="24"
+                      onKeyDown={blockNegativeKey}
                       className="w-24 h-9 bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl"
                       id="log-hours-input"
                     />
@@ -1316,8 +1326,13 @@ const ItemDetailDrawer = ({
                         min={0}
                         max={999}
                         value={newSubtask.estimated_hours}
+                        onKeyDown={blockNegativeKey}
                         onChange={(e) =>
-                          setNewSubtask((f) => ({ ...f, estimated_hours: e.target.value }))
+                          setNewSubtask((f) => ({
+                            ...f,
+                            estimated_hours:
+                              e.target.value === '' ? '' : String(clampNonNegInt(e.target.value)),
+                          }))
                         }
                         disabled={createSubtaskMutation.isPending}
                         placeholder="Hours"

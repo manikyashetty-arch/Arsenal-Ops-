@@ -13,6 +13,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import type { Project, ProjectMember, NewPersonalTaskForm } from './types';
+import { clampNonNegInt, blockNegativeKey } from '@/lib/inputUtils';
 import { parseLocalDate, formatLocalDate } from './utils';
 import { CALENDAR_CLASS_NAMES } from './constants';
 
@@ -182,8 +183,17 @@ const AddPersonalTaskDialog = ({
                 Estimated Hours <span className="text-[#555]">(optional)</span>
               </label>
               <Input
+                type="number"
+                min="0"
                 value={form.estimated_hours}
-                onChange={(e) => setForm({ ...form, estimated_hours: e.target.value })}
+                onKeyDown={blockNegativeKey}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    estimated_hours:
+                      e.target.value === '' ? '' : String(clampNonNegInt(e.target.value)),
+                  })
+                }
                 className="bg-[#0A0A14] border-[rgba(255,255,255,0.08)] text-white placeholder-[#444]"
               />
             </div>

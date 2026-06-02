@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { clampNonNegInt, blockNegativeKey } from '@/lib/inputUtils';
 import { Calendar as CalendarIcon } from '@/components/ui/calendar';
 import { toast } from 'sonner';
 import { API_BASE_URL } from '@/config/api';
@@ -466,9 +467,11 @@ const TicketDetailPanel = ({
                   </label>
                   <Input
                     type="number"
+                    min="0"
                     value={editForm.story_points || 0}
+                    onKeyDown={blockNegativeKey}
                     onChange={(e) =>
-                      setEditForm({ ...editForm, story_points: parseInt(e.target.value) || 0 })
+                      setEditForm({ ...editForm, story_points: clampNonNegInt(e.target.value) })
                     }
                     className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl"
                   />
@@ -479,9 +482,11 @@ const TicketDetailPanel = ({
                   </label>
                   <Input
                     type="number"
+                    min="0"
                     value={editForm.assigned_hours || 0}
+                    onKeyDown={blockNegativeKey}
                     onChange={(e) =>
-                      setEditForm({ ...editForm, assigned_hours: parseInt(e.target.value) || 0 })
+                      setEditForm({ ...editForm, assigned_hours: clampNonNegInt(e.target.value) })
                     }
                     className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl"
                   />
@@ -494,9 +499,11 @@ const TicketDetailPanel = ({
                   </label>
                   <Input
                     type="number"
+                    min="0"
                     value={editForm.logged_hours || 0}
+                    onKeyDown={blockNegativeKey}
                     onChange={(e) =>
-                      setEditForm({ ...editForm, logged_hours: parseInt(e.target.value) || 0 })
+                      setEditForm({ ...editForm, logged_hours: clampNonNegInt(e.target.value) })
                     }
                     className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl"
                   />
@@ -507,9 +514,11 @@ const TicketDetailPanel = ({
                   </label>
                   <Input
                     type="number"
+                    min="0"
                     value={editForm.remaining_hours || 0}
+                    onKeyDown={blockNegativeKey}
                     onChange={(e) =>
-                      setEditForm({ ...editForm, remaining_hours: parseInt(e.target.value) || 0 })
+                      setEditForm({ ...editForm, remaining_hours: clampNonNegInt(e.target.value) })
                     }
                     className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl"
                   />
@@ -733,6 +742,7 @@ const TicketDetailPanel = ({
                     placeholder="Hours"
                     min="0"
                     max="24"
+                    onKeyDown={blockNegativeKey}
                     className="w-24 h-9 bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl"
                     id="log-hours-input"
                   />
