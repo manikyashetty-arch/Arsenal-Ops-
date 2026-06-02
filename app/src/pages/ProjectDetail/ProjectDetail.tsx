@@ -1,4 +1,4 @@
-import { useState, useEffect, lazy, Suspense } from 'react';
+import { useState, useEffect, useMemo, lazy, Suspense } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiFetch, ApiError } from '@/lib/api';
@@ -385,7 +385,10 @@ const ProjectDetail = () => {
     },
     enabled: !!id,
   });
-  const hubWorkItems = hubWorkItemsQuery.data ?? [];
+  // Stable empty-array default so TimelineView/CalendarView row memos (which
+  // depend on these arrays) don't bust on a fresh [] every render. Identity
+  // still changes when query data changes, so live updates keep flowing.
+  const hubWorkItems = useMemo(() => hubWorkItemsQuery.data ?? [], [hubWorkItemsQuery.data]);
 
   // ── react-query: goals ──────────────────────────────────────────────────
   const goalsQuery = useQuery<Goal[]>({
@@ -393,7 +396,7 @@ const ProjectDetail = () => {
     queryFn: () => apiFetch<Goal[]>(`/api/projects/${id}/goals`),
     enabled: !!id,
   });
-  const goals = goalsQuery.data ?? [];
+  const goals = useMemo(() => goalsQuery.data ?? [], [goalsQuery.data]);
 
   // ── react-query: milestones ─────────────────────────────────────────────
   const milestonesQuery = useQuery<Milestone[]>({
@@ -401,7 +404,7 @@ const ProjectDetail = () => {
     queryFn: () => apiFetch<Milestone[]>(`/api/projects/${id}/milestones`),
     enabled: !!id,
   });
-  const milestones = milestonesQuery.data ?? [];
+  const milestones = useMemo(() => milestonesQuery.data ?? [], [milestonesQuery.data]);
 
   // ── react-query: activities ─────────────────────────────────────────────
   const activitiesQuery = useQuery<ActivityItem[]>({
