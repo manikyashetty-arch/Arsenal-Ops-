@@ -468,7 +468,7 @@ const TicketDetailPanel = ({
                   <Input
                     type="number"
                     min="0"
-                    value={editForm.story_points || 0}
+                    value={editForm.story_points || ''}
                     onKeyDown={blockNegativeKey}
                     onChange={(e) =>
                       setEditForm({ ...editForm, story_points: clampNonNegInt(e.target.value) })
@@ -483,7 +483,7 @@ const TicketDetailPanel = ({
                   <Input
                     type="number"
                     min="0"
-                    value={editForm.assigned_hours || 0}
+                    value={editForm.assigned_hours || ''}
                     onKeyDown={blockNegativeKey}
                     onChange={(e) =>
                       setEditForm({ ...editForm, assigned_hours: clampNonNegInt(e.target.value) })
