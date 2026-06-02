@@ -1,6 +1,17 @@
 import React, { useState } from 'react';
 import { RotateCcw, Save, Settings } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 import { toast } from 'sonner';
 import {
   PulseData,
@@ -14,7 +25,7 @@ import {
   FeatureForecastRow,
   IncludedServicesRow,
   savePulseData,
-  resetPulseData,
+  buildEmptyPulseData,
 } from '../pulseData';
 import PulseProjectMetaSection from './sections/PulseProjectMetaSection';
 import PulseSummarySection from './sections/PulseSummarySection';
@@ -48,15 +59,16 @@ const PulseSettingsView: React.FC<PulseSettingsViewProps> = ({ projectId, initia
     toast.success('Pulse data saved');
   };
 
-  const handleReset = async () => {
-    resetPulseData(projectId);
-    // Lazy-load the fixture only when the user actually resets; keeps the
-    // dummy data out of the main bundle. (See pulseData.fixtures.ts.)
-    const { DUMMY_PULSE_DATA } = await import('../pulseData.fixtures');
-    setData(DUMMY_PULSE_DATA);
-    onChange(DUMMY_PULSE_DATA);
+  const handleReset = () => {
+    // Persist the empty state to localStorage so the clear survives a page
+    // refresh. resetPulseData (which just removes the row) would let
+    // loadPulseData's no-row branch return DUMMY_PULSE_DATA on next mount.
+    const empty = buildEmptyPulseData();
+    savePulseData(projectId, empty);
+    setData(empty);
+    onChange(empty);
     setIsDirty(false);
-    toast.info('Reset to dummy data');
+    toast.info('Pulse data cleared');
   };
 
   // Project meta
@@ -221,15 +233,35 @@ const PulseSettingsView: React.FC<PulseSettingsViewProps> = ({ projectId, initia
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleReset}
-            className="text-[#a3a3a3] hover:text-white"
-          >
-            <RotateCcw className="w-4 h-4 mr-2" />
-            Reset to dummy data
-          </Button>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button variant="ghost" size="sm" className="text-[#a3a3a3] hover:text-white">
+                <RotateCcw className="w-4 h-4 mr-2" />
+                Clear all data
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent className="bg-[#0d0d0d] border-[rgba(255,255,255,0.08)] text-white">
+              <AlertDialogHeader>
+                <AlertDialogTitle>Clear all Pulse data?</AlertDialogTitle>
+                <AlertDialogDescription className="text-[#a3a3a3]">
+                  This wipes every field on the Pulse tab for this project — ledger, months, risks,
+                  milestones, updates, summary metrics, and project meta. The action can't be
+                  undone.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel className="bg-transparent border-[rgba(255,255,255,0.08)] text-white hover:bg-[rgba(255,255,255,0.04)]">
+                  Cancel
+                </AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={handleReset}
+                  className="bg-[#EF4444] hover:bg-[#DC2626] text-white"
+                >
+                  Clear data
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
           <Button
             onClick={handleSave}
             disabled={!isDirty}

@@ -149,6 +149,48 @@ export const currentIncludedServices = (data: PulseData): IncludedServicesRow =>
 const STORAGE_PREFIX = 'pulse-data:';
 
 /**
+ * Structurally-valid PulseData with every metric zeroed and every list empty.
+ * Returned for new projects that have no saved pulse data yet — replaces the
+ * old behavior of seeding new projects with the DUMMY_PULSE_DATA fixture.
+ *
+ * Also used as the default-merge target so older saved payloads pick up
+ * newly-added schema fields as zeros rather than as demo values.
+ */
+export const buildEmptyPulseData = (): PulseData => ({
+  project: { name: '', keyPrefix: '', contractStart: '', launchTarget: '', contractEnd: '' },
+  ledger: [],
+  months: [],
+  lastActualIdx: -1,
+  currentMonthTrackedPct: 0,
+  includedServices: [],
+  summary: {
+    healthScore: 0,
+    healthStatus: 'Healthy',
+    deliveryPct: 0,
+    deliveryCompleted: 0,
+    deliveryTotal: 0,
+    overdueCount: 0,
+    openBugs: 0,
+    criticalOpen: 0,
+    overallCompletion: 0,
+    workItems: 0,
+    pointsCompleted: 0,
+    pointsTotal: 0,
+    activeSprints: 0,
+    monthLabel: '',
+    monthIndex: 0,
+    totalMonths: 0,
+    narrative: '',
+    risksTrendNote: '',
+    peopleTrendNote: '',
+  },
+  risks: [],
+  milestones: [],
+  updates: [],
+  forecastVsActuals: { current: [], last: [], project: [] },
+});
+
+/**
  * Load pulse data for a project.
  *
  * The fixture (`DUMMY_PULSE_DATA`) is split into a separate chunk via dynamic
