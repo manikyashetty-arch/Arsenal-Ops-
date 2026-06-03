@@ -736,8 +736,15 @@ def create_work_item(
         update_epic_hours(work_item.epic_id, db)
         db.commit()
 
-    # Send assignment notification if assignee is set (off the request thread)
-    if work_item.assignee_id and work_item.assignee:
+    # Send assignment notification if assignee is set (off the request thread).
+    # Skip when the creator self-assigned — emailing yourself about a ticket
+    # you just made is noise. Matches the same `assignee.email != current_user.email`
+    # guard already used on status-change notifications below.
+    if (
+        work_item.assignee_id
+        and work_item.assignee
+        and work_item.assignee.email != current_user.email
+    ):
         assignee = work_item.assignee
         background_tasks.add_task(
             email_service.send_task_assignment_notification,
@@ -1002,10 +1009,13 @@ def update_work_item(
             )
             db.add(activity)
 
-            # Send assignment notification to new assignee if newly assigned (off the request thread)
+            # Send assignment notification to new assignee if newly assigned
+            # (off the request thread). Skip when reassigning to self —
+            # already what `current_user` knows about. Matches the create_work_item
+            # guard above and the status-change guard further down.
             if new_assignee_id and new_assignee_name != "Unassigned":
                 new_assignee = db.query(Developer).filter(Developer.id == new_assignee_id).first()
-                if new_assignee and new_assignee.email:
+                if new_assignee and new_assignee.email and new_assignee.email != current_user.email:
                     background_tasks.add_task(
                         email_service.send_task_assignment_notification,
                         to_email=new_assignee.email,
