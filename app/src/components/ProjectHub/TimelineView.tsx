@@ -6,6 +6,7 @@ import {
   ChevronRight,
   ZoomIn,
   ZoomOut,
+  X,
   BookOpen,
   ClipboardList,
   Bug,
