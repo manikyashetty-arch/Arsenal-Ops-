@@ -17,13 +17,14 @@ sys.path.append("..")
 from sqlalchemy import func
 
 from database import get_db
+from models.activity_log import ActivityLog
 from models.architecture import Architecture, PRDAnalysis, RoadmapTemplate
 from models.developer import Developer, project_developers
 from models.project import Project
 from models.sprint import Sprint, SprintStatus
 from models.user import User
 from models.work_item import WorkItem
-from routers.auth import get_current_user
+from routers.auth import get_current_user, require_capability
 from services.architecture_generator import architecture_generator
 from services.prd_processor import prd_processor
 from services.roadmap_generator import build_week_dates, roadmap_generator
@@ -73,6 +74,7 @@ async def _run_prd_analysis_pipeline(
     prd_content: str,
     additional_context: str,
     filename: str | None,
+    current_user: User,
 ) -> dict:
     """
     Shared analyze + persist pipeline for both file and text endpoints.
@@ -83,6 +85,24 @@ async def _run_prd_analysis_pipeline(
     analysis (and a clear warning) rather than nothing.
     """
     additional_context = additional_context or ""
+
+    # Guard: one PRD per project. Once analysis exists for a project, a second
+    # upload would silently shadow it (downstream queries pick the latest by
+    # created_at) and run a needless LLM round trip. 409 is the correct status
+    # — the request conflicts with the current state of the resource. Checked
+    # before the empty-content guard so a duplicate upload doesn't depend on
+    # what the new file contains.
+    existing_analysis = (
+        db.query(PRDAnalysis.id).filter(PRDAnalysis.project_id == project.id).first()
+    )
+    if existing_analysis:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "A PRD has already been analyzed for this project. "
+                "Delete the existing analysis before uploading a new one."
+            ),
+        )
 
     # Guard: empty content means the extractor returned nothing (e.g. a scanned
     # PDF with no text layer). Feeding "" to the LLM produces a hallucinated
@@ -125,6 +145,24 @@ async def _run_prd_analysis_pipeline(
         timeline=analysis.get("timeline"),
     )
     db.add(prd_analysis)
+    # Flush to get prd_analysis.id without committing — we'll commit both the
+    # analysis row and its activity-log entry atomically below.
+    db.flush()
+
+    # Activity log entry — surfaces "Analyzed PRD: <filename>" in the project's
+    # Activity tab. Atomic with the PRDAnalysis insert: if the commit fails,
+    # neither row persists. Committed BEFORE architecture generation so the
+    # log entry survives even if the architecture LLM call errors out.
+    db.add(
+        ActivityLog(
+            project_id=project.id,
+            user_id=current_user.id,
+            action="created",
+            entity_type="prd_analysis",
+            entity_id=prd_analysis.id,
+            title=(f"Analyzed PRD: {filename}" if filename else "Analyzed PRD from pasted text"),
+        )
+    )
     db.commit()
     db.refresh(prd_analysis)
 
@@ -181,11 +219,11 @@ async def analyze_prd_file(
     additional_context: str = Form(""),
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_capability("project.ai.write")),
 ):
     """
-    Upload and analyze a PRD file (PDF or Word) (requires auth)
-    Returns: PRD analysis and generated architectures
+    Upload and analyze a PRD file (PDF or Word) (requires `project.ai.write`).
+    Returns: PRD analysis and generated architectures.
     """
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
@@ -210,6 +248,7 @@ async def analyze_prd_file(
         prd_content=prd_data["cleaned_text"],
         additional_context=additional_context,
         filename=file.filename,
+        current_user=current_user,
     )
 
 
@@ -217,11 +256,11 @@ async def analyze_prd_file(
 async def analyze_prd_text(
     request: TextAnalysisRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_capability("project.ai.write")),
 ):
     """
-    Analyze PRD from text input (requires auth)
-    Returns: PRD analysis and generated architectures
+    Analyze PRD from text input (requires `project.ai.write`).
+    Returns: PRD analysis and generated architectures.
     """
     project = db.query(Project).filter(Project.id == request.project_id).first()
     if not project:
@@ -233,6 +272,7 @@ async def analyze_prd_text(
         prd_content=request.prd_content,
         additional_context=request.additional_context or "",
         filename=None,
+        current_user=current_user,
     )
 
 
@@ -830,10 +870,10 @@ async def generate_roadmap_template(
     project_id: int,
     request: GenerateRoadmapTemplateRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_capability("project.ai.write")),
 ):
     """
-    Generate a roadmap .xlsx template.
+    Generate a roadmap .xlsx template (requires `project.ai.write`).
 
     If the project has a PRD analysis, the LLM seeds the file with suggested
     milestones / epics / tasks. Otherwise the user gets a blank scaffold with

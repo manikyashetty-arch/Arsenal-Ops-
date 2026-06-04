@@ -177,15 +177,20 @@ const ItemDetailDrawer = ({
   getNextSprint,
 }: ItemDetailDrawerProps) => {
   const queryClient = useQueryClient();
-  const { user } = useAuth();
-  // Only the ticket's assignee may log hours (matches backend enforcement in
-  // routers/workitems.py::log_hours). Resolve the current user's developer id
-  // via project developers and compare against selectedItem.assignee_id.
-  const isAssignee = useMemo(() => {
-    if (!user?.email || !selectedItem.assignee_id) return false;
-    const myDev = allDevelopers.find((d) => d.email === user.email);
-    return !!myDev && myDev.id === selectedItem.assignee_id;
-  }, [user?.email, selectedItem.assignee_id, allDevelopers]);
+  const { user, can } = useAuth();
+  // Gate Edit / Delete / Assign-to-me on the same `project.tracker_write` cap
+  // that the backend's PUT /api/workitems/{id} and DELETE /api/workitems/{id}
+  // now require. Picker label: "Manage items & sprints".
+  const canWriteTracker = can('project.tracker_write');
+  // Current user's developer id — used both to gate the "Log hours" form
+  // (only the ticket's assignee may log; matches backend enforcement in
+  // routers/workitems.py::log_hours) and to power the inline "Assign to me"
+  // button on the Assignee row when the ticket has no assignee.
+  const currentUserDevId = useMemo(() => {
+    if (!user?.email) return null;
+    return allDevelopers.find((d) => d.email === user.email)?.id ?? null;
+  }, [user?.email, allDevelopers]);
+  const isAssignee = !!currentUserDevId && currentUserDevId === selectedItem.assignee_id;
   const [isEditing, setIsEditing] = useState(false);
   const [editForm, setEditForm] = useState<Partial<WorkItem>>({});
   const [newComment, setNewComment] = useState('');
@@ -518,32 +523,36 @@ const ItemDetailDrawer = ({
             <span className="text-sm text-[#737373] font-mono">{selectedItem.id}</span>
           </div>
           <div className="flex items-center gap-1.5">
-            <Button
-              size="sm"
-              variant="ghost"
-              disabled={selectedItem.status === 'done' && !isEditing}
-              title={
-                selectedItem.status === 'done' && !isEditing
-                  ? 'This ticket is done. Re-open it (Move to → any non-done status) before editing.'
-                  : undefined
-              }
-              onClick={() => {
-                setIsEditing(!isEditing);
-                if (!isEditing) setEditForm(selectedItem);
-              }}
-              className="text-[#737373] hover:text-white rounded-lg h-8 px-2.5 disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              <Pencil className="w-3.5 h-3.5 mr-1" />
-              {isEditing ? 'Cancel' : 'Edit'}
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => onDeleteItem(selectedItem.id)}
-              className="text-red-400 hover:text-red-300 hover:bg-red-400/10 rounded-lg h-8 px-2.5"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-            </Button>
+            {canWriteTracker && (
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={selectedItem.status === 'done' && !isEditing}
+                title={
+                  selectedItem.status === 'done' && !isEditing
+                    ? 'This ticket is done. Re-open it (Move to → any non-done status) before editing.'
+                    : undefined
+                }
+                onClick={() => {
+                  setIsEditing(!isEditing);
+                  if (!isEditing) setEditForm(selectedItem);
+                }}
+                className="text-[#737373] hover:text-white rounded-lg h-8 px-2.5 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <Pencil className="w-3.5 h-3.5 mr-1" />
+                {isEditing ? 'Cancel' : 'Edit'}
+              </Button>
+            )}
+            {canWriteTracker && (
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => onDeleteItem(selectedItem.id)}
+                className="text-red-400 hover:text-red-300 hover:bg-red-400/10 rounded-lg h-8 px-2.5"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </Button>
+            )}
             <Button
               size="sm"
               variant="ghost"
@@ -990,8 +999,28 @@ const ItemDetailDrawer = ({
 
               {/* Metadata */}
               <div className="space-y-3">
+                {/* Assignee row — pulled out of the generic map so we can
+                    inject an "Assign to me" quick-action when the ticket is
+                    unassigned. Excludes epics (aggregation nodes, never
+                    assigned) and users with no developer row on this project. */}
+                <div className="flex items-center justify-between py-2 border-b border-[rgba(255,255,255,0.03)]">
+                  <span className="text-xs text-[#737373]">Assignee</span>
+                  {selectedItem.assignee_id ? (
+                    <span className="text-sm text-[#f5f5f5]">{selectedItem.assignee}</span>
+                  ) : selectedItem.type !== 'epic' && currentUserDevId && canWriteTracker ? (
+                    <button
+                      type="button"
+                      onClick={() => onSaveEdit({ assignee_id: currentUserDevId })}
+                      disabled={isSavingEdit}
+                      className="text-xs font-medium px-2.5 py-1 rounded-md bg-[rgba(224,185,84,0.12)] text-[#E0B954] hover:bg-[rgba(224,185,84,0.2)] disabled:opacity-50 transition-colors"
+                    >
+                      Assign to me
+                    </button>
+                  ) : (
+                    <span className="text-sm text-[#f5f5f5]">Unassigned</span>
+                  )}
+                </div>
                 {[
-                  { label: 'Assignee', value: selectedItem.assignee },
                   ...(itemDetail.reporter_name
                     ? [{ label: 'Created By', value: itemDetail.reporter_name }]
                     : []),

@@ -17,7 +17,7 @@ from models.project import Project
 from models.sprint import Sprint, SprintStatus
 from models.user import User
 from models.work_item import WorkItem, WorkItemStatus, WorkItemType
-from routers.auth import get_current_user
+from routers.auth import get_current_user, require_capability
 from services.email_service import email_service
 from services.hierarchy import validate_hierarchy
 from services.llm_agent import llm_agent
@@ -641,9 +641,9 @@ def create_work_item(
     item: WorkItemCreate,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_capability("project.tracker_write")),
 ):
-    """Create a new work item"""
+    """Create a new work item (requires `project.tracker_write`)."""
     # Get project for key prefix
     project = db.query(Project).filter(Project.id == item.project_id).first()
     if not project:
@@ -736,8 +736,15 @@ def create_work_item(
         update_epic_hours(work_item.epic_id, db)
         db.commit()
 
-    # Send assignment notification if assignee is set (off the request thread)
-    if work_item.assignee_id and work_item.assignee:
+    # Send assignment notification if assignee is set (off the request thread).
+    # Skip when the creator self-assigned — emailing yourself about a ticket
+    # you just made is noise. Matches the same `assignee.email != current_user.email`
+    # guard already used on status-change notifications below.
+    if (
+        work_item.assignee_id
+        and work_item.assignee
+        and work_item.assignee.email != current_user.email
+    ):
         assignee = work_item.assignee
         background_tasks.add_task(
             email_service.send_task_assignment_notification,
@@ -790,7 +797,7 @@ def update_work_item(
     update: WorkItemUpdate,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_capability("project.tracker_write")),
 ):
     """Update an existing work item (requires auth)"""
     item = db.query(WorkItem).filter(WorkItem.id == item_id).first()
@@ -1002,10 +1009,13 @@ def update_work_item(
             )
             db.add(activity)
 
-            # Send assignment notification to new assignee if newly assigned (off the request thread)
+            # Send assignment notification to new assignee if newly assigned
+            # (off the request thread). Skip when reassigning to self —
+            # already what `current_user` knows about. Matches the create_work_item
+            # guard above and the status-change guard further down.
             if new_assignee_id and new_assignee_name != "Unassigned":
                 new_assignee = db.query(Developer).filter(Developer.id == new_assignee_id).first()
-                if new_assignee and new_assignee.email:
+                if new_assignee and new_assignee.email and new_assignee.email != current_user.email:
                     background_tasks.add_task(
                         email_service.send_task_assignment_notification,
                         to_email=new_assignee.email,
@@ -1291,9 +1301,11 @@ def batch_update_status(
 
 @router.delete("/{item_id}")
 def delete_work_item(
-    item_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
+    item_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_capability("project.tracker_write")),
 ):
-    """Delete a work item (requires auth)"""
+    """Delete a work item (requires `project.tracker_write`)."""
     item = db.query(WorkItem).filter(WorkItem.id == item_id).first()
     if not item:
         raise HTTPException(status_code=404, detail="Work item not found")
@@ -1718,9 +1730,9 @@ async def generate_work_items(
 def create_sprint(
     sprint: SprintCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_capability("project.tracker_write")),
 ):
-    """Create a new sprint (requires auth)"""
+    """Create a new sprint (requires `project.tracker_write`)."""
     # Verify project exists
     project = db.query(Project).filter(Project.id == sprint.project_id).first()
     if not project:
@@ -2191,7 +2203,7 @@ def get_hours_analytics(
         if not is_project_admin:
             raise HTTPException(
                 status_code=403,
-                detail="Missing required capability: project.pm or project-level admin",
+                detail="Do not have permission",
             )
 
     # Verify project exists
