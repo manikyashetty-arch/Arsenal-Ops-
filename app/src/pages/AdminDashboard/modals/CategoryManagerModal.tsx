@@ -321,7 +321,7 @@ const CategoryManagerModal = ({
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel className="bg-transparent border-[rgba(255,255,255,0.08)] text-white hover:bg-[rgba(255,255,255,0.04)]">
+            <AlertDialogCancel className="bg-transparent border-[rgba(255,255,255,0.08)] text-white hover:bg-[#E0B954] hover:border-[#E0B954] hover:text-black">
               Cancel
             </AlertDialogCancel>
             <AlertDialogAction
