@@ -6,7 +6,6 @@ import { Button } from '@/components/ui/button';
 import { toast, Toaster } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
 import { apiFetch } from '@/lib/api';
-import { PROJECT_TABS } from '@/lib/projectTabs';
 import {
   invalidateProjectScope,
   invalidateAdminMembershipImpact,
@@ -18,11 +17,30 @@ import UserModal from './modals/UserModal';
 import EditUserModal from './modals/EditUserModal';
 import GitHubModal from './modals/GitHubModal';
 import ProjectMembersModal from './modals/ProjectMembersModal';
-import CategoryManagerModal, {
-  type ProjectCategory,
-  type CategoryFormPayload,
-} from './modals/CategoryManagerModal';
-import type { Employee, DeveloperCapacity } from './tabs/EmployeesTab';
+import CategoryManagerModal from './modals/CategoryManagerModal';
+import type {
+  User,
+  Project,
+  DashboardStats,
+  Role,
+  ProjectWeeklyReport,
+  Capability,
+  AdminTab,
+  ProjectCategory,
+  CategoryFormPayload,
+  Employee,
+  DeveloperCapacity,
+} from './types';
+import { VALID_ADMIN_TABS } from './types';
+import {
+  type CatalogNode,
+  applyToggleGrant,
+  applyToggleCatalogItem,
+  isItemChecked,
+  isItemEffectivelyChecked,
+  toPascalCase,
+  buildPickerCatalog,
+} from './lib/capabilityPicker';
 
 // Route-level chunks for each tab. Lazy-loading keeps heavy dependencies out
 // of the /admin critical path — most importantly recharts (the `charts` chunk,
@@ -34,83 +52,6 @@ const EmployeesTab = lazy(() => import('./tabs/EmployeesTab'));
 const ProjectsTab = lazy(() => import('./tabs/ProjectsTab'));
 const UsersTab = lazy(() => import('./tabs/UsersTab'));
 const RolesTab = lazy(() => import('./tabs/RolesTab'));
-
-interface User {
-  id: number;
-  email: string;
-  name: string;
-  role: string; // Comma-separated roles
-  is_active: boolean;
-  is_first_login: boolean;
-  created_at: string;
-  last_login_at: string | null;
-  github_username?: string | null;
-}
-
-interface Project {
-  id: number;
-  name: string;
-  description: string | null;
-  status: string;
-  created_at: string;
-  total_items: number;
-  done_items: number;
-  completion_pct: number;
-  developer_count: number;
-  github_repo_url: string | null;
-  github_repo_urls?: string[];
-  github_repo_name: string | null;
-  has_github_token: boolean;
-  // Category surface — flat fields populated by GET /api/admin/projects.
-  // null when the project hasn't been assigned to any category.
-  category_id: number | null;
-  category_name: string | null;
-}
-
-interface DashboardStats {
-  total_employees: number;
-  total_projects: number;
-  total_tickets: number;
-  active_sprints: number;
-  tickets_by_status: Record<string, number>;
-  tickets_by_priority: Record<string, number>;
-}
-
-interface Role {
-  id: number;
-  name: string;
-  description: string | null;
-  is_system: boolean;
-  capability_keys: string[];
-  user_count?: number;
-  created_at?: string;
-  updated_at?: string;
-}
-
-interface ProjectWeeklyReportRow {
-  project_id: number;
-  project_name: string;
-  category_id: number | null;
-  category_name: string | null;
-  todo_backlog: number;
-  in_progress: number;
-  in_review: number;
-  done_this_week: number;
-}
-
-interface ProjectWeeklyReport {
-  week_start: string;
-  week_end: string;
-  rows: ProjectWeeklyReportRow[];
-}
-
-interface Capability {
-  key: string;
-  description: string;
-}
-
-type AdminTab = 'dashboard' | 'employees' | 'projects' | 'users' | 'roles';
-const VALID_ADMIN_TABS: AdminTab[] = ['dashboard', 'employees', 'projects', 'users', 'roles'];
 
 const AdminDashboard = () => {
   const navigate = useNavigate();
@@ -348,15 +289,6 @@ const AdminDashboard = () => {
 
   // Role dropdown state (per-user role-edit modal trigger; modal lives at parent)
   const [openRoleDropdown, setOpenRoleDropdown] = useState<number | null>(null);
-
-  // Helper function to convert role to Pascal Case (still used by the parent's
-  // role-dropdown modal below)
-  const toPascalCase = (str: string): string => {
-    return str
-      .split('_')
-      .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-      .join('');
-  };
 
   // RBAC role create/edit modal state
   const [showRoleModal, setShowRoleModal] = useState(false);
@@ -1034,234 +966,24 @@ const AdminDashboard = () => {
     }
   };
 
-  // Returns true if `grant` is a wildcard that covers `key`.
-  const wildcardCovers = (grant: string, key: string): boolean => {
-    if (grant === '*') return true;
-    if (!grant.endsWith('.*')) return false;
-    const prefix = grant.slice(0, -2);
-    return key === prefix || key.startsWith(prefix + '.');
-  };
-
-  // Returns true if `key` falls under the scope of `grant`.
-  const keyIsUnderGrant = (key: string, grant: string): boolean => {
-    if (grant === '*') return true;
-    if (grant.endsWith('.*')) {
-      const prefix = grant.slice(0, -2);
-      return key === prefix || key.startsWith(prefix + '.');
-    }
-    return key === grant;
-  };
+  // RBAC capability-picker wiring. The pure grant-resolution logic (wildcard
+  // coverage, auto-promote, toggle/sweep) lives in ./lib/capabilityPicker and
+  // is unit-tested; here we only memoize the display catalog and wrap the two
+  // toggles in setRoleForm.
+  const PICKER_CATALOG = useMemo(() => buildPickerCatalog(), []);
 
   const toggleGrant = (key: string) => {
-    setRoleForm((f) => {
-      const grants = f.capability_keys;
-      if (grants.includes(key)) {
-        return { ...f, capability_keys: grants.filter((g) => g !== key) };
-      }
-      const coveringWildcards = grants.filter((g) => wildcardCovers(g, key));
-      if (coveringWildcards.length > 0) {
-        const nonCovering = grants.filter((g) => !coveringWildcards.includes(g));
-        const expanded = new Set<string>(nonCovering);
-        for (const cap of capabilityRegistry) {
-          if (cap.key === key) continue;
-          if (coveringWildcards.some((w) => keyIsUnderGrant(cap.key, w))) {
-            expanded.add(cap.key);
-          }
-        }
-        return { ...f, capability_keys: Array.from(expanded) };
-      }
-      return { ...f, capability_keys: [...grants, key] };
-    });
+    setRoleForm((f) => ({
+      ...f,
+      capability_keys: applyToggleGrant(f.capability_keys, key, capabilityRegistry),
+    }));
   };
 
-  // Display catalog for the Roles role-editor picker.
-  //
-  // PROJECT items are derived from the single project-tab registry
-  // (`lib/projectTabs.ts`) so adding a tab there automatically surfaces it in
-  // the role editor with the right label, description, grant key, and
-  // sub-rows. The ADMIN group is hand-curated since admin surfaces don't
-  // share the tab abstraction.
-  //
-  // Both surfaces use PM-friendly labels ("Overview", "Timeline") rather
-  // than raw keys; the keys still drive the grant — only the label is
-  // humanized.
-  interface PickerItem {
-    label: string;
-    grant: string;
-    description: string;
-    /** Optional sub-rows shown indented under the parent. When the parent's
-     *  grant (typically a wildcard) is active, children render as covered
-     *  and disabled — to customize, admin unchecks the parent first then
-     *  picks specific child grants. */
-    children?: { label: string; grant: string; description: string }[];
-  }
-
-  const PICKER_CATALOG: {
-    prefix: 'project' | 'admin';
-    label: string;
-    wildcard: string;
-    items: PickerItem[];
-  }[] = useMemo(
-    () => [
-      {
-        prefix: 'project',
-        label: 'Project',
-        wildcard: 'project.*',
-        // Mapped from PROJECT_TABS so the role editor reflects the live
-        // project-tab registry — no duplicated labels/descriptions to drift.
-        // The two write-side entries below are appended manually because they
-        // gate creation surfaces (work items/sprints, PRD/roadmap AI) that
-        // aren't tabs and so don't live in PROJECT_TABS. Cap keys live
-        // outside the read groups' wildcards on purpose (`project.tracker_write`
-        // is a sibling of `project.tracker`, not nested under it) so granting
-        // read access doesn't auto-grant write.
-        items: [
-          ...PROJECT_TABS.map((tab) => ({
-            label: tab.label,
-            grant: tab.picker.grant,
-            description: tab.picker.description,
-            children: tab.picker.children ? [...tab.picker.children] : undefined,
-          })),
-          {
-            label: 'Manage items & sprints',
-            grant: 'project.tracker_write',
-            description: 'Create, edit, and delete work items and sprints',
-          },
-          {
-            label: 'AI Generators',
-            grant: 'project.ai.write',
-            description: 'Run PRD analyzer and roadmap parser (write)',
-          },
-          {
-            label: 'Create new projects',
-            grant: 'project.create',
-            description: 'Create new projects from the home page (write)',
-          },
-          {
-            label: 'Assign personal tasks to project',
-            grant: 'project.assign_personal_task',
-            description: 'Convert a personal task into a project ticket (write)',
-          },
-        ],
-      },
-      {
-        prefix: 'admin',
-        label: 'Admin',
-        wildcard: 'admin.*',
-        items: [
-          {
-            label: 'Dashboard',
-            grant: 'admin.dashboard',
-            description: 'Admin dashboard summary',
-          },
-          {
-            label: 'Employees',
-            grant: 'admin.employees',
-            description: 'Manage employees',
-          },
-          {
-            label: 'Projects',
-            grant: 'admin.projects',
-            description: 'Manage projects from admin',
-          },
-          {
-            label: 'Users',
-            grant: 'admin.users',
-            description: 'Manage users and role assignments',
-          },
-          {
-            label: 'Roles',
-            grant: 'admin.roles',
-            description: 'Manage roles and capability grants',
-          },
-        ],
-      },
-    ],
-    [],
-  );
-
-  /** Strict "is this exact grant or a wildcard ancestor in the grant set?"
-   *  check. Sibling sub-caps and descendants do NOT count.
-   *
-   *  This is the LEAF check — for items that have children (or for groups),
-   *  use `isItemEffectivelyChecked` below which also returns true when
-   *  every child is effectively checked.
-   */
-  const isItemChecked = (grant: string, grants: string[]): boolean => {
-    if (grants.includes('*')) return true;
-    if (grants.includes(grant)) return true;
-    for (const g of grants) {
-      if (!g.endsWith('.*')) continue;
-      const prefix = g.slice(0, -2);
-      // grant is covered when it equals the wildcard's prefix or is a
-      // descendant. e.g. grant='project.pm.*' is covered by g='project.*'
-      // because 'project.pm.*' starts with 'project.'.
-      if (grant === prefix || grant.startsWith(prefix + '.')) return true;
-    }
-    return false;
-  };
-
-  /** Recursive "effectively checked" — used for the display state of any
-   *  catalog node (group wildcard, top-level item, or child item).
-   *
-   *  Returns true when:
-   *    - The grant is exactly in `grants` or covered by a wildcard ancestor
-   *      (strict path — same as `isItemChecked`), OR
-   *    - The node has children AND every child is effectively checked
-   *      (auto-promote path — e.g. all 3 PM sub-rows checked → "Project
-   *      Manager" parent shows checked; all top-level project items
-   *      checked → "Grant all Project" shows checked).
-   *
-   *  Toggle logic uses this same predicate so clicking a parent that's
-   *  "checked because all children are" cleanly sweeps everything under it.
-   */
-  type CatalogNode = { grant: string; children?: readonly { grant: string }[] };
-
-  const isItemEffectivelyChecked = (node: CatalogNode, grants: string[]): boolean => {
-    if (isItemChecked(node.grant, grants)) return true;
-    if (!node.children || node.children.length === 0) return false;
-    return node.children.every((c) => isItemEffectivelyChecked(c, grants));
-  };
-
-  /** Toggle a catalog item.
-   *
-   *  Uses the EFFECTIVE checked state — so a parent that's showing checked
-   *  only because every child is granted will, on click, sweep those
-   *  children. Same shape works for the group wildcard ("Grant all Project")
-   *  when all top-level items are individually granted.
-   *
-   *  Uncheck: remove the exact grant; for wildcards, also sweep every
-   *  explicit sub-cap underneath. This single sweep handles both the
-   *  "wildcard directly granted" and "all children granted" auto-promote
-   *  paths because both end up with grants under the wildcard prefix.
-   *
-   *  Check: add the grant; for wildcards, sweep redundant explicit sub-caps
-   *  underneath since they're now covered. Keeps `grants` minimal.
-   */
   const toggleCatalogItem = (node: CatalogNode) => {
-    const { grant } = node;
-    setRoleForm((f) => {
-      const grants = f.capability_keys;
-      const checked = isItemEffectivelyChecked(node, grants);
-      if (checked) {
-        let isUnderRemoved: (g: string) => boolean;
-        if (grant.endsWith('.*')) {
-          const prefix = grant.slice(0, -2);
-          isUnderRemoved = (g) => g === grant || g === prefix || g.startsWith(prefix + '.');
-        } else {
-          isUnderRemoved = (g) => g === grant;
-        }
-        return { ...f, capability_keys: grants.filter((g) => !isUnderRemoved(g)) };
-      }
-      let cleaned: string[];
-      if (grant.endsWith('.*')) {
-        const prefix = grant.slice(0, -2);
-        cleaned = grants.filter((g) => g !== prefix && !g.startsWith(prefix + '.'));
-      } else {
-        cleaned = grants.slice();
-      }
-      return { ...f, capability_keys: [...cleaned, grant] };
-    });
+    setRoleForm((f) => ({
+      ...f,
+      capability_keys: applyToggleCatalogItem(f.capability_keys, node),
+    }));
   };
 
   const spinner = (
