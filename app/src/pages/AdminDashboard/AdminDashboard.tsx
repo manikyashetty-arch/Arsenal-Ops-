@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { lazy, Suspense, useState, useEffect, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Users, FolderKanban, X, ArrowLeft, BarChart3, Shield, KeyRound } from 'lucide-react';
@@ -22,11 +22,18 @@ import CategoryManagerModal, {
   type ProjectCategory,
   type CategoryFormPayload,
 } from './modals/CategoryManagerModal';
-import EmployeesTab, { type Employee, type DeveloperCapacity } from './tabs/EmployeesTab';
-import DashboardTab from './tabs/DashboardTab';
-import ProjectsTab from './tabs/ProjectsTab';
-import UsersTab from './tabs/UsersTab';
-import RolesTab from './tabs/RolesTab';
+import type { Employee, DeveloperCapacity } from './tabs/EmployeesTab';
+
+// Route-level chunks for each tab. Lazy-loading keeps heavy dependencies out
+// of the /admin critical path — most importantly recharts (the `charts` chunk,
+// ~487 KB) which only DashboardTab needs but previously loaded before first
+// paint for every tab. Each tab's chunk now downloads on first view, in
+// parallel with that tab's data fetch (see per-tab `enabled` gating below).
+const DashboardTab = lazy(() => import('./tabs/DashboardTab'));
+const EmployeesTab = lazy(() => import('./tabs/EmployeesTab'));
+const ProjectsTab = lazy(() => import('./tabs/ProjectsTab'));
+const UsersTab = lazy(() => import('./tabs/UsersTab'));
+const RolesTab = lazy(() => import('./tabs/RolesTab'));
 
 interface User {
   id: number;
@@ -145,17 +152,32 @@ const AdminDashboard = () => {
 
   const queryClient = useQueryClient();
 
-  // Admin queries override the global `refetchOnMount: false` because admin is
-  // a snapshot view — when the user opens this tab, they expect current data,
-  // not whatever's been sitting in the cache. With `refetchOnMount: 'always'`,
-  // every mount triggers a background refetch even if invalidation was missed
-  // by an upstream mutation. Endpoints are fast (Bucket A optimizations) so
-  // the cost is a brief refetch flicker on tab entry.
-  const ADMIN_REFETCH = { refetchOnMount: 'always' } as const;
+  // Admin queries refetch on mount only when the cached data is *stale*
+  // (older than the global 30s `staleTime`). `refetchOnMount: true` — not
+  // `'always'` — means a quick out-and-back, or a tab switch within 30s, reads
+  // straight from cache with no spinner and no network round-trip; only data
+  // that's actually aged refetches, and it does so in the background while the
+  // cached value stays on screen. Combined with the per-tab `enabled` gating
+  // below, this is what makes both first paint and tab switches feel instant.
+  // Mutations still invalidate explicitly, so this isn't relying on TTL alone
+  // to stay correct.
+  const ADMIN_REFETCH = { refetchOnMount: true } as const;
+
+  // Per-tab data gating. Each query fires only when the tab that renders it is
+  // active, so first paint waits on a single endpoint (whichever tab you land
+  // on) instead of all six in parallel — and the expensive capacity endpoint
+  // never runs unless the Employees tab is actually opened. Employees data is
+  // also consumed by the Projects tab's "add member" modal, hence the OR.
+  const onDashboard = activeTab === 'dashboard';
+  const onEmployees = activeTab === 'employees';
+  const onProjects = activeTab === 'projects';
+  const onUsers = activeTab === 'users';
+  const onRoles = activeTab === 'roles';
 
   const statsQuery = useQuery<DashboardStats>({
     queryKey: ['admin', 'stats'],
     queryFn: () => apiFetch<DashboardStats>('/api/admin/stats'),
+    enabled: onDashboard,
     ...ADMIN_REFETCH,
   });
   const stats = statsQuery.data ?? null;
@@ -163,6 +185,7 @@ const AdminDashboard = () => {
   const employeesQuery = useQuery<Employee[]>({
     queryKey: ['admin', 'employees'],
     queryFn: () => apiFetch<Employee[]>('/api/admin/employees'),
+    enabled: onEmployees || onProjects,
     ...ADMIN_REFETCH,
   });
   // useMemo keeps the array reference stable across renders so the
@@ -173,6 +196,7 @@ const AdminDashboard = () => {
   const capacityQuery = useQuery<DeveloperCapacity[]>({
     queryKey: ['admin', 'developers-capacity'],
     queryFn: () => apiFetch<DeveloperCapacity[]>('/api/admin/developers/capacity'),
+    enabled: onEmployees,
     ...ADMIN_REFETCH,
   });
   const developerCapacities = useMemo(() => capacityQuery.data ?? [], [capacityQuery.data]);
@@ -180,6 +204,7 @@ const AdminDashboard = () => {
   const projectsQuery = useQuery<Project[]>({
     queryKey: ['admin', 'projects'],
     queryFn: () => apiFetch<Project[]>('/api/admin/projects'),
+    enabled: onProjects,
     ...ADMIN_REFETCH,
   });
   // Stabilize the empty default — `data ?? []` creates a new array every
@@ -192,6 +217,7 @@ const AdminDashboard = () => {
   const categoriesQuery = useQuery<ProjectCategory[]>({
     queryKey: ['admin', 'projectCategories'],
     queryFn: () => apiFetch<ProjectCategory[]>('/api/admin/project-categories/'),
+    enabled: onProjects,
     ...ADMIN_REFETCH,
   });
   const categories = useMemo(() => categoriesQuery.data ?? [], [categoriesQuery.data]);
@@ -199,6 +225,7 @@ const AdminDashboard = () => {
   const usersQuery = useQuery<User[]>({
     queryKey: ['admin', 'users'],
     queryFn: () => apiFetch<User[]>('/api/auth/admin/users'),
+    enabled: onUsers,
     ...ADMIN_REFETCH,
   });
   const users = useMemo(() => usersQuery.data ?? [], [usersQuery.data]);
@@ -206,6 +233,9 @@ const AdminDashboard = () => {
   const rolesQuery = useQuery<Role[]>({
     queryKey: ['admin', 'roles'],
     queryFn: () => apiFetch<Role[]>('/api/auth/admin/roles'),
+    // Roles tab renders the list; Users tab's per-user role-assignment modal
+    // reads the same data to populate its checkboxes.
+    enabled: onUsers || onRoles,
     ...ADMIN_REFETCH,
   });
   const roles = useMemo(() => rolesQuery.data ?? [], [rolesQuery.data]);
@@ -213,17 +243,21 @@ const AdminDashboard = () => {
   const capabilitiesQuery = useQuery<Capability[]>({
     queryKey: ['admin', 'capabilities'],
     queryFn: () => apiFetch<Capability[]>('/api/auth/capabilities'),
+    enabled: onRoles,
     ...ADMIN_REFETCH,
   });
   const capabilityRegistry = useMemo(() => capabilitiesQuery.data ?? [], [capabilitiesQuery.data]);
 
-  const loading =
-    statsQuery.isLoading ||
-    employeesQuery.isLoading ||
-    capacityQuery.isLoading ||
-    projectsQuery.isLoading ||
-    usersQuery.isLoading ||
-    rolesQuery.isLoading;
+  // Per-tab loading flags. Each tab shows its own spinner scoped to the
+  // queries it actually renders, instead of one page-wide gate that blocked
+  // first paint until all six endpoints resolved. A disabled (inactive-tab)
+  // query reports `isLoading: false` in react-query v5, so these only go true
+  // for the tab currently in view.
+  const dashboardLoading = statsQuery.isLoading;
+  const employeesLoading = employeesQuery.isLoading || capacityQuery.isLoading;
+  const projectsLoading = projectsQuery.isLoading || categoriesQuery.isLoading;
+  const usersLoading = usersQuery.isLoading;
+  const rolesLoading = rolesQuery.isLoading;
 
   // Team capacity summary derived from employees + capacity data
   const WEEKLY_CAPACITY_HRS = 40;
@@ -400,6 +434,7 @@ const AdminDashboard = () => {
         `/api/admin/projects/weekly-report${qs ? `?${qs}` : ''}`,
       );
     },
+    enabled: onProjects,
     ...ADMIN_REFETCH,
   });
 
@@ -1229,6 +1264,15 @@ const AdminDashboard = () => {
     });
   };
 
+  const spinner = (
+    <div className="flex items-center justify-center h-64">
+      <div className="animate-spin w-8 h-8 border-2 border-[#E0B954] border-t-transparent rounded-full" />
+    </div>
+  );
+  const restricted = (
+    <div className="text-center py-12 text-[#737373]">This section is restricted.</div>
+  );
+
   return (
     <div className="min-h-screen bg-[#080808] text-white">
       <Toaster position="top-right" theme="dark" />
@@ -1285,25 +1329,25 @@ const AdminDashboard = () => {
         </div>
       </div>
 
-      {/* Content */}
+      {/* Content. Each tab gates on its own data (per-tab spinner) and lazy-
+          loads its chunk (Suspense fallback) — first paint no longer waits on
+          every admin endpoint, nor on the recharts bundle. */}
       <div className="max-w-7xl mx-auto px-6 py-6">
-        {loading ? (
-          <div className="flex items-center justify-center h-64">
-            <div className="animate-spin w-8 h-8 border-2 border-[#E0B954] border-t-transparent rounded-full" />
-          </div>
-        ) : (
-          <>
-            {/* Dashboard Tab — gated on admin.dashboard */}
-            {activeTab === 'dashboard' &&
-              (canSeeDashboard ? (
-                stats && <DashboardTab stats={stats} setActiveTab={setActiveTab} />
-              ) : (
-                <div className="text-center py-12 text-[#737373]">This section is restricted.</div>
-              ))}
+        <Suspense fallback={spinner}>
+          {/* Dashboard Tab — gated on admin.dashboard */}
+          {activeTab === 'dashboard' &&
+            (canSeeDashboard
+              ? dashboardLoading
+                ? spinner
+                : stats && <DashboardTab stats={stats} setActiveTab={setActiveTab} />
+              : restricted)}
 
-            {/* Employees Tab — gated on admin.employees */}
-            {activeTab === 'employees' &&
-              (canSeeEmployees ? (
+          {/* Employees Tab — gated on admin.employees */}
+          {activeTab === 'employees' &&
+            (canSeeEmployees ? (
+              employeesLoading ? (
+                spinner
+              ) : (
                 <EmployeesTab
                   employees={employees}
                   developerCapacities={developerCapacities}
@@ -1312,13 +1356,17 @@ const AdminDashboard = () => {
                   onEditEmployee={handleEditEmployee}
                   onDeleteEmployee={handleDeleteEmployee}
                 />
-              ) : (
-                <div className="text-center py-12 text-[#737373]">This section is restricted.</div>
-              ))}
+              )
+            ) : (
+              restricted
+            ))}
 
-            {/* Projects Tab — gated on admin.projects */}
-            {activeTab === 'projects' &&
-              (canSeeProjects ? (
+          {/* Projects Tab — gated on admin.projects */}
+          {activeTab === 'projects' &&
+            (canSeeProjects ? (
+              projectsLoading ? (
+                spinner
+              ) : (
                 <ProjectsTab
                   projects={filteredProjects}
                   categories={categories}
@@ -1335,13 +1383,17 @@ const AdminDashboard = () => {
                   onSendGitHubInvites={handleSendGitHubInvites}
                   onOpenProjectMembers={handleOpenProjectMembers}
                 />
-              ) : (
-                <div className="text-center py-12 text-[#737373]">This section is restricted.</div>
-              ))}
+              )
+            ) : (
+              restricted
+            ))}
 
-            {/* Users Tab — gated on admin.users */}
-            {activeTab === 'users' &&
-              (canSeeUsers ? (
+          {/* Users Tab — gated on admin.users */}
+          {activeTab === 'users' &&
+            (canSeeUsers ? (
+              usersLoading ? (
+                spinner
+              ) : (
                 <UsersTab
                   users={users}
                   onEditUserRoles={setOpenRoleDropdown}
@@ -1349,13 +1401,17 @@ const AdminDashboard = () => {
                   onDeleteUser={handleDeleteUser}
                   onEditUser={handleOpenEditUser}
                 />
-              ) : (
-                <div className="text-center py-12 text-[#737373]">This section is restricted.</div>
-              ))}
+              )
+            ) : (
+              restricted
+            ))}
 
-            {/* Roles Tab — gated on admin.roles */}
-            {activeTab === 'roles' &&
-              (canSeeRoles ? (
+          {/* Roles Tab — gated on admin.roles */}
+          {activeTab === 'roles' &&
+            (canSeeRoles ? (
+              rolesLoading ? (
+                spinner
+              ) : (
                 <RolesTab
                   roles={roles}
                   isDeletingRole={deleteRoleMutation.isPending}
@@ -1363,11 +1419,11 @@ const AdminDashboard = () => {
                   onEditRole={handleOpenEditRole}
                   onDeleteRole={handleDeleteRole}
                 />
-              ) : (
-                <div className="text-center py-12 text-[#737373]">This section is restricted.</div>
-              ))}
-          </>
-        )}
+              )
+            ) : (
+              restricted
+            ))}
+        </Suspense>
       </div>
 
       {/* Role Create/Edit Modal */}

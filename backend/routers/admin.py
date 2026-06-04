@@ -184,7 +184,7 @@ def get_developers_capacity(db: Session = Depends(get_db)):
 
     from models.project import Project
     from models.time_entry import TimeEntry
-    from services.capacity_service import compute_capacity_breakdown, week_boundaries
+    from services.capacity_service import compute_capacity_breakdowns_batch, week_boundaries
 
     week_start, week_end = week_boundaries()
 
@@ -271,14 +271,14 @@ def get_developers_capacity(db: Session = Depends(get_db)):
             )
         return out
 
+    # Compute every developer's breakdown in a fixed number of queries rather
+    # than ~5 per developer (the prior O(developers) N+1). Behaviour matches the
+    # old per-developer compute_capacity_breakdown with no project restriction.
+    breakdowns = compute_capacity_breakdowns_batch(developers, week_start, db=db)
+
     result = []
     for dev in developers:
-        breakdown = compute_capacity_breakdown(
-            dev.assigned_work_items or [],
-            week_start,
-            db=db,
-            developer_id=dev.id,
-        )
+        breakdown = breakdowns.get(dev.id, {})
         result.append(
             {
                 "developer_id": dev.id,
