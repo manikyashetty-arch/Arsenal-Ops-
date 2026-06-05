@@ -23,6 +23,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar as CalendarIcon } from '@/components/ui/calendar';
+import { Spinner } from '@/components/ui/spinner';
 import { toast, Toaster } from 'sonner';
 import {
   Select,
@@ -508,7 +509,7 @@ const PersonalTasksPage = () => {
         {/* Task List */}
         {isLoading ? (
           <div className="flex items-center justify-center py-20">
-            <div className="w-6 h-6 border-2 border-[#E0B954]/30 border-t-[#E0B954] rounded-full animate-spin" />
+            <Spinner size="sm" className="w-6 h-6" />
           </div>
         ) : filteredTasks.length === 0 ? (
           <div className="text-center py-20">
