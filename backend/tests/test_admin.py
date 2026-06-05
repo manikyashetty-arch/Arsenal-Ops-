@@ -38,7 +38,8 @@ class TestAdminRBACGating:
         )
 
         assert response.status_code == 403
-        assert "Missing required capability" in response.json()["detail"]
+        # require_capability returns this fixed detail on a missing grant.
+        assert "Do not have permission" in response.json()["detail"]
 
     def test_admin_endpoints_reject_unauthenticated(self, test_client):
         """Verify missing Authorization header → 401.

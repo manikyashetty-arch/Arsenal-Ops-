@@ -30,11 +30,10 @@ describe('Login', () => {
   });
 
   it('shows error message when Google config fetch fails', async () => {
-    server.use(
-      http.get('/api/auth/google/config', () => {
-        return HttpResponse.json({ error: 'Not found' }, { status: 404 });
-      }),
-    );
+    // Login only surfaces the error from its catch block, i.e. when the fetch
+    // itself rejects (network failure) — not on a non-OK HTTP response. Simulate
+    // a network error so the error path is actually exercised.
+    server.use(http.get('/api/auth/google/config', () => HttpResponse.error()));
 
     renderWithProviders(<Login />);
 

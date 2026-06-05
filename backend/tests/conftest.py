@@ -27,7 +27,7 @@ load_dotenv(Path(__file__).parent.parent / ".env.test")
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from database import Base, get_db  # noqa: E402
+from database import SYSTEM_ROLES, Base, get_db  # noqa: E402
 from main import app  # noqa: E402
 from models import (  # noqa: E402, F401
     activity_log,
@@ -55,12 +55,39 @@ from models.developer import (  # noqa: E402
     project_developers,
 )
 from models.project import Project  # noqa: E402
+from models.role import Role, RoleCapability  # noqa: E402
 from models.user import User  # noqa: E402
 from routers.auth import (  # noqa: E402
     ACCESS_TOKEN_EXPIRE_MINUTES,
     create_access_token,
     get_password_hash,
 )
+
+
+def assign_system_role(db, target_user: User) -> None:
+    """Give `target_user` the canonical DB Role matching its legacy `role` string.
+
+    Mirrors production `seed_rbac()`, which backfills user_roles from the legacy
+    `users.role` column. The in-memory SQLite test DB skips seed_rbac() (it's
+    Postgres-only), so capability checks (require_capability) see no roles and
+    403 unless we seed them here. Idempotent and defensive so it composes with
+    tests that seed their own roles (e.g. test_admin.py).
+    """
+    spec = next((s for s in SYSTEM_ROLES if s[0] == target_user.role), None)
+    if spec is None:
+        return
+    name, desc, caps = spec
+    role = db.query(Role).filter(Role.name == name).first()
+    if role is None:
+        role = Role(name=name, description=desc, is_system=True)
+        db.add(role)
+        db.flush()
+        for cap in caps:
+            db.add(RoleCapability(role_id=role.id, capability_key=cap))
+        db.flush()
+    if role not in target_user.roles:
+        target_user.roles.append(role)
+    db.commit()
 
 
 @pytest.fixture
@@ -151,6 +178,7 @@ def admin_user(db) -> tuple[User, str]:
     db.add(user)
     db.commit()
 
+    assign_system_role(db, user)
     token = make_token(user)
     return user, token
 
@@ -173,6 +201,7 @@ def pm_user(db) -> tuple[User, str]:
     db.add(user)
     db.commit()
 
+    assign_system_role(db, user)
     token = make_token(user)
     return user, token
 
@@ -195,6 +224,7 @@ def dev_user(db) -> tuple[User, str]:
     db.add(user)
     db.commit()
 
+    assign_system_role(db, user)
     token = make_token(user)
     return user, token
 

@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { renderWithProviders } from '@/test/utils';
-import CreateItemModal from './CreateItemModal';
+import CreateItemModal, { type CreateItemModalProps } from './CreateItemModal';
 
 describe('CreateItemModal', () => {
   const mockProject = {
@@ -12,7 +12,9 @@ describe('CreateItemModal', () => {
     ],
   };
 
-  const mockWorkItems = [
+  // Typed via the modal's own prop type so the literal `type` values are
+  // checked against WorkItemType (main tightened this from `string`).
+  const mockWorkItems: CreateItemModalProps['workItems'] = [
     { id: '1', key: 'TEST-1', title: 'Epic One', type: 'epic' },
     { id: '2', key: 'TEST-2', title: 'Story One', type: 'user_story' },
   ];

@@ -36,7 +36,9 @@ describe('apiFetch', () => {
     } catch (err) {
       expect(err).toBeInstanceOf(ApiError);
       expect(err instanceof ApiError && err.status).toBe(400);
-      expect(err instanceof ApiError && err.message).toContain('Bad Request');
+      // apiFetch surfaces the backend's `detail` field when present (falling
+      // back to statusText only if the body isn't JSON).
+      expect(err instanceof ApiError && err.message).toContain('bad request');
     }
   });
 

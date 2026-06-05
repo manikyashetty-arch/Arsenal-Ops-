@@ -420,6 +420,8 @@ class TestDevelopersQueryOptimization:
 
         assert response.status_code == 200
         assert len(response.json()) == 5
-        # Threshold: should be ~1-2 queries (1 for auth + 1 for list), but allow up to 3
-        # to account for potential session housekeeping
-        assert query_count <= 3, f"Expected <= 3 queries, got {query_count}"
+        # Threshold: 1 for the user lookup + 1 for the list, plus a small constant
+        # for RBAC capability resolution on the authed user (loading roles +
+        # role_capabilities). This is a fixed per-request cost — it does not scale
+        # with the number of developers — so it still guards against N+1.
+        assert query_count <= 5, f"Expected <= 5 queries, got {query_count}"

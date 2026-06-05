@@ -6,7 +6,11 @@ import { server } from '@/test/mocks/server';
 import { renderWithProviders } from '@/test/utils';
 import AdminDashboard from './AdminDashboard';
 
-// Helper to seed admin user in localStorage + auth context
+// Helper to seed admin user in localStorage + auth context.
+// AuthProvider re-fetches /api/auth/me/capabilities on mount and overwrites the
+// localStorage cache, so we must also serve admin caps from that endpoint
+// (main added per-tab capability gating after this suite was first written).
+// resetHandlers() in afterEach clears this override between tests.
 const seedAdminUser = () => {
   localStorage.setItem('token', 'test-admin-jwt');
   localStorage.setItem(
@@ -20,6 +24,9 @@ const seedAdminUser = () => {
     }),
   );
   localStorage.setItem('capabilities', JSON.stringify(['admin.*']));
+  server.use(
+    http.get('/api/auth/me/capabilities', () => HttpResponse.json({ capabilities: ['admin.*'] })),
+  );
 };
 
 // Helper to seed non-admin developer user
@@ -46,7 +53,7 @@ describe('AdminDashboard', () => {
 
       await waitFor(() => {
         expect(screen.getByText('Admin Dashboard')).toBeInTheDocument();
-        expect(screen.getByRole('button', { name: /employees/i })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /^Employees$/i })).toBeInTheDocument();
       });
     });
 
@@ -74,11 +81,11 @@ describe('AdminDashboard', () => {
       renderWithProviders(<AdminDashboard />);
 
       await waitFor(() => {
-        expect(screen.getByRole('button', { name: /dashboard/i })).toBeInTheDocument();
-        expect(screen.getByRole('button', { name: /employees/i })).toBeInTheDocument();
-        expect(screen.getAllByRole('button', { name: /projects/i })[0]).toBeInTheDocument();
-        expect(screen.getByRole('button', { name: /users/i })).toBeInTheDocument();
-        expect(screen.getByRole('button', { name: /roles/i })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /^Dashboard$/i })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /^Employees$/i })).toBeInTheDocument();
+        expect(screen.getAllByRole('button', { name: /^Projects$/i })[0]).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /^Users$/i })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /^Roles$/i })).toBeInTheDocument();
       });
     });
 
@@ -86,7 +93,7 @@ describe('AdminDashboard', () => {
       renderWithProviders(<AdminDashboard />);
 
       await waitFor(() => {
-        const dashboardBtn = screen.getByRole('button', { name: /dashboard/i });
+        const dashboardBtn = screen.getByRole('button', { name: /^Dashboard$/i });
         expect(dashboardBtn).toHaveClass('border-[#E0B954]');
       });
     });
@@ -96,10 +103,10 @@ describe('AdminDashboard', () => {
       renderWithProviders(<AdminDashboard />);
 
       await waitFor(() => {
-        expect(screen.getByRole('button', { name: /employees/i })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /^Employees$/i })).toBeInTheDocument();
       });
 
-      const employeesBtn = screen.getByRole('button', { name: /employees/i });
+      const employeesBtn = screen.getByRole('button', { name: /^Employees$/i });
       await user.click(employeesBtn);
 
       await waitFor(() => {
@@ -118,10 +125,10 @@ describe('AdminDashboard', () => {
       renderWithProviders(<AdminDashboard />);
 
       await waitFor(() => {
-        expect(screen.getByRole('button', { name: /employees/i })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /^Employees$/i })).toBeInTheDocument();
       });
 
-      const employeesBtn = screen.getByRole('button', { name: /employees/i });
+      const employeesBtn = screen.getByRole('button', { name: /^Employees$/i });
       await user.click(employeesBtn);
 
       // Tab becomes active
@@ -134,7 +141,7 @@ describe('AdminDashboard', () => {
       const user = userEvent.setup();
       renderWithProviders(<AdminDashboard />);
 
-      const employeesBtn = await screen.findByRole('button', { name: /employees/i });
+      const employeesBtn = await screen.findByRole('button', { name: /^Employees$/i });
       await user.click(employeesBtn);
 
       // Employee tab should be active and API fetch initiated
@@ -148,10 +155,10 @@ describe('AdminDashboard', () => {
       renderWithProviders(<AdminDashboard />);
 
       await waitFor(() => {
-        expect(screen.getByRole('button', { name: /employees/i })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /^Employees$/i })).toBeInTheDocument();
       });
 
-      const employeesBtn = screen.getByRole('button', { name: /employees/i });
+      const employeesBtn = screen.getByRole('button', { name: /^Employees$/i });
       await user.click(employeesBtn);
 
       // With default empty handler, no employees should render
@@ -171,10 +178,10 @@ describe('AdminDashboard', () => {
       renderWithProviders(<AdminDashboard />);
 
       await waitFor(() => {
-        expect(screen.getByRole('button', { name: /users/i })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /^Users$/i })).toBeInTheDocument();
       });
 
-      const usersBtn = screen.getByRole('button', { name: /users/i });
+      const usersBtn = screen.getByRole('button', { name: /^Users$/i });
       await user.click(usersBtn);
 
       await waitFor(() => {
@@ -186,7 +193,7 @@ describe('AdminDashboard', () => {
       const user = userEvent.setup();
       renderWithProviders(<AdminDashboard />);
 
-      const usersBtn = await screen.findByRole('button', { name: /users/i });
+      const usersBtn = await screen.findByRole('button', { name: /^Users$/i });
       await user.click(usersBtn);
 
       // Users tab should be active
@@ -277,13 +284,17 @@ describe('AdminDashboard', () => {
       renderWithProviders(<AdminDashboard />);
 
       await waitFor(() => {
-        expect(screen.getByRole('button', { name: /roles/i })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /^Roles$/i })).toBeInTheDocument();
       });
 
-      await user.click(screen.getByRole('button', { name: /roles/i }));
+      await user.click(screen.getByRole('button', { name: /^Roles$/i }));
 
+      // Assert on the role descriptions: they're unique, whereas the role
+      // names ("admin") now collide with the seeded user's email/name and the
+      // names are pascal-cased ("project_manager" → "Project Manager") in the UI.
       await waitFor(() => {
-        expect(screen.getByText(/admin|project_manager/i)).toBeInTheDocument();
+        expect(screen.getByText('Administrator role')).toBeInTheDocument();
+        expect(screen.getByText('Project manager role')).toBeInTheDocument();
       });
     });
   });
@@ -299,7 +310,7 @@ describe('AdminDashboard', () => {
       // Dashboard should render and tabs should be visible
       await waitFor(() => {
         expect(screen.getByText('Admin Dashboard')).toBeInTheDocument();
-        expect(screen.getByRole('button', { name: /employees/i })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /^Employees$/i })).toBeInTheDocument();
       });
     });
 
@@ -307,7 +318,7 @@ describe('AdminDashboard', () => {
       const user = userEvent.setup();
       renderWithProviders(<AdminDashboard />);
 
-      const employeesBtn = await screen.findByRole('button', { name: /employees/i });
+      const employeesBtn = await screen.findByRole('button', { name: /^Employees$/i });
       await user.click(employeesBtn);
 
       // Tab should become active
@@ -362,14 +373,14 @@ describe('AdminDashboard', () => {
       renderWithProviders(<AdminDashboard />);
 
       await waitFor(() => {
-        expect(screen.getByRole('button', { name: /employees/i })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /^Employees$/i })).toBeInTheDocument();
       });
 
-      await user.click(screen.getByRole('button', { name: /employees/i }));
+      await user.click(screen.getByRole('button', { name: /^Employees$/i }));
 
       // Page should render even if API fails; employees just won't show
       await waitFor(() => {
-        expect(screen.getByRole('button', { name: /employees/i })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /^Employees$/i })).toBeInTheDocument();
       });
     });
 
@@ -423,7 +434,7 @@ describe('AdminDashboard', () => {
       });
 
       await waitFor(() => {
-        const usersBtn = screen.getByRole('button', { name: /users/i });
+        const usersBtn = screen.getByRole('button', { name: /^Users$/i });
         expect(usersBtn).toHaveClass('border-[#E0B954]');
       });
     });
@@ -437,14 +448,14 @@ describe('AdminDashboard', () => {
       });
 
       await waitFor(() => {
-        expect(screen.getByRole('button', { name: /employees/i })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /^Employees$/i })).toBeInTheDocument();
       });
 
-      await user.click(screen.getByRole('button', { name: /employees/i }));
+      await user.click(screen.getByRole('button', { name: /^Employees$/i }));
 
       // Click changes the active tab styling
       await waitFor(() => {
-        const employeesBtn = screen.getByRole('button', { name: /employees/i });
+        const employeesBtn = screen.getByRole('button', { name: /^Employees$/i });
         expect(employeesBtn).toHaveClass('border-[#E0B954]');
       });
     });

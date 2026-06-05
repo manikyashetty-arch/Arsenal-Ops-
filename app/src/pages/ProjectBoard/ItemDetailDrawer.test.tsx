@@ -150,9 +150,19 @@ describe('ItemDetailDrawer', () => {
 
   it('submits comment POST to backend when adding comment', async () => {
     const user = userEvent.setup();
-    const onSubmitComment = vi.fn();
 
-    renderWithProviders(<ItemDetailDrawer {...mockProps} onSubmitComment={onSubmitComment} />, {
+    // Comments are now POSTed internally by WorkItemPanel (the onSubmitComment
+    // prop is kept only for backward compat and is no longer invoked), so assert
+    // the network call rather than a callback.
+    let postedBody: { content?: string; comment_type?: string } | null = null;
+    server.use(
+      http.post('/api/comments/', async ({ request }) => {
+        postedBody = (await request.json()) as { content: string; comment_type: string };
+        return HttpResponse.json({ id: 99, ...postedBody }, { status: 201 });
+      }),
+    );
+
+    renderWithProviders(<ItemDetailDrawer {...mockProps} />, {
       initialPath: '/project/1/board/1',
     });
 
@@ -162,7 +172,9 @@ describe('ItemDetailDrawer', () => {
     const commentBtn = screen.getByRole('button', { name: /^Comment$/i });
     await user.click(commentBtn);
 
-    expect(onSubmitComment).toHaveBeenCalledWith('Test comment', 'comment');
+    await waitFor(() => {
+      expect(postedBody).toMatchObject({ content: 'Test comment', comment_type: 'comment' });
+    });
   });
 
   it('closes drawer and hides content when close button clicked', async () => {

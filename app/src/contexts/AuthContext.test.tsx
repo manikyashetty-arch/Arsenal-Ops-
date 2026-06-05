@@ -3,7 +3,7 @@ import { renderHook, act, waitFor } from '@testing-library/react';
 import { http, HttpResponse } from 'msw';
 import { server } from '@/test/mocks/server';
 import { ReactNode } from 'react';
-import { AuthProvider, useAuth, useAuthState, useAuthActions, isAdmin } from './AuthContext';
+import { AuthProvider, useAuth, useAuthState, useAuthActions } from './AuthContext';
 
 // Wrapper for renderHook
 function Wrapper({ children }: { children: ReactNode }) {
@@ -279,47 +279,9 @@ describe('AuthContext', () => {
     });
   });
 
-  describe('isAdmin helper', () => {
-    it('returns true for admin user', () => {
-      const adminUser = {
-        id: 1,
-        email: 'admin@example.com',
-        name: 'Admin User',
-        role: 'admin',
-        is_first_login: false,
-      };
-
-      expect(isAdmin(adminUser)).toBe(true);
-    });
-
-    it('returns false for non-admin user', () => {
-      const devUser = {
-        id: 2,
-        email: 'dev@example.com',
-        name: 'Dev User',
-        role: 'developer',
-        is_first_login: false,
-      };
-
-      expect(isAdmin(devUser)).toBe(false);
-    });
-
-    it('returns false when user is null', () => {
-      expect(isAdmin(null)).toBe(false);
-    });
-
-    it('returns true for multi-role with admin', () => {
-      const multiRoleUser = {
-        id: 3,
-        email: 'multi@example.com',
-        name: 'Multi User',
-        role: 'admin,project_manager',
-        is_first_login: false,
-      };
-
-      expect(isAdmin(multiRoleUser)).toBe(true);
-    });
-  });
+  // NOTE: the legacy `isAdmin` role-string helper was removed on main in favor
+  // of capability-based `can(...)` (see AuthContext header). Its former tests
+  // are covered by the `can method checks capability correctly` test above.
 
   describe('useAuthState and useAuthActions', () => {
     it('useAuthState returns only state values', async () => {

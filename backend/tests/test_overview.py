@@ -255,9 +255,11 @@ class TestOverviewQueryOptimization:
 
             assert response.status_code == 200
             # The overview bundles 8 different sub-fetches (project, sprints, goals, etc.)
-            # Each sub-fetch can be 1-2 queries. Threshold: < 20 to catch egregious N+1.
-            # Typical: ~10-15 queries for a full bundle.
-            assert query_count < 20, f"Query count {query_count} exceeds threshold"
+            # Each sub-fetch can be 1-2 queries. Threshold catches egregious N+1.
+            # Typical: ~10-15 queries for a full bundle, plus a small constant for
+            # RBAC capability resolution on the authed user (loading roles +
+            # role_capabilities) — a per-request fixed cost, not row-scaled.
+            assert query_count < 22, f"Query count {query_count} exceeds threshold"
         finally:
             event.remove(db.get_bind(), "before_cursor_execute", count_query)
 
