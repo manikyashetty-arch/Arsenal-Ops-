@@ -9,6 +9,8 @@ import {
   Flag,
   ArrowRight,
   Calendar,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -301,6 +303,28 @@ const MyTasksBox = ({
                     onChange={(newStatus) => onChangeTaskStatus(task, newStatus)}
                   />
                 </div>
+                <div className="w-[64px]">
+                  {(() => {
+                    const allocated = task.assigned_hours ?? task.estimated_hours ?? 0;
+                    const logged = task.logged_hours ?? 0;
+                    if (allocated <= 0) return null;
+                    const pct = Math.min(100, Math.round((logged / allocated) * 100));
+                    const barColor = logged >= allocated ? '#34D399' : '#E0B954';
+                    return (
+                      <div className="space-y-1">
+                        <div className="text-[11px] text-[#737373] tabular-nums">
+                          {logged}h/{allocated}h
+                        </div>
+                        <div className="h-1 rounded-full bg-[rgba(255,255,255,0.07)] overflow-hidden">
+                          <div
+                            className="h-full rounded-full transition-all"
+                            style={{ width: `${pct}%`, backgroundColor: barColor }}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
                 <div className="w-[76px]">
                   {(myTaskTab === 'upcoming' || myTaskTab === 'overdue') &&
                     task.priority &&
@@ -449,8 +473,13 @@ const MyTasksBox = ({
         {myTaskTab !== 'personal' && filteredMyTasks.length > 6 && (
           <button
             onClick={() => setShowAllTasks((p) => !p)}
-            className="w-full text-center text-xs text-[#737373] hover:text-[#E0B954] py-2.5 transition-colors"
+            className="w-full flex items-center justify-center gap-1.5 text-xs text-white hover:text-[#E0B954] py-2.5 transition-colors"
           >
+            {showAllTasks ? (
+              <ChevronUp className="w-3.5 h-3.5" />
+            ) : (
+              <ChevronDown className="w-3.5 h-3.5" />
+            )}
             {showAllTasks ? 'Show less' : `Show ${filteredMyTasks.length - 6} more`}
           </button>
         )}
