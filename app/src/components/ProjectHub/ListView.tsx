@@ -35,6 +35,7 @@ interface WorkItem {
   assignee?: string;
   assignee_id?: number;
   due_date?: string;
+  completed_at?: string | null;
   estimated_hours?: number;
   logged_hours?: number;
   sprint?: string;
@@ -51,7 +52,7 @@ interface ListViewProps {
   onTaskClick?: (item: WorkItem) => void;
 }
 
-type SortField = 'title' | 'status' | 'priority' | 'due_date' | 'assignee';
+type SortField = 'title' | 'status' | 'priority' | 'due_date' | 'completed_at' | 'assignee';
 type SortDirection = 'asc' | 'desc';
 
 const TYPE_CONFIG: Record<
@@ -108,6 +109,11 @@ const ListView: React.FC<ListViewProps> = ({ workItems, onTaskClick }) => {
       if (sortField === 'due_date') {
         aVal = a.due_date ? new Date(a.due_date).getTime() : Infinity;
         bVal = b.due_date ? new Date(b.due_date).getTime() : Infinity;
+      }
+
+      if (sortField === 'completed_at') {
+        aVal = a.completed_at ? new Date(a.completed_at).getTime() : Infinity;
+        bVal = b.completed_at ? new Date(b.completed_at).getTime() : Infinity;
       }
 
       if (aVal === undefined || aVal === null) aVal = '';
@@ -308,6 +314,7 @@ const ListView: React.FC<ListViewProps> = ({ workItems, onTaskClick }) => {
                     <SortHeader field="priority" label="Priority" />
                     <SortHeader field="assignee" label="Assignee" />
                     <SortHeader field="due_date" label="Due Date" />
+                    <SortHeader field="completed_at" label="Completed" />
                     <th className="text-left py-3 px-4 text-xs font-medium text-[#737373] uppercase">
                       Est / Logged
                     </th>
@@ -353,6 +360,9 @@ const ListView: React.FC<ListViewProps> = ({ workItems, onTaskClick }) => {
                       <td className="py-3 px-4 text-[#a3a3a3]">{item.assignee || 'Unassigned'}</td>
                       <td className="py-3 px-4 text-[#a3a3a3]">
                         {item.due_date ? new Date(item.due_date).toLocaleDateString() : '-'}
+                      </td>
+                      <td className="py-3 px-4 text-[#a3a3a3]">
+                        {item.completed_at ? new Date(item.completed_at).toLocaleDateString() : '-'}
                       </td>
                       <td className="py-3 px-4 text-[#a3a3a3]">
                         {item.estimated_hours || 0}h / {item.logged_hours || 0}h

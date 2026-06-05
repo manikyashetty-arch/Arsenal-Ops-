@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { X, Plus, Calendar } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -6,6 +6,13 @@ import { Textarea } from '@/components/ui/textarea';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar as CalendarIcon } from '@/components/ui/calendar';
 import { toast } from 'sonner';
+import { WorkItemCombobox } from '@/components/WorkItemCombobox';
+import {
+  fieldSupportsType,
+  getAllowedTargetTypes,
+  type WorkItemType,
+} from '@/lib/hierarchy/validateReparent';
+import { clampNonNegInt, blockNegativeKey } from '@/lib/inputUtils';
 
 export interface CreateItemFormValues {
   type: string;
@@ -36,7 +43,9 @@ interface WorkItemLite {
   id: string;
   key: string;
   title: string;
-  type: string;
+  type: WorkItemType;
+  parent_id?: number | null;
+  epic_id?: number | null;
 }
 
 export interface CreateItemModalProps {
@@ -47,6 +56,7 @@ export interface CreateItemModalProps {
   isCreatingItem: boolean;
   onClose: () => void;
   onSubmit: (form: CreateItemFormValues) => void;
+  initialType?: string;
 }
 
 const CreateItemModal = ({
@@ -57,9 +67,10 @@ const CreateItemModal = ({
   isCreatingItem,
   onClose,
   onSubmit,
+  initialType,
 }: CreateItemModalProps) => {
   const [createForm, setCreateForm] = useState<CreateItemFormValues>({
-    type: 'user_story',
+    type: initialType ?? 'user_story',
     title: '',
     description: '',
     priority: 'medium',
@@ -74,6 +85,19 @@ const CreateItemModal = ({
   });
   const [tagInput, setTagInput] = useState('');
   const [showCalendarCreateForm, setShowCalendarCreateForm] = useState(false);
+
+  // Depth-1 cap: an item that already has a parent cannot itself be picked
+  // as a parent — that would create a depth-2 chain.
+  const depth1ParentExclusions = useMemo(() => {
+    const excluded = new Set<number>();
+    for (const wi of workItems) {
+      if (wi.parent_id != null) {
+        const n = Number(wi.id);
+        if (!Number.isNaN(n)) excluded.add(n);
+      }
+    }
+    return excluded;
+  }, [workItems]);
 
   const handleCreateItem = () => {
     if (!createForm.title.trim()) {
@@ -93,7 +117,9 @@ const CreateItemModal = ({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between p-5 border-b border-[rgba(255,255,255,0.05)] flex-shrink-0">
-          <h2 className="text-lg font-bold text-white">Create Work Item</h2>
+          <h2 className="text-lg font-bold text-white">
+            {createForm.type === 'epic' ? 'Create Epic' : 'Create Work Item'}
+          </h2>
           <button
             onClick={onClose}
             className="p-2 rounded-lg hover:bg-[rgba(244,246,255,0.05)] text-[#737373] hover:text-white"
@@ -102,19 +128,37 @@ const CreateItemModal = ({
           </button>
         </div>
         <div className="p-5 space-y-4 flex-1 overflow-y-auto">
-          <div>
-            <label className="text-xs font-medium text-[#737373] block mb-1.5">Type</label>
-            <select
-              value={createForm.type}
-              onChange={(e) => setCreateForm((f) => ({ ...f, type: e.target.value }))}
-              className="w-full h-10 bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.07)] text-[#f5f5f5] rounded-xl px-3 text-sm"
-            >
-              <option value="user_story">User Story</option>
-              <option value="task">Task</option>
-              <option value="bug">Bug</option>
-              <option value="epic">Epic</option>
-            </select>
-          </div>
+          {/* Type selector — hidden when the parent opens this modal with
+              initialType='epic' (the "New Epic" menu item). Epics are
+              structurally different from stories/tasks/bugs (no parent_id,
+              no estimated_hours, etc.); allowing the user to flip the type
+              mid-flow would surface the wrong fields and break the user's
+              intent from the menu they clicked. */}
+          {createForm.type !== 'epic' && (
+            <div>
+              <label className="text-xs font-medium text-[#737373] block mb-1.5">Type</label>
+              <select
+                value={createForm.type}
+                onChange={(e) => {
+                  const newType = e.target.value as WorkItemType;
+                  setCreateForm((f) => ({
+                    ...f,
+                    type: newType,
+                    epic_id: fieldSupportsType(newType, 'epic_id') ? f.epic_id : null,
+                    parent_id: fieldSupportsType(newType, 'parent_id') ? f.parent_id : null,
+                    // Epics aggregate hours from descendants — don't carry over a
+                    // value the user typed for a different type.
+                    estimated_hours: newType === 'epic' ? '' : f.estimated_hours,
+                  }));
+                }}
+                className="w-full h-10 bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.07)] text-[#f5f5f5] rounded-xl px-3 text-sm"
+              >
+                <option value="user_story">User Story</option>
+                <option value="task">Task</option>
+                <option value="bug">Bug</option>
+              </select>
+            </div>
+          )}
           <div>
             <label className="text-xs font-medium text-[#737373] block mb-1.5">Title *</label>
             <Input
@@ -156,11 +200,13 @@ const CreateItemModal = ({
                 <label className="text-xs font-medium text-[#737373] block mb-1.5">Points</label>
                 <Input
                   type="number"
-                  value={createForm.story_points}
+                  min="0"
+                  value={createForm.story_points || ''}
+                  onKeyDown={blockNegativeKey}
                   onChange={(e) =>
                     setCreateForm((f) => ({
                       ...f,
-                      story_points: parseInt(e.target.value) || 0,
+                      story_points: clampNonNegInt(e.target.value),
                     }))
                   }
                   className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl h-10"
@@ -188,57 +234,46 @@ const CreateItemModal = ({
               </select>
             </div>
           </div>
-          {createForm.type !== 'task' && (
-            /* Hierarchy - Hidden for Tasks */
+          {(fieldSupportsType(createForm.type as WorkItemType, 'epic_id') ||
+            fieldSupportsType(createForm.type as WorkItemType, 'parent_id')) && (
             <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs font-medium text-[#737373] block mb-1.5">
-                  Epic (optional)
-                </label>
-                <select
-                  value={createForm.epic_id || ''}
-                  onChange={(e) =>
-                    setCreateForm((f) => ({
-                      ...f,
-                      epic_id: e.target.value ? parseInt(e.target.value) : null,
-                    }))
-                  }
-                  className="w-full h-10 bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.07)] text-[#f5f5f5] rounded-xl px-3 text-sm"
-                >
-                  <option value="">No Epic</option>
-                  {workItems
-                    .filter((wi) => wi.type === 'epic')
-                    .map((wi) => (
-                      <option key={wi.id} value={wi.id}>
-                        {wi.key} — {wi.title}
-                      </option>
-                    ))}
-                </select>
-              </div>
-              <div>
-                <label className="text-xs font-medium text-[#737373] block mb-1.5">
-                  Parent Story (optional)
-                </label>
-                <select
-                  value={createForm.parent_id || ''}
-                  onChange={(e) =>
-                    setCreateForm((f) => ({
-                      ...f,
-                      parent_id: e.target.value ? parseInt(e.target.value) : null,
-                    }))
-                  }
-                  className="w-full h-10 bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.07)] text-[#f5f5f5] rounded-xl px-3 text-sm"
-                >
-                  <option value="">No Parent</option>
-                  {workItems
-                    .filter((wi) => wi.type === 'user_story')
-                    .map((wi) => (
-                      <option key={wi.id} value={wi.id}>
-                        {wi.key} — {wi.title}
-                      </option>
-                    ))}
-                </select>
-              </div>
+              {fieldSupportsType(createForm.type as WorkItemType, 'epic_id') && (
+                <div>
+                  <label className="text-xs font-medium text-[#737373] block mb-1.5">
+                    Epic (optional)
+                  </label>
+                  <WorkItemCombobox
+                    value={createForm.epic_id}
+                    valueKey={null}
+                    items={workItems}
+                    allowedTypes={getAllowedTargetTypes(createForm.type as WorkItemType, 'epic_id')}
+                    onChange={(newId) => setCreateForm((f) => ({ ...f, epic_id: newId }))}
+                    placeholder="No epic"
+                  />
+                </div>
+              )}
+              {fieldSupportsType(createForm.type as WorkItemType, 'parent_id') && (
+                <div>
+                  <label
+                    className="text-xs font-medium text-[#737373] block mb-1.5"
+                    title="This task is part of a larger story or task."
+                  >
+                    Belongs to (optional)
+                  </label>
+                  <WorkItemCombobox
+                    value={createForm.parent_id}
+                    valueKey={null}
+                    items={workItems}
+                    allowedTypes={getAllowedTargetTypes(
+                      createForm.type as WorkItemType,
+                      'parent_id',
+                    )}
+                    excludeIds={depth1ParentExclusions}
+                    onChange={(newId) => setCreateForm((f) => ({ ...f, parent_id: newId }))}
+                    placeholder="No parent"
+                  />
+                </div>
+              )}
             </div>
           )}
           {createForm.type === 'task' && (
@@ -338,8 +373,15 @@ const CreateItemModal = ({
               )}
             </div>
           )}
-          {/* Due Date and Estimated Hours */}
-          <div className="grid grid-cols-2 gap-3">
+          {/* Due Date and Estimated Hours. Epics don't show Est. Hours — their
+              hours are aggregated from descendant stories/tasks/bugs and the
+              subtasks underneath those, so accepting a manual estimate on an
+              epic would be misleading. */}
+          <div
+            className={
+              createForm.type === 'epic' ? 'grid grid-cols-1 gap-3' : 'grid grid-cols-2 gap-3'
+            }
+          >
             <div>
               <label className="text-xs font-medium text-[#737373] block mb-1.5">
                 Due Date (optional)
@@ -406,17 +448,28 @@ const CreateItemModal = ({
                 </PopoverContent>
               </Popover>
             </div>
-            <div>
-              <label className="text-xs font-medium text-[#737373] block mb-1.5">Est. Hours</label>
-              <Input
-                type="number"
-                min="1"
-                value={createForm.estimated_hours}
-                onChange={(e) => setCreateForm((f) => ({ ...f, estimated_hours: e.target.value }))}
-                placeholder="Hours"
-                className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl h-10"
-              />
-            </div>
+            {createForm.type !== 'epic' && (
+              <div>
+                <label className="text-xs font-medium text-[#737373] block mb-1.5">
+                  Est. Hours
+                </label>
+                <Input
+                  type="number"
+                  min="0"
+                  value={createForm.estimated_hours}
+                  onKeyDown={blockNegativeKey}
+                  onChange={(e) =>
+                    setCreateForm((f) => ({
+                      ...f,
+                      estimated_hours:
+                        e.target.value === '' ? '' : String(clampNonNegInt(e.target.value)),
+                    }))
+                  }
+                  placeholder="Hours"
+                  className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl h-10"
+                />
+              </div>
+            )}
           </div>
         </div>
         <div className="flex justify-end gap-3 p-5 border-t border-[rgba(255,255,255,0.05)] flex-shrink-0">

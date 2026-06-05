@@ -30,7 +30,9 @@ from routers.developers import router as developers_router  # noqa: E402
 from routers.overview import router as overview_router  # noqa: E402
 from routers.personal_tasks import router as personal_tasks_router  # noqa: E402
 from routers.prd_analysis import router as prd_router  # noqa: E402
+from routers.project_categories import router as project_categories_router  # noqa: E402
 from routers.projects import router as projects_router  # noqa: E402
+from routers.pulse import router as pulse_router  # noqa: E402
 from routers.roadmap import router as roadmap_router  # noqa: E402
 from routers.workitems import router as workitems_router  # noqa: E402
 
@@ -158,6 +160,8 @@ app.include_router(admin_router)
 app.include_router(roadmap_router)
 app.include_router(personal_tasks_router)
 app.include_router(overview_router)
+app.include_router(pulse_router)
+app.include_router(project_categories_router)
 
 
 # Startup event for database initialization
@@ -203,54 +207,102 @@ async def startup_event():
     except Exception as e:
         logger.exception("migrate_add_perf_indexes failed: %s", e)
 
-    # Emergency-bootstrap safety net: if the users table is empty (fresh deploy
-    # where scripts/seed_admins.py has not been run yet) seed exactly ONE admin
-    # from the first ADMIN_EMAILS entry so the system isn't locked out.
-    #
-    # Full admin seeding has moved to backend/scripts/seed_admins.py — run it
-    # once per deploy (or whenever ADMIN_EMAILS changes). Cost here is one
-    # COUNT(*) per worker startup; the write path is skipped once any user
-    # exists.
+    # Seed every email in ADMIN_EMAILS as an admin on startup. Idempotent:
+    # users that already carry the admin role are left untouched; existing
+    # non-admin users have "admin" appended to their comma-separated role list
+    # so their other roles are preserved. Also links them to the RBAC 'admin'
+    # Role row so they get the wildcard capability grant (without this, the
+    # legacy column says "admin" but user.roles is empty → can(...) returns
+    # false → every require_capability-gated endpoint 403s for them).
     try:
         from database import SessionLocal
         from models.developer import Developer
-        from models.user import User, UserRole
+        from models.role import Role
+        from models.user import User, UserRole, has_role
 
-        db = SessionLocal()
-        try:
-            user_count = db.query(User).count()
-            if user_count == 0:
-                admin_emails_str = os.getenv("ADMIN_EMAILS", "manikya.shetty@arsenalai.com")
-                first_email = next(
-                    (e.strip() for e in admin_emails_str.split(",") if e.strip()),
-                    None,
-                )
-                if first_email:
-                    name = first_email.split("@")[0].replace(".", " ").title()
+        admin_emails_str = os.getenv("ADMIN_EMAILS", "manikya.shetty@arsenalai.com")
+        admin_emails = [e.strip() for e in admin_emails_str.split(",") if e.strip()]
+
+        if admin_emails:
+            db = SessionLocal()
+            try:
+                # seed_rbac() runs inside init_db() above, so the 'admin' Role row
+                # should exist by now. If it doesn't (e.g. seed failed silently),
+                # log and skip the role-linking step rather than crashing startup.
+                admin_role = db.query(Role).filter(Role.name == "admin").first()
+                if not admin_role:
+                    logger.error(
+                        "[BOOTSTRAP] 'admin' Role row missing — RBAC seed may have failed. "
+                        "ADMIN_EMAILS users will get the legacy role column but no capabilities."
+                    )
+
+                created = 0
+                promoted = 0
+                rbac_linked = 0
+                for email in admin_emails:
+                    existing = db.query(User).filter(User.email == email).first()
+                    if existing:
+                        legacy_already_admin = has_role(existing.role, UserRole.ADMIN.value)
+                        rbac_already_admin = admin_role is not None and admin_role in existing.roles
+
+                        if legacy_already_admin and rbac_already_admin:
+                            continue
+
+                        if not legacy_already_admin:
+                            existing.role = (
+                                f"{existing.role},{UserRole.ADMIN.value}"
+                                if existing.role
+                                else UserRole.ADMIN.value
+                            )
+                            existing.is_active = True
+                            promoted += 1
+                            logger.warning(
+                                "[BOOTSTRAP] Promoted %s to admin (legacy column)", email
+                            )
+
+                        if admin_role is not None and not rbac_already_admin:
+                            existing.roles.append(admin_role)
+                            rbac_linked += 1
+                            logger.warning("[BOOTSTRAP] Linked %s to RBAC admin role", email)
+
+                        db.commit()
+                        continue
+
+                    name = email.split("@")[0].replace(".", " ").title()
                     admin = User(
-                        email=first_email,
+                        email=email,
                         name=name,
                         hashed_password=None,
                         role=UserRole.ADMIN.value,
                         is_active=True,
                         is_first_login=False,
                     )
+                    if admin_role is not None:
+                        admin.roles.append(admin_role)
+                        rbac_linked += 1
                     db.add(admin)
                     db.commit()
-                    if not db.query(Developer).filter(Developer.email == first_email).first():
-                        db.add(Developer(name=name, email=first_email))
+                    created += 1
+                    logger.warning("[BOOTSTRAP] Seeded admin %s", email)
+
+                    if not db.query(Developer).filter(Developer.email == email).first():
+                        db.add(Developer(name=name, email=email))
                         db.commit()
+
+                if created or promoted or rbac_linked:
                     logger.warning(
-                        "[BOOTSTRAP] Users table was empty; emergency-seeded admin %s. "
-                        "Run scripts/seed_admins.py to provision the full ADMIN_EMAILS list.",
-                        first_email,
+                        "[BOOTSTRAP] Admin seeding done: %d created, %d promoted, %d RBAC-linked",
+                        created,
+                        promoted,
+                        rbac_linked,
                     )
-        except Exception as e:
-            logger.exception("Emergency admin bootstrap error: %s", e)
-        finally:
-            db.close()
+            except Exception as e:
+                db.rollback()
+                logger.exception("Admin bootstrap error: %s", e)
+            finally:
+                db.close()
     except Exception as e:
-        logger.exception("Emergency admin bootstrap setup error: %s", e)
+        logger.exception("Admin bootstrap setup error: %s", e)
 
 
 @app.get("/")
@@ -278,14 +330,12 @@ def health_check():
     """Health check endpoint"""
     from datetime import datetime
 
-    azure_configured = bool(
-        os.getenv("AZURE_OPENAI_API_KEY") and os.getenv("AZURE_OPENAI_ENDPOINT")
-    )
+    openai_configured = bool(os.getenv("OPENAI_API_KEY"))
     return {
         "status": "healthy",
         "timestamp": datetime.now().isoformat(),
         "services": {
-            "ai_engine": "operational" if azure_configured else "missing_credentials",
+            "ai_engine": "operational" if openai_configured else "missing_credentials",
             "api": "operational",
         },
         "version": "1.0.0",

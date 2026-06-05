@@ -1,5 +1,12 @@
-import { BrowserRouter as Router, Routes, Route, useNavigate, useLocation } from 'react-router-dom';
-import { useState, useEffect, lazy, Suspense } from 'react';
+import {
+  BrowserRouter as Router,
+  Routes,
+  Route,
+  Navigate,
+  useNavigate,
+  useLocation,
+} from 'react-router-dom';
+import { useState, useEffect, lazy, Suspense, type ReactNode } from 'react';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { Toaster } from 'sonner';
@@ -25,6 +32,23 @@ const RouteSpinner = () => (
     <div className="w-10 h-10 border-2 border-[#E0B954]/30 border-t-[#E0B954] rounded-full animate-spin" />
   </div>
 );
+
+import { hasAnyAdminCapability } from '@/lib/adminCaps';
+
+/**
+ * Route guard for /admin. Renders children only when the user holds at least
+ * one admin.* capability. Otherwise redirects to the projects home so users
+ * can't see the admin shell at all. Backend endpoints are independently
+ * gated, so this is defense-in-depth on the client.
+ *
+ * The admin-cap list itself lives in `lib/adminCaps.ts` so this guard and
+ * every Admin-nav-link visibility check stay in sync.
+ */
+function RequireAnyAdminCapability({ children }: { children: ReactNode }) {
+  const { can } = useAuth();
+  if (hasAnyAdminCapability(can)) return <>{children}</>;
+  return <Navigate to="/" replace />;
+}
 
 function IdleWarningModal({
   onStay,
@@ -194,11 +218,16 @@ function AuthenticatedRoutes() {
               </RouteErrorBoundary>
             }
           />
+          {/* /admin keeps main's capability guard, wrapped in the branch's
+              error boundary so a render failure shows the fallback, not a
+              blank screen. */}
           <Route
             path="/admin"
             element={
               <RouteErrorBoundary>
-                <AdminDashboard />
+                <RequireAnyAdminCapability>
+                  <AdminDashboard />
+                </RequireAnyAdminCapability>
               </RouteErrorBoundary>
             }
           />

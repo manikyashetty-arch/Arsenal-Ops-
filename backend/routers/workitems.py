@@ -17,8 +17,9 @@ from models.project import Project
 from models.sprint import Sprint, SprintStatus
 from models.user import User
 from models.work_item import WorkItem, WorkItemStatus, WorkItemType
-from routers.auth import get_current_user
+from routers.auth import get_current_user, require_capability
 from services.email_service import email_service
+from services.hierarchy import validate_hierarchy
 from services.llm_agent import llm_agent
 
 router = APIRouter(prefix="/api/workitems", tags=["Work Items"])
@@ -60,14 +61,35 @@ def get_next_item_number(db: Session, key_prefix: str) -> int:
     return row or 1
 
 
+def _creator_dev_id(db: Session, current_user: User) -> int | None:
+    """Resolve the Developer.id for the currently authenticated user.
+
+    Used as the value for WorkItem.reporter_id on creation so the side panel
+    can render "Created By <name>". Returns None if the user has no linked
+    Developer row (rare — typically only admin-only accounts).
+    """
+    from models.developer import Developer
+
+    if not current_user or not current_user.email:
+        return None
+    dev = db.query(Developer).filter(Developer.email == current_user.email).first()
+    return dev.id if dev else None
+
+
 def update_epic_hours(epic_id: int, db: Session):
     """
-    Roll up estimated_hours, logged_hours, and remaining_hours from all child work items
-    (stories, tasks, bugs) into the epic. Single GROUP-BY aggregate query.
+    Roll up estimated_hours, logged_hours, and remaining_hours into the epic
+    from BOTH levels below:
+      - 2nd level: stories/tasks/bugs whose epic_id == this epic (their own,
+        independent hour columns — NOT a rollup of their subtasks)
+      - 3rd level: subtasks whose parent is one of those stories/tasks/bugs
 
-    Must be called whenever a child's hours change OR a child is added/removed/reparented:
-      - create_work_item (with epic_id)
-      - update_work_item (estimated_hours, logged_hours, remaining_hours, or epic_id changed)
+    Story/Task/Bug parents keep their own direct hours independent of their
+    subtasks. The epic is the only level that aggregates across the tree.
+
+    Called whenever any descendant's hours change OR the hierarchy shifts:
+      - create_work_item (with epic_id or subtask under a parent linked to an epic)
+      - update_work_item (hours change, status change, epic_id/parent_id reparent)
       - log_hours endpoint
       - delete_work_item
     """
@@ -75,32 +97,143 @@ def update_epic_hours(epic_id: int, db: Session):
     if not epic or epic.type != WorkItemType.EPIC.value:
         return
 
-    row = (
-        db.query(
-            func.coalesce(func.sum(WorkItem.estimated_hours), 0).label("est"),
-            func.coalesce(func.sum(WorkItem.logged_hours), 0).label("logged"),
-            func.coalesce(func.sum(WorkItem.remaining_hours), 0).label("remaining"),
-        )
+    # 2nd level: direct children's own hour columns
+    direct_children_ids_subq = (
+        db.query(WorkItem.id)
         .filter(
             WorkItem.epic_id == epic_id,
             WorkItem.type.in_(
                 [WorkItemType.USER_STORY.value, WorkItemType.TASK.value, WorkItemType.BUG.value]
             ),
         )
+        .subquery()
+    )
+
+    direct = (
+        db.query(
+            func.coalesce(func.sum(WorkItem.estimated_hours), 0).label("est"),
+            func.coalesce(func.sum(WorkItem.logged_hours), 0).label("logged"),
+            func.coalesce(func.sum(WorkItem.remaining_hours), 0).label("remaining"),
+        )
+        .filter(WorkItem.id.in_(db.query(direct_children_ids_subq.c.id)))
         .one()
     )
 
-    epic.estimated_hours = row.est or 0
-    epic.logged_hours = row.logged or 0
-    epic.remaining_hours = row.remaining or 0
+    # 3rd level: subtasks whose parent is one of the direct children
+    subtasks = (
+        db.query(
+            func.coalesce(func.sum(WorkItem.estimated_hours), 0).label("est"),
+            func.coalesce(func.sum(WorkItem.logged_hours), 0).label("logged"),
+            func.coalesce(func.sum(WorkItem.remaining_hours), 0).label("remaining"),
+        )
+        .filter(
+            WorkItem.type == WorkItemType.SUBTASK.value,
+            WorkItem.parent_id.in_(db.query(direct_children_ids_subq.c.id)),
+        )
+        .one()
+    )
+
+    epic.estimated_hours = (direct.est or 0) + (subtasks.est or 0)
+    epic.logged_hours = (direct.logged or 0) + (subtasks.logged or 0)
+    epic.remaining_hours = (direct.remaining or 0) + (subtasks.remaining or 0)
     epic.updated_at = datetime.utcnow()
+
+
+def update_parent_status_from_subtasks(parent_id: int, db: Session):
+    """
+    Reopen a Story/Task/Bug if it was previously marked done but one of its
+    subtasks has just been reopened.
+
+    Auto-completion was intentionally removed: parents are marked done
+    EXPLICITLY by the user (the API blocks the transition if any subtask is
+    still open via the rule in update_work_item). This function only handles
+    the reverse direction — keeping a parent's "done" status from drifting
+    into an inconsistent state when a descendant is reopened.
+    """
+    parent = db.query(WorkItem).filter(WorkItem.id == parent_id).first()
+    if not parent:
+        return
+    if parent.type not in (
+        WorkItemType.USER_STORY.value,
+        WorkItemType.TASK.value,
+        WorkItemType.BUG.value,
+    ):
+        return
+    if parent.status != WorkItemStatus.DONE.value:
+        # Parent isn't done — nothing to reopen.
+        return
+
+    subtasks = (
+        db.query(WorkItem)
+        .filter(
+            WorkItem.parent_id == parent_id,
+            WorkItem.type == WorkItemType.SUBTASK.value,
+        )
+        .all()
+    )
+    if not subtasks:
+        return
+
+    any_open = any(s.status != WorkItemStatus.DONE.value for s in subtasks)
+    if any_open:
+        parent.status = WorkItemStatus.TODO.value
+        parent.completed_at = None
+        parent.started_at = None
+        parent.updated_at = datetime.utcnow()
+
+
+def refresh_parent_and_epic(parent: WorkItem, db: Session):
+    """
+    Re-evaluate a Story/Task/Bug parent and its grandparent epic after a
+    subtask change.
+
+    Hours are NOT rolled up from subtasks to the parent — Story/Task/Bug rows
+    keep their own direct estimate / logged / remaining values. The epic is
+    the only level that aggregates across subtasks (it sums both 2nd and 3rd
+    level items via update_epic_hours).
+
+    What we still do at the parent level: status auto-update (all subtasks
+    done → parent done, any subtask reopened → parent reopens). That rule is
+    independent of hours and remains useful.
+    """
+    update_parent_status_from_subtasks(parent.id, db)
+    if parent.epic_id is not None:
+        # update_epic_hours queries the database directly; flush any pending
+        # parent status writes from the call above so the epic's status rollup
+        # (which depends on parent status) sees them.
+        db.flush()
+        update_epic_hours(parent.epic_id, db)
+        update_epic_status_from_stories(parent.epic_id, db)
+
+
+def propagate_from_subtask(subtask: WorkItem, db: Session):
+    """
+    Helper: when a subtask changes, run the parent's status rollup and then
+    the grandparent epic's hours + status rollup.
+
+    Hours go DIRECTLY from the subtask to the epic via update_epic_hours
+    (which sums both 2nd and 3rd level descendants). The 2nd-level parent's
+    own hour columns are not touched — by design, parents keep their own
+    independent hours.
+    """
+    if subtask.parent_id is None:
+        return
+    parent = db.query(WorkItem).filter(WorkItem.id == subtask.parent_id).first()
+    if parent is None:
+        return
+    refresh_parent_and_epic(parent, db)
 
 
 def update_epic_status_from_stories(epic_id: int, db: Session):
     """
-    Auto-update epic status based on all linked work items (stories/tasks/bugs).
-    - If ALL work items are done, mark epic as done
-    - If ANY work item is not done, reopen epic if it was done
+    Reopen an epic if it was previously marked done but one of its
+    stories/tasks/bugs has just been reopened.
+
+    Auto-completion was intentionally removed: epics are marked done
+    EXPLICITLY by the user (the API blocks the transition if any child is
+    still open via the rule in update_work_item). This function only handles
+    the reverse direction — keeping the epic's "done" status from drifting
+    into an inconsistent state when a child is reopened.
 
     Args:
         epic_id: ID of the epic to check
@@ -108,6 +241,9 @@ def update_epic_status_from_stories(epic_id: int, db: Session):
     """
     epic = db.query(WorkItem).filter(WorkItem.id == epic_id).first()
     if not epic or epic.type != WorkItemType.EPIC.value:
+        return
+    if epic.status != WorkItemStatus.DONE.value:
+        # Epic isn't done — nothing to reopen.
         return
 
     # Get all work items linked to this epic
@@ -126,16 +262,9 @@ def update_epic_status_from_stories(epic_id: int, db: Session):
         # No work items under this epic, don't auto-update status
         return
 
-    # Check if ALL items are done
-    all_done = all(item.status == "done" for item in items)
-
-    if all_done and epic.status != "done":
-        epic.status = "done"
-        epic.completed_at = datetime.utcnow()
-        epic.updated_at = datetime.utcnow()
-    elif not all_done and epic.status == "done":
-        # Reopen epic if one of its items is reopened
-        epic.status = "todo"
+    any_open = any(item.status != WorkItemStatus.DONE.value for item in items)
+    if any_open:
+        epic.status = WorkItemStatus.TODO.value
         epic.completed_at = None
         epic.started_at = None
         epic.updated_at = datetime.utcnow()
@@ -315,10 +444,9 @@ def list_work_items(
 class SlimWorkItem(BaseModel):
     """Slim payload used by the Kanban board endpoint.
 
-    Excludes heavy fields (description, acceptance_criteria, started_at,
-    completed_at) that the board view never renders. Wire size is roughly
-    40-50% of the full row, which adds up fast on projects with hundreds
-    of items.
+    Excludes heavy fields (description, acceptance_criteria, started_at)
+    that the board view never renders. Wire size is roughly 40-50% of
+    the full row, which adds up fast on projects with hundreds of items.
     """
 
     id: str
@@ -339,6 +467,8 @@ class SlimWorkItem(BaseModel):
     remaining_hours: int = 0
     assigned_hours: int = 0
     logged_hours: int = 0
+    due_date: str | None = None
+    completed_at: str | None = None
 
 
 @router.get("/board", response_model=list[SlimWorkItem])
@@ -393,6 +523,8 @@ def list_board_items(
             remaining_hours=item.remaining_hours or 0,
             assigned_hours=item.estimated_hours or 0,
             logged_hours=item.logged_hours or 0,
+            due_date=item.due_date.isoformat() if item.due_date else None,
+            completed_at=item.completed_at.isoformat() if item.completed_at else None,
         )
         for item in items
     ]
@@ -418,6 +550,7 @@ def get_my_tasks(db: Session = Depends(get_db), current_user: User = Depends(get
             selectinload(WorkItem.parent),
             selectinload(WorkItem.epic),
             selectinload(WorkItem.sprint),
+            selectinload(WorkItem.reporter),
         )
         .filter(WorkItem.assignee_id == developer.id)
         .all()
@@ -458,6 +591,7 @@ def get_my_tasks(db: Session = Depends(get_db), current_user: User = Depends(get
                 "story_points": item.story_points or 0,
                 "assigned_hours": item.estimated_hours or 0,
                 "assignee": developer.name,
+                "reporter_name": item.reporter.name if item.reporter else None,
                 "description": item.description or "",
                 "tags": item.tags or [],
                 "acceptance_criteria": item.acceptance_criteria or [],
@@ -477,11 +611,29 @@ def get_my_tasks(db: Session = Depends(get_db), current_user: User = Depends(get
 def get_work_item(
     item_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
 ):
-    """Get a specific work item (requires auth)"""
-    item = db.query(WorkItem).filter(WorkItem.id == item_id).first()
+    """Get a specific work item (requires auth).
+
+    Augments the raw model with `reporter_name` and `assignee_name` so the
+    side panel can show "Created By" / "Assigned To" without a follow-up
+    lookup. The model's column dict is returned as-is otherwise.
+    """
+    item = (
+        db.query(WorkItem)
+        .options(
+            selectinload(WorkItem.assignee),
+            selectinload(WorkItem.reporter),
+        )
+        .filter(WorkItem.id == item_id)
+        .first()
+    )
     if not item:
         raise HTTPException(status_code=404, detail="Work item not found")
-    return item
+    # Column dict + relation-derived fields. SQLAlchemy auto-serialization via
+    # FastAPI doesn't include relationships, so we add the names explicitly.
+    payload = {c.name: getattr(item, c.name) for c in item.__table__.columns}
+    payload["reporter_name"] = item.reporter.name if item.reporter else None
+    payload["assignee_name"] = item.assignee.name if item.assignee else None
+    return payload
 
 
 @router.post("/")
@@ -489,13 +641,22 @@ def create_work_item(
     item: WorkItemCreate,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_capability("project.tracker_write")),
 ):
-    """Create a new work item"""
+    """Create a new work item (requires `project.tracker_write`)."""
     # Get project for key prefix
     project = db.query(Project).filter(Project.id == item.project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
+
+    validate_hierarchy(
+        db,
+        item_type=item.type,
+        project_id=item.project_id,
+        parent_id=item.parent_id,
+        epic_id=item.epic_id,
+        item_id=None,
+    )
 
     # Generate key using project's key_prefix
     key_prefix = getattr(project, "key_prefix", None) or "PROJ"
@@ -527,6 +688,10 @@ def create_work_item(
         sprint_id=item.sprint_id,
         epic_id=item.epic_id,
         parent_id=item.parent_id,
+        # Stamp the creator (looked up via Developer row matched on email).
+        # Used by the ticket side panel "Created By" line. Stays NULL if the
+        # current user has no linked developer record (rare — admin-only users).
+        reporter_id=_creator_dev_id(db, current_user),
         tags=item.tags,
         acceptance_criteria=item.acceptance_criteria,
         start_date=datetime.fromisoformat(item.start_date) if item.start_date else None,
@@ -561,13 +726,25 @@ def create_work_item(
     db.commit()
     db.refresh(work_item)
 
-    # Update epic hours if this work item is linked to an epic
-    if work_item.epic_id:
+    # Propagation on create:
+    # - For stories/tasks/bugs linked to an epic, refresh the epic's hours.
+    # - For a brand-new subtask, walk up the chain (parent → grandparent epic).
+    if work_item.type == WorkItemType.SUBTASK.value and work_item.parent_id:
+        propagate_from_subtask(work_item, db)
+        db.commit()
+    elif work_item.epic_id:
         update_epic_hours(work_item.epic_id, db)
         db.commit()
 
-    # Send assignment notification if assignee is set (off the request thread)
-    if work_item.assignee_id and work_item.assignee:
+    # Send assignment notification if assignee is set (off the request thread).
+    # Skip when the creator self-assigned — emailing yourself about a ticket
+    # you just made is noise. Matches the same `assignee.email != current_user.email`
+    # guard already used on status-change notifications below.
+    if (
+        work_item.assignee_id
+        and work_item.assignee
+        and work_item.assignee.email != current_user.email
+    ):
         assignee = work_item.assignee
         background_tasks.add_task(
             email_service.send_task_assignment_notification,
@@ -620,7 +797,7 @@ def update_work_item(
     update: WorkItemUpdate,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_capability("project.tracker_write")),
 ):
     """Update an existing work item (requires auth)"""
     item = db.query(WorkItem).filter(WorkItem.id == item_id).first()
@@ -639,6 +816,10 @@ def update_work_item(
     # Track old epic_id so we can recompute the FORMER epic when an item is reparented
     old_epic_id = item.epic_id
 
+    # Track old parent_id so a re-parented subtask refreshes BOTH the old and
+    # new parent (and their respective epics).
+    old_parent_id = item.parent_id
+
     update_data = update.model_dump(exclude_unset=True)
 
     # logged_hours and remaining_hours are derived columns — logged_hours
@@ -650,9 +831,93 @@ def update_work_item(
     update_data.pop("logged_hours", None)
     update_data.pop("remaining_hours", None)
 
+    # Done tickets are frozen — only allowed mutation is a status change that
+    # re-opens them (any non-done status). Combined "re-open + edit other fields"
+    # in a single request is rejected: caller must re-open first, then edit.
+    if item.status == WorkItemStatus.DONE.value:
+        non_status_changes = [k for k in update_data if k != "status"]
+        if non_status_changes:
+            raise HTTPException(
+                status_code=403,
+                detail="This ticket is marked done. Re-open it before editing.",
+            )
+        # If status is being changed to a non-done value, clear completed_at so
+        # the audit trail reflects the new lifecycle.
+        new_status = update_data.get("status")
+        if new_status and new_status != WorkItemStatus.DONE.value:
+            item.completed_at = None
+
+    # Block manually marking a parent done while any child is still open.
+    # This applies in two directions:
+    #   - Epic: rejected if any of its stories/tasks/bugs aren't done.
+    #   - Story/Task/Bug: rejected if any of its subtasks aren't done.
+    # The rule is recursive by induction — to mark an Epic done you must first
+    # mark its children done, and to mark each child done its own subtasks
+    # must be done. So checking direct children is sufficient to cover all
+    # descendants.
+    if update_data.get("status") == WorkItemStatus.DONE.value:
+        if item.type == WorkItemType.EPIC.value:
+            open_child = (
+                db.query(WorkItem.id, WorkItem.key)
+                .filter(
+                    WorkItem.epic_id == item.id,
+                    WorkItem.type.in_(
+                        [
+                            WorkItemType.USER_STORY.value,
+                            WorkItemType.TASK.value,
+                            WorkItemType.BUG.value,
+                        ]
+                    ),
+                    WorkItem.status != WorkItemStatus.DONE.value,
+                )
+                .first()
+            )
+            if open_child is not None:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"Can't mark epic done — {open_child.key} is still open. "
+                        "Complete every story/task/bug under this epic first."
+                    ),
+                )
+        elif item.type in (
+            WorkItemType.USER_STORY.value,
+            WorkItemType.TASK.value,
+            WorkItemType.BUG.value,
+        ):
+            open_subtask = (
+                db.query(WorkItem.id, WorkItem.key)
+                .filter(
+                    WorkItem.parent_id == item.id,
+                    WorkItem.type == WorkItemType.SUBTASK.value,
+                    WorkItem.status != WorkItemStatus.DONE.value,
+                )
+                .first()
+            )
+            if open_subtask is not None:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"Can't mark this ticket done — subtask {open_subtask.key} "
+                        "is still open. Complete every subtask first."
+                    ),
+                )
+
     # Handle frontend compatibility: assigned_hours -> estimated_hours
     if "assigned_hours" in update_data:
         update_data["estimated_hours"] = update_data.pop("assigned_hours")
+
+    # Validate hierarchy if type / parent_id / epic_id is being touched.
+    # Compute the proposed post-update values so we validate the final shape.
+    if any(k in update_data for k in ("type", "parent_id", "epic_id")):
+        validate_hierarchy(
+            db,
+            item_type=update_data.get("type", item.type),
+            project_id=item.project_id,
+            parent_id=update_data.get("parent_id", item.parent_id),
+            epic_id=update_data.get("epic_id", item.epic_id),
+            item_id=item.id,
+        )
 
     # Handle date fields - parse ISO strings to datetime
     if "start_date" in update_data and update_data["start_date"]:
@@ -744,10 +1009,13 @@ def update_work_item(
             )
             db.add(activity)
 
-            # Send assignment notification to new assignee if newly assigned (off the request thread)
+            # Send assignment notification to new assignee if newly assigned
+            # (off the request thread). Skip when reassigning to self —
+            # already what `current_user` knows about. Matches the create_work_item
+            # guard above and the status-change guard further down.
             if new_assignee_id and new_assignee_name != "Unassigned":
                 new_assignee = db.query(Developer).filter(Developer.id == new_assignee_id).first()
-                if new_assignee and new_assignee.email:
+                if new_assignee and new_assignee.email and new_assignee.email != current_user.email:
                     background_tasks.add_task(
                         email_service.send_task_assignment_notification,
                         to_email=new_assignee.email,
@@ -776,6 +1044,34 @@ def update_work_item(
             title=f"{action.capitalize()} {item.key}: {item.title}",
         )
         db.add(activity)
+
+    # Auto-comment for every status transition — surfaces the move in the
+    # ticket's comment feed alongside the existing "Ticket transferred from X
+    # to Y" so the side panel reads as a single chronological audit trail.
+    if "status" in update_data and update_data["status"] != old_status:
+        from models.comment import Comment as _StatusComment
+        from models.developer import Developer as _AuthorDev
+
+        STATUS_LABELS = {
+            WorkItemStatus.BACKLOG.value: "Backlog",
+            WorkItemStatus.TODO.value: "To Do",
+            WorkItemStatus.IN_PROGRESS.value: "In Progress",
+            WorkItemStatus.IN_REVIEW.value: "In Review",
+            WorkItemStatus.DONE.value: "Done",
+        }
+        new_status = update_data["status"]
+        new_label = STATUS_LABELS.get(new_status, new_status.replace("_", " ").title())
+
+        author = db.query(_AuthorDev).filter(_AuthorDev.email == current_user.email).first()
+        author_id = author.id if author else None
+
+        db.add(
+            _StatusComment(
+                work_item_id=item.id,
+                author_id=author_id,
+                content=f"Moved to {new_label}",
+            )
+        )
 
     db.commit()
     db.refresh(item)
@@ -832,32 +1128,44 @@ def update_work_item(
                     role="creator",
                 )
 
-    # Update epic status if this item's status changed and it's linked to an epic
-    if "status" in update_data and item.epic_id:
-        update_epic_status_from_stories(item.epic_id, db)
-
-    # Update epic hours when any of the child's hour fields changed
     hour_fields_changed = any(
         f in update_data for f in ("estimated_hours", "logged_hours", "remaining_hours")
     )
-    if hour_fields_changed and item.epic_id:
-        update_epic_hours(item.epic_id, db)
 
-    # Update epic if epic_id changed (moving item to a different epic).
-    # Recompute BOTH the new epic AND the previous epic — the old one lost a child.
-    if "epic_id" in update_data:
-        if item.epic_id:
-            update_epic_hours(item.epic_id, db)
+    if item.type == WorkItemType.SUBTASK.value:
+        # Subtask changes propagate up to parent (story/task/bug) and then to
+        # the grandparent epic via the parent's epic_id.
+        status_or_hours_changed = "status" in update_data or hour_fields_changed
+        parent_changed = "parent_id" in update_data and item.parent_id != old_parent_id
+        if status_or_hours_changed or parent_changed:
+            propagate_from_subtask(item, db)
+            # If re-parented, refresh the FORMER parent too (it just lost a subtask).
+            if parent_changed and old_parent_id is not None:
+                old_parent = db.query(WorkItem).filter(WorkItem.id == old_parent_id).first()
+                if old_parent is not None:
+                    refresh_parent_and_epic(old_parent, db)
+            db.commit()
+    else:
+        # Story / task / bug / epic — existing single-level rollup to the epic.
+        if "status" in update_data and item.epic_id:
             update_epic_status_from_stories(item.epic_id, db)
-        if old_epic_id and old_epic_id != item.epic_id:
-            update_epic_hours(old_epic_id, db)
-            update_epic_status_from_stories(old_epic_id, db)
 
-    # Final commit for any epic updates
-    if ("status" in update_data or hour_fields_changed or "epic_id" in update_data) and (
-        item.epic_id or old_epic_id
-    ):
-        db.commit()
+        if hour_fields_changed and item.epic_id:
+            update_epic_hours(item.epic_id, db)
+
+        # epic_id changed (item moved between epics): refresh both ends.
+        if "epic_id" in update_data:
+            if item.epic_id:
+                update_epic_hours(item.epic_id, db)
+                update_epic_status_from_stories(item.epic_id, db)
+            if old_epic_id and old_epic_id != item.epic_id:
+                update_epic_hours(old_epic_id, db)
+                update_epic_status_from_stories(old_epic_id, db)
+
+        if ("status" in update_data or hour_fields_changed or "epic_id" in update_data) and (
+            item.epic_id or old_epic_id
+        ):
+            db.commit()
 
     # Return with assignee name
     assignee_name = "Unassigned"
@@ -911,6 +1219,59 @@ def batch_update_status(
     """Batch update status for multiple work items (requires auth)"""
     items = db.query(WorkItem).filter(WorkItem.id.in_(update.item_ids)).all()
 
+    # Block marking a parent done while any of its descendants is still open
+    # (matches the single-item rule in update_work_item). Checked once per item
+    # before any writes so the whole batch is rejected atomically.
+    if update.status == WorkItemStatus.DONE.value:
+        for item in items:
+            if item.type == WorkItemType.EPIC.value:
+                open_child = (
+                    db.query(WorkItem.id, WorkItem.key)
+                    .filter(
+                        WorkItem.epic_id == item.id,
+                        WorkItem.type.in_(
+                            [
+                                WorkItemType.USER_STORY.value,
+                                WorkItemType.TASK.value,
+                                WorkItemType.BUG.value,
+                            ]
+                        ),
+                        WorkItem.status != WorkItemStatus.DONE.value,
+                        WorkItem.id.notin_(update.item_ids),
+                    )
+                    .first()
+                )
+                if open_child is not None:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=(
+                            f"Can't mark epic {item.key} done — {open_child.key} is still open."
+                        ),
+                    )
+            elif item.type in (
+                WorkItemType.USER_STORY.value,
+                WorkItemType.TASK.value,
+                WorkItemType.BUG.value,
+            ):
+                open_subtask = (
+                    db.query(WorkItem.id, WorkItem.key)
+                    .filter(
+                        WorkItem.parent_id == item.id,
+                        WorkItem.type == WorkItemType.SUBTASK.value,
+                        WorkItem.status != WorkItemStatus.DONE.value,
+                        WorkItem.id.notin_(update.item_ids),
+                    )
+                    .first()
+                )
+                if open_subtask is not None:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=(
+                            f"Can't mark {item.key} done — subtask {open_subtask.key} "
+                            "is still open."
+                        ),
+                    )
+
     # Collect epics that need updating
     epics_to_update = set()
 
@@ -940,15 +1301,19 @@ def batch_update_status(
 
 @router.delete("/{item_id}")
 def delete_work_item(
-    item_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
+    item_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_capability("project.tracker_write")),
 ):
-    """Delete a work item (requires auth)"""
+    """Delete a work item (requires `project.tracker_write`)."""
     item = db.query(WorkItem).filter(WorkItem.id == item_id).first()
     if not item:
         raise HTTPException(status_code=404, detail="Work item not found")
 
-    # Store epic_id before deleting so we can update it
+    # Stash linkage fields before deletion so we know what to recompute
     epic_id = item.epic_id
+    parent_id = item.parent_id
+    item_type = item.type
 
     # Log activity before deletion
     from models.activity_log import ActivityLog
@@ -965,8 +1330,15 @@ def delete_work_item(
     db.delete(item)
     db.commit()
 
-    # Update epic hours and status if item was linked to an epic
-    if epic_id:
+    # Propagation on delete:
+    # - Subtask: walk up parent → grandparent epic
+    # - Story/task/bug linked to an epic: refresh that epic
+    if item_type == WorkItemType.SUBTASK.value and parent_id is not None:
+        parent = db.query(WorkItem).filter(WorkItem.id == parent_id).first()
+        if parent is not None:
+            refresh_parent_and_epic(parent, db)
+            db.commit()
+    elif epic_id:
         update_epic_hours(epic_id, db)
         update_epic_status_from_stories(epic_id, db)
         db.commit()
@@ -987,13 +1359,40 @@ def log_hours(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Log hours to a work item - creates time entry and updates totals (requires auth)"""
+    """
+    Log hours to a work item - creates time entry and updates totals.
+
+    Authorization: only the developer the ticket is assigned to may log hours
+    on it. The caller is matched to a Developer row by email; if that developer
+    isn't the assignee, the request is rejected. Tickets with no assignee
+    cannot be logged against by anyone.
+    """
     from models.developer import Developer
     from models.time_entry import TimeEntry
 
     item = db.query(WorkItem).filter(WorkItem.id == item_id).first()
     if not item:
         raise HTTPException(status_code=404, detail="Work item not found")
+
+    # Done tickets are frozen — re-open before logging more hours.
+    if item.status == WorkItemStatus.DONE.value:
+        raise HTTPException(
+            status_code=403,
+            detail="This ticket is marked done. Re-open it before logging hours.",
+        )
+
+    # Assignee-only enforcement
+    if not item.assignee_id:
+        raise HTTPException(
+            status_code=403,
+            detail="This ticket has no assignee — hours can only be logged on assigned tickets.",
+        )
+    caller_dev = db.query(Developer).filter(Developer.email == current_user.email).first()
+    if not caller_dev or caller_dev.id != item.assignee_id:
+        raise HTTPException(
+            status_code=403,
+            detail="Only the ticket's assignee can log hours on it.",
+        )
 
     if request.hours <= 0:
         raise HTTPException(status_code=400, detail="Hours must be greater than 0")
@@ -1061,6 +1460,19 @@ def log_hours(
     db.add(time_entry)
     db.flush()  # ensure the new TimeEntry is visible to the sum query below
 
+    # Auto-comment: surfaces the log event in the ticket's comments feed
+    # alongside the existing "Ticket transferred from X to Y" comments so
+    # users see a single chronological audit trail in the side panel.
+    from models.comment import Comment as _LogComment
+
+    db.add(
+        _LogComment(
+            work_item_id=item_id,
+            author_id=developer.id if developer else None,
+            content=f"Logged {request.hours}h",
+        )
+    )
+
     # Recompute logged_hours from the live TimeEntry sum instead of `+=`.
     # The naive accumulator drifts whenever ANYTHING else has touched the column
     # (direct PUT writes, deleted entries, manual DB edits). Querying SUM each
@@ -1077,8 +1489,13 @@ def log_hours(
     db.commit()
     db.refresh(item)
 
-    # Roll up to parent epic so its logged/remaining stay in sync with children
-    if item.epic_id:
+    # Roll up:
+    # - Logging on a subtask propagates two levels (parent → grandparent epic).
+    # - Logging on a story/task/bug under an epic propagates one level.
+    if item.type == WorkItemType.SUBTASK.value and item.parent_id:
+        propagate_from_subtask(item, db)
+        db.commit()
+    elif item.epic_id:
         update_epic_hours(item.epic_id, db)
         db.commit()
 
@@ -1114,6 +1531,15 @@ def get_work_item_time_entries(
     # Get all time entries for this work item
     time_entries = db.query(TimeEntry).filter(TimeEntry.work_item_id == item_id).all()
 
+    # Batch-fetch the developers referenced by these entries in one query, so the
+    # per-entry loop below doesn't issue a Developer SELECT per time entry (N+1).
+    dev_ids = {te.developer_id for te in time_entries if te.developer_id}
+    devs_by_id = (
+        {d.id: d for d in db.query(Developer).filter(Developer.id.in_(dev_ids)).all()}
+        if dev_ids
+        else {}
+    )
+
     # Calculate week boundaries if filtering by this week
     week_start = None
     week_end = None
@@ -1131,11 +1557,7 @@ def get_work_item_time_entries(
         if this_week_only and te.logged_at and not (week_start <= te.logged_at <= week_end):
             continue
 
-        developer = (
-            db.query(Developer).filter(Developer.id == te.developer_id).first()
-            if te.developer_id
-            else None
-        )
+        developer = devs_by_id.get(te.developer_id) if te.developer_id else None
 
         result.append(
             {
@@ -1308,9 +1730,9 @@ async def generate_work_items(
 def create_sprint(
     sprint: SprintCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_capability("project.tracker_write")),
 ):
-    """Create a new sprint (requires auth)"""
+    """Create a new sprint (requires `project.tracker_write`)."""
     # Verify project exists
     project = db.query(Project).filter(Project.id == sprint.project_id).first()
     if not project:
@@ -1466,6 +1888,13 @@ def move_ticket_to_sprint(
     item = db.query(WorkItem).filter(WorkItem.id == item_id).first()
     if not item:
         raise HTTPException(status_code=404, detail="Work item not found")
+
+    # Done tickets are frozen — re-open before re-assigning to another sprint.
+    if item.status == WorkItemStatus.DONE.value:
+        raise HTTPException(
+            status_code=403,
+            detail="This ticket is marked done. Re-open it before moving sprints.",
+        )
 
     # If moving to backlog
     if request.target_sprint_id is None:
@@ -1639,8 +2068,15 @@ def get_project_analytics(
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
 
-    # Get all work items for the project
-    items = db.query(WorkItem).filter(WorkItem.project_id == project_id).all()
+    # Get all work items for the project. Eager-load assignee so the
+    # team-performance loop below (item.assignee.name) doesn't lazy-load a
+    # Developer per distinct assignee (N+1).
+    items = (
+        db.query(WorkItem)
+        .options(selectinload(WorkItem.assignee))
+        .filter(WorkItem.project_id == project_id)
+        .all()
+    )
 
     # Status distribution
     status_counts = {}
@@ -1750,8 +2186,16 @@ def get_hours_analytics(
     Authorized for users with the project.pm capability OR project-level admin
     membership on this specific project (matches frontend canSeePMTab logic).
     """
+    from models.developer import Developer
+
+    # Load the project once and reuse it for both the auth check and the body
+    # (previously queried twice on the non-PM path). Auth-check ordering is
+    # preserved exactly: a non-PM/non-admin caller still gets 403 (the
+    # `project and ...` guard yields is_project_admin=False for a missing
+    # project), and the 404 is raised afterwards only for PM/admin callers.
+    project = db.query(Project).filter(Project.id == project_id).first()
+
     if not current_user.has_capability("project.pm"):
-        project = db.query(Project).filter(Project.id == project_id).first()
         is_project_admin = bool(
             project
             and any(d.email == current_user.email and d.is_admin for d in project.developers)
@@ -1759,12 +2203,10 @@ def get_hours_analytics(
         if not is_project_admin:
             raise HTTPException(
                 status_code=403,
-                detail="Missing required capability: project.pm or project-level admin",
+                detail="Do not have permission",
             )
-    from models.developer import Developer
 
     # Verify project exists
-    project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
 
@@ -1844,15 +2286,15 @@ def get_hours_analytics(
     developer_ids_from_entries = {te.developer_id for te in all_time_entries if te.developer_id}
     existing_ids = {d.id for d in developers}
 
-    for dev_id in developer_ids_from_entries:
-        if dev_id not in existing_ids:
-            dev = db.query(Developer).filter(Developer.id == dev_id).first()
-            if dev:
-                developers.append(dev)
-                existing_ids.add(dev_id)
+    # Batch-load the contributors who logged time but aren't formal project
+    # members in a single query (was one Developer SELECT per missing id).
+    missing_ids = developer_ids_from_entries - existing_ids
+    if missing_ids:
+        for dev in db.query(Developer).filter(Developer.id.in_(missing_ids)).all():
+            developers.append(dev)
+            existing_ids.add(dev.id)
 
     # Build maps for quick lookup
-    work_item_assignee_map = {item.id: item.assignee_id for item in items}
     work_item_map = {item.id: item for item in items}
     dev_map = {d.id: d for d in developers}
 
@@ -1864,18 +2306,32 @@ def get_hours_analytics(
             if item.assignee_id == dev.id and item.type != WorkItemType.EPIC.value
         ]
 
-        # Hours logged BY this developer (their own time entries where developer_id = dev.id)
-        # OR if developer_id is NULL, fall back to ticket assignee attribution
-        dev_time_entries = [
-            te
-            for te in all_time_entries
-            if te.developer_id == dev.id
-            or (te.developer_id is None and work_item_assignee_map.get(te.work_item_id) == dev.id)
-        ]
+        # Hours logged BY this developer — only entries with an explicit
+        # developer_id. Kept consistent with /api/admin/developers/capacity so
+        # both views report the same numbers. Legacy NULL-developer rows are
+        # ignored everywhere (run a one-off backfill if you want them counted).
+        dev_time_entries = [te for te in all_time_entries if te.developer_id == dev.id]
         logged = sum(te.hours for te in dev_time_entries)
 
-        # Allocated = total estimated hours on all currently-assigned tickets
-        allocated = sum(item.estimated_hours or 0 for item in dev_items)
+        # Allocated = estimated hours on currently-assigned tickets, minus hours
+        # already logged by OTHER developers on those tickets. Previous assignees'
+        # work shouldn't show up on the new assignee's plate after a transfer:
+        # a 6h ticket with 3h already logged before takeover becomes 3h allocated.
+        # Per-ticket: total logged on the ticket minus this dev's own logs on it
+        # gives "others' logs on this ticket". Subtract from the estimate.
+        my_hours_per_item: dict[int, float] = {}
+        for te in dev_time_entries:
+            my_hours_per_item[te.work_item_id] = my_hours_per_item.get(te.work_item_id, 0.0) + (
+                te.hours or 0
+            )
+        allocated = sum(
+            max(
+                0,
+                (item.estimated_hours or 0)
+                - max(0, (item.logged_hours or 0) - my_hours_per_item.get(item.id, 0.0)),
+            )
+            for item in dev_items
+        )
 
         # Remaining = pending work on currently-assigned non-done tickets.
         # Use per-ticket (estimate - cumulative-logged), so:
@@ -1908,6 +2364,31 @@ def get_hours_analytics(
             for te in dev_time_entries
             if te.logged_at and current_week_start <= te.logged_at <= current_week_end
         )
+
+        # Weekly logged history — aggregate this developer's time entries by
+        # Sat→Fri UTC week so the PM tab can drill into "Total Logged" and see
+        # the full breakdown going back to the earliest available entry.
+        from collections import defaultdict as _dd
+        from datetime import timedelta as _td
+
+        _weekly_bucket: dict = _dd(int)
+        for te in dev_time_entries:
+            if not te.logged_at:
+                continue
+            _days_back = (te.logged_at.weekday() + 2) % 7  # Sat=5 → 0
+            _ws = (te.logged_at - _td(days=_days_back)).replace(
+                hour=0, minute=0, second=0, microsecond=0
+            )
+            _weekly_bucket[_ws] += te.hours or 0
+
+        weekly_logged_history = [
+            {
+                "week_start": _ws.isoformat(),
+                "week_end": (_ws + _td(days=6, hours=23, minutes=59, seconds=59)).isoformat(),
+                "hours": _hrs,
+            }
+            for _ws, _hrs in sorted(_weekly_bucket.items(), reverse=True)
+        ]
 
         # Status-based weekly capacity breakdown for THIS developer scoped to THIS project.
         # Mirrors /api/admin/developers/capacity but filtered to the current project.
@@ -1975,6 +2456,7 @@ def get_hours_analytics(
                 "logged_hours": logged,
                 "remaining_hours": remaining,
                 "current_week_logged": current_week_logged,
+                "weekly_logged_history": weekly_logged_history,
                 "in_progress_remaining": in_progress_remaining,
                 "total_items": len(dev_items),
                 "completed_items": len(completed_items),
@@ -1997,13 +2479,11 @@ def get_hours_analytics(
     # Weekly breakdown - based on calendar weeks (Monday to Sunday)
     from datetime import timedelta
 
-    from models.time_entry import TimeEntry
-
     weekly_hours = []
 
-    # Get all time entries for this project's work items
-    work_item_ids = [item.id for item in items]
-    time_entries = db.query(TimeEntry).filter(TimeEntry.work_item_id.in_(work_item_ids)).all()
+    # Reuse the time entries already loaded above (all_time_entries) instead of
+    # re-running the identical query — same project work items, same transaction.
+    time_entries = all_time_entries
 
     # Calculate weeks from first sprint start (or project start if no sprints) to now
     today = datetime.utcnow()
@@ -2259,6 +2739,13 @@ def add_item_dependency(
     if not item:
         raise HTTPException(status_code=404, detail="Work item not found")
 
+    # Done tickets are frozen — re-open before changing their dependency graph.
+    if item.status == WorkItemStatus.DONE.value:
+        raise HTTPException(
+            status_code=403,
+            detail="This ticket is marked done. Re-open it before adding dependencies.",
+        )
+
     depends_on = db.query(WorkItem).filter(WorkItem.id == dependency.depends_on_id).first()
     if not depends_on:
         raise HTTPException(status_code=404, detail="Dependent work item not found")
@@ -2324,6 +2811,13 @@ def remove_item_dependency(
         raise HTTPException(status_code=404, detail="Dependency not found")
 
     item = db.query(WorkItem).filter(WorkItem.id == item_id).first()
+
+    # Done tickets are frozen — re-open before changing their dependency graph.
+    if item and item.status == WorkItemStatus.DONE.value:
+        raise HTTPException(
+            status_code=403,
+            detail="This ticket is marked done. Re-open it before removing dependencies.",
+        )
 
     # Log activity
     activity = ActivityLog(

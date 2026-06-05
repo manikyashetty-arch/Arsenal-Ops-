@@ -35,16 +35,19 @@ import {
   EyeOff,
   ChevronDown,
   ChevronRight,
+  ChevronUp,
+  ChevronsUpDown,
   ListFilter,
   Check,
+  Repeat2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { toast, Toaster } from 'sonner';
 import StatusDotMenu from '@/components/ProjectsPage/StatusDotMenu';
-import { useAuth, isProjectManager } from '@/contexts/AuthContext';
+import { useAuth } from '@/contexts/AuthContext';
 import { buildEpicGroups } from '@/lib/hierarchy/buildEpicGroups';
-import { apiFetch } from '@/lib/api';
+import { apiFetch, ApiError } from '@/lib/api';
 import { invalidateProjectScope, invalidateWorkItemScope } from '@/lib/invalidations';
 import type { CreateItemFormValues } from './modals/CreateItemModal';
 // EditSprintModal's file also exports the CompleteSprintConfirm /
@@ -72,10 +75,33 @@ const parseLocalDate = (dateString: string | undefined): Date | undefined => {
   return new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
 };
 
+// Returns YYYY-MM-DD for the Monday of the week containing `d`, in local time.
+const getWeekStart = (d: Date): string => {
+  const date = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const day = date.getDay(); // 0=Sun, 1=Mon, ..., 6=Sat
+  date.setDate(date.getDate() + (day === 0 ? -6 : 1 - day));
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const dd = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${dd}`;
+};
+
+const formatWeekRange = (weekStart: string): string => {
+  const start = parseLocalDate(weekStart);
+  if (!start) return weekStart;
+  const end = new Date(start);
+  end.setDate(end.getDate() + 6);
+  const sameMonth = start.getMonth() === end.getMonth();
+  if (sameMonth) {
+    return `${start.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} – ${end.getDate()}`;
+  }
+  return `${start.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} – ${end.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`;
+};
+
 interface WorkItem {
   id: string;
   key: string; // Ticket key like PROJ-123
-  type: 'user_story' | 'task' | 'bug' | 'epic';
+  type: 'user_story' | 'task' | 'bug' | 'epic' | 'subtask';
   title: string;
   description: string;
   status: 'todo' | 'in_progress' | 'in_review' | 'done';
@@ -98,6 +124,7 @@ interface WorkItem {
   created_at?: string;
   updated_at?: string;
   due_date?: string | null;
+  completed_at?: string | null;
   estimated_hours?: number | null;
 }
 
@@ -183,6 +210,12 @@ const TYPE_CONFIG = {
   task: { icon: ClipboardList, color: '#F59E0B', label: 'Task', bg: 'rgba(245,158,11,0.15)' },
   bug: { icon: Bug, color: '#EF4444', label: 'Bug', bg: 'rgba(239,68,68,0.15)' },
   epic: { icon: Target, color: '#A78BFA', label: 'Epic', bg: 'rgba(167,139,250,0.15)' },
+  subtask: {
+    icon: ClipboardList,
+    color: '#FBBF24',
+    label: 'Subtask',
+    bg: 'rgba(251,191,36,0.15)',
+  },
 };
 
 const PRIORITY_COLORS = {
@@ -212,10 +245,38 @@ const PRIORITY_COLORS = {
   },
 };
 
+// Canonical orderings for the sortable list-view columns.
+const LIST_SORT_TYPE_ORDER: Record<string, number> = {
+  epic: 0,
+  user_story: 1,
+  task: 2,
+  bug: 3,
+};
+const LIST_SORT_STATUS_ORDER: Record<string, number> = {
+  backlog: 0,
+  todo: 1,
+  in_progress: 2,
+  in_review: 3,
+  done: 4,
+};
+const LIST_SORT_PRIORITY_ORDER: Record<string, number> = {
+  critical: 0,
+  high: 1,
+  medium: 2,
+  low: 3,
+};
+
+type ListSortKey = 'type' | 'status' | 'priority' | 'assignee' | 'due_date' | 'completed_at';
+
 const ProjectBoard = () => {
   const { id, ticketId } = useParams<{ id: string; ticketId?: string }>();
   const navigate = useNavigate();
-  const { token, user } = useAuth(); // token kept for legacy child components (TimeEntriesTable, TicketContributors, ReviewerView)
+  const { token, user, can } = useAuth(); // token kept for legacy child components (TimeEntriesTable, TicketContributors, ReviewerView)
+  // Gate any UI that mutates a work item — kanban drag (PUT for status),
+  // StatusDotMenu (PUT for status), Edit/Delete in the side panel, and the
+  // "Assign to me" pill. Backend mirrors this with require_capability on
+  // PUT /api/workitems/{id} and DELETE /api/workitems/{id}.
+  const canWriteTracker = can('project.tracker_write');
   const queryClient = useQueryClient();
   const [showReviewer, setShowReviewer] = useState(false);
   // isEditing + editForm + drawer comment state moved into ItemDetailDrawer
@@ -223,12 +284,22 @@ const ProjectBoard = () => {
   // the user navigates to a different ticket.
   const [isGenerating, setIsGenerating] = useState(false);
   const [showCreateForm, setShowCreateForm] = useState(false);
-  const [viewMode, setViewMode] = useState<'board' | 'list'>('board');
-  const [listGroupBy, setListGroupBy] = useState<'sprint' | 'epic'>(() => {
+  const [createFormType, setCreateFormType] = useState<string>('user_story');
+  const [viewMode, setViewMode] = useState<'board' | 'list' | 'epic'>('board');
+  const [listGroupBy, setListGroupBy] = useState<'sprint' | 'week'>(() => {
     if (typeof window === 'undefined') return 'sprint';
     try {
       const stored = window.localStorage.getItem(`projectBoard.listGroupBy.${id ?? ''}`);
-      return stored === 'epic' ? 'epic' : 'sprint';
+      if (stored === 'week') return stored;
+      // 'epic' was a valid list grouping before Epic became a top-level view — clear it.
+      if (stored === 'epic') {
+        try {
+          window.localStorage.removeItem(`projectBoard.listGroupBy.${id ?? ''}`);
+        } catch {
+          /* ignore */
+        }
+      }
+      return 'sprint';
     } catch {
       return 'sprint';
     }
@@ -253,6 +324,105 @@ const ProjectBoard = () => {
   const sprintMenuRef = useRef<HTMLDivElement>(null);
   const [draggedItem, setDraggedItem] = useState<string | null>(null);
   const [dragOverColumn, setDragOverColumn] = useState<string | null>(null);
+
+  // Shared sort state for the By Sprint / By Epic list views. Applies within
+  // each group; doesn't reorder groups themselves. Null = group's natural
+  // order (preserves the parent→child clustering in the By Epic view).
+  const [listSortKey, setListSortKey] = useState<ListSortKey | null>(null);
+  const [listSortDir, setListSortDir] = useState<'asc' | 'desc'>('asc');
+  const handleListSort = (key: ListSortKey) => {
+    if (listSortKey === key) {
+      if (listSortDir === 'asc') setListSortDir('desc');
+      else setListSortKey(null);
+    } else {
+      setListSortKey(key);
+      setListSortDir('asc');
+    }
+  };
+  const listItemComparator = useMemo(() => {
+    if (!listSortKey) return null;
+    const dir = listSortDir === 'asc' ? 1 : -1;
+    return (a: WorkItem, b: WorkItem) => {
+      let cmp = 0;
+      switch (listSortKey) {
+        case 'type':
+          cmp = (LIST_SORT_TYPE_ORDER[a.type] ?? 99) - (LIST_SORT_TYPE_ORDER[b.type] ?? 99);
+          break;
+        case 'status':
+          cmp = (LIST_SORT_STATUS_ORDER[a.status] ?? 99) - (LIST_SORT_STATUS_ORDER[b.status] ?? 99);
+          break;
+        case 'priority':
+          cmp =
+            (LIST_SORT_PRIORITY_ORDER[a.priority] ?? 99) -
+            (LIST_SORT_PRIORITY_ORDER[b.priority] ?? 99);
+          break;
+        case 'assignee': {
+          const aa = a.assignee_id ? (a.assignee || '').toLowerCase() : '￿';
+          const bb = b.assignee_id ? (b.assignee || '').toLowerCase() : '￿';
+          cmp = aa.localeCompare(bb);
+          break;
+        }
+        case 'due_date':
+        case 'completed_at': {
+          // Null/missing values always sort to the bottom, regardless of dir,
+          // so toggling asc/desc reorders the populated rows without flipping
+          // the empty ones to the top.
+          const av = a[listSortKey] ? new Date(a[listSortKey] as string).getTime() : null;
+          const bv = b[listSortKey] ? new Date(b[listSortKey] as string).getTime() : null;
+          if (av === null && bv === null) return 0;
+          if (av === null) return 1;
+          if (bv === null) return -1;
+          cmp = av - bv;
+          break;
+        }
+      }
+      return cmp * dir;
+    };
+  }, [listSortKey, listSortDir]);
+  const renderListSortHeader = (label: string, key: ListSortKey) => {
+    const active = listSortKey === key;
+    const Icon = active ? (listSortDir === 'asc' ? ChevronUp : ChevronDown) : ChevronsUpDown;
+    return (
+      <button
+        type="button"
+        onClick={() => handleListSort(key)}
+        className={`flex items-center gap-1 text-left uppercase tracking-wider hover:text-white transition-colors ${
+          active ? 'text-[#E0B954]' : ''
+        }`}
+        aria-sort={active ? (listSortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
+      >
+        {label}
+        <Icon className="w-3 h-3 shrink-0" aria-hidden />
+      </button>
+    );
+  };
+
+  const VIEW_TABS = [
+    { mode: 'board' as const, icon: LayoutGrid, label: 'Board', tabId: 'tab-board' },
+    { mode: 'list' as const, icon: List, label: 'List', tabId: 'tab-list' },
+    { mode: 'epic' as const, icon: Target, label: 'Epic', tabId: 'tab-epic' },
+  ];
+
+  const handleViewTabKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLDivElement>) => {
+      const modes = ['board', 'list', 'epic'] as const;
+      const currentIndex = modes.indexOf(viewMode);
+      if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        setViewMode(modes[(currentIndex + 1) % modes.length]);
+      } else if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        setViewMode(modes[(currentIndex - 1 + modes.length) % modes.length]);
+      } else if (e.key === 'Home') {
+        e.preventDefault();
+        setViewMode('board');
+      } else if (e.key === 'End') {
+        e.preventDefault();
+        setViewMode('epic');
+      }
+    },
+    [viewMode],
+  );
 
   // AI Planning flow — only the top-level open + architectures (shared with
   // ArchitectureEditor wrapper) stay at the parent. Multi-step + PRD/Roadmap
@@ -312,7 +482,9 @@ const ProjectBoard = () => {
     queryFn: () => apiFetch<Sprint[]>(`/api/workitems/projects/${id}/sprints`),
     enabled: !!id,
   });
-  const sprints = sprintsQuery.data ?? [];
+  // Stable ref so the list-view memos below (orderedListSprints, listViewGroups)
+  // actually hold instead of busting on a fresh [] every render.
+  const sprints = useMemo(() => sprintsQuery.data ?? [], [sprintsQuery.data]);
 
   const developersQuery = useQuery<Array<{ id: number; name: string; email: string }>>({
     queryKey: ['developers'],
@@ -463,51 +635,137 @@ const ProjectBoard = () => {
     setter((prev) => (prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value]));
   };
 
-  // Sprint grouping for list view
-  const listViewToday = new Date().toISOString().split('T')[0];
-  const isSprintCompleted = (s: Sprint) =>
-    s.status === 'completed' || (s.end_date != null && s.end_date < listViewToday);
-  const isSprintActive = (s: Sprint) =>
-    s.status === 'active' ||
-    (s.start_date != null &&
-      s.start_date <= listViewToday &&
-      s.end_date != null &&
-      s.end_date >= listViewToday);
+  // Sprint grouping for list view. `listViewToday` only needs day granularity,
+  // so compute it once per mount (also satisfies react-hooks/purity, which
+  // forbids a bare new Date() in the render body).
+  const listViewToday = useMemo(() => new Date().toISOString().split('T')[0], []);
+  // Hoisted out of the per-row list map below (was a `new Date()` allocated for
+  // every row + a react-hooks/purity violation). Day granularity is enough.
+  const todayMidnightMs = useMemo(() => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d.getTime();
+  }, []);
+  const isSprintCompleted = useCallback(
+    (s: Sprint) => s.status === 'completed' || (s.end_date != null && s.end_date < listViewToday),
+    [listViewToday],
+  );
+  const isSprintActive = useCallback(
+    (s: Sprint) =>
+      s.status === 'active' ||
+      (s.start_date != null &&
+        s.start_date <= listViewToday &&
+        s.end_date != null &&
+        s.end_date >= listViewToday),
+    [listViewToday],
+  );
 
-  const orderedListSprints = [
-    ...sprints
-      .filter((s) => !isSprintCompleted(s) && isSprintActive(s))
-      .sort(
-        (a, b) => new Date(b.start_date ?? 0).getTime() - new Date(a.start_date ?? 0).getTime(),
-      ),
-    ...sprints
-      .filter((s) => !isSprintCompleted(s) && !isSprintActive(s))
-      .sort(
-        (a, b) => new Date(a.start_date ?? 0).getTime() - new Date(b.start_date ?? 0).getTime(),
-      ),
-    ...(showCompletedSprints
-      ? sprints
-          .filter(isSprintCompleted)
-          .sort((a, b) => new Date(b.end_date ?? 0).getTime() - new Date(a.end_date ?? 0).getTime())
-      : []),
-  ];
+  // Memoized so these filter+sort chains don't re-run on every render (e.g. on
+  // every keystroke/drag) regardless of which view is active.
+  const orderedListSprints = useMemo(
+    () => [
+      ...sprints
+        .filter((s) => !isSprintCompleted(s) && isSprintActive(s))
+        .sort(
+          (a, b) => new Date(b.start_date ?? 0).getTime() - new Date(a.start_date ?? 0).getTime(),
+        ),
+      ...sprints
+        .filter((s) => !isSprintCompleted(s) && !isSprintActive(s))
+        .sort(
+          (a, b) => new Date(a.start_date ?? 0).getTime() - new Date(b.start_date ?? 0).getTime(),
+        ),
+      ...(showCompletedSprints
+        ? sprints
+            .filter(isSprintCompleted)
+            .sort(
+              (a, b) => new Date(b.end_date ?? 0).getTime() - new Date(a.end_date ?? 0).getTime(),
+            )
+        : []),
+    ],
+    [sprints, isSprintCompleted, isSprintActive, showCompletedSprints],
+  );
 
-  const listViewGroups = [
-    ...orderedListSprints.map((sprint) => ({
-      key: String(sprint.id),
-      label: sprint.name,
-      isCompleted: isSprintCompleted(sprint),
-      items: filteredItems.filter((item) => item.sprint_id === sprint.id),
-    })),
-    {
-      key: 'backlog',
-      label: 'Backlog',
-      isCompleted: false,
-      items: filteredItems.filter((item) => !item.sprint_id),
-    },
-  ].filter((g) => g.items.length > 0);
+  const listViewGroups = useMemo(
+    () =>
+      [
+        ...orderedListSprints.map((sprint) => ({
+          key: String(sprint.id),
+          label: sprint.name,
+          isCompleted: isSprintCompleted(sprint),
+          items: filteredItems.filter((item) => item.sprint_id === sprint.id),
+        })),
+        {
+          key: 'backlog',
+          label: 'Backlog',
+          isCompleted: false,
+          items: filteredItems.filter((item) => !item.sprint_id),
+        },
+      ].filter((g) => g.items.length > 0),
+    [orderedListSprints, filteredItems, isSprintCompleted],
+  );
 
-  const listViewEpicGroups = buildEpicGroups(filteredItems, workItems).groups;
+  const listViewEpicGroups = useMemo(
+    () => buildEpicGroups(filteredItems, workItems).groups,
+    [filteredItems, workItems],
+  );
+
+  // Group items into ISO weeks by their "relevant date":
+  //   completed → completed_at (the week the work actually finished)
+  //   not completed + due_date → due_date (lands in past weeks when overdue,
+  //                                        future weeks when upcoming)
+  //   neither → Unscheduled bucket
+  // Result: past weeks read as "what got done + what slipped", current/future
+  // weeks read as "what's coming due".
+  const listViewWeekGroups = useMemo(() => {
+    const todayWeekStart = getWeekStart(new Date());
+    const buckets = new Map<string, WorkItem[]>();
+    for (const item of filteredItems) {
+      let weekKey: string | null = null;
+      if (item.completed_at) {
+        weekKey = getWeekStart(new Date(item.completed_at));
+      } else if (item.due_date) {
+        const d = parseLocalDate(item.due_date);
+        if (d) weekKey = getWeekStart(d);
+      }
+      const key = weekKey ?? '__unscheduled__';
+      const existing = buckets.get(key);
+      if (existing) existing.push(item);
+      else buckets.set(key, [item]);
+    }
+    const dated = [...buckets.keys()].filter((k) => k !== '__unscheduled__').sort();
+    const todayMs = parseLocalDate(todayWeekStart)?.getTime() ?? 0;
+    const groups = dated.map((weekStart) => {
+      let label: string;
+      if (weekStart === todayWeekStart) {
+        label = 'This Week';
+      } else {
+        const ws = parseLocalDate(weekStart)?.getTime() ?? 0;
+        const weeksAway = Math.round((ws - todayMs) / (7 * 86400000));
+        if (weeksAway === -1) label = 'Last Week';
+        else if (weeksAway === 1) label = 'Next Week';
+        else label = formatWeekRange(weekStart);
+      }
+      return {
+        key: `week:${weekStart}`,
+        weekStart,
+        label,
+        isCurrent: weekStart === todayWeekStart,
+        isPast: weekStart < todayWeekStart,
+        items: buckets.get(weekStart) ?? [],
+      };
+    });
+    if (buckets.has('__unscheduled__')) {
+      groups.push({
+        key: 'week:unscheduled',
+        weekStart: '',
+        label: 'Unscheduled',
+        isCurrent: false,
+        isPast: false,
+        items: buckets.get('__unscheduled__') ?? [],
+      });
+    }
+    return groups;
+  }, [filteredItems]);
 
   const toggleSprintCollapse = (key: string) => {
     setCollapsedSprints((prev) => {
@@ -558,14 +816,21 @@ const ProjectBoard = () => {
       );
       return { previous };
     },
-    onError: (_err, _vars, ctx) => {
+    onError: (err, _vars, ctx) => {
       if (ctx?.previous)
         queryClient.setQueryData(['workItems', workItemFilters, 'board'], ctx.previous);
-      toast.error('Failed to move ticket');
+      // Surface backend validation errors (e.g. "subtask still open" when
+      // marking a parent done) so the user knows why the move was rejected
+      // instead of seeing a generic toast.
+      const detail = err instanceof ApiError ? err.message : 'Failed to move ticket';
+      toast.error(detail);
     },
-    onSettled: () => {
+    onSettled: (_data, _err, { itemId }) => {
       invalidateWorkItems();
       invalidateProject();
+      // Backend writes "Marked as done" / "Reopened ticket" auto-comments on
+      // done-boundary status changes — keep this item's comments in sync.
+      queryClient.invalidateQueries({ queryKey: ['workItem', itemId, 'comments'] });
     },
   });
 
@@ -636,7 +901,10 @@ const ProjectBoard = () => {
     onSuccess: (_data, { targetSprintId }) => {
       toast.success(targetSprintId ? 'Moved to sprint' : 'Moved to backlog');
     },
-    onError: () => toast.error('Failed to move ticket'),
+    onError: (err) => {
+      const detail = err instanceof ApiError ? err.message : 'Failed to move ticket';
+      toast.error(detail);
+    },
     onSettled: () => {
       invalidateWorkItems();
       invalidateProjectScope(queryClient, id);
@@ -1013,9 +1281,13 @@ const ProjectBoard = () => {
       toast.success(`Logged ${hours}h! Remaining: ${data.remaining_hours}h`);
     },
     onError: () => toast.error('Failed to log hours'),
-    onSettled: () => {
+    onSettled: (_data, _err, { itemId }) => {
       invalidateWorkItems();
       invalidateProject();
+      // Backend writes a "Logged Xh" auto-comment alongside the TimeEntry —
+      // invalidate this item's comments so the drawer surfaces it without
+      // forcing the user to close and reopen the panel.
+      queryClient.invalidateQueries({ queryKey: ['workItem', itemId, 'comments'] });
     },
   });
 
@@ -1079,14 +1351,20 @@ const ProjectBoard = () => {
       );
       return { previous };
     },
-    onError: (_err, _vars, ctx) => {
+    onError: (err, _vars, ctx) => {
       if (ctx?.previous)
         queryClient.setQueryData(['workItems', workItemFilters, 'board'], ctx.previous);
-      toast.error('Failed to update status');
+      // Surface backend validation messages (e.g. "subtask still open" when
+      // marking a parent done) instead of the generic toast.
+      const detail = err instanceof ApiError ? err.message : 'Failed to update status';
+      toast.error(detail);
     },
-    onSettled: () => {
+    onSettled: (_data, _err, { itemId }) => {
       invalidateWorkItems();
       invalidateProject();
+      // Backend writes a "Moved to <Status>" auto-comment on every status
+      // change — keep this item's comments in sync.
+      queryClient.invalidateQueries({ queryKey: ['workItem', itemId, 'comments'] });
     },
   });
 
@@ -1205,24 +1483,29 @@ const ProjectBoard = () => {
               <Eye className="w-3.5 h-3.5" />
               Reviewer
             </Button>
-            <Button
-              onClick={handleAIGenerate}
-              disabled={isGenerating}
-              size="sm"
-              className="bg-gradient-to-r from-[#E0B954] to-[#C79E3B] hover:opacity-90 text-[#080808] rounded-lg font-medium h-9 transition-opacity"
-            >
-              {isGenerating ? (
-                <>
-                  <div className="w-3.5 h-3.5 border-2 border-[#080808]/30 border-t-[#080808] rounded-full animate-spin mr-2" />
-                  Generating...
-                </>
-              ) : (
-                <>
-                  <Sparkles className="w-3.5 h-3.5 mr-2" />
-                  AI Generate
-                </>
-              )}
-            </Button>
+            {/* AI Generate — gated on `project.ai.write`. Hidden entirely
+                when missing so the modal (which would 403 on submit) can't
+                be opened. */}
+            {can('project.ai.write') && (
+              <Button
+                onClick={handleAIGenerate}
+                disabled={isGenerating}
+                size="sm"
+                className="bg-gradient-to-r from-[#E0B954] to-[#C79E3B] hover:opacity-90 text-[#080808] rounded-lg font-medium h-9 transition-opacity"
+              >
+                {isGenerating ? (
+                  <>
+                    <div className="w-3.5 h-3.5 border-2 border-[#080808]/30 border-t-[#080808] rounded-full animate-spin mr-2" />
+                    Generating...
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="w-3.5 h-3.5 mr-2" />
+                    AI Generate
+                  </>
+                )}
+              </Button>
+            )}
             <Button
               onClick={() => navigate(`/project/${id}`)}
               size="sm"
@@ -1547,58 +1830,86 @@ const ProjectBoard = () => {
               />
             </div>
 
-            {/* View Toggle */}
-            <div className="flex bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.05)] rounded-lg p-0.5">
-              <button
-                onClick={() => setViewMode('board')}
-                className={`p-1.5 rounded-md transition-colors ${viewMode === 'board' ? 'bg-[#E0B954] text-[#080808]' : 'text-[#737373] hover:text-white'}`}
-              >
-                <LayoutGrid className="w-3.5 h-3.5" />
-              </button>
-              <button
-                onClick={() => setViewMode('list')}
-                className={`p-1.5 rounded-md transition-colors ${viewMode === 'list' ? 'bg-[#E0B954] text-[#080808]' : 'text-[#737373] hover:text-white'}`}
-              >
-                <List className="w-3.5 h-3.5" />
-              </button>
+            {/* View Tab Bar */}
+            <div
+              role="tablist"
+              aria-label="Project view"
+              className="flex items-center gap-0"
+              onKeyDown={handleViewTabKeyDown}
+            >
+              {VIEW_TABS.map(({ mode, icon: Icon, label, tabId }) => (
+                <button
+                  key={mode}
+                  role="tab"
+                  id={tabId}
+                  aria-selected={viewMode === mode}
+                  aria-controls={`tabpanel-${mode}`}
+                  tabIndex={viewMode === mode ? 0 : -1}
+                  onClick={() => setViewMode(mode)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border-b-2 transition-colors ${
+                    viewMode === mode
+                      ? 'border-[#E0B954] text-[#E0B954]'
+                      : 'border-transparent text-[#737373] hover:text-white'
+                  }`}
+                >
+                  <Icon className="w-3.5 h-3.5" aria-hidden="true" />
+                  {label}
+                </button>
+              ))}
             </div>
 
-            <div className="relative">
-              <Button
-                onClick={() => setShowAddMenu((prev) => !prev)}
-                size="sm"
-                className="bg-gradient-to-r from-[#E0B954] to-[#C79E3B] hover:opacity-90 text-[#080808] rounded-lg font-medium h-8 px-3 text-xs transition-opacity"
-              >
-                <Plus className="w-3 h-3" />
-              </Button>
-              {showAddMenu && (
-                <>
-                  <div className="fixed inset-0 z-10" onClick={() => setShowAddMenu(false)} />
-                  <div className="absolute right-0 top-full mt-1 z-20 bg-[#1a1a1a] border border-[rgba(255,255,255,0.08)] rounded-lg shadow-xl overflow-hidden min-w-[130px]">
-                    <button
-                      onClick={() => {
-                        setShowCreateForm(true);
-                        setShowAddMenu(false);
-                      }}
-                      className="w-full flex items-center gap-2 px-3 py-2 text-xs text-[#F4F6FF] hover:bg-[rgba(255,255,255,0.06)] transition-colors"
-                    >
-                      <Plus className="w-3.5 h-3.5 text-[#E0B954]" />
-                      New Item
-                    </button>
-                    <button
-                      onClick={() => {
-                        setShowCreateSprintModal(true);
-                        setShowAddMenu(false);
-                      }}
-                      className="w-full flex items-center gap-2 px-3 py-2 text-xs text-[#F4F6FF] hover:bg-[rgba(255,255,255,0.06)] transition-colors"
-                    >
-                      <Plus className="w-3.5 h-3.5 text-[#E0B954]" />
-                      New Sprint
-                    </button>
-                  </div>
-                </>
-              )}
-            </div>
+            {/* "+" menu — gated on `project.tracker_write`. */}
+            {can('project.tracker_write') && (
+              <div className="relative">
+                <Button
+                  onClick={() => setShowAddMenu((prev) => !prev)}
+                  size="sm"
+                  className="bg-gradient-to-r from-[#E0B954] to-[#C79E3B] hover:opacity-90 text-[#080808] rounded-lg font-medium h-8 px-3 text-xs transition-opacity flex items-center gap-1.5"
+                >
+                  <Plus className="w-3 h-3" />
+                  Add
+                </Button>
+                {showAddMenu && (
+                  <>
+                    <div className="fixed inset-0 z-10" onClick={() => setShowAddMenu(false)} />
+                    <div className="absolute right-0 top-full mt-1 z-20 bg-[#1a1a1a] border border-[rgba(255,255,255,0.08)] rounded-lg shadow-xl overflow-hidden min-w-[140px]">
+                      <button
+                        onClick={() => {
+                          setCreateFormType('user_story');
+                          setShowCreateForm(true);
+                          setShowAddMenu(false);
+                        }}
+                        className="w-full flex items-center gap-2 px-3 py-2 text-xs text-[#F4F6FF] hover:bg-[rgba(255,255,255,0.06)] transition-colors"
+                      >
+                        <Plus className="w-3.5 h-3.5 text-[#E0B954]" />
+                        New Item
+                      </button>
+                      <button
+                        onClick={() => {
+                          setCreateFormType('epic');
+                          setShowCreateForm(true);
+                          setShowAddMenu(false);
+                        }}
+                        className="w-full flex items-center gap-2 px-3 py-2 text-xs text-[#F4F6FF] hover:bg-[rgba(255,255,255,0.06)] transition-colors"
+                      >
+                        <Target className="w-3.5 h-3.5 text-[#A78BFA]" />
+                        New Epic
+                      </button>
+                      <button
+                        onClick={() => {
+                          setShowCreateSprintModal(true);
+                          setShowAddMenu(false);
+                        }}
+                        className="w-full flex items-center gap-2 px-3 py-2 text-xs text-[#F4F6FF] hover:bg-[rgba(255,255,255,0.06)] transition-colors"
+                      >
+                        <Repeat2 className="w-3.5 h-3.5 text-[#E0B954]" />
+                        New Sprint
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </header>
@@ -1607,7 +1918,12 @@ const ProjectBoard = () => {
       <div className="flex-1 overflow-x-auto">
         {viewMode === 'board' ? (
           /* KANBAN BOARD VIEW */
-          <div className="flex gap-4 p-6 min-h-[calc(100vh-140px)]">
+          <div
+            role="tabpanel"
+            id="tabpanel-board"
+            aria-labelledby="tab-board"
+            className="flex gap-4 p-6 min-h-[calc(100vh-140px)]"
+          >
             {(Object.keys(STATUS_CONFIG) as Array<keyof typeof STATUS_CONFIG>).map((status) => {
               const config = STATUS_CONFIG[status];
               const columnItems = columnItemsByStatus[status] ?? [];
@@ -1634,9 +1950,208 @@ const ProjectBoard = () => {
               );
             })}
           </div>
+        ) : viewMode === 'epic' ? (
+          /* EPIC VIEW */
+          <div
+            role="tabpanel"
+            id="tabpanel-epic"
+            aria-labelledby="tab-epic"
+            className="p-6 space-y-3"
+          >
+            {listViewEpicGroups.length === 0 ? (
+              <div className="py-16 text-center text-[#737373] text-sm">No items found</div>
+            ) : (
+              listViewEpicGroups.map((group) => {
+                const isCollapsed = collapsedSprints.has(group.key);
+                const isUnparented = group.key === 'unparented';
+                const epicKey = group.epic?.key as string | undefined;
+                return (
+                  <div
+                    key={group.key}
+                    className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-2xl overflow-hidden"
+                  >
+                    {/* Epic group header */}
+                    <div className="flex items-center gap-2.5 px-5 py-3.5 hover:bg-[rgba(255,255,255,0.02)] transition-colors">
+                      <button
+                        onClick={() => toggleSprintCollapse(group.key)}
+                        className="flex items-center gap-2.5 flex-1 text-left min-w-0"
+                      >
+                        {isCollapsed ? (
+                          <ChevronRight className="w-3.5 h-3.5 text-[#737373] shrink-0" />
+                        ) : (
+                          <ChevronDown className="w-3.5 h-3.5 text-[#737373] shrink-0" />
+                        )}
+                        {isUnparented ? (
+                          <span className="text-sm font-semibold text-[#737373] italic">
+                            No epic
+                          </span>
+                        ) : (
+                          <>
+                            <Target className="w-3.5 h-3.5 text-[#A78BFA] shrink-0" />
+                            {epicKey && (
+                              <span className="text-[11px] font-mono text-[#A78BFA] shrink-0">
+                                {epicKey}
+                              </span>
+                            )}
+                            <span className="text-sm font-semibold text-[#f5f5f5] truncate">
+                              {group.label}
+                            </span>
+                          </>
+                        )}
+                        <span className="text-xs text-[#737373] shrink-0">
+                          {group.count} item{group.count !== 1 ? 's' : ''}
+                        </span>
+                      </button>
+                      {!isUnparented && group.epic && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            navigate(`/project/${id}/board/${group.epic!.id}`);
+                          }}
+                          className="text-[10px] text-[#737373] hover:text-[#A78BFA] transition-colors shrink-0"
+                          title="Open epic"
+                        >
+                          Open epic →
+                        </button>
+                      )}
+                    </div>
+
+                    {!isCollapsed && (
+                      <>
+                        {/* Table header */}
+                        <div className="grid grid-cols-[120px_1fr_120px_100px_80px_120px_110px_110px] gap-4 px-5 py-3 border-t border-[rgba(255,255,255,0.05)] text-xs text-[#737373] font-semibold uppercase tracking-wider">
+                          {renderListSortHeader('Type', 'type')}
+                          <span>Title</span>
+                          {renderListSortHeader('Status', 'status')}
+                          {renderListSortHeader('Priority', 'priority')}
+                          <span>Points</span>
+                          {renderListSortHeader('Assignee', 'assignee')}
+                          {renderListSortHeader('Due Date', 'due_date')}
+                          {renderListSortHeader('Completed', 'completed_at')}
+                        </div>
+                        {/* Table rows. Default: hierarchy-aware (parent → child with
+                            indent). When sorted, render flat at depth=0 since
+                            cross-hierarchy ordering breaks the parent/child grouping. */}
+                        {(listItemComparator
+                          ? [...group.rows]
+                              .sort((a, b) => listItemComparator(a.item, b.item))
+                              .map((r) => ({ item: r.item, depth: 0 }))
+                          : group.rows
+                        ).map(({ item, depth }) => {
+                          const typeInfo = TYPE_CONFIG[item.type] || TYPE_CONFIG.task;
+                          const TypeIcon = typeInfo.icon;
+                          const priorityStyle =
+                            PRIORITY_COLORS[item.priority] || PRIORITY_COLORS.medium;
+                          return (
+                            <div
+                              key={item.id}
+                              onMouseEnter={() => prefetchComments(item.id)}
+                              onClick={() => {
+                                navigate(`/project/${id}/board/${item.id}`);
+                              }}
+                              className="grid grid-cols-[120px_1fr_120px_100px_80px_120px_110px_110px] gap-4 px-5 py-3.5 border-t border-[rgba(255,255,255,0.03)] hover:bg-[rgba(255,255,255,0.025)] cursor-pointer transition-colors group"
+                            >
+                              <div className="flex items-center">
+                                <div
+                                  className="flex items-center gap-1.5 px-2 py-1 rounded-md text-xs"
+                                  style={{ backgroundColor: typeInfo.bg, color: typeInfo.color }}
+                                >
+                                  <TypeIcon className="w-3 h-3" />
+                                  {typeInfo.label}
+                                </div>
+                              </div>
+                              <div
+                                className="flex items-center gap-3 min-w-0"
+                                style={{ paddingLeft: depth === 1 ? 24 : 0 }}
+                              >
+                                {depth === 1 && (
+                                  <span
+                                    className="text-[#444] font-mono text-xs shrink-0"
+                                    aria-hidden
+                                  >
+                                    └─
+                                  </span>
+                                )}
+                                <span className="text-[10px] text-[#E0B954] font-mono font-medium shrink-0">
+                                  {item.key}
+                                </span>
+                                <span className="text-sm text-[#f5f5f5] truncate group-hover:text-white transition-colors">
+                                  {item.title}
+                                </span>
+                              </div>
+                              <div className="flex items-center">
+                                <StatusDotMenu
+                                  status={item.status}
+                                  onChange={(newStatus) => handleStatusChange(item, newStatus)}
+                                />
+                              </div>
+                              <div className="flex items-center">
+                                <span
+                                  className="text-[10px] px-1.5 py-0.5 rounded font-medium"
+                                  style={{
+                                    backgroundColor: priorityStyle.hex + '33',
+                                    color: priorityStyle.hex,
+                                  }}
+                                >
+                                  {item.priority.charAt(0).toUpperCase() + item.priority.slice(1)}
+                                </span>
+                              </div>
+                              <div className="flex items-center">
+                                <span className="text-sm font-semibold text-[#E0B954]">
+                                  {item.story_points}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-1.5">
+                                {item.assignee && item.assignee !== 'Unassigned' ? (
+                                  <>
+                                    <div
+                                      className="w-5 h-5 rounded-full bg-gradient-to-br from-[#E0B954] to-[#B8872A] flex items-center justify-center shrink-0"
+                                      title={item.assignee}
+                                    >
+                                      <span className="text-[9px] font-semibold text-white">
+                                        {item.assignee.charAt(0).toUpperCase()}
+                                      </span>
+                                    </div>
+                                    <span className="text-xs text-[#a3a3a3] truncate">
+                                      {item.assignee}
+                                    </span>
+                                  </>
+                                ) : (
+                                  <span className="text-xs text-[#555] truncate">—</span>
+                                )}
+                              </div>
+                              <div className="flex items-center">
+                                <span className="text-xs text-[#a3a3a3] truncate">
+                                  {item.due_date
+                                    ? parseLocalDate(item.due_date)?.toLocaleDateString()
+                                    : '—'}
+                                </span>
+                              </div>
+                              <div className="flex items-center">
+                                <span className="text-xs text-[#a3a3a3] truncate">
+                                  {item.completed_at
+                                    ? new Date(item.completed_at).toLocaleDateString()
+                                    : '—'}
+                                </span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </>
+                    )}
+                  </div>
+                );
+              })
+            )}
+          </div>
         ) : (
           /* LIST VIEW */
-          <div className="p-6 space-y-3">
+          <div
+            role="tabpanel"
+            id="tabpanel-list"
+            aria-labelledby="tab-list"
+            className="p-6 space-y-3"
+          >
             {/* List view header: Group by toggle + completed-sprints toggle */}
             <div className="flex items-center justify-between gap-3">
               <div
@@ -1656,11 +2171,11 @@ const ProjectBoard = () => {
                 <button
                   type="button"
                   role="radio"
-                  aria-checked={listGroupBy === 'epic'}
-                  onClick={() => setListGroupBy('epic')}
-                  className={`px-2.5 h-6 text-[11px] rounded-md transition-colors ${listGroupBy === 'epic' ? 'bg-[#E0B954] text-[#080808] font-medium' : 'text-[#737373] hover:text-white'}`}
+                  aria-checked={listGroupBy === 'week'}
+                  onClick={() => setListGroupBy('week')}
+                  className={`px-2.5 h-6 text-[11px] rounded-md transition-colors ${listGroupBy === 'week' ? 'bg-[#E0B954] text-[#080808] font-medium' : 'text-[#737373] hover:text-white'}`}
                 >
-                  By Epic
+                  By Week
                 </button>
               </div>
               {listGroupBy === 'sprint' && (
@@ -1678,20 +2193,18 @@ const ProjectBoard = () => {
               )}
             </div>
 
-            {listGroupBy === 'epic' ? (
-              listViewEpicGroups.length === 0 ? (
+            {listGroupBy === 'week' ? (
+              listViewWeekGroups.length === 0 ? (
                 <div className="py-16 text-center text-[#737373] text-sm">No items found</div>
               ) : (
-                listViewEpicGroups.map((group) => {
+                listViewWeekGroups.map((group) => {
                   const isCollapsed = collapsedSprints.has(group.key);
-                  const isUnparented = group.key === 'unparented';
-                  const epicKey = group.epic?.key as string | undefined;
                   return (
                     <div
                       key={group.key}
                       className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-2xl overflow-hidden"
                     >
-                      {/* Epic group header */}
+                      {/* Week group header */}
                       <div className="flex items-center gap-2.5 px-5 py-3.5 hover:bg-[rgba(255,255,255,0.02)] transition-colors">
                         <button
                           onClick={() => toggleSprintCollapse(group.key)}
@@ -1702,58 +2215,52 @@ const ProjectBoard = () => {
                           ) : (
                             <ChevronDown className="w-3.5 h-3.5 text-[#737373] shrink-0" />
                           )}
-                          {isUnparented ? (
-                            <span className="text-sm font-semibold text-[#737373] italic">
-                              No epic
+                          <span className="text-sm font-semibold text-[#f5f5f5]">
+                            {group.label}
+                          </span>
+                          {group.weekStart && group.label !== formatWeekRange(group.weekStart) && (
+                            <span className="text-[10px] text-[#555555]">
+                              {formatWeekRange(group.weekStart)}
                             </span>
-                          ) : (
-                            <>
-                              <Target className="w-3.5 h-3.5 text-[#A78BFA] shrink-0" />
-                              {epicKey && (
-                                <span className="text-[11px] font-mono text-[#A78BFA] shrink-0">
-                                  {epicKey}
-                                </span>
-                              )}
-                              <span className="text-sm font-semibold text-[#f5f5f5] truncate">
-                                {group.label}
-                              </span>
-                            </>
                           )}
-                          <span className="text-xs text-[#737373] shrink-0">
-                            {group.count} item{group.count !== 1 ? 's' : ''}
+                          {group.isCurrent && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-[rgba(224,185,84,0.12)] text-[#E0B954]">
+                              Current
+                            </span>
+                          )}
+                          <span className="text-xs text-[#737373]">
+                            {group.items.length} item{group.items.length !== 1 ? 's' : ''}
                           </span>
                         </button>
-                        {!isUnparented && group.epic && (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              navigate(`/project/${id}/board/${group.epic!.id}`);
-                            }}
-                            className="text-[10px] text-[#737373] hover:text-[#A78BFA] transition-colors shrink-0"
-                            title="Open epic"
-                          >
-                            Open epic →
-                          </button>
-                        )}
                       </div>
 
                       {!isCollapsed && (
                         <>
                           {/* Table header */}
-                          <div className="grid grid-cols-[1fr_120px_100px_100px_100px_120px] gap-4 px-5 py-3 border-t border-[rgba(255,255,255,0.05)] text-xs text-[#737373] font-semibold uppercase tracking-wider">
+                          <div className="grid grid-cols-[120px_1fr_120px_100px_80px_120px_110px_110px] gap-4 px-5 py-3 border-t border-[rgba(255,255,255,0.05)] text-xs text-[#737373] font-semibold uppercase tracking-wider">
+                            {renderListSortHeader('Type', 'type')}
                             <span>Title</span>
-                            <span>Type</span>
-                            <span>Status</span>
-                            <span>Priority</span>
+                            {renderListSortHeader('Status', 'status')}
+                            {renderListSortHeader('Priority', 'priority')}
                             <span>Points</span>
-                            <span>Assignee</span>
+                            {renderListSortHeader('Assignee', 'assignee')}
+                            {renderListSortHeader('Due Date', 'due_date')}
+                            {renderListSortHeader('Completed', 'completed_at')}
                           </div>
-                          {/* Table rows with subtask indent */}
-                          {group.rows.map(({ item, depth }) => {
+                          {/* Table rows */}
+                          {(listItemComparator
+                            ? [...group.items].sort(listItemComparator)
+                            : group.items
+                          ).map((item) => {
                             const typeInfo = TYPE_CONFIG[item.type] || TYPE_CONFIG.task;
                             const TypeIcon = typeInfo.icon;
                             const priorityStyle =
                               PRIORITY_COLORS[item.priority] || PRIORITY_COLORS.medium;
+                            const dueDate = item.due_date ? parseLocalDate(item.due_date) : null;
+                            const isOverdue =
+                              !!dueDate &&
+                              !item.completed_at &&
+                              dueDate.getTime() < todayMidnightMs;
                             return (
                               <div
                                 key={item.id}
@@ -1761,27 +2268,8 @@ const ProjectBoard = () => {
                                 onClick={() => {
                                   navigate(`/project/${id}/board/${item.id}`);
                                 }}
-                                className="grid grid-cols-[1fr_120px_100px_100px_100px_120px] gap-4 px-5 py-3.5 border-t border-[rgba(255,255,255,0.03)] hover:bg-[rgba(255,255,255,0.025)] cursor-pointer transition-colors group"
+                                className="grid grid-cols-[120px_1fr_120px_100px_80px_120px_110px_110px] gap-4 px-5 py-3.5 border-t border-[rgba(255,255,255,0.03)] hover:bg-[rgba(255,255,255,0.025)] cursor-pointer transition-colors group"
                               >
-                                <div
-                                  className="flex items-center gap-3 min-w-0"
-                                  style={{ paddingLeft: depth === 1 ? 24 : 0 }}
-                                >
-                                  {depth === 1 && (
-                                    <span
-                                      className="text-[#444] font-mono text-xs shrink-0"
-                                      aria-hidden
-                                    >
-                                      └─
-                                    </span>
-                                  )}
-                                  <span className="text-[10px] text-[#E0B954] font-mono font-medium shrink-0">
-                                    {item.key}
-                                  </span>
-                                  <span className="text-sm text-[#f5f5f5] truncate group-hover:text-white transition-colors">
-                                    {item.title}
-                                  </span>
-                                </div>
                                 <div className="flex items-center">
                                   <div
                                     className="flex items-center gap-1.5 px-2 py-1 rounded-md text-xs"
@@ -1791,11 +2279,25 @@ const ProjectBoard = () => {
                                     {typeInfo.label}
                                   </div>
                                 </div>
+                                <div className="flex items-center gap-3 min-w-0">
+                                  <span className="text-[10px] text-[#E0B954] font-mono font-medium shrink-0">
+                                    {item.key}
+                                  </span>
+                                  <span className="text-sm text-[#f5f5f5] truncate group-hover:text-white transition-colors">
+                                    {item.title}
+                                  </span>
+                                </div>
                                 <div className="flex items-center">
-                                  <StatusDotMenu
-                                    status={item.status}
-                                    onChange={(newStatus) => handleStatusChange(item, newStatus)}
-                                  />
+                                  {canWriteTracker ? (
+                                    <StatusDotMenu
+                                      status={item.status}
+                                      onChange={(newStatus) => handleStatusChange(item, newStatus)}
+                                    />
+                                  ) : (
+                                    <span className="text-xs text-[#a3a3a3] capitalize">
+                                      {item.status.replace('_', ' ')}
+                                    </span>
+                                  )}
                                 </div>
                                 <div className="flex items-center">
                                   <span
@@ -1813,9 +2315,43 @@ const ProjectBoard = () => {
                                     {item.story_points}
                                   </span>
                                 </div>
+                                <div className="flex items-center gap-1.5">
+                                  {item.assignee && item.assignee !== 'Unassigned' ? (
+                                    <>
+                                      <div
+                                        className="w-5 h-5 rounded-full bg-gradient-to-br from-[#E0B954] to-[#B8872A] flex items-center justify-center shrink-0"
+                                        title={item.assignee}
+                                      >
+                                        <span className="text-[9px] font-semibold text-white">
+                                          {item.assignee.charAt(0).toUpperCase()}
+                                        </span>
+                                      </div>
+                                      <span className="text-xs text-[#a3a3a3] truncate">
+                                        {item.assignee}
+                                      </span>
+                                    </>
+                                  ) : (
+                                    <span className="text-xs text-[#555] truncate">—</span>
+                                  )}
+                                </div>
                                 <div className="flex items-center">
-                                  <span className="text-xs text-[#737373] truncate">
-                                    {item.assignee}
+                                  <span
+                                    className={`text-xs truncate ${
+                                      isOverdue ? 'text-[#EF4444]' : 'text-[#a3a3a3]'
+                                    }`}
+                                  >
+                                    {dueDate ? dueDate.toLocaleDateString() : '—'}
+                                  </span>
+                                </div>
+                                <div className="flex items-center">
+                                  <span
+                                    className={`text-xs truncate ${
+                                      item.completed_at ? 'text-[#E0B954]' : 'text-[#a3a3a3]'
+                                    }`}
+                                  >
+                                    {item.completed_at
+                                      ? new Date(item.completed_at).toLocaleDateString()
+                                      : '—'}
                                   </span>
                                 </div>
                               </div>
@@ -1859,7 +2395,17 @@ const ProjectBoard = () => {
                         </span>
                       </button>
                       {group.key !== 'backlog' &&
-                        (isProjectManager(user) ||
+                        // Sprint complete/close is a managerial action. The
+                        // legacy gate was `isProjectManager(user)` (user.role
+                        // includes 'admin' or 'project_manager'). Capability
+                        // mapping: `project.pm` is granted to the admin role
+                        // (via `*`) and the project_manager role (via
+                        // `project.*`), but NOT to the developer role —
+                        // matching the original intent. Project-level path:
+                        // developers flagged is_admin on this project or
+                        // marked as "Project Creator" keep their existing
+                        // override even without the capability.
+                        (can('project.pm') ||
                           project?.developers?.some(
                             (d) =>
                               d.email === user?.email &&
@@ -1905,16 +2451,21 @@ const ProjectBoard = () => {
                     {!isCollapsed && (
                       <>
                         {/* Table header */}
-                        <div className="grid grid-cols-[1fr_120px_100px_100px_100px_120px] gap-4 px-5 py-3 border-t border-[rgba(255,255,255,0.05)] text-xs text-[#737373] font-semibold uppercase tracking-wider">
+                        <div className="grid grid-cols-[120px_1fr_120px_100px_80px_120px_110px_110px] gap-4 px-5 py-3 border-t border-[rgba(255,255,255,0.05)] text-xs text-[#737373] font-semibold uppercase tracking-wider">
+                          {renderListSortHeader('Type', 'type')}
                           <span>Title</span>
-                          <span>Type</span>
-                          <span>Status</span>
-                          <span>Priority</span>
+                          {renderListSortHeader('Status', 'status')}
+                          {renderListSortHeader('Priority', 'priority')}
                           <span>Points</span>
-                          <span>Assignee</span>
+                          {renderListSortHeader('Assignee', 'assignee')}
+                          {renderListSortHeader('Due Date', 'due_date')}
+                          {renderListSortHeader('Completed', 'completed_at')}
                         </div>
                         {/* Table rows */}
-                        {group.items.map((item) => {
+                        {(listItemComparator
+                          ? [...group.items].sort(listItemComparator)
+                          : group.items
+                        ).map((item) => {
                           const typeInfo = TYPE_CONFIG[item.type] || TYPE_CONFIG.task;
                           const TypeIcon = typeInfo.icon;
                           const priorityStyle =
@@ -1926,16 +2477,8 @@ const ProjectBoard = () => {
                               onClick={() => {
                                 navigate(`/project/${id}/board/${item.id}`);
                               }}
-                              className="grid grid-cols-[1fr_120px_100px_100px_100px_120px] gap-4 px-5 py-3.5 border-t border-[rgba(255,255,255,0.03)] hover:bg-[rgba(255,255,255,0.025)] cursor-pointer transition-colors group"
+                              className="grid grid-cols-[120px_1fr_120px_100px_80px_120px_110px_110px] gap-4 px-5 py-3.5 border-t border-[rgba(255,255,255,0.03)] hover:bg-[rgba(255,255,255,0.025)] cursor-pointer transition-colors group"
                             >
-                              <div className="flex items-center gap-3 min-w-0">
-                                <span className="text-[10px] text-[#E0B954] font-mono font-medium shrink-0">
-                                  {item.key}
-                                </span>
-                                <span className="text-sm text-[#f5f5f5] truncate group-hover:text-white transition-colors">
-                                  {item.title}
-                                </span>
-                              </div>
                               <div className="flex items-center">
                                 <div
                                   className="flex items-center gap-1.5 px-2 py-1 rounded-md text-xs"
@@ -1945,11 +2488,25 @@ const ProjectBoard = () => {
                                   {typeInfo.label}
                                 </div>
                               </div>
+                              <div className="flex items-center gap-3 min-w-0">
+                                <span className="text-[10px] text-[#E0B954] font-mono font-medium shrink-0">
+                                  {item.key}
+                                </span>
+                                <span className="text-sm text-[#f5f5f5] truncate group-hover:text-white transition-colors">
+                                  {item.title}
+                                </span>
+                              </div>
                               <div className="flex items-center">
-                                <StatusDotMenu
-                                  status={item.status}
-                                  onChange={(newStatus) => handleStatusChange(item, newStatus)}
-                                />
+                                {canWriteTracker ? (
+                                  <StatusDotMenu
+                                    status={item.status}
+                                    onChange={(newStatus) => handleStatusChange(item, newStatus)}
+                                  />
+                                ) : (
+                                  <span className="text-xs text-[#a3a3a3] capitalize">
+                                    {item.status.replace('_', ' ')}
+                                  </span>
+                                )}
                               </div>
                               <div className="flex items-center">
                                 <span
@@ -1967,9 +2524,37 @@ const ProjectBoard = () => {
                                   {item.story_points}
                                 </span>
                               </div>
+                              <div className="flex items-center gap-1.5">
+                                {item.assignee && item.assignee !== 'Unassigned' ? (
+                                  <>
+                                    <div
+                                      className="w-5 h-5 rounded-full bg-gradient-to-br from-[#E0B954] to-[#B8872A] flex items-center justify-center shrink-0"
+                                      title={item.assignee}
+                                    >
+                                      <span className="text-[9px] font-semibold text-white">
+                                        {item.assignee.charAt(0).toUpperCase()}
+                                      </span>
+                                    </div>
+                                    <span className="text-xs text-[#a3a3a3] truncate">
+                                      {item.assignee}
+                                    </span>
+                                  </>
+                                ) : (
+                                  <span className="text-xs text-[#555] truncate">—</span>
+                                )}
+                              </div>
                               <div className="flex items-center">
-                                <span className="text-xs text-[#737373] truncate">
-                                  {item.assignee}
+                                <span className="text-xs text-[#a3a3a3] truncate">
+                                  {item.due_date
+                                    ? parseLocalDate(item.due_date)?.toLocaleDateString()
+                                    : '—'}
+                                </span>
+                              </div>
+                              <div className="flex items-center">
+                                <span className="text-xs text-[#a3a3a3] truncate">
+                                  {item.completed_at
+                                    ? new Date(item.completed_at).toLocaleDateString()
+                                    : '—'}
                                 </span>
                               </div>
                             </div>
@@ -2021,6 +2606,7 @@ const ProjectBoard = () => {
             existingTags={existingTags}
             parseLocalDate={parseLocalDate}
             isCreatingItem={isCreatingItem}
+            initialType={createFormType}
             onClose={() => setShowCreateForm(false)}
             onSubmit={(form) => createItemMutation.mutate(form)}
           />

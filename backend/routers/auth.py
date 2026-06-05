@@ -169,11 +169,16 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     return user
 
 
-def get_current_admin(current_user: User = Depends(get_current_user)):
-    # Check if user has admin role (roles are comma-separated)
-    if "admin" not in current_user.role:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
-    return current_user
+def _has_admin_role(user: User) -> bool:
+    """Does this user hold the system 'admin' Role?
+
+    Reads the many-to-many `user.roles` relationship instead of the legacy
+    comma-separated `user.role` string. Used for last-admin-protection
+    business rules below — not for permission decisions. Real permission
+    checks go through `require_capability()` which inspects effective
+    capabilities, not role names.
+    """
+    return any(r.name == "admin" for r in user.roles)
 
 
 def require_capability(cap: str):
@@ -197,7 +202,7 @@ def require_capability(cap: str):
         if not current_user.has_capability(cap):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Missing required capability: {cap}",
+                detail="Do not have permission",
             )
         return current_user
 
@@ -279,7 +284,14 @@ def create_user(
     admin: User = Depends(require_capability("admin.users")),
     db: Session = Depends(get_db),
 ):
-    """Admin: Create a new user with auto-generated password"""
+    """Admin: Pre-register a user for Google SSO login.
+
+    Everyone authenticates via Google SSO. Internal-domain emails are
+    auto-provisioned on first SSO login and don't need this endpoint —
+    it's primarily for authorizing external users (whose domains the SSO
+    endpoint would otherwise reject) by creating the User row in advance.
+    No password is issued; hashed_password is left null.
+    """
     from models.developer import Developer
 
     # Check if email already exists
@@ -289,41 +301,50 @@ def create_user(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered"
         )
 
-    # Generate temporary password
-    temp_password = generate_temp_password()
-
-    # Create user
+    # SSO-only: no password, no first-login dance.
     new_user = User(
         email=user_data.email,
         name=user_data.name,
-        hashed_password=get_password_hash(temp_password),
+        hashed_password=None,
         role=user_data.role,
-        is_first_login=True,
+        is_first_login=False,
     )
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
 
-    # If user has developer role, also create them as a Developer/Employee
+    # If user has developer role, also create them as a Developer/Employee.
+    # is_external is derived from the email domain: addresses on a configured
+    # internal domain (ALLOWED_EMAIL_DOMAINS) are treated as company employees;
+    # everyone else is external. This matches the SSO flow and means the
+    # admin can use Add User for either case without surprising results.
     if "developer" in user_data.role:
-        # Check if developer already exists with this email
         existing_dev = db.query(Developer).filter(Developer.email == user_data.email).first()
         if not existing_dev:
-            new_developer = Developer(name=user_data.name, email=user_data.email)
+            allowed_domains = [
+                d.strip().lower()
+                for d in os.getenv("ALLOWED_EMAIL_DOMAINS", "arsenalai.com").split(",")
+                if d.strip()
+            ]
+            email_domain = user_data.email.split("@")[-1].lower()
+            is_internal_domain = email_domain in allowed_domains
+            new_developer = Developer(
+                name=user_data.name,
+                email=user_data.email,
+                is_external=not is_internal_domain,
+            )
             db.add(new_developer)
             db.commit()
 
     return {
         "status": "success",
-        "message": "User created successfully",
+        "message": "User authorized. They can now sign in with Google SSO.",
         "user": {
             "id": new_user.id,
             "email": new_user.email,
             "name": new_user.name,
             "role": new_user.role,
         },
-        "temporary_password": temp_password,
-        "note": "Please share this password securely with the user. They will be required to change it on first login.",
     }
 
 
@@ -332,9 +353,17 @@ def list_users(
     admin: User = Depends(require_capability("admin.users")),
     db: Session = Depends(get_db),
 ):
-    """Admin: List all users"""
+    """Admin: List all users (with github_username joined from linked Developer)."""
+    from models.developer import Developer
+
     users = db.query(User).all()
-    return [user.to_dict() for user in users]
+    # Join developer rows in one pass (avoids N+1).
+    devs = {d.email: d for d in db.query(Developer).all()}
+    out = []
+    for u in users:
+        d = devs.get(u.email)
+        out.append({**u.to_dict(), "github_username": d.github_username if d else None})
+    return out
 
 
 @router.post("/admin/reset-password")
@@ -358,6 +387,88 @@ def admin_reset_password(
     }
 
 
+class UserProfileUpdate(BaseModel):
+    name: str | None = None
+    email: str | None = None
+    github_username: str | None = None
+
+
+@router.put("/admin/users/{user_id}")
+def update_user_profile(
+    user_id: int,
+    payload: UserProfileUpdate,
+    admin: User = Depends(require_capability("admin.users")),
+    db: Session = Depends(get_db),
+):
+    """Admin: Update a user's profile (name, email, GitHub username).
+
+    Email changes are accepted but risky — the user's Google account must match
+    the new email for SSO to keep working. github_username writes through to the
+    linked Developer row if one exists; otherwise it's silently ignored.
+    """
+    from models.developer import Developer
+
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    old_email = user.email
+    new_email = payload.email.strip() if payload.email is not None else None
+    if new_email and new_email != old_email:
+        # Block collisions on either side of the User/Developer split.
+        if db.query(User).filter(User.email == new_email, User.id != user.id).first():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Another user already has that email",
+            )
+        if (
+            db.query(Developer)
+            .filter(Developer.email == new_email, Developer.email != old_email)
+            .first()
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Another developer record already has that email",
+            )
+        user.email = new_email
+
+    if payload.name is not None:
+        new_name = payload.name.strip()
+        if not new_name:
+            raise HTTPException(status_code=400, detail="Name cannot be empty")
+        user.name = new_name
+
+    # Keep the linked Developer row in sync. Match by the user's email BEFORE
+    # commit so we find it even if we're about to change it.
+    dev = db.query(Developer).filter(Developer.email == old_email).first()
+    if dev:
+        if payload.name is not None:
+            dev.name = user.name
+        if new_email and new_email != old_email:
+            dev.email = new_email
+        if payload.github_username is not None:
+            cleaned = payload.github_username.strip() or None
+            if cleaned and cleaned != dev.github_username:
+                clash = (
+                    db.query(Developer)
+                    .filter(Developer.github_username == cleaned, Developer.id != dev.id)
+                    .first()
+                )
+                if clash:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Another developer already uses that GitHub username",
+                    )
+            dev.github_username = cleaned
+
+    db.commit()
+    db.refresh(user)
+    return {
+        **user.to_dict(),
+        "github_username": dev.github_username if dev else None,
+    }
+
+
 class RoleUpdate(BaseModel):
     role: str
 
@@ -374,11 +485,14 @@ def update_user_role(
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
-    # Prevent removing the last admin
-    if "admin" in user.role and "admin" not in role_data.role:
-        # Count users with admin role (roles are comma-separated)
-        all_users = db.query(User).all()
-        admin_count = sum(1 for u in all_users if "admin" in u.role)
+    # Prevent removing the last admin. Read the many-to-many `user.roles`
+    # relationship rather than the legacy comma-string column so this stays
+    # correct even when the column drifts. The legacy string sync still runs
+    # via _sync_legacy_role_string() but is no longer authoritative.
+    is_demoting_admin = _has_admin_role(user) and "admin" not in role_data.role
+    if is_demoting_admin:
+        all_users = db.query(User).options(selectinload(User.roles)).all()
+        admin_count = sum(1 for u in all_users if _has_admin_role(u))
         if admin_count <= 1:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot remove the last admin"
@@ -413,11 +527,12 @@ def delete_user(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot delete your own account"
         )
 
-    # Prevent deleting the last admin
-    if "admin" in user.role:
-        # Count users with admin role (roles are comma-separated)
-        all_users = db.query(User).all()
-        admin_count = sum(1 for u in all_users if "admin" in u.role)
+    # Prevent deleting the last admin. Counts users whose `roles`
+    # relationship includes the system 'admin' role, not the legacy
+    # comma-separated `user.role` column.
+    if _has_admin_role(user):
+        all_users = db.query(User).options(selectinload(User.roles)).all()
+        admin_count = sum(1 for u in all_users if _has_admin_role(u))
         if admin_count <= 1:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot delete the last admin"
@@ -487,14 +602,22 @@ def google_login(request: GoogleLoginRequest, db: Session = Depends(get_db)):
         if not user.is_active:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account is disabled")
 
-        # Ensure existing user has a Developer record (for users created before SSO feature)
+        # Ensure existing user has a Developer record (for users created before SSO feature).
+        # is_external derives from the email domain: anyone on an allowed internal
+        # domain is a company employee; everyone else is external (admin-registered).
         existing_dev = db.query(Developer).filter(Developer.email == user_info["email"]).first()
         if not existing_dev:
-            new_developer = Developer(name=user.name, email=user.email)
+            new_developer = Developer(
+                name=user.name,
+                email=user.email,
+                is_external=not is_internal_domain,
+            )
             db.add(new_developer)
             db.commit()
     else:
-        # Create new user from Google SSO
+        # Create new user from Google SSO. By construction we only reach this branch
+        # for internal-domain emails (the not-pre-registered + non-internal case
+        # was already rejected above), so the new Developer is always internal.
         user = User(
             email=user_info["email"],
             name=user_info["name"],
@@ -512,7 +635,11 @@ def google_login(request: GoogleLoginRequest, db: Session = Depends(get_db)):
         try:
             existing_dev = db.query(Developer).filter(Developer.email == user_info["email"]).first()
             if not existing_dev:
-                new_developer = Developer(name=user_info["name"], email=user_info["email"])
+                new_developer = Developer(
+                    name=user_info["name"],
+                    email=user_info["email"],
+                    is_external=False,
+                )
                 db.add(new_developer)
                 db.commit()
         except Exception as dev_error:

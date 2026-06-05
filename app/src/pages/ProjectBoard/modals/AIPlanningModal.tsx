@@ -1,4 +1,5 @@
 import { useState, useRef, Dispatch, SetStateAction } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Sparkles,
   Target,
@@ -19,9 +20,13 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { toast } from 'sonner';
 import ArchitectureCard from '@/components/ArchitectureCard';
 import { apiFetch } from '@/lib/api';
+import { invalidateProjectScope } from '@/lib/invalidations';
+import GenerateRoadmapModal from '@/pages/ProjectDetail/modals/GenerateRoadmapModal';
+import { Download } from 'lucide-react';
 
 interface Architecture {
   id: number;
@@ -84,6 +89,38 @@ const PRIORITY_COLORS = {
   low: { hex: '#737373' },
 };
 
+/**
+ * Format two ISO date strings (sprint start Monday → sprint end Friday) into
+ * a compact readable range, e.g.
+ *   "Jan 5 – 16, 2026"             (same month)
+ *   "Jan 26 – Feb 6, 2026"          (cross month, same year)
+ *   "Dec 28, 2025 – Jan 9, 2026"    (cross year)
+ *
+ * Uses UTC methods because backend emits dates as midnight UTC and we want the
+ * calendar dates the user sees in the spreadsheet — same pattern as
+ * `formatWeekRange` in AdminDashboard/tabs/ProjectsTab.
+ */
+function formatSprintRange(startISO: string, endISO: string): string {
+  const start = new Date(startISO);
+  const end = new Date(endISO);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+    return `${startISO} → ${endISO}`;
+  }
+  const monthOpts: Intl.DateTimeFormatOptions = { month: 'short', timeZone: 'UTC' };
+  const sameMonth =
+    start.getUTCFullYear() === end.getUTCFullYear() && start.getUTCMonth() === end.getUTCMonth();
+  const sameYear = start.getUTCFullYear() === end.getUTCFullYear();
+  const startMonth = start.toLocaleDateString('en-US', monthOpts);
+  const endMonth = end.toLocaleDateString('en-US', monthOpts);
+  if (sameMonth) {
+    return `${startMonth} ${start.getUTCDate()} – ${end.getUTCDate()}, ${end.getUTCFullYear()}`;
+  }
+  if (sameYear) {
+    return `${startMonth} ${start.getUTCDate()} – ${endMonth} ${end.getUTCDate()}, ${end.getUTCFullYear()}`;
+  }
+  return `${startMonth} ${start.getUTCDate()}, ${start.getUTCFullYear()} – ${endMonth} ${end.getUTCDate()}, ${end.getUTCFullYear()}`;
+}
+
 export interface AIPlanningModalProps {
   project: Project | null;
   architectures: Architecture[];
@@ -111,7 +148,26 @@ const AIPlanningModal = ({
   onCommitted,
   setIsGenerating,
 }: AIPlanningModalProps) => {
+  const queryClient = useQueryClient();
+
+  // Backend rule: one PRD per project. The /analyze-* endpoints 409 if an
+  // analysis already exists. Check up-front so we can disable the Analyze
+  // button + show a tooltip explanation instead of letting the user spend a
+  // file pick + click only to see an error toast.
+  //
+  // The endpoint returns `null` when no analysis exists (not 404), so we
+  // probe with a useQuery and treat truthy data as "already analyzed". The
+  // query auto-disables when project is null, and stays cheap since the
+  // payload is small.
+  const existingPRDQuery = useQuery<unknown>({
+    queryKey: ['prdAnalysisExists', project?.id],
+    queryFn: () => apiFetch(`/api/prd/projects/${project?.id}/analysis`),
+    enabled: !!project?.id,
+  });
+  const hasExistingPRDAnalysis = existingPRDQuery.data != null;
+
   const [aiStep, setAiStep] = useState<AIStep>('upload');
+  const [generateTemplateOpen, setGenerateTemplateOpen] = useState(false);
   const [uploadMode, setUploadMode] = useState<'prd' | 'roadmap'>('prd');
   const [prdFile, setPrdFile] = useState<File | null>(null);
   const [prdText, setPrdText] = useState('');
@@ -198,6 +254,10 @@ const AIPlanningModal = ({
       setAnalysis(data.analysis);
       setArchitectures(data.architectures);
       setAiStep('architectures');
+      // Backend has persisted PRDAnalysis + architectures. Invalidate the
+      // ProjectDetail caches so the analysis surfaces there even if the user
+      // closes this modal without going through preview/commit.
+      invalidateProjectScope(queryClient, project.id);
       toast.success('PRD analyzed successfully!');
     } catch (err: any) {
       toast.error(err?.message || 'Failed to analyze PRD');
@@ -242,11 +302,27 @@ const AIPlanningModal = ({
   // Select architecture
   const handleSelectArchitecture = async (archId: number) => {
     setSelectedArchitectureId(archId);
+    if (!project) return;
     try {
       await apiFetch(`/api/prd/architectures/${archId}/select`, { method: 'POST' });
+      // Reflect the selection on ProjectDetail (project.selected_architecture).
+      invalidateProjectScope(queryClient, project.id);
     } catch (err) {
       console.error('Failed to select architecture:', err);
     }
+  };
+
+  // User wants to exit at the architectures step without going through the
+  // preview/commit flow. The PRDAnalysis and selected architecture are already
+  // persisted server-side; we just invalidate caches and close.
+  const handleSaveAndClose = () => {
+    if (!project) {
+      onClose();
+      return;
+    }
+    invalidateProjectScope(queryClient, project.id);
+    toast.success('PRD analysis saved. You can resume any time.');
+    onClose();
   };
 
   // Preview generated tickets
@@ -627,6 +703,23 @@ const AIPlanningModal = ({
                     </div>
                   </div>
 
+                  <div className="flex items-center justify-between gap-3 bg-[rgba(224,185,84,0.05)] border border-[rgba(224,185,84,0.2)] rounded-xl p-4">
+                    <div>
+                      <p className="text-sm font-medium text-white">Don't have a roadmap file?</p>
+                      <p className="text-xs text-[#a3a3a3] mt-0.5">
+                        Download a starter template — pre-filled from your PRD if one's been
+                        analyzed, otherwise a blank scaffold with the right columns.
+                      </p>
+                    </div>
+                    <Button
+                      onClick={() => setGenerateTemplateOpen(true)}
+                      className="bg-[#E0B954] hover:bg-[#C79E3B] text-black shrink-0"
+                    >
+                      <Download className="w-4 h-4 mr-1" />
+                      Download template
+                    </Button>
+                  </div>
+
                   <div className="bg-[rgba(102,184,255,0.1)] border border-[rgba(102,184,255,0.3)] rounded-xl p-4">
                     <p className="text-xs text-[#66b8ff] flex gap-2 items-start">
                       <span className="mt-0.5">ℹ️</span>
@@ -748,6 +841,68 @@ const AIPlanningModal = ({
                       {roadmapSummary.timeline.start} → {roadmapSummary.timeline.end}
                     </p>
                   </div>
+
+                  {/* Sprints — per-sprint date list that will be committed.
+                      Reads from `roadmapParsedData.sprints` (passed verbatim
+                      from the parser; no extra API surface). When milestone
+                      date ranges have calendar gaps, the parser splits sprints
+                      at the gap so each sprint stays calendar-continuous —
+                      the gap weeks surface as a callout below the list. */}
+                  {roadmapParsedData?.sprints && roadmapParsedData.sprints.length > 0 && (
+                    <div className="mb-4 pb-4 border-b border-[rgba(255,255,255,0.07)]">
+                      <div className="flex items-center justify-between mb-2">
+                        <p className="text-xs font-medium text-[#737373]">
+                          Sprints ({roadmapParsedData.sprints.length})
+                        </p>
+                        <span className="text-[10px] text-[#525252]">Created on confirm</span>
+                      </div>
+                      <div className="space-y-1.5 max-h-[260px] overflow-y-auto pr-1">
+                        {roadmapParsedData.sprints.map((sprint: any) => (
+                          <div
+                            key={sprint.number}
+                            className="flex items-center justify-between gap-3 text-xs bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.04)] rounded-lg px-3 py-2"
+                          >
+                            <div className="flex items-center gap-3 min-w-0">
+                              <span className="font-semibold text-[#E0B954] tabular-nums shrink-0">
+                                Sprint {sprint.number}
+                              </span>
+                              <span className="text-[#a3a3a3] truncate">
+                                {formatSprintRange(sprint.start_week, sprint.end_week)}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-3 text-[10px] text-[#737373] shrink-0 tabular-nums">
+                              <span>{sprint.duration_weeks}w</span>
+                              <span>
+                                {sprint.task_count ?? sprint.tasks?.length ?? 0} task
+                                {(sprint.task_count ?? sprint.tasks?.length ?? 0) === 1 ? '' : 's'}
+                              </span>
+                              {typeof sprint.total_hours === 'number' && sprint.total_hours > 0 && (
+                                <span>{Math.round(sprint.total_hours)}h</span>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                      {/* Calendar-gap callout — sprints intentionally don't bridge
+                          uncovered weeks (would produce calendar-discontinuous
+                          ranges in burndowns). The detailed `uncovered_week`
+                          entries are also surfaced in the Warnings list below;
+                          this is a one-liner pointer up here so the user spots
+                          gaps without scrolling. */}
+                      {roadmapParsedData?.meta?.missing_weeks &&
+                        roadmapParsedData.meta.missing_weeks.length > 0 && (
+                          <p className="mt-2 text-[10px] text-[#f59e0b]">
+                            {roadmapParsedData.meta.missing_weeks.length} calendar week
+                            {roadmapParsedData.meta.missing_weeks.length === 1 ? '' : 's'} not
+                            covered by any milestone — no sprint for{' '}
+                            {roadmapParsedData.meta.missing_weeks.length === 1
+                              ? 'that week'
+                              : 'those weeks'}
+                            . See warnings below.
+                          </p>
+                        )}
+                    </div>
+                  )}
 
                   {/* Team Members */}
                   {roadmapSummary.assignees && roadmapSummary.assignees.length > 0 && (
@@ -1140,14 +1295,35 @@ const AIPlanningModal = ({
             {aiStep === 'upload' && (
               <>
                 {uploadMode === 'prd' && (
-                  <Button
-                    onClick={handleAnalyzePRD}
-                    disabled={!prdFile && !prdText.trim()}
-                    className="bg-gradient-to-r from-[#E0B954] to-[#B8872A] text-white rounded-xl px-6 font-medium shadow-lg shadow-[#B8872A]/20 disabled:opacity-50"
-                  >
-                    <Sparkles className="w-4 h-4 mr-2" />
-                    Analyze PRD
-                  </Button>
+                  /* The backend enforces one PRD per project (409 on second
+                     upload). Disable the button up-front when an analysis
+                     exists and explain why via tooltip. Wrap the button in a
+                     <span> because pointer events don't fire on disabled
+                     buttons — Radix Tooltip needs a hoverable target. */
+                  <TooltipProvider delayDuration={150}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span className={hasExistingPRDAnalysis ? 'cursor-not-allowed' : ''}>
+                          <Button
+                            onClick={handleAnalyzePRD}
+                            disabled={hasExistingPRDAnalysis || (!prdFile && !prdText.trim())}
+                            className="bg-gradient-to-r from-[#E0B954] to-[#B8872A] text-white rounded-xl px-6 font-medium shadow-lg shadow-[#B8872A]/20 disabled:opacity-50"
+                            // Pointer events off so the wrapping span's hover
+                            // wins and the tooltip shows even when disabled.
+                            style={hasExistingPRDAnalysis ? { pointerEvents: 'none' } : undefined}
+                          >
+                            <Sparkles className="w-4 h-4 mr-2" />
+                            Analyze PRD
+                          </Button>
+                        </span>
+                      </TooltipTrigger>
+                      {hasExistingPRDAnalysis && (
+                        <TooltipContent>
+                          A PRD analysis already exists for this project!
+                        </TooltipContent>
+                      )}
+                    </Tooltip>
+                  </TooltipProvider>
                 )}
                 {uploadMode === 'roadmap' && (
                   <Button
@@ -1165,14 +1341,23 @@ const AIPlanningModal = ({
             {aiStep === 'architectures' && (
               <>
                 {uploadMode === 'prd' ? (
-                  <Button
-                    onClick={handlePreviewTickets}
-                    disabled={!selectedArchitectureId}
-                    className="bg-gradient-to-r from-[#E0B954] to-[#B8872A] text-white rounded-xl px-6 font-medium shadow-lg shadow-[#B8872A]/20 disabled:opacity-50"
-                  >
-                    <ArrowRight className="w-4 h-4 mr-2" />
-                    Preview Tickets
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      onClick={handleSaveAndClose}
+                      className="bg-gradient-to-r from-[#E0B954] to-[#B8872A] text-white rounded-xl px-6 font-medium shadow-lg shadow-[#B8872A]/20"
+                    >
+                      <CheckCircle2 className="w-4 h-4 mr-2" />
+                      Save &amp; close
+                    </Button>
+                    <Button
+                      onClick={handlePreviewTickets}
+                      disabled={!selectedArchitectureId}
+                      className="bg-gradient-to-r from-[#E0B954] to-[#B8872A] text-white rounded-xl px-6 font-medium shadow-lg shadow-[#B8872A]/20 disabled:opacity-50"
+                    >
+                      <ArrowRight className="w-4 h-4 mr-2" />
+                      Preview Tickets
+                    </Button>
+                  </div>
                 ) : (
                   <Button
                     onClick={() => setAiStep('preview')}
@@ -1197,6 +1382,15 @@ const AIPlanningModal = ({
           </div>
         )}
       </div>
+
+      {project && (
+        <GenerateRoadmapModal
+          open={generateTemplateOpen}
+          onOpenChange={setGenerateTemplateOpen}
+          projectId={project.id}
+          projectName={project.name}
+        />
+      )}
     </div>
   );
 };

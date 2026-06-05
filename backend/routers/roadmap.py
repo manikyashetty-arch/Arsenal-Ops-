@@ -12,17 +12,18 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 sys.path.append("..")
-from sqlalchemy import func
 
 from database import get_db
 from logging_config import setup_logger
+from models.activity_log import ActivityLog
 from models.developer import Developer
 from models.project import Project
 from models.sprint import Sprint
 from models.user import User
 from models.work_item import WorkItem, WorkItemType
 from parser import parse as parse_roadmap
-from routers.auth import get_current_user
+from routers.auth import require_capability
+from routers.workitems import update_epic_hours
 from services.roadmap_ai_parser import excel_to_readable_text, get_roadmap_ai_parser
 
 logger = setup_logger("roadmap")
@@ -77,8 +78,20 @@ def create_work_item(
     assignee_id: int | None,
     epic_id: int | None = None,
     acceptance_criteria: list[str] | None = None,
+    reporter_id: int | None = None,
+    story_points: int = 0,
 ) -> WorkItem:
-    """Helper to create a work item with auto-generated key"""
+    """Helper to create a work item with auto-generated key.
+
+    reporter_id stamps the creator so the side panel can show "Created By".
+    Pass the uploader's developer_id for roadmap imports.
+
+    story_points defaults to 0 (matches the DB column default — appropriate
+    for epics, which aggregate from children). Callers creating tasks/stories
+    should pass an explicit value; the commit endpoint uses 3 as a placeholder
+    until the team estimates during refinement (interim — will move to a
+    Fibonacci/T-shirt picker once that work lands).
+    """
 
     # Generate key
     next_num = get_next_work_item_number(db, project.key_prefix)
@@ -99,7 +112,9 @@ def create_work_item(
         remaining_hours=hours,
         assignee_id=assignee_id,
         epic_id=epic_id,
+        reporter_id=reporter_id,
         acceptance_criteria=acceptance_criteria or [],
+        story_points=story_points,
     )
 
     db.add(work_item)
@@ -113,11 +128,11 @@ async def parse_roadmap_file(
     file: UploadFile = File(...),
     sprint_weeks: int = Form(default=2),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_capability("project.ai.write")),
 ):
     """
-    Upload and parse a roadmap Excel file
-    Returns: Summary of epics, tasks, assignees, timeline, conflicts, warnings, and sprints
+    Upload and parse a roadmap Excel file (requires `project.ai.write`).
+    Returns: Summary of epics, tasks, assignees, timeline, conflicts, warnings, and sprints.
     """
     # Verify project exists
     project = db.query(Project).filter(Project.id == project_id).first()
@@ -246,12 +261,12 @@ async def parse_roadmap_file(
 def commit_roadmap_tickets(
     request: RoadmapCommitRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_capability("project.ai.write")),
 ):
     """
-    Create work items from parsed roadmap data
-    Creates epics first, then tasks linked to epics
-    Handles assignee lookup with fallback to current user
+    Create work items from parsed roadmap data (requires `project.ai.write`).
+    Creates epics first, then tasks linked to epics.
+    Handles assignee lookup with fallback to current user.
     """
     # Verify project exists
     project = db.query(Project).filter(Project.id == request.project_id).first()
@@ -297,6 +312,7 @@ def commit_roadmap_tickets(
                     effort_hrs=None,
                     assignee_id=None,
                     epic_id=None,
+                    reporter_id=current_dev.id,
                 )
                 epic_map[epic_name] = epic
 
@@ -334,7 +350,10 @@ def commit_roadmap_tickets(
             if epic_name and epic_name in epic_map:
                 epic_id = epic_map[epic_name].id
 
-            # Create task
+            # Create task. story_points=3 is a placeholder; teams refine the
+            # value in-app post-import. Once the Fibonacci / T-shirt picker
+            # ships, this default will go away and the spreadsheet will
+            # control story-point values directly (or leave them null).
             task = create_work_item(
                 db=db,
                 project=project,
@@ -346,6 +365,8 @@ def commit_roadmap_tickets(
                 assignee_id=assignee_id,
                 epic_id=epic_id,
                 acceptance_criteria=[],
+                reporter_id=current_dev.id,
+                story_points=3,
             )
 
             created_tasks += 1
@@ -429,8 +450,11 @@ def commit_roadmap_tickets(
         # Commit all changes
         db.commit()
 
-        # Update epic hours for all epics in this project
-        # This calculates total hours from all child stories
+        # Roll up epic hours using the canonical helper from routers/workitems.
+        # update_epic_hours handles all three columns (estimated / logged /
+        # remaining) and includes 3rd-level subtasks if any ever get imported.
+        # Replaced an inline estimate-only loop that diverged from the live
+        # rollup logic.
         epics = (
             db.query(WorkItem)
             .filter(
@@ -438,28 +462,37 @@ def commit_roadmap_tickets(
             )
             .all()
         )
-
         for epic in epics:
-            # Sum all work items' estimated_hours that belong to this epic (stories, tasks, bugs)
-            total_hours = (
-                db.query(func.coalesce(func.sum(WorkItem.estimated_hours), 0))
-                .filter(
-                    WorkItem.epic_id == epic.id,
-                    WorkItem.type.in_(
-                        [
-                            WorkItemType.USER_STORY.value,
-                            WorkItemType.TASK.value,
-                            WorkItemType.BUG.value,
-                        ]
-                    ),
-                )
-                .scalar()
-            )
-
-            epic.estimated_hours = total_hours
-            epic.updated_at = datetime.utcnow()
+            update_epic_hours(epic.id, db)
 
         # Final commit for epic hours
+        db.commit()
+
+        # Activity log entry — surfaces a single "Imported roadmap: …" event in
+        # the project's Activity tab. We deliberately don't log per-ticket
+        # creations from the bulk import (would drown out other activity); the
+        # summary line + the structured `details` payload preserve the counts.
+        db.add(
+            ActivityLog(
+                project_id=request.project_id,
+                user_id=current_user.id,
+                action="created",
+                entity_type="roadmap",
+                title=(
+                    f"Imported roadmap: {len(epic_map)} epic"
+                    f"{'s' if len(epic_map) != 1 else ''}, "
+                    f"{created_tasks} task{'s' if created_tasks != 1 else ''}, "
+                    f"{sprints_created} sprint{'s' if sprints_created != 1 else ''}"
+                ),
+                details={
+                    "epics_created": len(epic_map),
+                    "tasks_created": created_tasks,
+                    "sprints_created": sprints_created,
+                    "tasks_assigned_to_sprints": tasks_assigned_to_sprint,
+                    "assignees_not_found": assignee_not_found_count,
+                },
+            )
+        )
         db.commit()
 
         response_data = {

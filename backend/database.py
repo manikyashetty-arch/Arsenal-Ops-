@@ -57,6 +57,38 @@ def run_migrations():
     from sqlalchemy import text
 
     with engine.connect() as conn:
+        # Migration: Add category_id column to projects (links to
+        # project_categories, ON DELETE SET NULL so removing a category
+        # quietly unassigns its projects). The project_categories table
+        # itself is created by Base.metadata.create_all on first startup
+        # after this model lands.
+        try:
+            result = conn.execute(
+                text("""
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_name = 'projects' AND column_name = 'category_id'
+            """)
+            )
+            if not result.fetchone():
+                print("[MIGRATION] Adding category_id column to projects...")
+                conn.execute(
+                    text("""
+                    ALTER TABLE projects
+                    ADD COLUMN category_id INTEGER
+                    REFERENCES project_categories(id) ON DELETE SET NULL
+                """)
+                )
+                conn.execute(
+                    text(
+                        "CREATE INDEX IF NOT EXISTS ix_projects_category_id ON projects(category_id)"
+                    )
+                )
+                conn.commit()
+                print("[MIGRATION] category_id column + index added successfully!")
+        except Exception as e:
+            print(f"[MIGRATION ERROR] projects.category_id: {e}")
+
         # Migration: Add logged_hours column to work_items
         try:
             result = conn.execute(
@@ -637,6 +669,31 @@ def run_migrations():
         except Exception as e:
             print(f"[MIGRATION ERROR] hashed_password nullable: {e}")
 
+        # Migration: Add is_external flag to developers (separates external users
+        # created via Admin → Users → Add User from internal team members).
+        try:
+            result = conn.execute(
+                text("""
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_name = 'developers' AND column_name = 'is_external'
+            """)
+            )
+            if not result.fetchone():
+                print("[MIGRATION] Adding is_external column to developers...")
+                conn.execute(
+                    text("""
+                    ALTER TABLE developers
+                    ADD COLUMN is_external BOOLEAN NOT NULL DEFAULT FALSE
+                """)
+                )
+                conn.commit()
+                print(
+                    "[MIGRATION] is_external column added (defaulting all existing rows to FALSE)"
+                )
+        except Exception as e:
+            print(f"[MIGRATION ERROR] developers.is_external: {e}")
+
 
 SYSTEM_ROLES: list[tuple[str, str, list[str]]] = [
     ("admin", "Full system access", ["*"]),
@@ -649,10 +706,13 @@ SYSTEM_ROLES: list[tuple[str, str, list[str]]] = [
         [
             "project.overview.*",
             "project.tracker.*",
+            "project.tracker_write",
             "project.calendar",
             "project.pulse",
-            "project.business",
             "project.activity",
+            "project.ai.write",
+            "project.create",
+            "project.assign_personal_task",
         ],
     ),
 ]
@@ -752,6 +812,86 @@ def seed_rbac():
                     )
         except Exception as e:
             print(f"[SEED ERROR] developer grants upgrade: {e}")
+            conn.rollback()
+
+        # One-shot: bring the developer role forward to its current canonical
+        # grant set when it exactly matches a known prior canonical state.
+        # Skipped silently when an admin has customised the role, so we never
+        # re-grant something they deliberately removed.
+        #
+        # Each prior state below is a frozen snapshot from a specific point
+        # in the write-RBAC rollout. When grants exactly match one of them,
+        # the missing caps are inserted to reach `CANONICAL_DEV_GRANTS`. After
+        # one successful run, `current` equals the canonical set and no branch
+        # matches on subsequent startups — so it's idempotent.
+        try:
+            BASE_READ_GRANTS = {
+                "project.overview.*",
+                "project.tracker.*",
+                "project.calendar",
+                "project.pulse",
+                "project.activity",
+            }
+            PRIOR_DEV_STATES = [
+                # 5 entries: pre-write-RBAC era
+                BASE_READ_GRANTS,
+                # 6 entries: after the ai.write one-shot, before tracker_write
+                #            was hoisted out of `project.tracker.*`
+                BASE_READ_GRANTS | {"project.ai.write"},
+                # 7 entries: after tracker_write rename, before project.create
+                #            + project.assign_personal_task were added
+                BASE_READ_GRANTS | {"project.ai.write", "project.tracker_write"},
+            ]
+            CANONICAL_DEV_GRANTS = {g for n, _, gs in SYSTEM_ROLES if n == "developer" for g in gs}
+            dev_row = conn.execute(
+                text("SELECT id FROM roles WHERE name = 'developer' AND is_system = TRUE")
+            ).fetchone()
+            if dev_row:
+                dev_id = dev_row[0]
+                current = {
+                    r[0]
+                    for r in conn.execute(
+                        text("SELECT capability_key FROM role_capabilities WHERE role_id = :rid"),
+                        {"rid": dev_id},
+                    ).fetchall()
+                }
+                if current in PRIOR_DEV_STATES:
+                    to_add = sorted(CANONICAL_DEV_GRANTS - current)
+                    for g in to_add:
+                        conn.execute(
+                            text(
+                                "INSERT INTO role_capabilities (role_id, capability_key) "
+                                "VALUES (:rid, :g)"
+                            ),
+                            {"rid": dev_id, "g": g},
+                        )
+                    if to_add:
+                        conn.commit()
+                        print(f"[SEED] Added {to_add} to existing 'developer' role")
+        except Exception as e:
+            print(f"[SEED ERROR] developer write-caps upgrade: {e}")
+            conn.rollback()
+
+        # One-shot: rewrite any stale `project.tracker.write` rows to the
+        # post-rename key `project.tracker_write`. The cap was renamed so that
+        # the read wildcard `project.tracker.*` no longer auto-covers it;
+        # stale rows would fail save-side validation (`is_valid_grant`).
+        try:
+            result = conn.execute(
+                text(
+                    "UPDATE role_capabilities "
+                    "SET capability_key = 'project.tracker_write' "
+                    "WHERE capability_key = 'project.tracker.write'"
+                )
+            )
+            if result.rowcount:
+                conn.commit()
+                print(
+                    f"[SEED] Rewrote {result.rowcount} stale 'project.tracker.write' "
+                    "row(s) to 'project.tracker_write'"
+                )
+        except Exception as e:
+            print(f"[SEED ERROR] tracker_write rename rewrite: {e}")
             conn.rollback()
 
         # Backfill user_roles from existing users.role comma-string — only when empty

@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { API_BASE_URL } from '@/config/api';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface WorkItem {
   id: string;
@@ -60,6 +61,13 @@ const ReviewerView: React.FC<ReviewerViewProps> = ({
   token,
   onTaskUpdate,
 }) => {
+  const { user } = useAuth();
+  // Only the ticket's assignee can log hours (matches backend enforcement).
+  // ReviewerView has no project-developer list to map email→developer id, so we
+  // compare by display name. Fragile in edge cases (renames, duplicates) but the
+  // backend rejects mismatches with 403 anyway — this is just UI hide.
+  const isAssigneeOf = (item: WorkItem) =>
+    !!user?.name && !!item.assignee && user.name === item.assignee;
   const [comments, setComments] = useState<Record<string, Comment[]>>({});
   const [newComment, setNewComment] = useState<Record<string, string>>({});
   const [logHoursInput, setLogHoursInput] = useState<Record<string, string>>({});
@@ -172,9 +180,18 @@ const ReviewerView: React.FC<ReviewerViewProps> = ({
         toast.success('Marked as done');
         onTaskUpdate?.(itemId, { status: 'done' });
       } else {
-        toast.error('Failed to update status');
+        // Surface backend validation messages (e.g. "subtask still open"
+        // when marking a parent done) instead of a generic toast.
+        let detail = 'Failed to update status';
+        try {
+          const body = await res.json();
+          if (body?.detail) detail = body.detail;
+        } catch {
+          // body wasn't JSON — keep the generic message
+        }
+        toast.error(detail);
       }
-    } catch (err) {
+    } catch {
       toast.error('Failed to update status');
     } finally {
       setLoading((prev) => ({ ...prev, [`done-${itemId}`]: false }));
@@ -239,17 +256,19 @@ const ReviewerView: React.FC<ReviewerViewProps> = ({
                 <h3 className="text-white font-medium">{item.title}</h3>
               </div>
               <div className="flex items-center gap-2">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() =>
-                    setShowLogHours((prev) => ({ ...prev, [item.id]: !prev[item.id] }))
-                  }
-                  className="text-[#737373] hover:text-[#F59E0B] hover:bg-[#F59E0B]/10"
-                >
-                  <Clock className="w-4 h-4 mr-1" />
-                  Log Time
-                </Button>
+                {isAssigneeOf(item) && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() =>
+                      setShowLogHours((prev) => ({ ...prev, [item.id]: !prev[item.id] }))
+                    }
+                    className="text-[#737373] hover:text-[#F59E0B] hover:bg-[#F59E0B]/10"
+                  >
+                    <Clock className="w-4 h-4 mr-1" />
+                    Log Time
+                  </Button>
+                )}
                 <Button
                   size="sm"
                   onClick={() => handleMarkDone(item.id)}
@@ -282,8 +301,8 @@ const ReviewerView: React.FC<ReviewerViewProps> = ({
               </div>
             </div>
 
-            {/* Log Hours Input */}
-            {showLogHours[item.id] && (
+            {/* Log Hours Input — only renders when the toggle is on AND user is assignee */}
+            {showLogHours[item.id] && isAssigneeOf(item) && (
               <div className="flex items-center gap-2 mb-3 p-3 bg-[#0d0d0d] rounded-lg">
                 <Input
                   type="number"
