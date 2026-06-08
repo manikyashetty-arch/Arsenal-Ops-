@@ -1524,6 +1524,7 @@ const AdminDashboard = () => {
         setUserForm={setUserForm}
         handleRoleToggle={handleRoleToggle}
         handleSaveUser={handleSaveUser}
+        roles={roles}
       />
 
       <EditUserModal

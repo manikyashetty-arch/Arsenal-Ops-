@@ -88,7 +88,9 @@ def get_dashboard_stats(db: Session = Depends(get_db)):
     """
     from models.sprint import Sprint
 
-    total_employees = db.query(Developer).count()
+    # Internal employees only — externals belong in the Users tab, not in
+    # the Employees count on the admin dashboard.
+    total_employees = db.query(Developer).filter(Developer.is_external.is_(False)).count()
     total_projects = db.query(Project).count()
     total_tickets = db.query(WorkItem).count()
     active_sprints = db.query(Sprint).filter(Sprint.status == "active").count()
@@ -190,12 +192,15 @@ def get_developers_capacity(db: Session = Depends(get_db)):
 
     # Single query that eager-loads each developer's assigned work items + each
     # work item's project. Replaces the prior N+1 (1 query per developer).
+    # Internal-only: this endpoint feeds the Employees tab's capacity rows, so
+    # the filter must match the list_employees endpoint above.
     developers = (
         db.query(Developer)
         .options(
             joinedload(Developer.assigned_work_items).joinedload(WorkItem.project),
             joinedload(Developer.projects),
         )
+        .filter(Developer.is_external.is_(False))
         .all()
     )
 
