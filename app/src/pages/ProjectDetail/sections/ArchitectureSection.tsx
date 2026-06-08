@@ -52,7 +52,10 @@ interface Architecture {
 interface ArchitectureSectionProps {
   architecture: Architecture;
   onEdit: (arch: Architecture) => void;
-  onOpenBoard: () => void;
+  /** Optional — when undefined the "AI Generate" button (which navigates to
+   *  the board) is hidden. Parent passes undefined when the user lacks the
+   *  `project.board` cap. */
+  onOpenBoard?: () => void;
 }
 
 const ArchitectureSection = ({
@@ -83,14 +86,16 @@ const ArchitectureSection = ({
             <Pencil className="w-4 h-4 mr-2" />
             Edit
           </Button>
-          <Button
-            size="sm"
-            onClick={onOpenBoard}
-            className="bg-gradient-to-r from-[#E0B954] to-[#B8872A] hover:from-[#C79E3B] hover:to-[#B8872A] text-white"
-          >
-            <Sparkles className="w-4 h-4 mr-2" />
-            AI Generate
-          </Button>
+          {onOpenBoard && (
+            <Button
+              size="sm"
+              onClick={onOpenBoard}
+              className="bg-gradient-to-r from-[#E0B954] to-[#B8872A] hover:from-[#C79E3B] hover:to-[#B8872A] text-white"
+            >
+              <Sparkles className="w-4 h-4 mr-2" />
+              AI Generate
+            </Button>
+          )}
         </div>
       </div>
       <div className="p-4 bg-[#080808] min-h-[400px]">

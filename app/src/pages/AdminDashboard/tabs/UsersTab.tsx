@@ -30,6 +30,13 @@ interface UsersTabProps {
   onAddUser: () => void;
   onDeleteUser: (user: User) => void;
   onEditUser: (user: User) => void;
+  /** Gates Add User + per-row Edit/Delete (all mutate the users table). */
+  canWriteUsers: boolean;
+  /** Gates the per-row "Edit Roles" affordance — that mutation hits
+   *  user_roles which the backend gates on `admin.roles_write`. Separate
+   *  prop because a role-write-only admin can adjust assignments without
+   *  being able to add/delete users themselves. */
+  canWriteRoles: boolean;
 }
 
 // Helper function to convert role to Pascal Case
@@ -46,6 +53,8 @@ const UsersTab = ({
   onAddUser,
   onDeleteUser,
   onEditUser,
+  canWriteUsers,
+  canWriteRoles,
 }: UsersTabProps) => {
   // Users tab filters + sort (tab-local state per CONVENTIONS.md)
   const [usersRoleFilter, setUsersRoleFilter] = useState<string>('all');
@@ -116,13 +125,15 @@ const UsersTab = ({
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold text-white">User Management</h2>
-        <Button
-          onClick={onAddUser}
-          className="bg-gradient-to-r from-[#E0B954] to-[#B8872A] text-white rounded-xl"
-        >
-          <Plus className="w-4 h-4 mr-2" />
-          Add User
-        </Button>
+        {canWriteUsers && (
+          <Button
+            onClick={onAddUser}
+            className="bg-gradient-to-r from-[#E0B954] to-[#B8872A] text-white rounded-xl"
+          >
+            <Plus className="w-4 h-4 mr-2" />
+            Add User
+          </Button>
+        )}
       </div>
 
       {/* Filter bar */}
@@ -243,21 +254,29 @@ const UsersTab = ({
                           </span>
                         );
                       })}
-                    {user.role.split(',').length > 2 && (
-                      <button
-                        onClick={() => onEditUserRoles(user.id)}
-                        className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs bg-[#E0B954]/20 text-[#E0B954] hover:bg-[#E0B954]/30 transition cursor-pointer"
-                      >
-                        +{user.role.split(',').length - 2}
-                      </button>
-                    )}
+                    {user.role.split(',').length > 2 &&
+                      (canWriteRoles ? (
+                        <button
+                          onClick={() => onEditUserRoles(user.id)}
+                          className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs bg-[#E0B954]/20 text-[#E0B954] hover:bg-[#E0B954]/30 transition cursor-pointer"
+                        >
+                          +{user.role.split(',').length - 2}
+                        </button>
+                      ) : (
+                        // Read-only chip — no click target, no editor open.
+                        <span className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs bg-[#E0B954]/20 text-[#E0B954]">
+                          +{user.role.split(',').length - 2}
+                        </span>
+                      ))}
                   </div>
-                  <button
-                    onClick={() => onEditUserRoles(user.id)}
-                    className="text-xs px-2 py-1 rounded bg-[rgba(224,185,84,0.1)] text-[#E0B954] hover:bg-[rgba(224,185,84,0.2)] transition"
-                  >
-                    Edit Roles
-                  </button>
+                  {canWriteRoles && (
+                    <button
+                      onClick={() => onEditUserRoles(user.id)}
+                      className="text-xs px-2 py-1 rounded bg-[rgba(224,185,84,0.1)] text-[#E0B954] hover:bg-[rgba(224,185,84,0.2)] transition"
+                    >
+                      Edit Roles
+                    </button>
+                  )}
                 </td>
                 <td className="py-3 px-4">
                   {user.is_active ? (
@@ -280,12 +299,17 @@ const UsersTab = ({
                 </td>
                 <td className="py-3 px-4">
                   <div className="flex justify-end gap-2">
+                    {/* Buttons stay visible so the action column has consistent
+                        width across rows. `disabled` gates the click + greys
+                        out the icon; tooltip explains why. The mutating
+                        endpoint is independently gated on the backend. */}
                     <Button
                       variant="ghost"
                       size="sm"
                       onClick={() => onEditUser(user)}
-                      className="text-[#737373] hover:text-white h-8 w-8 p-0"
-                      title="Edit user profile"
+                      disabled={!canWriteUsers}
+                      className="text-[#737373] hover:text-white h-8 w-8 p-0 disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:text-[#737373]"
+                      title={canWriteUsers ? 'Edit user profile' : 'Requires user-write access'}
                     >
                       <Pencil className="w-4 h-4" />
                     </Button>
@@ -293,8 +317,9 @@ const UsersTab = ({
                       variant="ghost"
                       size="sm"
                       onClick={() => onDeleteUser(user)}
-                      className="text-red-400 hover:text-red-300 h-8 w-8 p-0"
-                      title="Delete user"
+                      disabled={!canWriteUsers}
+                      className="text-red-400 hover:text-red-300 h-8 w-8 p-0 disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:text-red-400"
+                      title={canWriteUsers ? 'Delete user' : 'Requires user-write access'}
                     >
                       <Trash2 className="w-4 h-4" />
                     </Button>

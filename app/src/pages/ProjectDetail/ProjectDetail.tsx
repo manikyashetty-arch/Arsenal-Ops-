@@ -865,13 +865,18 @@ const ProjectDetail = () => {
                 </div>
               </div>
             </div>
-            <Button
-              onClick={() => navigate(`/project/${project.id}/board`)}
-              className="bg-gradient-to-r from-[#E0B954] to-[#C79E3B] hover:opacity-90 text-[#080808] rounded-xl font-semibold shadow-lg shadow-[#E0B954]/20 h-9 px-4"
-            >
-              <LayoutGrid className="w-4 h-4 mr-2" />
-              Open Board
-            </Button>
+            {/* Hidden when the user lacks `project.board` so they don't see
+                an entry point that would 403 on click. Backend GET /board
+                enforces the same cap, so this gate is UX-only, not security. */}
+            {can('project.board') && (
+              <Button
+                onClick={() => navigate(`/project/${project.id}/board`)}
+                className="bg-gradient-to-r from-[#E0B954] to-[#C79E3B] hover:opacity-90 text-[#080808] rounded-xl font-semibold shadow-lg shadow-[#E0B954]/20 h-9 px-4"
+              >
+                <LayoutGrid className="w-4 h-4 mr-2" />
+                Open Board
+              </Button>
+            )}
           </div>
         </div>
 
@@ -990,7 +995,13 @@ const ProjectDetail = () => {
                 <ArchitectureSection
                   architecture={project.selected_architecture}
                   onEdit={setEditingArchitecture}
-                  onOpenBoard={() => navigate(`/project/${project.id}/board`)}
+                  // Omitted when the user lacks `project.board` so the
+                  // "AI Generate" / Open Board entry point doesn't render.
+                  onOpenBoard={
+                    can('project.board')
+                      ? () => navigate(`/project/${project.id}/board`)
+                      : undefined
+                  }
                 />
               )}
 

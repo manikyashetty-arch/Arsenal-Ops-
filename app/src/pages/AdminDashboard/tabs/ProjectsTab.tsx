@@ -117,6 +117,10 @@ interface ProjectsTabProps {
   onEditGitHubSettings: (project: Project, e: React.MouseEvent) => void;
   onSendGitHubInvites: (project: Project, e: React.MouseEvent) => void;
   onOpenProjectMembers: (project: Project, e: React.MouseEvent) => void;
+  /** Gates write affordances: Manage Categories, per-card category Select,
+   *  Edit GitHub Settings, Send GitHub Invites. The filter dropdown and
+   *  read-only project list stay visible for read-only admins. */
+  canWriteProjects: boolean;
 }
 
 /** Compact "Jun 1 – 7, 2026" range for the report header. Same-month dates
@@ -180,6 +184,7 @@ const ProjectsTab = ({
   onEditGitHubSettings,
   onSendGitHubInvites,
   onOpenProjectMembers,
+  canWriteProjects,
 }: ProjectsTabProps) => {
   const navigate = useNavigate();
 
@@ -248,15 +253,19 @@ const ProjectsTab = ({
           </Select>
           {/* Match "Back to Projects" button style — ghost variant, muted
               foreground that brightens on hover. Keeps the header visual
-              hierarchy consistent across the admin shell. */}
-          <Button
-            variant="ghost"
-            onClick={onOpenCategoryManager}
-            className="text-[#737373] hover:text-white"
-          >
-            <Tag className="w-4 h-4 mr-2" />
-            Manage categories
-          </Button>
+              hierarchy consistent across the admin shell.
+              Hidden without `admin.projects_write` so read-only admins
+              don't see an entry point that would 403 on category mutation. */}
+          {canWriteProjects && (
+            <Button
+              variant="ghost"
+              onClick={onOpenCategoryManager}
+              className="text-[#737373] hover:text-white"
+            >
+              <Tag className="w-4 h-4 mr-2" />
+              Manage categories
+            </Button>
+          )}
         </div>
       </div>
 
@@ -543,61 +552,76 @@ const ProjectsTab = ({
                       <h3 className="text-sm font-semibold text-white truncate">{project.name}</h3>
                       <div className="text-xs text-[#737373] mt-0.5">{project.status}</div>
                     </div>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={(e) => onEditGitHubSettings(project, e)}
-                      className="text-[#737373] hover:text-white h-7 w-7 p-0 shrink-0"
-                    >
-                      <Settings className="w-3.5 h-3.5" />
-                    </Button>
+                    {canWriteProjects && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={(e) => onEditGitHubSettings(project, e)}
+                        className="text-[#737373] hover:text-white h-7 w-7 p-0 shrink-0"
+                      >
+                        <Settings className="w-3.5 h-3.5" />
+                      </Button>
+                    )}
                   </div>
 
-                  {/* Category badge IS the edit affordance — clicking it opens
-                  the Select dropdown so a single chip-shaped element shows
-                  the current state and lets the admin change it without a
-                  separate control next to the badge. Trigger styling adapts
-                  based on whether a category is assigned (gold tones) or
-                  not (muted tones). */}
+                  {/* Category chip. When the admin has projects-write, the
+                  chip IS the edit affordance (a Select); without it, the
+                  chip renders as a read-only badge with the same shape so
+                  the layout stays stable across permission levels. */}
                   <div className="mb-3">
-                    <Select
-                      value={
-                        project.category_id === null
-                          ? UNCATEGORIZED_OPTION
-                          : String(project.category_id)
-                      }
-                      onValueChange={(value) => {
-                        const nextId = value === UNCATEGORIZED_OPTION ? null : Number(value);
-                        // No-op guard — Radix Select sometimes fires onValueChange
-                        // with the current value during open/close. Skip the round
-                        // trip when nothing actually changed.
-                        if (nextId === project.category_id) return;
-                        onSetProjectCategory(project.id, nextId);
-                      }}
-                    >
-                      <SelectTrigger
-                        onClick={(e) => e.stopPropagation()}
-                        className={
-                          'h-7 px-2.5 text-[11px] gap-1.5 rounded-full border w-auto inline-flex ' +
-                          (project.category_name
-                            ? 'bg-[rgba(224,185,84,0.1)] text-[#E0B954] border-[rgba(224,185,84,0.2)] hover:bg-[rgba(224,185,84,0.18)]'
-                            : 'bg-[rgba(255,255,255,0.03)] text-[#737373] border-[rgba(255,255,255,0.05)] hover:bg-[rgba(255,255,255,0.06)] hover:text-white')
+                    {canWriteProjects ? (
+                      <Select
+                        value={
+                          project.category_id === null
+                            ? UNCATEGORIZED_OPTION
+                            : String(project.category_id)
                         }
+                        onValueChange={(value) => {
+                          const nextId = value === UNCATEGORIZED_OPTION ? null : Number(value);
+                          // No-op guard — Radix Select sometimes fires onValueChange
+                          // with the current value during open/close. Skip the round
+                          // trip when nothing actually changed.
+                          if (nextId === project.category_id) return;
+                          onSetProjectCategory(project.id, nextId);
+                        }}
+                      >
+                        <SelectTrigger
+                          onClick={(e) => e.stopPropagation()}
+                          className={
+                            'h-7 px-2.5 text-[11px] gap-1.5 rounded-full border w-auto inline-flex ' +
+                            (project.category_name
+                              ? 'bg-[rgba(224,185,84,0.1)] text-[#E0B954] border-[rgba(224,185,84,0.2)] hover:bg-[rgba(224,185,84,0.18)]'
+                              : 'bg-[rgba(255,255,255,0.03)] text-[#737373] border-[rgba(255,255,255,0.05)] hover:bg-[rgba(255,255,255,0.06)] hover:text-white')
+                          }
+                        >
+                          <Tag className="w-3 h-3" />
+                          <SelectValue>{project.category_name ?? 'Uncategorized'}</SelectValue>
+                        </SelectTrigger>
+                        <SelectContent className="bg-[#0d0d0d] border-[rgba(255,255,255,0.08)]">
+                          <SelectItem value={UNCATEGORIZED_OPTION} className="text-white">
+                            Uncategorized
+                          </SelectItem>
+                          {categories.map((cat) => (
+                            <SelectItem key={cat.id} value={String(cat.id)} className="text-white">
+                              {cat.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <span
+                        className={
+                          'h-7 px-2.5 text-[11px] gap-1.5 rounded-full border inline-flex items-center ' +
+                          (project.category_name
+                            ? 'bg-[rgba(224,185,84,0.1)] text-[#E0B954] border-[rgba(224,185,84,0.2)]'
+                            : 'bg-[rgba(255,255,255,0.03)] text-[#737373] border-[rgba(255,255,255,0.05)]')
+                        }
+                        title="Read-only — requires projects write to change"
                       >
                         <Tag className="w-3 h-3" />
-                        <SelectValue>{project.category_name ?? 'Uncategorized'}</SelectValue>
-                      </SelectTrigger>
-                      <SelectContent className="bg-[#0d0d0d] border-[rgba(255,255,255,0.08)]">
-                        <SelectItem value={UNCATEGORIZED_OPTION} className="text-white">
-                          Uncategorized
-                        </SelectItem>
-                        {categories.map((cat) => (
-                          <SelectItem key={cat.id} value={String(cat.id)} className="text-white">
-                            {cat.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                        {project.category_name ?? 'Uncategorized'}
+                      </span>
+                    )}
                   </div>
 
                   {/* GitHub Info + Invite */}
@@ -622,24 +646,26 @@ const ProjectsTab = ({
                           </span>
                         )}
                       </div>
-                      <Button
-                        size="sm"
-                        onClick={(e) => onSendGitHubInvites(project, e)}
-                        disabled={invitingProjectId === project.id}
-                        className="w-full h-7 text-[10px] bg-gradient-to-r from-[#E0B954] to-[#B8872A] hover:from-[#C79E3B] hover:to-[#B8872A] text-white rounded-lg font-medium shadow-sm disabled:opacity-50"
-                      >
-                        {invitingProjectId === project.id ? (
-                          <>
-                            <div className="w-3 h-3 border border-white/30 border-t-white rounded-full animate-spin mr-1" />
-                            Sending...
-                          </>
-                        ) : (
-                          <>
-                            <Mail className="w-3 h-3 mr-1" />
-                            Send GitHub Invites
-                          </>
-                        )}
-                      </Button>
+                      {canWriteProjects && (
+                        <Button
+                          size="sm"
+                          onClick={(e) => onSendGitHubInvites(project, e)}
+                          disabled={invitingProjectId === project.id}
+                          className="w-full h-7 text-[10px] bg-gradient-to-r from-[#E0B954] to-[#B8872A] hover:from-[#C79E3B] hover:to-[#B8872A] text-white rounded-lg font-medium shadow-sm disabled:opacity-50"
+                        >
+                          {invitingProjectId === project.id ? (
+                            <>
+                              <div className="w-3 h-3 border border-white/30 border-t-white rounded-full animate-spin mr-1" />
+                              Sending...
+                            </>
+                          ) : (
+                            <>
+                              <Mail className="w-3 h-3 mr-1" />
+                              Send GitHub Invites
+                            </>
+                          )}
+                        </Button>
+                      )}
                     </div>
                   )}
                   {!project.github_repo_url && (
