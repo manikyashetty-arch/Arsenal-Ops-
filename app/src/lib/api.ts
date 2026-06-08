@@ -88,3 +88,21 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
   if (res.status === 204) return undefined as T;
   return res.json();
 }
+
+/**
+ * Pick a user-facing error message for a mutation `onError` handler.
+ *
+ * - 403 → ``"Do not have permission"`` (the backend's standard cap-failure
+ *   message). Users without `project.tracker_write` (PMs, viewers, custom
+ *   roles that exclude write caps) hit this on any work-item mutation.
+ * - Anything else → the provided fallback (e.g. ``"Failed to update item"``).
+ *
+ * 401s are handled separately by ``handleUnauthorized`` (full-page redirect
+ * to /login), so callers don't need to special-case them here.
+ */
+export function permissionAwareError(err: unknown, fallback: string): string {
+  if (err instanceof ApiError && err.status === 403) {
+    return 'Do not have permission';
+  }
+  return fallback;
+}

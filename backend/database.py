@@ -921,6 +921,170 @@ def seed_rbac():
             conn.rollback()
 
 
+def _allowed_internal_domains() -> list[str]:
+    """Parsed ALLOWED_EMAIL_DOMAINS, lowercased, empty entries dropped.
+
+    Single source of truth shared by SSO/Add User code paths and the
+    reconciliation below. Default matches the historical fallback so behaviour
+    is unchanged when the env var isn't set.
+    """
+    return [
+        d.strip().lower()
+        for d in os.getenv("ALLOWED_EMAIL_DOMAINS", "arsenalai.com").split(",")
+        if d.strip()
+    ]
+
+
+def reconcile_internal_developers():
+    """Ensure every internal-domain User has a matching Developer row marked
+    internal, and flip any internal-domain Developer that drifted to external.
+
+    Why: the Employees tab filters `Developer.is_external == False`. Adding a
+    non-developer-role user via Add User used to skip Developer creation,
+    leaving internal employees invisible in that tab. This pass fixes both
+    historical gaps and any future drift.
+
+    Idempotent: runs every startup but only mutates rows that need it.
+    ORM-based so it works on both Postgres (production) and SQLite (local dev).
+    """
+    from models.developer import Developer
+    from models.user import User
+
+    allowed = _allowed_internal_domains()
+    if not allowed:
+        return
+
+    def is_internal(email: str | None) -> bool:
+        if not email or "@" not in email:
+            return False
+        return email.rsplit("@", 1)[-1].lower() in allowed
+
+    db = SessionLocal()
+    try:
+        # Pass 1: flip internal-domain Developers that were mis-flagged external.
+        flipped = 0
+        externals = db.query(Developer).filter(Developer.is_external.is_(True)).all()
+        for dev in externals:
+            if is_internal(dev.email):
+                dev.is_external = False
+                flipped += 1
+
+        # Pass 2: insert missing Developer rows for internal-domain Users.
+        # One query for existing Developer emails (set membership beats N selects).
+        existing_dev_emails = {
+            email for (email,) in db.query(Developer.email).all() if email is not None
+        }
+        inserted = 0
+        internal_users = (
+            db.query(User).filter(User.email.isnot(None)).all()
+        )  # is_internal handles the domain check
+        for user in internal_users:
+            if not is_internal(user.email):
+                continue
+            if user.email in existing_dev_emails:
+                continue
+            db.add(Developer(name=user.name, email=user.email, is_external=False))
+            existing_dev_emails.add(user.email)
+            inserted += 1
+
+        if flipped or inserted:
+            db.commit()
+            if flipped:
+                print(
+                    f"[RECONCILE] Flipped {flipped} internal-domain developer(s) "
+                    "from external to internal"
+                )
+            if inserted:
+                print(
+                    f"[RECONCILE] Backfilled {inserted} Developer row(s) "
+                    "for internal-domain User(s)"
+                )
+    except Exception as e:
+        db.rollback()
+        print(f"[RECONCILE ERROR] internal-domain developer reconciliation: {e}")
+    finally:
+        db.close()
+
+
+def _reconcile_user_roles_impl(db) -> int:
+    """Pure backfill logic. Returns the number of users newly linked.
+
+    Split out from `reconcile_user_roles` so tests can drive it against an
+    in-memory SQLite Session without monkey-patching SessionLocal.
+    """
+    from sqlalchemy.orm import selectinload
+
+    from models.role import Role
+    from models.user import User
+
+    # Eager-load user.roles so the empty-check below doesn't fire N
+    # lazy-load SELECTs against user_roles.
+    users = (
+        db.query(User)
+        .options(selectinload(User.roles))
+        .filter(User.role.isnot(None))
+        .filter(User.role != "")
+        .all()
+    )
+    if not users:
+        return 0
+
+    role_by_name = {r.name: r for r in db.query(Role).all()}
+    if not role_by_name:
+        return 0
+
+    fixed = 0
+    for user in users:
+        if user.roles:  # already linked (fully or partially), skip
+            continue
+        names = [n.strip() for n in (user.role or "").split(",") if n.strip()]
+        linked = False
+        for name in names:
+            role = role_by_name.get(name)
+            if role is not None:
+                user.roles.append(role)
+                linked = True
+        if linked:
+            fixed += 1
+    return fixed
+
+
+def reconcile_user_roles():
+    """Backfill user_roles for any User whose legacy `role` string names a
+    known system Role but has zero entries in the many-to-many user_roles
+    table.
+
+    Why: `User.has_capability` reads from `user.roles` (the m2m), not
+    `user.role` (the legacy comma-string). Users created via the SSO and
+    Add User paths historically only set the string — leaving them with zero
+    effective capabilities regardless of what their role grants.
+
+    Idempotent: only touches users whose `user_roles` row count is zero.
+    The one-shot seed_rbac backfill at lines ~889-919 already handles the
+    initial migration; this catches every user created afterwards by paths
+    that forgot to write the m2m link.
+
+    Conservative on partial mismatches: a user with `role="admin,developer"`
+    but only the admin link present is left alone — we never override what
+    looks like a deliberate admin adjustment. The fix is "either fully
+    linked or fully empty"; partial states are preserved.
+    """
+    db = SessionLocal()
+    try:
+        fixed = _reconcile_user_roles_impl(db)
+        if fixed:
+            db.commit()
+            print(
+                f"[RECONCILE] Linked {fixed} user(s) to their system Role(s) "
+                "from legacy users.role string"
+            )
+    except Exception as e:
+        db.rollback()
+        print(f"[RECONCILE ERROR] user_roles backfill: {e}")
+    finally:
+        db.close()
+
+
 def init_db():
     """Initialize database tables"""
     Base.metadata.create_all(bind=engine)
@@ -930,3 +1094,13 @@ def init_db():
 
     # Seed RBAC system roles + backfill assignments from legacy users.role
     seed_rbac()
+
+    # Reconcile Developer rows so the Employees tab reflects every internal-
+    # domain User (drops the historical "developer role required" gap).
+    reconcile_internal_developers()
+
+    # Backfill user_roles for users created by paths that forgot to write
+    # the m2m link (Add User, SSO new-user). Without this, has_capability
+    # returns False for everything even when their legacy role string says
+    # "developer" or "admin".
+    reconcile_user_roles()

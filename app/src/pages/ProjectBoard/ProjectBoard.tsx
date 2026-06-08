@@ -47,7 +47,7 @@ import { toast, Toaster } from 'sonner';
 import StatusDotMenu from '@/components/ProjectsPage/StatusDotMenu';
 import { useAuth } from '@/contexts/AuthContext';
 import { buildEpicGroups } from '@/lib/hierarchy/buildEpicGroups';
-import { apiFetch, ApiError } from '@/lib/api';
+import { apiFetch, ApiError, permissionAwareError } from '@/lib/api';
 import { invalidateProjectScope, invalidateWorkItemScope } from '@/lib/invalidations';
 import type { CreateItemFormValues } from './modals/CreateItemModal';
 // EditSprintModal's file also exports the CompleteSprintConfirm /
@@ -882,7 +882,7 @@ const ProjectBoard = () => {
     },
     onError: (err: any) => {
       console.error('Failed to create item:', err);
-      toast.error('Failed to create item');
+      toast.error(permissionAwareError(err, 'Failed to create item'));
     },
     onSettled: () => {
       invalidateWorkItems();
@@ -948,7 +948,7 @@ const ProjectBoard = () => {
       toast.success('Sprint created!');
       setShowCreateSprintModal(false);
     },
-    onError: () => toast.error('Failed to create sprint'),
+    onError: (err) => toast.error(permissionAwareError(err, 'Failed to create sprint')),
     onSettled: () => {
       invalidateProjectScope(queryClient, id);
     },
@@ -1036,7 +1036,7 @@ const ProjectBoard = () => {
       toast.success('Sprint updated!');
       setEditingSprint(null);
     },
-    onError: () => toast.error('Failed to update sprint'),
+    onError: (err) => toast.error(permissionAwareError(err, 'Failed to update sprint')),
     onSettled: () => {
       invalidateProjectScope(queryClient, id);
     },
@@ -1102,7 +1102,7 @@ const ProjectBoard = () => {
       toast.success(`"${sprint?.name}" has been completed.`);
       setCompletingSprintId(null);
     },
-    onError: () => toast.error('Failed to complete sprint'),
+    onError: (err) => toast.error(permissionAwareError(err, 'Failed to complete sprint')),
     onSettled: () => {
       invalidateProjectScope(queryClient, id);
       invalidateWorkItemScope(queryClient, id);
@@ -1122,7 +1122,7 @@ const ProjectBoard = () => {
       toast.success('Sprint deleted');
       setDeletingSprintId(null);
     },
-    onError: () => toast.error('Failed to delete sprint'),
+    onError: (err) => toast.error(permissionAwareError(err, 'Failed to delete sprint')),
     onSettled: () => {
       invalidateWorkItems();
       invalidateProjectScope(queryClient, id);
@@ -1231,7 +1231,7 @@ const ProjectBoard = () => {
       );
       toast.success('Item updated!');
     },
-    onError: () => toast.error('Failed to update item'),
+    onError: (err) => toast.error(permissionAwareError(err, 'Failed to update item')),
     onSettled: () => {
       invalidateWorkItems();
       invalidateProject();
@@ -1251,7 +1251,7 @@ const ProjectBoard = () => {
       navigate(`/project/${id}/board`);
       toast.success('Item deleted');
     },
-    onError: () => toast.error('Failed to delete item'),
+    onError: (err) => toast.error(permissionAwareError(err, 'Failed to delete item')),
     onSettled: () => {
       invalidateWorkItems();
       invalidateProject();
@@ -1280,7 +1280,7 @@ const ProjectBoard = () => {
       );
       toast.success(`Logged ${hours}h! Remaining: ${data.remaining_hours}h`);
     },
-    onError: () => toast.error('Failed to log hours'),
+    onError: (err) => toast.error(permissionAwareError(err, 'Failed to log hours')),
     onSettled: (_data, _err, { itemId }) => {
       invalidateWorkItems();
       invalidateProject();

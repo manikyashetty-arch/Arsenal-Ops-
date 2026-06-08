@@ -230,6 +230,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, [isAuthenticated, logout]);
 
+  // Keep capability list fresh while the user is signed in. Without this, a
+  // developer who was logged in before an admin edits their role keeps the
+  // old cap list in localStorage until they hard-refresh or re-login —
+  // `can('project.create')` then stays false even though the backend would
+  // accept the call.
+  //
+  // Two triggers:
+  //  • `visibilitychange` → instant refresh when the tab regains focus
+  //    (covers the "admin tells user, user switches back" case).
+  //  • 60s interval → safety net for actively-used sessions that never lose
+  //    focus. Matches the backend `_caps_cache` TTL, so the frontend can't
+  //    be more stale than the backend itself.
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') refreshCapabilities();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+
+    const interval = setInterval(refreshCapabilities, 60000);
+
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible);
+      clearInterval(interval);
+    };
+  }, [isAuthenticated, refreshCapabilities]);
+
   const dismissWarning = useCallback(() => {
     showWarningRef.current = false;
     setShowWarning(false);
