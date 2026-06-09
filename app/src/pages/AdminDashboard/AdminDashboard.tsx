@@ -467,16 +467,18 @@ const AdminDashboard = () => {
   });
 
   // ── Category CRUD mutations ───────────────────────────────────────────
-  // Invalidate three keys on any category mutation:
+  // Invalidate four keys on any category mutation:
   //   ['admin','projectCategories'] — drives the manager modal list
   //   ['admin','projects']          — project cards show category badges
   //   ['admin','projectsWeeklyReport'] — report rows include category_name
+  //   ['projectCategories']         — home-page CreateProjectDialog picker
   // A rename of a category needs to reflow into the cards AND the report;
   // an assignment change re-buckets which projects show in a filtered report.
   const invalidateCategoryScope = () => {
     queryClient.invalidateQueries({ queryKey: ['admin', 'projectCategories'] });
     queryClient.invalidateQueries({ queryKey: ['admin', 'projects'] });
     queryClient.invalidateQueries({ queryKey: ['admin', 'projectsWeeklyReport'] });
+    queryClient.invalidateQueries({ queryKey: ['projectCategories'] });
   };
 
   const createCategoryMutation = useMutation({

@@ -327,6 +327,31 @@ def format_project(project: Project, db: Session) -> dict:
     return format_projects_batch([project], db)[0]
 
 
+@router.get("/categories")
+def list_project_categories_lite(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_capability("project.create")),
+):
+    """List project categories (id + name + description only) for users
+    creating projects. Gated on `project.create` because the only caller is
+    the Create Project dialog — admins fetch the richer category list
+    (with `project_count`) via `GET /api/admin/project-categories`.
+
+    Returned in alphabetical order so the picker stays predictable.
+    """
+    from models.project_category import ProjectCategory
+
+    categories = db.query(ProjectCategory).order_by(ProjectCategory.name.asc()).all()
+    return [
+        {
+            "id": c.id,
+            "name": c.name,
+            "description": c.description,
+        }
+        for c in categories
+    ]
+
+
 @router.post("/")
 def create_project(
     project: ProjectCreate,
@@ -429,6 +454,30 @@ def create_project(
                 )
             )
         db.commit()
+
+    # Log creation in the project's activity feed. Same shape as the other
+    # `created` / `entity_type` rows in this file (see milestone/goal create
+    # endpoints) so the Activity tab renders it consistently. Committed in
+    # its own transaction so a logging failure can't roll back the project.
+    try:
+        from models.activity_log import ActivityLog
+
+        db.add(
+            ActivityLog(
+                project_id=new_project.id,
+                user_id=current_user.id,
+                action="created",
+                entity_type="project",
+                entity_id=new_project.id,
+                title=f"Created project: {new_project.name}",
+            )
+        )
+        db.commit()
+    except Exception as e:
+        # Non-fatal: the project itself is already committed above. Log
+        # and keep going so the caller still gets a 200.
+        db.rollback()
+        print(f"[ActivityLog] Failed to log project creation for #{new_project.id}: {e}")
 
     return format_project(new_project, db)
 
