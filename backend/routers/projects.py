@@ -38,17 +38,27 @@ def has_project_access(project: Project, user: User) -> bool:
 def is_project_admin(project_id: int, user: User, db: Session) -> bool:
     """Return True when the user can act as a project admin on this project.
 
-    Two paths grant project-admin rights, matching the frontend's
+    Three paths grant project-admin rights, matching the frontend's
     `isCurrentUserAdmin` semantics in `ProjectDetail.tsx`:
-      1. Capability-based: the user holds `admin.projects` (system admins via
-         `*`, or any custom role explicitly granted it). Replaces the legacy
-         `"admin" in user.role` substring check, which missed users whose
-         admin status came from the RBAC user_roles relationship rather than
-         the legacy comma-separated `users.role` column.
+      1. Capability-based (tool admin): the user holds `admin.projects`
+         (system admins via `*`, or any custom role explicitly granted it).
+         Replaces the legacy `"admin" in user.role` substring check, which
+         missed users whose admin status came from the RBAC user_roles
+         relationship rather than the legacy comma-separated `users.role`
+         column.
       2. Membership-based: the user appears in this project's developers
          list with the `is_admin` flag set on the join row.
+      3. Capability-based (overview write): the user holds the new
+         `project.overview_write` cap, which grants tool-wide ability to
+         edit Overview content (project info + team membership) on any
+         project they can otherwise see. Distinct from path 1 (which is
+         "admin everything") and path 2 (which is "this project only");
+         path 3 is "edit Overview on every project".
     """
     if user.has_capability("admin.projects"):
+        return True
+
+    if user.has_capability("project.overview_write"):
         return True
 
     result = db.execute(
@@ -65,7 +75,8 @@ def is_project_admin(project_id: int, user: User, db: Session) -> bool:
 
 
 def require_project_admin(project_id: int, user: User, db: Session):
-    """Require project admin access, raise 403 if denied"""
+    """Require project admin access (or the equivalent capabilities — see
+    `is_project_admin`), raise 403 if denied."""
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
@@ -73,7 +84,7 @@ def require_project_admin(project_id: int, user: User, db: Session):
     if not is_project_admin(project_id, user, db):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="You must be a project admin to perform this action",
+            detail="You don't have permission to edit this project",
         )
 
     return project
@@ -1402,7 +1413,14 @@ async def upload_project_file(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Upload a file to a project"""
+    """Upload a file to a project.
+
+    Resource management (files + links) is part of the Overview section,
+    so it shares the same gate as other Overview writes — see
+    `is_project_admin` for the three accept paths (tool admin, overview
+    write cap, or per-project admin).
+    """
+    require_project_admin(project_id, current_user, db)
     from models.project_file import ProjectFile
 
     require_project_access(project_id, current_user, db)
@@ -1498,7 +1516,8 @@ def delete_project_file(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Delete a file from a project"""
+    """Delete a file from a project. Gated like other Overview writes."""
+    require_project_admin(project_id, current_user, db)
     from models.project_file import ProjectFile
 
     require_project_access(project_id, current_user, db)
@@ -1579,7 +1598,8 @@ def create_project_link(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """Create a new link for a project"""
+    """Create a new link for a project. Gated like other Overview writes."""
+    require_project_admin(project_id, user, db)
     from models.project_link import ProjectLink
 
     require_project_access(project_id, user, db)
@@ -1605,7 +1625,8 @@ def delete_project_link(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """Delete a link from a project"""
+    """Delete a link from a project. Gated like other Overview writes."""
+    require_project_admin(project_id, user, db)
     from models.project_link import ProjectLink
 
     require_project_access(project_id, user, db)

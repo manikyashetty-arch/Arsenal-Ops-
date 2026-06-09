@@ -36,6 +36,14 @@ CAPABILITIES: dict[str, str] = {
     # sweep them in.
     "project.tracker_write": "Create, edit, and delete work items and sprints",
     "project.ai.write": "Use AI generators (PRD analyzer, roadmap parser)",
+    # Overview-section write cap. Underscore (not dot) so the read wildcard
+    # `project.overview.*` does NOT auto-cover this — the same pattern used
+    # for `project.tracker_write`. System admins (`*`), PM (`project.*`),
+    # and per-project admins always have access regardless of this cap;
+    # see `is_project_admin` in routers/projects.py.
+    "project.overview_write": (
+        "Edit Overview content (project info, team membership, project-admin role)"
+    ),
     "project.create": "Create new projects",
     "project.assign_personal_task": "Assign personal tasks to a project (convert to ticket)",
     "project.board": "Open and view the Project Board (kanban + sprints)",

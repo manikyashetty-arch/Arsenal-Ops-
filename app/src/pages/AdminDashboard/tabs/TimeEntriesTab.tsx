@@ -67,8 +67,21 @@ interface TimeEntriesResponse {
 
 type DatePreset = 'today' | 'this_week' | 'this_month' | 'last_week' | 'last_month' | 'custom';
 
-/** Table layout — flat list or grouped by Sat→Fri week. */
-type GroupBy = 'none' | 'week';
+/** Table layout — flat list, grouped by Sat→Fri week, or grouped by month. */
+type GroupBy = 'none' | 'week' | 'month';
+
+/** A group bucket — shared shape for week + month grouping so the render
+ *  branch can treat them identically. `key` is a stable YYYY-MM-DD string
+ *  used for React keys and Map lookups; `label` is the already-formatted
+ *  header text ("Jun 6 → Jun 12, 2026" for week, "June 2026" for month).
+ */
+interface EntryGroup {
+  key: string;
+  label: string;
+  totalHours: number;
+  entries: TimeEntryRow[];
+  sortDate: Date;
+}
 
 interface FiltersState {
   projectId: number | null;
@@ -167,6 +180,23 @@ function resolveDateRange(
 function formatLoggedAt(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+}
+
+/**
+ * Format a `YYYY-MM-DD` filter date as "Jun 8, 2026" for the Range summary
+ * card. Uses `parseLocalDate` rather than `new Date(str)` because plain
+ * `new Date("2026-06-08")` parses as UTC and shifts to the previous local
+ * day in any timezone west of UTC — the same papercut `parseLocalDate`
+ * exists to fix elsewhere in the app.
+ */
+function formatRangeDate(yyyyMmDd: string): string {
+  const d = parseLocalDate(yyyyMmDd);
+  if (!d) return yyyyMmDd;
   return d.toLocaleDateString(undefined, {
     month: 'short',
     day: 'numeric',
@@ -366,42 +396,63 @@ const TimeEntriesTab: React.FC<TimeEntriesTabProps> = ({ projects, employees }) 
   });
 
   // Stabilize the empty-default reference — `?? []` produces a fresh array
-  // every render, which would otherwise re-trigger `weeklyGroups` below and
+  // every render, which would otherwise re-trigger `groupedRows` below and
   // any downstream memos. Per app/CLAUDE.md "Stabilize empty-default arrays".
   const rows = useMemo(() => entriesQuery.data?.rows ?? [], [entriesQuery.data?.rows]);
   const totalHours = entriesQuery.data?.total_hours ?? 0;
   const totalRows = entriesQuery.data?.total_rows ?? 0;
   const truncated = entriesQuery.data?.truncated ?? false;
 
-  // When `groupBy === 'week'`, bucket each entry into the Sat→Fri week
-  // containing its logged_at timestamp. Groups are sorted most-recent week
-  // first; entries inside keep the server's DESC ordering. Returns null
-  // when grouping is off so the render branch can stay simple.
-  const weeklyGroups = useMemo(() => {
-    if (filters.groupBy !== 'week') return null;
-    const buckets = new Map<
-      string,
-      { weekStart: Date; weekEnd: Date; totalHours: number; entries: TimeEntryRow[] }
-    >();
+  // When `groupBy !== 'none'`, bucket each entry into the period
+  // (Sat→Fri week or calendar month) containing its logged_at timestamp.
+  // Groups are sorted most-recent period first; entries inside keep the
+  // server's DESC ordering. Returns null when grouping is off so the
+  // render branch can short-circuit to the flat layout.
+  //
+  // Both modes produce the same `EntryGroup` shape so the render code
+  // doesn't branch on the grouping kind — only the label format differs,
+  // and that's pre-computed here.
+  const groupedRows = useMemo<EntryGroup[] | null>(() => {
+    if (filters.groupBy === 'none') return null;
+
+    // `bucketize` returns the bucket start Date + pre-formatted label for
+    // the chosen mode. Computed once and reused per row.
+    const bucketize = (logged: Date): { start: Date; label: string } => {
+      if (filters.groupBy === 'month') {
+        const start = new Date(logged.getFullYear(), logged.getMonth(), 1);
+        const label = start.toLocaleDateString(undefined, {
+          month: 'long',
+          year: 'numeric',
+        });
+        return { start, label };
+      }
+      // week (Sat→Fri)
+      const start = startOfWeek(logged);
+      const end = addDays(start, 6);
+      const startStr = start.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+      const endStr = end.toLocaleDateString(undefined, {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+      });
+      return { start, label: `${startStr} → ${endStr}` };
+    };
+
+    const buckets = new Map<string, EntryGroup>();
     for (const row of rows) {
       const logged = new Date(row.logged_at);
       if (Number.isNaN(logged.getTime())) continue;
-      const weekStart = startOfWeek(logged);
-      const key = formatLocalDate(weekStart);
+      const { start, label } = bucketize(logged);
+      const key = formatLocalDate(start);
       let bucket = buckets.get(key);
       if (!bucket) {
-        bucket = {
-          weekStart,
-          weekEnd: addDays(weekStart, 6),
-          totalHours: 0,
-          entries: [],
-        };
+        bucket = { key, label, totalHours: 0, entries: [], sortDate: start };
         buckets.set(key, bucket);
       }
       bucket.totalHours += row.hours || 0;
       bucket.entries.push(row);
     }
-    return [...buckets.values()].sort((a, b) => b.weekStart.getTime() - a.weekStart.getTime());
+    return [...buckets.values()].sort((a, b) => b.sortDate.getTime() - a.sortDate.getTime());
   }, [filters.groupBy, rows]);
 
   // Reset button activates when any non-default field is set. Keep this in
@@ -548,7 +599,8 @@ const TimeEntriesTab: React.FC<TimeEntriesTabProps> = ({ projects, employees }) 
         <div className="rounded-xl border border-[rgba(255,255,255,0.07)] bg-[rgba(255,255,255,0.02)] p-4">
           <p className="text-[11px] uppercase tracking-wider text-[#737373]">Range</p>
           <p className="text-sm font-medium text-white mt-1">
-            {from || '—'} <span className="text-[#525252]">→</span> {to || '—'}
+            {from ? formatRangeDate(from) : '—'} <span className="text-[#525252]">→</span>{' '}
+            {to ? formatRangeDate(to) : '—'}
           </p>
         </div>
       </div>
@@ -570,6 +622,7 @@ const TimeEntriesTab: React.FC<TimeEntriesTabProps> = ({ projects, employees }) 
           [
             { id: 'none', label: 'None' },
             { id: 'week', label: 'Week' },
+            { id: 'month', label: 'Month' },
           ] as const
         ).map((opt) => {
           const active = filters.groupBy === opt.id;
@@ -614,31 +667,19 @@ const TimeEntriesTab: React.FC<TimeEntriesTabProps> = ({ projects, employees }) 
                   <th className="px-4 py-2.5 font-medium text-right">Hours</th>
                 </tr>
               </thead>
-              {weeklyGroups ? (
-                // Grouped view — one <tbody> per week, each with a header
-                // row (sub-total) and an entry row per TimeEntry. Multiple
-                // <tbody>s in one <table> is valid HTML and lets us scope
-                // the row dividers per group.
-                weeklyGroups.map((group) => (
-                  <tbody
-                    key={formatLocalDate(group.weekStart)}
-                    className="divide-y divide-[rgba(255,255,255,0.04)]"
-                  >
+              {groupedRows ? (
+                // Grouped view — one <tbody> per group (week or month),
+                // each with a header row (sub-total) and an entry row per
+                // TimeEntry. Multiple <tbody>s in one <table> is valid
+                // HTML and lets us scope the row dividers per group.
+                groupedRows.map((group) => (
+                  <tbody key={group.key} className="divide-y divide-[rgba(255,255,255,0.04)]">
                     <tr className="bg-[rgba(224,185,84,0.06)] border-t border-[#E0B954]/20">
                       <td
                         colSpan={3}
                         className="px-4 py-2 text-xs font-semibold text-[#E0B954] uppercase tracking-wider"
                       >
-                        {group.weekStart.toLocaleDateString(undefined, {
-                          month: 'short',
-                          day: 'numeric',
-                        })}
-                        {' → '}
-                        {group.weekEnd.toLocaleDateString(undefined, {
-                          month: 'short',
-                          day: 'numeric',
-                          year: 'numeric',
-                        })}
+                        {group.label}
                         <span className="ml-2 text-[10px] font-normal text-[#a3a3a3]">
                           ({group.entries.length} {group.entries.length === 1 ? 'entry' : 'entries'}
                           )

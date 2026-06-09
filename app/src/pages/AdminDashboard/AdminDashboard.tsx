@@ -113,24 +113,55 @@ interface Capability {
 }
 
 type AdminTab = 'dashboard' | 'employees' | 'projects' | 'time_entries' | 'users' | 'roles';
-const VALID_ADMIN_TABS: AdminTab[] = [
-  'dashboard',
-  'employees',
-  'projects',
-  'time_entries',
-  'users',
-  'roles',
+
+/**
+ * Tab order + the capability that gates each. Order drives both the tab-strip
+ * left-to-right and the "first allowed tab" fallback below — keep them aligned
+ * with the picker catalog's Admin section in `PICKER_CATALOG`.
+ */
+const ADMIN_TAB_CAPS: ReadonlyArray<{ id: AdminTab; cap: string }> = [
+  { id: 'dashboard', cap: 'admin.dashboard' },
+  { id: 'employees', cap: 'admin.employees' },
+  { id: 'projects', cap: 'admin.projects' },
+  { id: 'time_entries', cap: 'admin.time_entries' },
+  { id: 'users', cap: 'admin.users' },
+  { id: 'roles', cap: 'admin.roles' },
 ];
+
+/**
+ * Resolve which admin tab to render. Single source of truth used by both the
+ * `useState` lazy initializer (correct on first paint) and the URL-sync
+ * effect (correct on browser back/forward).
+ *
+ * Rules:
+ *   - If the URL specifies a tab and the user has its cap → use it.
+ *   - Else fall back to the FIRST tab in `ADMIN_TAB_CAPS` the user can see.
+ *   - Else 'dashboard' as a defensive last resort — shouldn't happen because
+ *     `RequireAnyAdminCapability` guards the route, but keeps the return
+ *     type honest if caps drift mid-session.
+ */
+function resolveAdminTab(urlTab: string | null, hasAccess: (cap: string) => boolean): AdminTab {
+  if (urlTab) {
+    const requested = ADMIN_TAB_CAPS.find((t) => t.id === urlTab);
+    if (requested && hasAccess(requested.cap)) return requested.id;
+  }
+  const firstAllowed = ADMIN_TAB_CAPS.find((t) => hasAccess(t.cap));
+  return firstAllowed ? firstAllowed.id : 'dashboard';
+}
 
 const AdminDashboard = () => {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
+  // Auth hook hoisted above the tab-state setup so `can` is available to the
+  // `useState` lazy initializer below — that's how we resolve the right
+  // starting tab on first paint without a flash of restricted content.
+  const { user, refreshCapabilities, can } = useAuth(); // keeps auth guard active; token read from localStorage by apiFetch
+
   const tabFromUrl = searchParams.get('tab');
-  const initialTab: AdminTab =
-    tabFromUrl && (VALID_ADMIN_TABS as string[]).includes(tabFromUrl)
-      ? (tabFromUrl as AdminTab)
-      : 'dashboard';
-  const [activeTab, setActiveTabState] = useState<AdminTab>(initialTab);
+  // Lazy initializer so we read `can` exactly once on mount. If the URL
+  // points at a tab the user can see → use it. Otherwise fall back to the
+  // first tab they can see (skipping the "Section restricted" splash).
+  const [activeTab, setActiveTabState] = useState<AdminTab>(() => resolveAdminTab(tabFromUrl, can));
 
   const setActiveTab = (tab: AdminTab) => {
     setActiveTabState(tab);
@@ -145,17 +176,26 @@ const AdminDashboard = () => {
     }
   };
 
-  // Sync state with URL on browser back/forward navigation. Pre-existing
-  // pattern; deliberately reads activeTab without listing it as a dep so
-  // the effect only runs when the URL changes, not when state changes back.
+  // Sync state with URL on browser back/forward navigation, and self-correct
+  // when the URL points at a tab the user can't see (or no tab at all and
+  // the user lacks `admin.dashboard`). Deliberately reads activeTab without
+  // listing it as a dep so the effect only runs when the URL changes, not
+  // when state changes back.
   useEffect(() => {
     const urlTab = searchParams.get('tab');
-    const resolved: AdminTab =
-      urlTab && (VALID_ADMIN_TABS as string[]).includes(urlTab)
-        ? (urlTab as AdminTab)
-        : 'dashboard';
+    const resolved = resolveAdminTab(urlTab, can);
     if (resolved !== activeTab) {
       setActiveTabState(resolved);
+    }
+    // If the URL referred to a forbidden / unknown tab, rewrite it to
+    // match the resolved tab so refresh + share both work. `replace: true`
+    // so this self-correction doesn't litter browser history.
+    const expectedUrlTab = resolved === 'dashboard' ? null : resolved;
+    if (urlTab !== expectedUrlTab) {
+      const next = new URLSearchParams(searchParams);
+      if (expectedUrlTab === null) next.delete('tab');
+      else next.set('tab', expectedUrlTab);
+      setSearchParams(next, { replace: true });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
@@ -308,8 +348,6 @@ const AdminDashboard = () => {
       ).sort(),
     [employees],
   );
-
-  const { user, refreshCapabilities, can } = useAuth(); // keeps auth guard active; token read from localStorage by apiFetch
 
   // Per-tab capability gates. The /admin route guard in App.tsx already
   // ensures the user holds at least one admin.* capability before this

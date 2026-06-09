@@ -103,13 +103,15 @@ export const PROJECT_TABS: readonly ProjectTabSpec[] = [
     ],
     picker: {
       readGrant: 'project.overview.*',
+      writeGrant: 'project.overview_write',
       description: 'Project overview (PRD, architecture, team, resources)',
-      // Overview writes (edit PRD, manage team, edit project info) are gated
-      // by the per-project admin role, not by capabilities — this is by
-      // design so each project controls its own admins. Surfaced as a
-      // footnote so the picker doesn't pretend Overview has a write grant.
+      // Write grants tool-wide ability to edit project info + manage team
+      // (add/remove developer, promote/demote project admin) on any
+      // project the user can see. Per-project admins and tool admins
+      // (`admin.projects` / `*`) can still edit Overview regardless of
+      // this cap — see `is_project_admin` in backend/routers/projects.py.
       footnote:
-        'Editing Overview content is governed by the per-project admin role, not by these capabilities.',
+        'Per-project admins and tool admins can also edit Overview regardless of this capability.',
     },
   },
   {
