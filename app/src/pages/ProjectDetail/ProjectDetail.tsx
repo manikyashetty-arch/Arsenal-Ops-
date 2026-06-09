@@ -349,8 +349,13 @@ const ProjectDetail = () => {
     const isAdminOfThisProject = !!(
       user && (project.developers ?? []).some((dev) => dev.email === user.email && dev.is_admin)
     );
-    const checkTabAccess = (id: ProjectTabId): boolean => {
-      const spec = PROJECT_TABS_BY_ID[id];
+    // `TabType` is wider than `ProjectTabId` (it includes legacy ids like
+    // 'goals' and 'hub' that aren't in the picker registry). For those,
+    // `PROJECT_TABS_BY_ID` lookup is undefined and we fail-closed to false,
+    // which is correct — the redirect logic then picks the first allowed
+    // registry tab below.
+    const checkTabAccess = (id: TabType): boolean => {
+      const spec = PROJECT_TABS_BY_ID[id as ProjectTabId];
       return spec ? canAccessProjectTab(spec, can, isAdminOfThisProject) : false;
     };
     if (checkTabAccess(activeTab)) return;
