@@ -56,12 +56,19 @@ interface ArchitectureSectionProps {
    *  the board) is hidden. Parent passes undefined when the user lacks the
    *  `project.board` cap. */
   onOpenBoard?: () => void;
+  /** Gates the inline Edit button. Mirrors `isCurrentUserAdmin()` from
+   *  ProjectDetail — true when the user is a tool admin, holds
+   *  `project.overview_write`, or is a per-project admin on this project.
+   *  Backend independently enforces the same predicate via
+   *  `require_project_admin` on PUT /api/prd/architectures/{id}. */
+  isCurrentUserAdmin: boolean;
 }
 
 const ArchitectureSection = ({
   architecture: arch,
   onEdit,
   onOpenBoard,
+  isCurrentUserAdmin,
 }: ArchitectureSectionProps) => {
   // Gate the diagram render — Mermaid is ~550KB gzipped and we only want to
   // load it when the user explicitly asks to see the diagram.
@@ -77,15 +84,17 @@ const ArchitectureSection = ({
           </div>
         </div>
         <div className="flex gap-2">
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => onEdit(arch)}
-            className="text-[#737373] hover:text-white"
-          >
-            <Pencil className="w-4 h-4 mr-2" />
-            Edit
-          </Button>
+          {isCurrentUserAdmin && (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => onEdit(arch)}
+              className="text-[#737373] hover:text-white"
+            >
+              <Pencil className="w-4 h-4 mr-2" />
+              Edit
+            </Button>
+          )}
           {onOpenBoard && (
             <Button
               size="sm"

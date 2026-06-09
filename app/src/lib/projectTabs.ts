@@ -105,13 +105,11 @@ export const PROJECT_TABS: readonly ProjectTabSpec[] = [
       readGrant: 'project.overview.*',
       writeGrant: 'project.overview_write',
       description: 'Project overview (PRD, architecture, team, resources)',
-      // Write grants tool-wide ability to edit project info + manage team
-      // (add/remove developer, promote/demote project admin) on any
-      // project the user can see. Per-project admins and tool admins
-      // (`admin.projects` / `*`) can still edit Overview regardless of
-      // this cap — see `is_project_admin` in backend/routers/projects.py.
-      footnote:
-        'Per-project admins and tool admins can also edit Overview regardless of this capability.',
+      // Note: per-project admins and tool admins (`admin.projects` / `*`)
+      // can also edit Overview regardless of this capability, via
+      // `is_project_admin` in backend/routers/projects.py. The picker UI
+      // doesn't surface this in a footnote — it's documented here for
+      // anyone editing the registry.
     },
   },
   {

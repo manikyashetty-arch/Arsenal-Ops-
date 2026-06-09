@@ -1039,6 +1039,7 @@ const ProjectDetail = () => {
                 <ArchitectureSection
                   architecture={project.selected_architecture}
                   onEdit={setEditingArchitecture}
+                  isCurrentUserAdmin={isCurrentUserAdmin()}
                   // Omitted when the user lacks `project.board` so the
                   // "AI Generate" / Open Board entry point doesn't render.
                   onOpenBoard={
