@@ -1,6 +1,8 @@
 import { useState, useEffect, lazy, Suspense } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, ShieldAlert } from 'lucide-react';
+import { Spinner } from '@/components/ui/spinner';
+import { useConfirm } from '@/components/ui/confirm-dialog';
 import {
   PROJECT_TABS,
   PROJECT_TABS_BY_ID,
@@ -34,6 +36,9 @@ const ProjectDetail = () => {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const { user, can } = useAuth();
+  // Themed confirm dialog (shared primitive). `confirm` is threaded into the
+  // data hook for the remove-developer flow; `confirmDialog` renders below.
+  const { confirm, confirmDialog } = useConfirm();
 
   // Initial tab respects ?tab= URL param so external links (e.g. admin "Pulse Settings"
   // button) can deep-link to a specific tab on this project.
@@ -104,7 +109,10 @@ const ProjectDetail = () => {
     handleDemoteFromAdmin,
     handleSaveArchitecture,
     isCurrentUserAdmin,
-  } = useProjectDetailData(id, { onArchitectureSaved: () => setEditingArchitecture(null) });
+  } = useProjectDetailData(id, {
+    confirm,
+    onArchitectureSaved: () => setEditingArchitecture(null),
+  });
 
   // If the active tab isn't accessible (URL deep-link to a gated tab, role
   // change mid-session, or the default `overview` is blocked), redirect to
@@ -215,6 +223,7 @@ const ProjectDetail = () => {
   return (
     <div className="min-h-screen bg-[#080808] text-[#F4F6FF]">
       <Toaster position="top-right" theme="dark" richColors />
+      {confirmDialog}
 
       <ProjectDetailHeader
         project={project}
@@ -342,7 +351,7 @@ const ProjectDetail = () => {
         <Suspense
           fallback={
             <div className="flex items-center justify-center p-8">
-              <div className="w-8 h-8 border-2 border-[#E0B954]/30 border-t-[#E0B954] rounded-full animate-spin" />
+              <Spinner size="md" tone="gold" />
             </div>
           }
         >

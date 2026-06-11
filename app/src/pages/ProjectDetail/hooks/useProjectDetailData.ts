@@ -6,6 +6,9 @@ import {
   invalidateWorkItemScope,
   invalidateAdminMembershipImpact,
 } from '@/lib/invalidations';
+import { toastErrorHandler } from '@/lib/mutationToast';
+import { useAllDevelopers } from '@/hooks/useAllDevelopers';
+import type { ConfirmFn } from '@/components/ui/confirm-dialog';
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
 import type {
@@ -43,6 +46,10 @@ import type {
  */
 export interface UseProjectDetailDataOptions {
   onArchitectureSaved?: () => void;
+  /** Themed confirm dialog from the parent's `useConfirm()`. Used to gate the
+   *  destructive remove-developer action. When omitted, removal proceeds
+   *  without a prompt (defensive default; the orchestrator always passes it). */
+  confirm?: ConfirmFn;
 }
 export interface UseProjectDetailDataResult {
   project: Project | null;
@@ -120,11 +127,8 @@ export const useProjectDetailData = (
   const isLoading = projectQuery.isLoading;
   const accessDenied = projectQuery.error instanceof ApiError && projectQuery.error.status === 403;
 
-  // ── react-query: developers ─────────────────────────────────────────────
-  const developersQuery = useQuery<Developer[]>({
-    queryKey: ['developers'],
-    queryFn: () => apiFetch<Developer[]>('/api/developers/'),
-  });
+  // ── react-query: developers (shared global query) ───────────────────────
+  const developersQuery = useAllDevelopers<Developer>();
   const allDevelopers = developersQuery.data ?? [];
 
   // ── react-query: sprints ────────────────────────────────────────────────
@@ -237,7 +241,7 @@ export const useProjectDetailData = (
     onSettled: () => {
       invalidateProjectScope(queryClient, id);
     },
-    onError: () => toast.error('Failed to add link'),
+    onError: toastErrorHandler('add link'),
   });
 
   const deleteLinkMutation = useMutation({
@@ -268,7 +272,7 @@ export const useProjectDetailData = (
         method: 'PUT',
         body: JSON.stringify(updates),
       }),
-    onError: () => toast.error('Failed to update task'),
+    onError: toastErrorHandler('update task'),
     onSettled: () => {
       invalidateWorkItemScope(queryClient, id);
       invalidateProjectScope(queryClient, id);
@@ -338,7 +342,7 @@ export const useProjectDetailData = (
     onSuccess: () => {
       toast.success('Developer added!');
     },
-    onError: () => toast.error('Failed to add developer'),
+    onError: toastErrorHandler('add developer'),
     onSettled: () => {
       invalidateProjectScope(queryClient, id);
       // Cascade-affects work-item assignments on the backend — capacity needs invalidation.
@@ -367,7 +371,7 @@ export const useProjectDetailData = (
     onSuccess: () => {
       toast.success('Developer removed!');
     },
-    onError: () => toast.error('Failed to remove developer'),
+    onError: toastErrorHandler('remove developer'),
     onSettled: () => {
       invalidateProjectScope(queryClient, id);
       // Cascade-affects work-item assignments on the backend — capacity needs invalidation.
@@ -375,10 +379,19 @@ export const useProjectDetailData = (
     },
   });
 
-  // Remove developer from project
-  const handleRemoveDeveloper = (developerId: number) => {
+  // Remove developer from project — gated by the themed confirm dialog
+  // (threaded from the orchestrator's useConfirm) instead of native confirm().
+  const handleRemoveDeveloper = async (developerId: number) => {
     if (!project) return;
-    if (!confirm('Remove this developer from the project?')) return;
+    const confirmed = options?.confirm
+      ? await options.confirm({
+          title: 'Remove developer?',
+          description: 'Remove this developer from the project?',
+          destructive: true,
+          confirmText: 'Remove',
+        })
+      : true;
+    if (!confirmed) return;
     removeDeveloperMutation.mutate(developerId);
   };
 
@@ -393,7 +406,7 @@ export const useProjectDetailData = (
     onSuccess: () => {
       toast.success('Developer promoted to project admin!');
     },
-    onError: (err: any) => toast.error(err?.message || 'Failed to promote developer'),
+    onError: toastErrorHandler('promote developer'),
     onSettled: () => {
       invalidateProjectScope(queryClient, id);
     },
@@ -409,7 +422,7 @@ export const useProjectDetailData = (
     onSuccess: () => {
       toast.success('Developer demoted from project admin!');
     },
-    onError: (err: any) => toast.error(err?.message || 'Failed to demote developer'),
+    onError: toastErrorHandler('demote developer'),
     onSettled: () => {
       invalidateProjectScope(queryClient, id);
     },
@@ -470,7 +483,7 @@ export const useProjectDetailData = (
       toast.success('Architecture updated!');
       options?.onArchitectureSaved?.();
     },
-    onError: () => toast.error('Failed to update architecture'),
+    onError: toastErrorHandler('update architecture'),
     onSettled: () => {
       invalidateProjectScope(queryClient, id);
     },
