@@ -50,6 +50,7 @@ import { buildEpicGroups } from '@/lib/hierarchy/buildEpicGroups';
 import { apiFetch, ApiError, permissionAwareError } from '@/lib/api';
 import { invalidateProjectScope, invalidateWorkItemScope } from '@/lib/invalidations';
 import type { CreateItemFormValues } from './modals/CreateItemModal';
+import type { WorkItem, Sprint } from '@/types/workItems';
 // EditSprintModal's file also exports the CompleteSprintConfirm /
 // DeleteSprintConfirm confirmation modals as named exports, which must be
 // available eagerly. That static import already pulls the file into the main
@@ -98,36 +99,6 @@ const formatWeekRange = (weekStart: string): string => {
   return `${start.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} – ${end.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`;
 };
 
-interface WorkItem {
-  id: string;
-  key: string; // Ticket key like PROJ-123
-  type: 'user_story' | 'task' | 'bug' | 'epic' | 'subtask';
-  title: string;
-  description: string;
-  status: 'todo' | 'in_progress' | 'in_review' | 'done';
-  assigned_hours: number;
-  remaining_hours: number;
-  logged_hours: number;
-  story_points: number;
-  priority: 'high' | 'medium' | 'low' | 'critical';
-  assignee: string;
-  assignee_id: number | null;
-  sprint: string;
-  sprint_id: number | null;
-  product_id: string;
-  tags: string[];
-  epic: string;
-  parent_id?: number | null;
-  epic_id?: number | null;
-  parent_key?: string | null;
-  epic_key?: string | null;
-  created_at?: string;
-  updated_at?: string;
-  due_date?: string | null;
-  completed_at?: string | null;
-  estimated_hours?: number | null;
-}
-
 interface Developer {
   id: number;
   name: string;
@@ -167,24 +138,6 @@ interface Architecture {
   complexity: string;
   time_to_implement: string;
   is_selected: boolean;
-}
-
-interface Sprint {
-  id: number;
-  name: string;
-  goal: string;
-  status: string;
-  start_date: string | null;
-  end_date: string | null;
-  capacity_hours: number | null;
-  velocity: number | null;
-  total_items: number;
-  todo_count: number;
-  in_progress_count: number;
-  done_count: number;
-  total_points: number;
-  completed_points: number;
-  completion_pct: number;
 }
 
 const STATUS_CONFIG = {

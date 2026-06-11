@@ -3,25 +3,7 @@ import { BookOpen, ClipboardList, Bug, Target, Clock } from 'lucide-react';
 import TimeEntriesTable from '@/components/TimeEntriesTable';
 import { EpicChip } from '@/components/board/EpicChip';
 import { ParentChip } from '@/components/board/ParentChip';
-
-interface WorkItem {
-  id: string;
-  key: string;
-  type: 'user_story' | 'task' | 'bug' | 'epic' | 'subtask';
-  title: string;
-  status: 'todo' | 'in_progress' | 'in_review' | 'done';
-  assigned_hours: number;
-  remaining_hours: number;
-  logged_hours: number;
-  story_points: number;
-  priority: 'high' | 'medium' | 'low' | 'critical';
-  assignee: string;
-  tags: string[];
-  parent_id?: number | null;
-  epic_id?: number | null;
-  parent_key?: string | null;
-  epic_key?: string | null;
-}
+import type { WorkItem } from '@/types/workItems';
 
 interface StatusConfig {
   color: string;
