@@ -261,6 +261,49 @@ def test_report_excludes_hours_logged_outside_this_week(db):
     assert "8h" not in text
 
 
+def test_report_excludes_external_developers(db):
+    """External users (admin-added, is_external=True) belong in the Users
+    tab only and must not appear in the weekly report — even when they've
+    logged hours this week."""
+    from models.developer import Developer
+    from services.weekly_report_service import build_weekly_report_html
+
+    p = _make_project(db, "Alpha", "A")
+    internal = _make_dev(db, "Internal Ivy", "ivy@arsenalai.com")
+
+    # External developer — set is_external=True post-construction (the helper
+    # uses the default which is False).
+    external = Developer(name="External Ed", email="ed@vendor.com", is_external=True)
+    db.add(external)
+    db.commit()
+    db.refresh(external)
+
+    ws, _ = _wb()
+    # Both log hours this week; only Ivy should surface.
+    wi_int = _make_wi(
+        db, p.id, internal.id, status="in_progress", estimated_hours=10, started_at=ws
+    )
+    _add_span(db, wi_int.id, internal.id, assigned_at=ws)
+    _add_te(db, wi_int, internal.id, 4, logged_at=ws + timedelta(days=1))
+
+    wi_ext = _make_wi(
+        db, p.id, external.id, status="in_progress", estimated_hours=10, started_at=ws
+    )
+    _add_span(db, wi_ext.id, external.id, assigned_at=ws)
+    _add_te(db, wi_ext, external.id, 7, logged_at=ws + timedelta(days=1))
+
+    html = build_weekly_report_html(db)
+    text = _TextExtractor.text_of(html)
+
+    assert "Internal Ivy" in text
+    assert "ivy@arsenalai.com" in text
+    assert "External Ed" not in text
+    assert "ed@vendor.com" not in text
+    # Team total reflects internal hours only (4h), NOT 4 + 7 = 11.
+    assert "4h" in text
+    assert "11h" not in text
+
+
 def test_send_weekly_report_noop_when_no_recipients(db):
     """No recipients → returns {} and does NOT touch email_service."""
     from services.weekly_report_service import send_weekly_report

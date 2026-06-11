@@ -56,8 +56,15 @@ const TeamSection = ({
     responsibilities: '',
   });
 
+  // Defense-in-depth: even if `showAddDeveloper` was set to true while the
+  // user was admin (then they lost admin via cap refresh / demotion mid-
+  // session), the modal must not stay open with its submit button live.
+  // Backend independently enforces `require_project_admin` on the POST.
+  const effectiveShowAddDeveloper = showAddDeveloper && isCurrentUserAdmin;
+
   const handleAddDeveloper = () => {
     if (!newDeveloper.developer_id) return;
+    if (!isCurrentUserAdmin) return; // mirror of the UI gate, see above
     onAddDeveloper(newDeveloper);
     setShowAddDeveloper(false);
     setNewDeveloper({ developer_id: '', role: '', responsibilities: '' });
@@ -183,7 +190,7 @@ const TeamSection = ({
       </div>
 
       {/* Add Developer Modal */}
-      {showAddDeveloper && (
+      {effectiveShowAddDeveloper && (
         <Modal
           open
           onClose={() => setShowAddDeveloper(false)}

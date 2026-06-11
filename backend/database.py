@@ -698,6 +698,7 @@ SYSTEM_ROLES: list[tuple[str, str, list[str]]] = [
             "project.overview.*",
             "project.tracker.*",
             "project.tracker_write",
+            "project.board",
             "project.calendar",
             "project.pulse",
             "project.activity",
@@ -832,6 +833,19 @@ def seed_rbac():
                 # 7 entries: after tracker_write rename, before project.create
                 #            + project.assign_personal_task were added
                 BASE_READ_GRANTS | {"project.ai.write", "project.tracker_write"},
+                # 9 entries: after project.create + assign_personal_task were
+                #            added, before project.board was split out of the
+                #            tracker. `reconcile_project_board_cap` covers the
+                #            same case via a separate path; listing it here
+                #            keeps the seed_rbac one-shot able to bring the
+                #            role forward even if that migration is removed.
+                BASE_READ_GRANTS
+                | {
+                    "project.ai.write",
+                    "project.tracker_write",
+                    "project.create",
+                    "project.assign_personal_task",
+                },
             ]
             CANONICAL_DEV_GRANTS = {g for n, _, gs in SYSTEM_ROLES if n == "developer" for g in gs}
             dev_row = conn.execute(
@@ -921,6 +935,354 @@ def seed_rbac():
             conn.rollback()
 
 
+def mark_migration_applied(name: str, db) -> bool:
+    """Idempotency gate for one-shot data migrations.
+
+    Returns True the FIRST time a given migration name is seen — the caller
+    should then proceed with its work. Returns False on every subsequent
+    call, signalling "already applied, skip."
+
+    The marker row is committed BEFORE the caller does its mutations. That
+    ordering means:
+
+      - On a clean first run: marker committed → migration body runs → if
+        the body fails partway, the marker is still set and the body will
+        not re-run on boot. Therefore the migration body MUST be internally
+        idempotent (skip rows it's already touched) — see the existing
+        reconcile functions for the pattern.
+
+      - On any later boot: marker is found → return False → body skips.
+
+    `db` is a `Session`; the caller owns its lifecycle. We commit only the
+    one marker row here and roll back on conflict so the caller's
+    subsequent commits are independent.
+
+    See `models/applied_migration.py` for the table + naming convention.
+    """
+    from models.applied_migration import AppliedMigration
+
+    # Race-tolerant insert: two processes booting in parallel both pass the
+    # existence check, then both INSERT — the second one hits the primary
+    # key and we return False. Without this guard the second process would
+    # double-run the migration body.
+    existing = db.query(AppliedMigration).filter(AppliedMigration.name == name).first()
+    if existing:
+        return False
+    try:
+        db.add(AppliedMigration(name=name))
+        db.commit()
+    except Exception:
+        # Most likely a duplicate-key from a parallel boot. Treat as
+        # already-applied — the other process is doing (or has done) the
+        # work, and re-running is unnecessary.
+        db.rollback()
+        return False
+    return True
+
+
+def _allowed_internal_domains() -> list[str]:
+    """Parsed ALLOWED_EMAIL_DOMAINS, lowercased, empty entries dropped.
+
+    Single source of truth shared by SSO/Add User code paths and the
+    reconciliation below. Default matches the historical fallback so behaviour
+    is unchanged when the env var isn't set.
+    """
+    return [
+        d.strip().lower()
+        for d in os.getenv("ALLOWED_EMAIL_DOMAINS", "arsenalai.com").split(",")
+        if d.strip()
+    ]
+
+
+def reconcile_internal_developers():
+    """Ensure every internal-domain User has a matching Developer row marked
+    internal, and flip any internal-domain Developer that drifted to external.
+
+    Why: the Employees tab filters `Developer.is_external == False`. Adding a
+    non-developer-role user via Add User used to skip Developer creation,
+    leaving internal employees invisible in that tab. This pass fixes both
+    historical gaps and any future drift.
+
+    Idempotent: runs every startup but only mutates rows that need it.
+    ORM-based so it works on both Postgres (production) and SQLite (local dev).
+    """
+    from models.developer import Developer
+    from models.user import User
+
+    allowed = _allowed_internal_domains()
+    if not allowed:
+        return
+
+    def is_internal(email: str | None) -> bool:
+        if not email or "@" not in email:
+            return False
+        return email.rsplit("@", 1)[-1].lower() in allowed
+
+    db = SessionLocal()
+    try:
+        # Pass 1: flip internal-domain Developers that were mis-flagged external.
+        flipped = 0
+        externals = db.query(Developer).filter(Developer.is_external.is_(True)).all()
+        for dev in externals:
+            if is_internal(dev.email):
+                dev.is_external = False
+                flipped += 1
+
+        # Pass 2: insert missing Developer rows for internal-domain Users.
+        # One query for existing Developer emails (set membership beats N selects).
+        existing_dev_emails = {
+            email for (email,) in db.query(Developer.email).all() if email is not None
+        }
+        inserted = 0
+        internal_users = (
+            db.query(User).filter(User.email.isnot(None)).all()
+        )  # is_internal handles the domain check
+        for user in internal_users:
+            if not is_internal(user.email):
+                continue
+            if user.email in existing_dev_emails:
+                continue
+            db.add(Developer(name=user.name, email=user.email, is_external=False))
+            existing_dev_emails.add(user.email)
+            inserted += 1
+
+        if flipped or inserted:
+            db.commit()
+            if flipped:
+                print(
+                    f"[RECONCILE] Flipped {flipped} internal-domain developer(s) "
+                    "from external to internal"
+                )
+            if inserted:
+                print(
+                    f"[RECONCILE] Backfilled {inserted} Developer row(s) "
+                    "for internal-domain User(s)"
+                )
+    except Exception as e:
+        db.rollback()
+        print(f"[RECONCILE ERROR] internal-domain developer reconciliation: {e}")
+    finally:
+        db.close()
+
+
+def _reconcile_user_roles_impl(db) -> int:
+    """Pure backfill logic. Returns the number of users newly linked.
+
+    Split out from `reconcile_user_roles` so tests can drive it against an
+    in-memory SQLite Session without monkey-patching SessionLocal.
+    """
+    from sqlalchemy.orm import selectinload
+
+    from models.role import Role
+    from models.user import User
+
+    # Eager-load user.roles so the empty-check below doesn't fire N
+    # lazy-load SELECTs against user_roles.
+    users = (
+        db.query(User)
+        .options(selectinload(User.roles))
+        .filter(User.role.isnot(None))
+        .filter(User.role != "")
+        .all()
+    )
+    if not users:
+        return 0
+
+    role_by_name = {r.name: r for r in db.query(Role).all()}
+    if not role_by_name:
+        return 0
+
+    fixed = 0
+    for user in users:
+        if user.roles:  # already linked (fully or partially), skip
+            continue
+        names = [n.strip() for n in (user.role or "").split(",") if n.strip()]
+        linked = False
+        for name in names:
+            role = role_by_name.get(name)
+            if role is not None:
+                user.roles.append(role)
+                linked = True
+        if linked:
+            fixed += 1
+    return fixed
+
+
+def reconcile_user_roles():
+    """Backfill user_roles for any User whose legacy `role` string names a
+    known system Role but has zero entries in the many-to-many user_roles
+    table.
+
+    Why: `User.has_capability` reads from `user.roles` (the m2m), not
+    `user.role` (the legacy comma-string). Users created via the SSO and
+    Add User paths historically only set the string — leaving them with zero
+    effective capabilities regardless of what their role grants.
+
+    Idempotent: only touches users whose `user_roles` row count is zero.
+    The one-shot seed_rbac backfill at lines ~889-919 already handles the
+    initial migration; this catches every user created afterwards by paths
+    that forgot to write the m2m link.
+
+    Conservative on partial mismatches: a user with `role="admin,developer"`
+    but only the admin link present is left alone — we never override what
+    looks like a deliberate admin adjustment. The fix is "either fully
+    linked or fully empty"; partial states are preserved.
+    """
+    db = SessionLocal()
+    try:
+        fixed = _reconcile_user_roles_impl(db)
+        if fixed:
+            db.commit()
+            print(
+                f"[RECONCILE] Linked {fixed} user(s) to their system Role(s) "
+                "from legacy users.role string"
+            )
+    except Exception as e:
+        db.rollback()
+        print(f"[RECONCILE ERROR] user_roles backfill: {e}")
+    finally:
+        db.close()
+
+
+def reconcile_project_board_cap():
+    """One-shot backfill: grants `project.board` to roles that held the
+    pre-split tracker caps (`project.tracker.*` or `project.tracker_write`).
+
+    Why: before the read/write split, anyone who could view the tracker tab
+    could also navigate to the Project Board page (there was no read gate).
+    After the split, that page requires `project.board`, which roles
+    holding only tracker caps don't have — and the tracker wildcard does
+    NOT cover board (board isn't a sub-cap of tracker). Without this
+    backfill, every developer role user would lose Open Board access on
+    deploy.
+
+    Gated by the `applied_migrations` table so it runs at most once per
+    database. After it has applied, an admin who deliberately removes
+    `project.board` from a role won't have it re-added on next boot.
+
+    Wildcards (`*`, `project.*`) need no update — they already cover
+    `project.board` via prefix match.
+    """
+    from models.role import Role, RoleCapability
+
+    TRIGGER_CAPS = {"project.tracker.*", "project.tracker_write"}
+    TARGET = "project.board"
+    MIGRATION_NAME = "reconcile_project_board_cap_v1"
+
+    db = SessionLocal()
+    try:
+        if not mark_migration_applied(MIGRATION_NAME, db):
+            return  # already applied — admin owns role caps from here on
+
+        all_caps = db.query(RoleCapability).all()
+        held: dict[int, set[str]] = {}
+        for rc in all_caps:
+            held.setdefault(rc.role_id, set()).add(rc.capability_key)
+
+        affected_role_ids: list[int] = []
+        for role_id, keys in held.items():
+            if TARGET in keys:
+                continue
+            if keys & TRIGGER_CAPS:
+                db.add(RoleCapability(role_id=role_id, capability_key=TARGET))
+                affected_role_ids.append(role_id)
+
+        if affected_role_ids:
+            db.commit()
+            names = {
+                r.id: r.name
+                for r in db.query(Role).filter(Role.id.in_(set(affected_role_ids))).all()
+            }
+            pretty = ", ".join(sorted({names.get(rid, str(rid)) for rid in affected_role_ids}))
+            print(
+                f"[MIGRATION {MIGRATION_NAME}] Granted `project.board` to "
+                f"{len(affected_role_ids)} role(s): {pretty}"
+            )
+        else:
+            print(f"[MIGRATION {MIGRATION_NAME}] No roles needed backfill (first run).")
+    except Exception as e:
+        db.rollback()
+        print(f"[MIGRATION ERROR] {MIGRATION_NAME}: {e}")
+    finally:
+        db.close()
+
+
+def reconcile_admin_write_caps():
+    """One-shot backfill: grants `admin.*_write` caps to roles that held
+    the pre-split combined cap (`admin.employees` / `admin.projects` /
+    `admin.users` / `admin.roles`).
+
+    Why: before the read/write split, those four combined keys gated both
+    GETs and writes. After the split they gate only GETs, and a new
+    `_write` key gates writes. Without this backfill, any custom role
+    that had `admin.employees` (etc.) would lose its create/edit/delete
+    ability on deploy.
+
+    Gated by the `applied_migrations` table so it runs at most once per
+    database. After it has applied, deliberately removing a `*_write` cap
+    from a role to make it read-only is respected forever.
+
+    Wildcards (`*`, `admin.*`) already cover the new caps and aren't
+    enumerated by this migration — only explicit grants are backfilled.
+    """
+    from sqlalchemy.orm import Session
+
+    from models.role import Role, RoleCapability
+
+    # Map: combined-read cap → paired write cap to ensure
+    PAIRS = {
+        "admin.employees": "admin.employees_write",
+        "admin.projects": "admin.projects_write",
+        "admin.users": "admin.users_write",
+        "admin.roles": "admin.roles_write",
+    }
+    MIGRATION_NAME = "reconcile_admin_write_caps_v1"
+
+    db: Session = SessionLocal()
+    try:
+        if not mark_migration_applied(MIGRATION_NAME, db):
+            return  # already applied — admin owns role caps from here on
+
+        # One scan over RoleCapability is enough — we keep a per-role set of
+        # held keys, then insert any missing paired writes inside a single
+        # transaction.
+        all_caps = db.query(RoleCapability).all()
+        held: dict[int, set[str]] = {}
+        for rc in all_caps:
+            held.setdefault(rc.role_id, set()).add(rc.capability_key)
+
+        inserted = 0
+        affected_role_ids: list[int] = []
+        for role_id, keys in held.items():
+            for read_cap, write_cap in PAIRS.items():
+                if read_cap in keys and write_cap not in keys:
+                    db.add(RoleCapability(role_id=role_id, capability_key=write_cap))
+                    keys.add(write_cap)
+                    inserted += 1
+                    affected_role_ids.append(role_id)
+
+        if inserted:
+            db.commit()
+            # Resolve role names for the log line — single query, only fires
+            # when we actually changed something.
+            names = {
+                r.id: r.name
+                for r in db.query(Role).filter(Role.id.in_(set(affected_role_ids))).all()
+            }
+            pretty = ", ".join(sorted({names.get(rid, str(rid)) for rid in affected_role_ids}))
+            print(
+                f"[MIGRATION {MIGRATION_NAME}] Granted {inserted} admin *_write "
+                f"cap(s) to role(s): {pretty}"
+            )
+        else:
+            print(f"[MIGRATION {MIGRATION_NAME}] No roles needed backfill (first run).")
+    except Exception as e:
+        db.rollback()
+        print(f"[MIGRATION ERROR] {MIGRATION_NAME}: {e}")
+    finally:
+        db.close()
+
+
 def init_db():
     """Initialize database tables"""
     Base.metadata.create_all(bind=engine)
@@ -930,3 +1292,22 @@ def init_db():
 
     # Seed RBAC system roles + backfill assignments from legacy users.role
     seed_rbac()
+
+    # Reconcile Developer rows so the Employees tab reflects every internal-
+    # domain User (drops the historical "developer role required" gap).
+    reconcile_internal_developers()
+
+    # Backfill user_roles for users created by paths that forgot to write
+    # the m2m link (Add User, SSO new-user). Without this, has_capability
+    # returns False for everything even when their legacy role string says
+    # "developer" or "admin".
+    reconcile_user_roles()
+
+    # One-shot backfills for the read/write cap split. Each is gated by
+    # the `applied_migrations` table — they run exactly once per database,
+    # then never again. After the first successful run, admin role
+    # customizations (e.g. deliberately removing a `*_write` cap to make a
+    # role read-only) are preserved forever. See
+    # `models/applied_migration.py` for the pattern.
+    reconcile_admin_write_caps()
+    reconcile_project_board_cap()

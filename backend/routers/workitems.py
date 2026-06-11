@@ -476,7 +476,10 @@ def list_board_items(
     project_id: int = Query(..., description="Required: project to fetch board items for"),
     sprint_id: int | None = Query(None, description="Optional: filter to a single sprint"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    # Gated on `project.board` so the role editor's "Project Board · Read"
+    # toggle actually enforces — without this, hiding the Open Board button
+    # in the UI would be cosmetic only.
+    current_user: User = Depends(require_capability("project.board")),
 ):
     """Slim variant of ``GET /api/workitems/`` used by the Kanban board.
 
@@ -585,7 +588,9 @@ def get_my_tasks(db: Session = Depends(get_db), current_user: User = Depends(get
                 "logged_hours": item.logged_hours,
                 "remaining_hours": item.remaining_hours,
                 "is_overdue": bool(
-                    item.due_date and item.due_date < datetime.utcnow() and item.status != "done"
+                    item.due_date
+                    and item.due_date.date() < datetime.utcnow().date()
+                    and item.status != "done"
                 ),
                 "completed_at": item.completed_at.isoformat() if item.completed_at else None,
                 "story_points": item.story_points or 0,
@@ -1201,7 +1206,9 @@ def update_work_item(
         "due_date": item.due_date.isoformat() if item.due_date else None,
         "start_date": item.start_date.isoformat() if item.start_date else None,
         "is_overdue": bool(
-            item.due_date and item.due_date < datetime.utcnow() and item.status != "done"
+            item.due_date
+            and item.due_date.date() < datetime.utcnow().date()
+            and item.status != "done"
         ),
         "started_at": item.started_at.isoformat() if item.started_at else None,
         "completed_at": item.completed_at.isoformat() if item.completed_at else None,

@@ -34,6 +34,7 @@ import {
   fieldSupportsType,
 } from '@/lib/hierarchy/validateReparent';
 import { apiFetch } from '@/lib/api';
+import { useAuth } from '@/contexts/AuthContext';
 import { useAllDevelopers } from '@/hooks/useAllDevelopers';
 import { toastErrorHandler } from '@/lib/mutationToast';
 import { parseLocalDate, formatLocalDate } from '@/components/ProjectsPage/utils';
@@ -158,6 +159,11 @@ function renderCommentContent(
 const WorkItemPanel = (props: WorkItemPanelProps) => {
   const { item, token, currentUserId, onClose } = props;
   const queryClient = useQueryClient();
+  const { can } = useAuth();
+  // Write actions (edit + delete) require the same capability the backend
+  // enforces on PUT/DELETE /api/workitems/{id}. Without it the buttons are
+  // hidden so users don't see actions that would 403 on click.
+  const canWriteTracker = can('project.tracker_write');
 
   // ─── Edit form state ───────────────────────────────────────────────────────
   const [isEditing, setIsEditing] = useState(false);
@@ -1591,8 +1597,9 @@ const WorkItemPanel = (props: WorkItemPanelProps) => {
             <span className="text-sm font-mono text-[#E0B954]">{item.key}</span>
           </div>
           <div className="flex items-center gap-1.5">
-            {/* Edit (full variant — in header) */}
-            {props.variant === 'full' && (
+            {/* Edit (full variant — in header). Hidden when caller lacks
+                project.tracker_write so users don't see an action that would 403. */}
+            {props.variant === 'full' && canWriteTracker && (
               <Button
                 size="sm"
                 variant="ghost"
@@ -1612,8 +1619,8 @@ const WorkItemPanel = (props: WorkItemPanelProps) => {
                 {isEditing ? 'Cancel' : 'Edit'}
               </Button>
             )}
-            {/* Delete (full only) */}
-            {props.variant === 'full' && (
+            {/* Delete (full only — same capability gate as Edit). */}
+            {props.variant === 'full' && canWriteTracker && (
               <Button
                 size="sm"
                 variant="ghost"
@@ -1645,18 +1652,22 @@ const WorkItemPanel = (props: WorkItemPanelProps) => {
             : renderViewMode()}
         </div>
 
-        {/* Footer (compact only: Edit + Open ticket) */}
+        {/* Footer (compact only: Edit + Open ticket). Edit is hidden when the
+            user lacks project.tracker_write — Open ticket stays so the user
+            can still navigate to the board view. */}
         {props.variant === 'compact' && !isEditing && (
           <div className="flex-shrink-0 p-4 border-t border-[rgba(255,255,255,0.05)] flex gap-3">
-            <button
-              onClick={startEditing}
-              disabled={isDoneAndNotEditing}
-              title={isDoneAndNotEditing ? 'Re-open this ticket before editing.' : undefined}
-              className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] text-white font-semibold text-sm hover:bg-[rgba(255,255,255,0.08)] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              <Pencil className="w-4 h-4" />
-              Edit
-            </button>
+            {canWriteTracker && (
+              <button
+                onClick={startEditing}
+                disabled={isDoneAndNotEditing}
+                title={isDoneAndNotEditing ? 'Re-open this ticket before editing.' : undefined}
+                className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] text-white font-semibold text-sm hover:bg-[rgba(255,255,255,0.08)] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <Pencil className="w-4 h-4" />
+                Edit
+              </button>
+            )}
             <button
               onClick={() =>
                 props.variant === 'compact' &&

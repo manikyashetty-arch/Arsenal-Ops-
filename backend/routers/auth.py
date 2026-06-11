@@ -20,10 +20,24 @@ from sqlalchemy.orm import Session, selectinload
 
 sys.path.append("..")
 from capabilities import CAPABILITIES, is_valid_grant
-from database import get_db
+from database import _allowed_internal_domains, get_db
 from models.role import Role
 from models.user import User, UserRole
 from services.google_oauth_service import google_oauth_service
+
+
+def _is_internal_email(email: str | None) -> bool:
+    """True if the email's domain is in ALLOWED_EMAIL_DOMAINS (case-insensitive).
+
+    Shared by the Add User and SSO paths so they classify identically. The
+    domain list itself lives in database._allowed_internal_domains as a single
+    source of truth (the startup reconciliation in database.py uses the same
+    list to decide who belongs in the Employees tab).
+    """
+    if not email or "@" not in email:
+        return False
+    return email.rsplit("@", 1)[-1].lower() in _allowed_internal_domains()
+
 
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
 
@@ -253,7 +267,7 @@ def change_password(
 @router.post("/admin/create-user", response_model=dict)
 def create_user(
     user_data: UserCreate,
-    admin: User = Depends(require_capability("admin.users")),
+    admin: User = Depends(require_capability("admin.users_write")),
     db: Session = Depends(get_db),
 ):
     """Admin: Pre-register a user for Google SSO login.
@@ -282,31 +296,31 @@ def create_user(
         is_first_login=False,
     )
     db.add(new_user)
+    # Flush (not commit) so new_user.id is populated for the m2m append
+    # below, then commit user + roles in a single transaction.
+    db.flush()
+
+    # Link the new user to the corresponding system Role rows so they actually
+    # hold the capabilities their role string implies. Without this, the user
+    # has zero effective caps (has_capability reads user.roles, not user.role).
+    _link_roles_from_string(new_user, user_data.role, db)
     db.commit()
     db.refresh(new_user)
 
-    # If user has developer role, also create them as a Developer/Employee.
-    # is_external is derived from the email domain: addresses on a configured
-    # internal domain (ALLOWED_EMAIL_DOMAINS) are treated as company employees;
-    # everyone else is external. This matches the SSO flow and means the
-    # admin can use Add User for either case without surprising results.
-    if "developer" in user_data.role:
-        existing_dev = db.query(Developer).filter(Developer.email == user_data.email).first()
-        if not existing_dev:
-            allowed_domains = [
-                d.strip().lower()
-                for d in os.getenv("ALLOWED_EMAIL_DOMAINS", "arsenalai.com").split(",")
-                if d.strip()
-            ]
-            email_domain = user_data.email.split("@")[-1].lower()
-            is_internal_domain = email_domain in allowed_domains
-            new_developer = Developer(
-                name=user_data.name,
-                email=user_data.email,
-                is_external=not is_internal_domain,
-            )
-            db.add(new_developer)
-            db.commit()
+    # Always create a Developer/Employee row regardless of role. is_external is
+    # derived purely from the email domain: addresses on a configured internal
+    # domain (ALLOWED_EMAIL_DOMAINS) are company employees and must show up in
+    # the Employees tab even if their role doesn't include "developer";
+    # everyone else is external and filtered out of that tab.
+    existing_dev = db.query(Developer).filter(Developer.email == user_data.email).first()
+    if not existing_dev:
+        new_developer = Developer(
+            name=user_data.name,
+            email=user_data.email,
+            is_external=not _is_internal_email(user_data.email),
+        )
+        db.add(new_developer)
+        db.commit()
 
     return {
         "status": "success",
@@ -341,7 +355,7 @@ def list_users(
 @router.post("/admin/reset-password")
 def admin_reset_password(
     reset_data: PasswordReset,
-    admin: User = Depends(require_capability("admin.users")),
+    admin: User = Depends(require_capability("admin.users_write")),
     db: Session = Depends(get_db),
 ):
     """Admin: Reset a user's password"""
@@ -369,7 +383,7 @@ class UserProfileUpdate(BaseModel):
 def update_user_profile(
     user_id: int,
     payload: UserProfileUpdate,
-    admin: User = Depends(require_capability("admin.users")),
+    admin: User = Depends(require_capability("admin.users_write")),
     db: Session = Depends(get_db),
 ):
     """Admin: Update a user's profile (name, email, GitHub username).
@@ -449,7 +463,7 @@ class RoleUpdate(BaseModel):
 def update_user_role(
     user_id: int,
     role_data: RoleUpdate,
-    admin: User = Depends(require_capability("admin.roles")),
+    admin: User = Depends(require_capability("admin.roles_write")),
     db: Session = Depends(get_db),
 ):
     """Admin: Update a user's role"""
@@ -485,7 +499,7 @@ def update_user_role(
 @router.delete("/admin/users/{user_id}/")  # Support trailing slash
 def delete_user(
     user_id: int,
-    admin: User = Depends(require_capability("admin.users")),
+    admin: User = Depends(require_capability("admin.users_write")),
     db: Session = Depends(get_db),
 ):
     """Admin: Delete a user permanently"""
@@ -552,13 +566,7 @@ def google_login(request: GoogleLoginRequest, db: Session = Depends(get_db)):
     # Domain-based access control:
     # - Internal domains (e.g., arsenalai.com) can sign in via SSO and are auto-provisioned.
     # - Any other domain may sign in only if an admin has pre-registered the user.
-    allowed_domains = [
-        d.strip().lower()
-        for d in os.getenv("ALLOWED_EMAIL_DOMAINS", "arsenalai.com").split(",")
-        if d.strip()
-    ]
-    email_domain = user_info["email"].split("@")[-1].lower()
-    is_internal_domain = email_domain in allowed_domains
+    is_internal_domain = _is_internal_email(user_info["email"])
 
     # Check if user already exists by email
     user = db.query(User).filter(User.email == user_info["email"]).first()
@@ -600,6 +608,14 @@ def google_login(request: GoogleLoginRequest, db: Session = Depends(get_db)):
             last_login_at=datetime.utcnow(),
         )
         db.add(user)
+        # Flush (not commit) so user.id is available for the m2m link below,
+        # then commit user + roles in a single transaction.
+        db.flush()
+
+        # Link to the system 'developer' Role so the user actually holds the
+        # capabilities the role grants. Without this, the legacy users.role
+        # string is set but user_roles is empty → zero effective caps.
+        _link_roles_from_string(user, UserRole.DEVELOPER.value, db)
         db.commit()
         db.refresh(user)
 
@@ -755,6 +771,31 @@ def _sync_legacy_role_column(user: User) -> None:
     user.role = ",".join(names) if names else "developer"
 
 
+def _link_roles_from_string(user: User, role_str: str | None, db: Session) -> None:
+    """Populate user.roles from a comma-separated role-name string.
+
+    The inverse of `_sync_legacy_role_column`. Used at User-creation time
+    (Add User + SSO new-user) where the legacy `users.role` column is set
+    but the many-to-many `user_roles` table — the one `has_capability`
+    actually reads — would otherwise stay empty, leaving the user with zero
+    effective capabilities regardless of what the role grants.
+
+    Unknown role names are silently dropped (a missing system Role here means
+    `seed_rbac` hasn't run for that role yet; the startup reconciliation
+    below will catch up next boot).
+    """
+    if not role_str:
+        return
+    names = [n.strip() for n in role_str.split(",") if n.strip()]
+    if not names:
+        return
+    roles = db.query(Role).filter(Role.name.in_(names)).all()
+    existing_ids = {r.id for r in user.roles}
+    for role in roles:
+        if role.id not in existing_ids:
+            user.roles.append(role)
+
+
 def _validate_grants_or_400(keys: list[str]) -> list[str]:
     cleaned: list[str] = []
     seen: set[str] = set()
@@ -830,7 +871,7 @@ def list_roles(
 def create_role(
     req: RoleCreateRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_capability("admin.roles")),
+    current_user: User = Depends(require_capability("admin.roles_write")),
 ):
     from models.role import RoleCapability
 
@@ -868,7 +909,7 @@ def update_role(
     role_id: int,
     req: RoleUpdateRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_capability("admin.roles")),
+    current_user: User = Depends(require_capability("admin.roles_write")),
 ):
     role = db.query(Role).filter(Role.id == role_id).first()
     if not role:
@@ -904,7 +945,7 @@ def update_role(
 def delete_role(
     role_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_capability("admin.roles")),
+    current_user: User = Depends(require_capability("admin.roles_write")),
 ):
     role = db.query(Role).filter(Role.id == role_id).first()
     if not role:
@@ -930,7 +971,7 @@ def replace_role_capabilities(
     role_id: int,
     req: RoleCapabilitiesRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_capability("admin.roles")),
+    current_user: User = Depends(require_capability("admin.roles_write")),
 ):
     from models.role import RoleCapability
 
@@ -965,7 +1006,7 @@ def assign_role_to_user(
     user_id: int,
     role_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_capability("admin.roles")),
+    current_user: User = Depends(require_capability("admin.roles_write")),
 ):
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
@@ -989,7 +1030,7 @@ def remove_role_from_user(
     user_id: int,
     role_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_capability("admin.roles")),
+    current_user: User = Depends(require_capability("admin.roles_write")),
 ):
     user = db.query(User).filter(User.id == user_id).first()
     if not user:

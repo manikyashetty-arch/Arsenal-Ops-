@@ -78,7 +78,12 @@ def build_weekly_report_html(db: Session, generated_at: datetime | None = None) 
     generated_at = generated_at or datetime.utcnow()
     week_start, week_end = week_boundaries(generated_at)
 
-    developers = db.query(Developer).order_by(Developer.name).all()
+    # Internal employees only. Externals (admin-added users on non-internal
+    # domains) are filtered out — they belong in the Users tab, not in the
+    # team capacity / hours-logged surfaces.
+    developers = (
+        db.query(Developer).filter(Developer.is_external.is_(False)).order_by(Developer.name).all()
+    )
     hours_map = _hours_per_developer(db, week_start, week_end)
 
     # Display Mon → Fri for the email (backend buckets Sat → Fri).

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiFetch, ApiError } from '@/lib/api';
@@ -18,6 +18,7 @@ import {
   ConvertToTicketDialog,
   EditPersonalTaskDialog,
   CreateProjectDialog,
+  isPastDue,
 } from '@/components/ProjectsPage';
 import type {
   Project,
@@ -46,6 +47,7 @@ const ProjectsPage = () => {
     name: '',
     description: '',
     github_repo_url: '',
+    category_id: null,
   });
   const [selectedDevelopers, setSelectedDevelopers] = useState<SelectedDeveloper[]>([]);
   const [selectedDeveloperId, setSelectedDeveloperId] = useState<string>('');
@@ -109,6 +111,18 @@ const ProjectsPage = () => {
   });
   const availableDevelopers = developersQuery.data ?? [];
 
+  // Category list for the Create Project dialog. Lite endpoint (id + name
+  // only) gated on `project.create` — distinct from the admin endpoint
+  // which is gated on `admin.projects` and carries `project_count`.
+  // Enabled only when the modal is open so the list isn't fetched on every
+  // home-page visit.
+  const projectCategoriesQuery = useQuery<{ id: number; name: string }[]>({
+    queryKey: ['projectCategories'],
+    queryFn: () => apiFetch<{ id: number; name: string }[]>('/api/projects/categories'),
+    enabled: showCreateModal,
+  });
+  const projectCategories = projectCategoriesQuery.data ?? [];
+
   // ── react-query: personal tasks ───────────────────────────────────────────
   const personalTasksQuery = useQuery<PersonalTask[]>({
     queryKey: ['personalTasks'],
@@ -133,7 +147,21 @@ const ProjectsPage = () => {
     queryFn: () => apiFetch<MyTask[]>('/api/workitems/my-tasks'),
   });
   const myTasksLoading = myTasksQuery.isLoading;
-  const myTasks = myTasksQuery.data ?? [];
+  // Recompute `is_overdue` in the viewer's LOCAL timezone. The backend flag is
+  // computed in UTC and so can't be right for every viewer (Eastern, Pacific,
+  // etc.) — a task due "today" must not show as overdue, and must flip exactly
+  // at the viewer's local midnight. This override is the single source the
+  // dashboard widgets (MyTasksBox tabs/counts, DashboardStats, OverviewBox)
+  // read from. `new Date()` is intentionally inside useMemo (not the render
+  // body) per app/CLAUDE.md's react-hooks/purity guidance.
+  const myTasks = useMemo<MyTask[]>(
+    () =>
+      (myTasksQuery.data ?? []).map((t) => ({
+        ...t,
+        is_overdue: isPastDue(t.due_date, t.status),
+      })),
+    [myTasksQuery.data],
+  );
 
   // Apply an optimistic update directly inside the ['myTasks'] cache.
   const patchMyTasksCache = (updater: (old: MyTask[]) => MyTask[]) =>
@@ -545,12 +573,16 @@ const ProjectsPage = () => {
           name: createForm.name,
           description: createForm.description,
           github_repo_url: createForm.github_repo_url || undefined,
+          // Send category_id only when set — backend treats absent as null,
+          // same as null. Sending `undefined` keeps the field out of the
+          // JSON payload entirely, which is slightly cleaner.
+          category_id: createForm.category_id ?? undefined,
           developers: selectedDevelopers,
         }),
       }),
     onSuccess: () => {
       setShowCreateModal(false);
-      setCreateForm({ name: '', description: '', github_repo_url: '' });
+      setCreateForm({ name: '', description: '', github_repo_url: '', category_id: null });
       setSelectedDevelopers([]);
       toast.success('Project created successfully!');
     },
@@ -772,6 +804,7 @@ const ProjectsPage = () => {
         isCreating={isCreating}
         onCreate={handleCreateProject}
         availableDevelopers={availableDevelopers}
+        categories={projectCategories}
         selectedDevelopers={selectedDevelopers}
         selectedDeveloperId={selectedDeveloperId}
         setSelectedDeveloperId={setSelectedDeveloperId}
