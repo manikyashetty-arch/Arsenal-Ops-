@@ -41,8 +41,21 @@ generic `index.tsx`.
 4. **Handlers extract DOWN with their component** when they're only used by
    that component. Handlers that touch multiple sub-trees stay at the parent.
 
-5. **No central types module yet.** Inline `interface`/`type` declarations
-   in each file. A shared types module (audit F-T1) is a separate initiative.
+5. **Shared work-item types live in `@/types/workItems`.** The canonical
+   `WorkItem` / `Sprint` (plus the supporting `Developer` / `Project` shapes)
+   are defined in `src/types/workItems.ts`; the ProjectBoard family imports
+   from there rather than re-declaring inline interfaces. The full repo-wide
+   migration of the other ~17 `WorkItem` / `Sprint` declaration sites onto
+   this module is still deferred (audit F-T1 codemod) — those sites read
+   through a re-export shim until then. New ProjectBoard-family code MUST use
+   `@/types/workItems` and MUST NOT add a fresh inline `WorkItem`/`Sprint`.
+
+   **ProjectBoard is the reference for the feature-folder pattern.** It follows
+   data-hooks + view-components: `hooks/` (queries / mutations / DnD / filters /
+   sort / grouping — called once in the thin orchestrator), `lib/` (pure,
+   unit-tested logic), `views/` (props-down view bodies that never call
+   `useQuery`/`useMutation`), `components/` (chrome + the `BoardModals` render
+   cluster), and types via `@/types`. New large pages should mirror this layout.
 
 6. **No barrels until a folder has ≥4 files.** Explicit named imports keep
    the dependency graph readable.

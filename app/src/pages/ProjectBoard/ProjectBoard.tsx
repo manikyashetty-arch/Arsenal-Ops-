@@ -1,4 +1,4 @@
-import { useState, useCallback, lazy, Suspense } from 'react';
+import { useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import {
@@ -20,20 +20,6 @@ import { toast, Toaster } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
 import { apiFetch } from '@/lib/api';
 import type { WorkItem, Sprint } from '@/types/workItems';
-// EditSprintModal's file also exports the CompleteSprintConfirm /
-// DeleteSprintConfirm confirmation modals as named exports, which must be
-// available eagerly. That static import already pulls the file into the main
-// bundle, so a separate `lazy(() => import(...))` for EditSprintModal can't
-// move it into its own chunk — Rollup will emit a warning and keep it inline.
-// Keep EditSprintModal as a static import to match reality.
-import EditSprintModal, {
-  CompleteSprintConfirm,
-  DeleteSprintConfirm,
-} from './modals/EditSprintModal';
-const AIPlanningModal = lazy(() => import('./modals/AIPlanningModal'));
-const CreateItemModal = lazy(() => import('./modals/CreateItemModal'));
-const CreateSprintModal = lazy(() => import('./modals/CreateSprintModal'));
-const ItemDetailDrawer = lazy(() => import('./ItemDetailDrawer'));
 import BoardView from './views/BoardView';
 import ListView from './views/ListView';
 import EpicView from './views/EpicView';
@@ -41,8 +27,11 @@ import BoardSkeleton from './components/BoardSkeleton';
 import BoardHeader from './components/BoardHeader';
 import BoardToolbar from './components/BoardToolbar';
 import BoardFilterMenu from './components/BoardFilterMenu';
-import ReviewerPanel from './ReviewerPanel';
-import ArchitectureEditorWrapper from './ArchitectureEditorWrapper';
+// The modal/panel render cluster (detail drawer + the four lazy modals + the
+// eagerly-imported EditSprint/Complete/Delete confirmations + Reviewer panel +
+// Architecture editor) lives in BoardModals. The lazy boundaries (R5) and the
+// EditSprintModal static import (R4) moved there intact.
+import BoardModals from './components/BoardModals';
 import { parseLocalDate } from './lib/listGrouping';
 import { getNextSprint as getNextSprintPure } from './lib/sprintNav';
 import { useBoardData } from './hooks/useBoardData';
@@ -616,141 +605,67 @@ const ProjectBoard = () => {
         )}
       </div>
 
-      {/* Detail Slide-in Drawer */}
-      {selectedItem && (
-        <Suspense fallback={null}>
-          <ItemDetailDrawer
-            key={selectedItem.id}
-            selectedItem={selectedItem}
-            workItems={workItems}
-            sprints={sprints}
-            project={project}
-            allDevelopers={allDevelopers}
-            id={id}
-            token={token || ''}
-            navigate={navigate}
-            parseLocalDate={parseLocalDate}
-            isSavingEdit={isSavingEdit}
-            onSaveEdit={handleSaveEdit}
-            onDeleteItem={handleDeleteItem}
-            onStatusChange={handleStatusChange}
-            onLogHours={handleLogHours}
-            isLoggingHours={logHoursMutation.isPending}
-            onMoveToSprint={handleMoveToSprint}
-            onSubmitComment={handleSubmitComment}
-            getNextSprint={getNextSprint}
-          />
-        </Suspense>
-      )}
-
-      {/* Create Item Modal */}
-      {showCreateForm && (
-        <Suspense fallback={null}>
-          <CreateItemModal
-            project={project}
-            workItems={workItems}
-            existingTags={existingTags}
-            parseLocalDate={parseLocalDate}
-            isCreatingItem={isCreatingItem}
-            initialType={createFormType}
-            onClose={() => setShowCreateForm(false)}
-            onSubmit={(form) => createItemMutation.mutate(form)}
-          />
-        </Suspense>
-      )}
-
-      {/* AI Planning Modal */}
-      {showAIModal && (
-        <Suspense fallback={null}>
-          <AIPlanningModal
-            project={project}
-            architectures={architectures}
-            setArchitectures={setArchitectures}
-            onEditArchitecture={setEditingArchitecture}
-            startDate={startDate}
-            setStartDate={setStartDate}
-            endDate={endDate}
-            setEndDate={setEndDate}
-            onClose={() => setShowAIModal(false)}
-            onCommitted={handleAIPlanningCommitted}
-            setIsGenerating={setIsGenerating}
-          />
-        </Suspense>
-      )}
-
-      {/* Create Sprint Modal */}
-      {showCreateSprintModal && (
-        <Suspense fallback={null}>
-          <CreateSprintModal
-            parseLocalDate={parseLocalDate}
-            onClose={() => setShowCreateSprintModal(false)}
-            onSubmit={handleCreateSprint}
-            disabled={createSprintMutation.isPending}
-          />
-        </Suspense>
-      )}
-
-      {/* Edit Sprint Modal */}
-      {editingSprint && (
-        <Suspense fallback={null}>
-          <EditSprintModal
-            key={editingSprint.id}
-            editingSprint={editingSprint}
-            parseLocalDate={parseLocalDate}
-            onClose={() => setEditingSprint(null)}
-            onSubmit={handleEditSprint}
-          />
-        </Suspense>
-      )}
-
-      {/* Complete Sprint Confirmation */}
-      {completingSprintId !== null && (
-        <CompleteSprintConfirm
-          sprintId={completingSprintId}
-          sprints={sprints}
-          workItems={workItems}
-          onClose={() => setCompletingSprintId(null)}
-          onConfirm={handleCompleteSprint}
-        />
-      )}
-
-      {/* Delete Sprint Confirmation */}
-      {deletingSprintId !== null && (
-        <DeleteSprintConfirm
-          sprintId={deletingSprintId}
-          sprints={sprints}
-          workItems={workItems}
-          onClose={() => setDeletingSprintId(null)}
-          onConfirm={handleDeleteSprint}
-        />
-      )}
-
-      {/* Reviewer Panel - slide in from right. Gated on the derived
-          `effectiveShowReviewer` so a mid-session cap revocation closes
-          the panel even when local `showReviewer` state is still true. */}
-      {effectiveShowReviewer && (
-        <ReviewerPanel
-          workItems={workItems}
-          projectId={id!}
-          token={token!}
-          onClose={() => setShowReviewer(false)}
-          onTaskUpdate={(itemId, updates) => {
-            queryClient.setQueryData<WorkItem[]>(['workItems', workItemFilters, 'board'], (old) =>
-              (old ?? []).map((item) => (item.id === itemId ? { ...item, ...updates } : item)),
-            );
-            invalidateWorkItems();
-          }}
-        />
-      )}
-
-      {/* Architecture Editor Modal */}
-      {editingArchitecture && (
-        <ArchitectureEditorWrapper
-          architecture={editingArchitecture}
-          onSave={handleSaveArchitecture}
-          onClose={() => setEditingArchitecture(null)}
-        />
-      )}
+      <BoardModals
+        project={project}
+        workItems={workItems}
+        sprints={sprints}
+        allDevelopers={allDevelopers}
+        id={id}
+        token={token || ''}
+        navigate={navigate}
+        existingTags={existingTags}
+        parseLocalDate={parseLocalDate}
+        selectedItem={selectedItem}
+        isSavingEdit={isSavingEdit}
+        onSaveEdit={handleSaveEdit}
+        onDeleteItem={handleDeleteItem}
+        onStatusChange={handleStatusChange}
+        onLogHours={handleLogHours}
+        isLoggingHours={logHoursMutation.isPending}
+        onMoveToSprint={handleMoveToSprint}
+        onSubmitComment={handleSubmitComment}
+        getNextSprint={getNextSprint}
+        showCreateForm={showCreateForm}
+        createFormType={createFormType}
+        isCreatingItem={isCreatingItem}
+        onCloseCreateForm={() => setShowCreateForm(false)}
+        onSubmitCreateItem={(form) => createItemMutation.mutate(form)}
+        showAIModal={showAIModal}
+        architectures={architectures}
+        setArchitectures={setArchitectures}
+        onEditArchitecture={setEditingArchitecture}
+        startDate={startDate}
+        setStartDate={setStartDate}
+        endDate={endDate}
+        setEndDate={setEndDate}
+        onCloseAIModal={() => setShowAIModal(false)}
+        onAIPlanningCommitted={handleAIPlanningCommitted}
+        setIsGenerating={setIsGenerating}
+        showCreateSprintModal={showCreateSprintModal}
+        onCloseCreateSprint={() => setShowCreateSprintModal(false)}
+        onSubmitCreateSprint={handleCreateSprint}
+        isCreatingSprint={createSprintMutation.isPending}
+        editingSprint={editingSprint}
+        onCloseEditSprint={() => setEditingSprint(null)}
+        onSubmitEditSprint={handleEditSprint}
+        completingSprintId={completingSprintId}
+        onCloseCompleteSprint={() => setCompletingSprintId(null)}
+        onConfirmCompleteSprint={handleCompleteSprint}
+        deletingSprintId={deletingSprintId}
+        onCloseDeleteSprint={() => setDeletingSprintId(null)}
+        onConfirmDeleteSprint={handleDeleteSprint}
+        effectiveShowReviewer={effectiveShowReviewer}
+        onCloseReviewer={() => setShowReviewer(false)}
+        onReviewerTaskUpdate={(itemId, updates) => {
+          queryClient.setQueryData<WorkItem[]>(['workItems', workItemFilters, 'board'], (old) =>
+            (old ?? []).map((item) => (item.id === itemId ? { ...item, ...updates } : item)),
+          );
+          invalidateWorkItems();
+        }}
+        editingArchitecture={editingArchitecture}
+        onSaveArchitecture={handleSaveArchitecture}
+        onCloseArchitectureEditor={() => setEditingArchitecture(null)}
+      />
     </div>
   );
 };
