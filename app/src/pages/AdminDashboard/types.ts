@@ -81,11 +81,12 @@ export interface Capability {
   description: string;
 }
 
-export type AdminTab = 'dashboard' | 'employees' | 'projects' | 'users' | 'roles';
+export type AdminTab = 'dashboard' | 'employees' | 'projects' | 'time_entries' | 'users' | 'roles';
 export const VALID_ADMIN_TABS: AdminTab[] = [
   'dashboard',
   'employees',
   'projects',
+  'time_entries',
   'users',
   'roles',
 ];

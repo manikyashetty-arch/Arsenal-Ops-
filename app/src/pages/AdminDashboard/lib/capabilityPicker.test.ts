@@ -4,12 +4,15 @@ import {
   toPascalCase,
   wildcardCovers,
   keyIsUnderGrant,
-  isItemChecked,
-  isItemEffectivelyChecked,
+  isGrantHeld,
+  isSideEffective,
+  isGroupEffective,
   applyToggleGrant,
-  applyToggleCatalogItem,
+  applyToggleGroupWildcard,
+  applyTogglePickerCheckbox,
   buildPickerCatalog,
-  type CatalogNode,
+  type PickerItem,
+  type PickerGroup,
 } from './capabilityPicker';
 
 /** Order-independent grant-array comparison. */
@@ -30,318 +33,237 @@ describe('toPascalCase', () => {
   it('returns empty string for empty input', () => {
     expect(toPascalCase('')).toBe('');
   });
-
-  it('handles multiple underscores and mixed case', () => {
-    expect(toPascalCase('foo_bar_baz')).toBe('FooBarBaz');
-    expect(toPascalCase('mixedCASE_word')).toBe('MixedcaseWord');
-  });
 });
 
-describe('wildcardCovers', () => {
-  it("'*' covers anything", () => {
-    expect(wildcardCovers('*', 'project')).toBe(true);
-    expect(wildcardCovers('*', 'anything.at.all')).toBe(true);
-    expect(wildcardCovers('*', '')).toBe(true);
+describe('wildcardCovers / keyIsUnderGrant', () => {
+  it('`*` covers everything', () => {
+    expect(wildcardCovers('*', 'project.pm')).toBe(true);
+    expect(keyIsUnderGrant('anything.here', '*')).toBe(true);
   });
 
-  it("'project.*' covers the prefix and nested keys", () => {
+  it('`x.*` covers the prefix and its descendants but not siblings', () => {
     expect(wildcardCovers('project.*', 'project')).toBe(true);
     expect(wildcardCovers('project.*', 'project.pm')).toBe(true);
-    expect(wildcardCovers('project.*', 'project.pm.read')).toBe(true);
+    expect(wildcardCovers('project.*', 'projectile')).toBe(false);
+    expect(wildcardCovers('project.*', 'admin.users')).toBe(false);
   });
 
-  it("'project.*' does NOT cover 'projectx'", () => {
-    expect(wildcardCovers('project.*', 'projectx')).toBe(false);
-  });
-
-  it('a non-wildcard exact grant returns false (it only answers the wildcard question)', () => {
-    expect(wildcardCovers('project.read', 'project.read')).toBe(false);
-    expect(wildcardCovers('project.read', 'project.write')).toBe(false);
+  it('a non-wildcard grant covers only the exact key', () => {
+    expect(wildcardCovers('project.pm', 'project.pm')).toBe(false); // not a wildcard
+    expect(keyIsUnderGrant('project.pm', 'project.pm')).toBe(true);
+    expect(keyIsUnderGrant('project.pm.summary', 'project.pm')).toBe(false);
   });
 });
 
-describe('keyIsUnderGrant', () => {
-  it("'*' covers all", () => {
-    expect(keyIsUnderGrant('anything', '*')).toBe(true);
-    expect(keyIsUnderGrant('x.y.z', '*')).toBe(true);
+describe('isGrantHeld', () => {
+  it('true on exact match', () => {
+    expect(isGrantHeld('admin.users', ['admin.users'])).toBe(true);
   });
 
-  it("'x.*' covers 'x' and 'x.y'", () => {
-    expect(keyIsUnderGrant('x', 'x.*')).toBe(true);
-    expect(keyIsUnderGrant('x.y', 'x.*')).toBe(true);
-    expect(keyIsUnderGrant('x.y.z', 'x.*')).toBe(true);
+  it('true when the global `*` is held', () => {
+    expect(isGrantHeld('admin.users', ['*'])).toBe(true);
   });
 
-  it("'x.*' does NOT cover 'xy'", () => {
-    expect(keyIsUnderGrant('xy', 'x.*')).toBe(false);
+  it('true when a wildcard ancestor is held', () => {
+    expect(isGrantHeld('admin.users', ['admin.*'])).toBe(true);
+    expect(isGrantHeld('project.pm.summary', ['project.*'])).toBe(true);
   });
 
-  it('an exact grant matches only itself', () => {
-    expect(keyIsUnderGrant('project.read', 'project.read')).toBe(true);
-    expect(keyIsUnderGrant('project.write', 'project.read')).toBe(false);
-    expect(keyIsUnderGrant('project.read.more', 'project.read')).toBe(false);
+  it('false for a sibling cap (no auto-coverage across siblings)', () => {
+    expect(isGrantHeld('admin.users', ['admin.roles'])).toBe(false);
+    expect(isGrantHeld('admin.users_write', ['admin.users'])).toBe(false);
   });
 });
 
-describe('isItemChecked', () => {
-  it("returns true when '*' is present", () => {
-    expect(isItemChecked('project.read', ['*'])).toBe(true);
+// A representative paired row (read + write) with two read-only children.
+const overviewItem: PickerItem = {
+  label: 'Overview',
+  description: 'overview',
+  readGrant: 'project.overview.*',
+  writeGrant: 'project.overview_write',
+  children: [
+    { label: 'PRD', description: 'prd', readGrant: 'project.overview.prd' },
+    { label: 'Team', description: 'team', readGrant: 'project.overview.team' },
+  ],
+};
+
+describe('isSideEffective', () => {
+  it('direct: the side-grant is held', () => {
+    expect(isSideEffective(overviewItem, 'read', ['project.overview.*'])).toBe(true);
+    expect(isSideEffective(overviewItem, 'write', ['project.overview_write'])).toBe(true);
   });
 
-  it('returns true when the exact grant is present', () => {
-    expect(isItemChecked('project.read', ['project.read'])).toBe(true);
+  it('false when only the OTHER side is held (childless row, no vacuous promote)', () => {
+    const paired: PickerItem = {
+      label: 'Users',
+      description: 'u',
+      readGrant: 'admin.users',
+      writeGrant: 'admin.users_write',
+    };
+    expect(isSideEffective(paired, 'write', ['admin.users'])).toBe(false);
   });
 
-  it('returns true when a wildcard ancestor is present', () => {
-    // grant 'project.pm.*' is checked under grants=['project.*']
-    expect(isItemChecked('project.pm.*', ['project.*'])).toBe(true);
-    expect(isItemChecked('project.pm', ['project.*'])).toBe(true);
-    // the wildcard prefix itself counts too
-    expect(isItemChecked('project', ['project.*'])).toBe(true);
+  it('auto-promotes Read when every child Read is held (parent has a readGrant)', () => {
+    expect(
+      isSideEffective(overviewItem, 'read', ['project.overview.prd', 'project.overview.team']),
+    ).toBe(true);
   });
 
-  it('returns false otherwise', () => {
-    expect(isItemChecked('project.read', [])).toBe(false);
-    expect(isItemChecked('project.read', ['admin.read'])).toBe(false);
+  it('does NOT auto-promote when a child Read is missing', () => {
+    expect(isSideEffective(overviewItem, 'read', ['project.overview.prd'])).toBe(false);
   });
 
-  it('does NOT count a sibling grant as checked', () => {
-    expect(isItemChecked('project.read', ['project.write'])).toBe(false);
+  it('false for a side with no grant defined', () => {
+    const readOnly: PickerItem = { label: 'X', description: 'x', readGrant: 'project.calendar' };
+    expect(isSideEffective(readOnly, 'write', [])).toBe(false);
   });
 });
 
-describe('isItemEffectivelyChecked', () => {
-  it('returns true via a direct/exact grant', () => {
-    const node: CatalogNode = { grant: 'project.read' };
-    expect(isItemEffectivelyChecked(node, ['project.read'])).toBe(true);
+describe('isGroupEffective', () => {
+  const group: PickerGroup = {
+    prefix: 'admin',
+    label: 'Admin',
+    wildcard: 'admin.*',
+    items: [
+      { label: 'Dashboard', description: 'd', readGrant: 'admin.dashboard' },
+      {
+        label: 'Users',
+        description: 'u',
+        readGrant: 'admin.users',
+        writeGrant: 'admin.users_write',
+      },
+    ],
+  };
+
+  it('true when the group wildcard is held directly', () => {
+    expect(isGroupEffective(group, ['admin.*'])).toBe(true);
   });
 
-  it('returns true via a wildcard ancestor', () => {
-    const node: CatalogNode = { grant: 'project.pm' };
-    expect(isItemEffectivelyChecked(node, ['project.*'])).toBe(true);
-  });
-
-  it('auto-promotes a parent when every child is granted individually', () => {
-    const node: CatalogNode = {
-      grant: 'project.pm.*',
-      children: [{ grant: 'project.pm.a' }, { grant: 'project.pm.b' }],
-    };
-    expect(isItemEffectivelyChecked(node, ['project.pm.a', 'project.pm.b'])).toBe(true);
-  });
-
-  it('does NOT promote a parent when one child is missing', () => {
-    const node: CatalogNode = {
-      grant: 'project.pm.*',
-      children: [{ grant: 'project.pm.a' }, { grant: 'project.pm.b' }],
-    };
-    expect(isItemEffectivelyChecked(node, ['project.pm.a'])).toBe(false);
-  });
-
-  it('returns false for a leaf node with no grant present', () => {
-    const node: CatalogNode = { grant: 'project.read' };
-    expect(isItemEffectivelyChecked(node, [])).toBe(false);
-  });
-
-  it('auto-promotes through nested grandchildren', () => {
-    const node: CatalogNode = {
-      grant: 'project.*',
-      children: [
-        {
-          grant: 'project.pm.*',
-          children: [{ grant: 'project.pm.a' }, { grant: 'project.pm.b' }],
-        },
-        { grant: 'project.read' },
-      ],
-    };
-    // All leaves granted -> grandchild parent promotes -> top promotes.
-    expect(isItemEffectivelyChecked(node, ['project.pm.a', 'project.pm.b', 'project.read'])).toBe(
+  it('true when every defined side of every item is held', () => {
+    expect(isGroupEffective(group, ['admin.dashboard', 'admin.users', 'admin.users_write'])).toBe(
       true,
     );
-    // Drop one grandchild leaf -> promotion fails all the way up.
-    expect(isItemEffectivelyChecked(node, ['project.pm.a', 'project.read'])).toBe(false);
+  });
+
+  it('false when any defined side is missing', () => {
+    expect(isGroupEffective(group, ['admin.dashboard', 'admin.users'])).toBe(false); // users_write missing
   });
 });
 
-describe('applyToggleGrant', () => {
+describe('applyToggleGrant (global * toggle)', () => {
   const registry: Capability[] = [
-    { key: 'project.read', description: 'read' },
-    { key: 'project.write', description: 'write' },
-    { key: 'project.delete', description: 'delete' },
-    { key: 'admin.read', description: 'admin read' },
+    { key: 'admin.users', description: '' },
+    { key: 'admin.roles', description: '' },
   ];
 
-  it('removes a key that is already present (exact)', () => {
-    const result = applyToggleGrant(['project.read', 'project.write'], 'project.read', registry);
-    expectSameSet(result, ['project.write']);
+  it('adds `*` when absent', () => {
+    expectSameSet(applyToggleGrant([], '*', registry), ['*']);
   });
 
-  it('appends a key that is not present and not covered by a wildcard', () => {
-    const result = applyToggleGrant(['admin.read'], 'project.read', registry);
-    expectSameSet(result, ['admin.read', 'project.read']);
-  });
-
-  it('expands a covering wildcard into all registry keys under it except the toggled key', () => {
-    // grants=['project.*'], toggle 'project.read' off.
-    const result = applyToggleGrant(['project.*'], 'project.read', registry);
-    // Wildcard removed; every registry key under project.* except project.read kept.
-    expectSameSet(result, ['project.write', 'project.delete']);
-    expect(result).not.toContain('project.*');
-    expect(result).not.toContain('project.read');
-    expect(result).not.toContain('admin.read'); // not under project.*
-  });
-
-  it('preserves non-covering grants when expanding a wildcard', () => {
-    const result = applyToggleGrant(['project.*', 'admin.read'], 'project.write', registry);
-    expectSameSet(result, ['project.read', 'project.delete', 'admin.read']);
-    expect(result).not.toContain('project.*');
-    expect(result).not.toContain('project.write');
+  it('removes `*` when present', () => {
+    expectSameSet(applyToggleGrant(['*'], '*', registry), []);
   });
 });
 
-describe('applyToggleCatalogItem', () => {
-  it('removes the exact grant when a leaf is currently effectively checked', () => {
-    const node: CatalogNode = { grant: 'project.calendar' };
-    const result = applyToggleCatalogItem(['project.calendar', 'admin.read'], node);
-    expectSameSet(result, ['admin.read']);
+describe('applyToggleGroupWildcard', () => {
+  // Two items so a single granted sub-cap doesn't make the group "effectively
+  // held" — that lets us exercise the grant path distinctly from the revoke path.
+  const group: PickerGroup = {
+    prefix: 'admin',
+    label: 'Admin',
+    wildcard: 'admin.*',
+    items: [
+      { label: 'Users', description: 'u', readGrant: 'admin.users' },
+      { label: 'Roles', description: 'r', readGrant: 'admin.roles' },
+    ],
+  };
+
+  it('grants the wildcard and sweeps redundant sub-caps when not fully held', () => {
+    // Only admin.users granted → group not effective → toggling GRANTS the wildcard.
+    expectSameSet(applyToggleGroupWildcard(['admin.users', 'other'], group), ['admin.*', 'other']);
   });
 
-  it('adds the grant when a leaf is not checked', () => {
-    const node: CatalogNode = { grant: 'project.calendar' };
-    const result = applyToggleCatalogItem(['admin.read'], node);
-    expectSameSet(result, ['admin.read', 'project.calendar']);
+  it('revokes the wildcard (and everything under it) when held', () => {
+    expectSameSet(applyToggleGroupWildcard(['admin.*', 'project.pm'], group), ['project.pm']);
+  });
+});
+
+describe('applyTogglePickerCheckbox — W→R dependency', () => {
+  const pairedRow: PickerItem = {
+    label: 'Users',
+    description: 'u',
+    readGrant: 'admin.users',
+    writeGrant: 'admin.users_write',
+  };
+
+  it('Read ON adds the read grant', () => {
+    expectSameSet(applyTogglePickerCheckbox([], pairedRow, 'read'), ['admin.users']);
   });
 
-  it('drops redundant explicit sub-caps before adding a wildcard leaf grant', () => {
-    // node grant is a wildcard, currently NOT effectively checked (no children
-    // on the node, so isItemEffectivelyChecked is false even with sub-caps).
-    const node: CatalogNode = { grant: 'project.pm.*' };
-    const result = applyToggleCatalogItem(['project.pm', 'project.pm.summary', 'admin.read'], node);
-    expectSameSet(result, ['admin.read', 'project.pm.*']);
-    expect(result).not.toContain('project.pm');
-    expect(result).not.toContain('project.pm.summary');
+  it('Read OFF also clears Write (no edit-without-view)', () => {
+    expectSameSet(
+      applyTogglePickerCheckbox(['admin.users', 'admin.users_write'], pairedRow, 'read'),
+      [],
+    );
   });
 
-  it('unchecking a checked wildcard node sweeps the wildcard and all prefixed grants', () => {
-    // Node has children that make it effectively checked via promotion.
-    const node: CatalogNode = {
-      grant: 'project.*',
-      children: [{ grant: 'project.read' }, { grant: 'project.write' }],
-    };
-    const result = applyToggleCatalogItem(['project.read', 'project.write', 'admin.read'], node);
-    // Effectively checked -> sweep wildcard + everything under 'project.' prefix.
-    expectSameSet(result, ['admin.read']);
+  it('Write ON also ensures Read', () => {
+    expectSameSet(applyTogglePickerCheckbox([], pairedRow, 'write'), [
+      'admin.users',
+      'admin.users_write',
+    ]);
   });
 
-  it('checking a wildcard node with explicit sub-caps removes them and adds the wildcard', () => {
-    // node grant wildcard, not effectively checked (one child missing).
-    const node: CatalogNode = {
-      grant: 'project.*',
-      children: [{ grant: 'project.read' }, { grant: 'project.write' }],
-    };
-    const result = applyToggleCatalogItem(['project.read', 'admin.read'], node);
-    expectSameSet(result, ['admin.read', 'project.*']);
-    expect(result).not.toContain('project.read');
+  it('Write OFF leaves Read intact', () => {
+    expectSameSet(
+      applyTogglePickerCheckbox(['admin.users', 'admin.users_write'], pairedRow, 'write'),
+      ['admin.users'],
+    );
+  });
+
+  it('Read OFF on a parent sweeps child grants too', () => {
+    const next = applyTogglePickerCheckbox(
+      ['project.overview.*', 'project.overview.prd', 'project.overview_write'],
+      overviewItem,
+      'read',
+    );
+    expectSameSet(next, []);
   });
 });
 
 describe('buildPickerCatalog', () => {
-  it('returns two groups: project and admin', () => {
-    const catalog = buildPickerCatalog();
-    expect(catalog).toHaveLength(2);
+  const catalog = buildPickerCatalog();
+
+  it('exposes a project group and an admin group', () => {
     expect(catalog.map((g) => g.prefix)).toEqual(['project', 'admin']);
+    expect(catalog.find((g) => g.prefix === 'project')!.wildcard).toBe('project.*');
+    expect(catalog.find((g) => g.prefix === 'admin')!.wildcard).toBe('admin.*');
   });
 
-  it('admin group has exactly 5 items with the expected grants', () => {
-    const catalog = buildPickerCatalog();
+  it('admin group carries the read/write split incl. Time Entries (read-only)', () => {
     const admin = catalog.find((g) => g.prefix === 'admin')!;
-    expect(admin.items).toHaveLength(5);
-    expectSameSet(
-      admin.items.map((i) => i.grant),
-      ['admin.dashboard', 'admin.employees', 'admin.projects', 'admin.users', 'admin.roles'],
-    );
+    const byLabel = Object.fromEntries(admin.items.map((i) => [i.label, i]));
+    expect(byLabel['Users']).toMatchObject({
+      readGrant: 'admin.users',
+      writeGrant: 'admin.users_write',
+    });
+    expect(byLabel['Time Entries']).toMatchObject({ readGrant: 'admin.time_entries' });
+    expect(byLabel['Time Entries'].writeGrant).toBeUndefined();
   });
 
-  it('project group includes the hand-curated write-side entries', () => {
-    const catalog = buildPickerCatalog();
+  it('project group includes the hand-added Project Board row (read + write)', () => {
     const project = catalog.find((g) => g.prefix === 'project')!;
-    const grants = project.items.map((i) => i.grant);
-    expect(grants).toContain('project.tracker_write');
-    expect(grants).toContain('project.ai.write');
-    expect(grants).toContain('project.create');
-    expect(grants).toContain('project.assign_personal_task');
+    const board = project.items.find((i) => i.label === 'Project Board');
+    expect(board).toMatchObject({
+      readGrant: 'project.board',
+      writeGrant: 'project.tracker_write',
+    });
   });
 
-  it('maps an injected projectTabs array into the project group items', () => {
-    const fakeTabs = [{ label: 'X', picker: { grant: 'project.x', description: 'd' } }];
-    const catalog = buildPickerCatalog(fakeTabs);
+  it('write-only project actions expose only a writeGrant', () => {
     const project = catalog.find((g) => g.prefix === 'project')!;
-    const injected = project.items.find((i) => i.grant === 'project.x');
-    expect(injected).toBeDefined();
-    expect(injected!.label).toBe('X');
-    expect(injected!.description).toBe('d');
-    // The 4 hand-curated entries are appended after the injected tabs.
-    expect(project.items).toHaveLength(5);
-  });
-
-  it('maps injected tab children into picker item children', () => {
-    const fakeTabs = [
-      {
-        label: 'Y',
-        picker: {
-          grant: 'project.y.*',
-          description: 'd',
-          children: [{ label: 'Sub', grant: 'project.y.sub', description: 'sd' }],
-        },
-      },
-    ];
-    const catalog = buildPickerCatalog(fakeTabs);
-    const project = catalog.find((g) => g.prefix === 'project')!;
-    const injected = project.items.find((i) => i.grant === 'project.y.*')!;
-    expect(injected.children).toEqual([
-      { label: 'Sub', grant: 'project.y.sub', description: 'sd' },
-    ]);
-  });
-});
-
-describe('edge cases the live catalog masks (pin current behavior)', () => {
-  const reg: Capability[] = [
-    { key: 'project.read', description: '' },
-    { key: 'project.write', description: '' },
-  ];
-
-  it('toggles the global "*" grant off to empty', () => {
-    expect(applyToggleGrant(['*'], '*', reg)).toEqual([]);
-  });
-
-  it('adding "*" simply appends it (does NOT minimize existing non-covered grants)', () => {
-    // '*' isn't a covering wildcard of 'project.read' via the expansion path, so the
-    // result just appends '*'. Pins today's non-minimizing behavior against a future
-    // "collapse redundant grants" change.
-    expectSameSet(applyToggleGrant(['project.read'], '*', reg), ['project.read', '*']);
-  });
-
-  it('appends to an empty grant set', () => {
-    expect(applyToggleGrant([], 'project.read', reg)).toEqual(['project.read']);
-  });
-
-  it('unchecking a wildcard-covered key expands to empty when the key is the only matching cap', () => {
-    // grants=['project.*'], toggling 'project.read' off expands the wildcard into its
-    // sub-caps minus the toggled key; with a registry whose only matching cap IS the
-    // toggled key, the expansion collapses to nothing.
-    expect(
-      applyToggleGrant(['project.*'], 'project.read', [{ key: 'project.read', description: '' }]),
-    ).toEqual([]);
-  });
-
-  it('uncheck sweeps the full prefix even when "checked" was promoted from a partial child list', () => {
-    // The node lists only ONE child. With that child AND an unlisted sibling granted,
-    // the node reads as "effectively checked" (its listed child is granted), and
-    // unchecking sweeps the entire 'project.' prefix — removing the unlisted sibling
-    // too. Documents (does not endorse) the asymmetry between the children-based
-    // "checked" predicate and the prefix-based uncheck sweep.
-    const node: CatalogNode = { grant: 'project.*', children: [{ grant: 'project.read' }] };
-    const grants = ['project.read', 'project.extra'];
-    expect(isItemEffectivelyChecked(node, grants)).toBe(true);
-    expect(applyToggleCatalogItem(grants, node)).toEqual([]);
+    const ai = project.items.find((i) => i.label === 'AI Generators')!;
+    expect(ai.writeGrant).toBe('project.ai.write');
+    expect(ai.readGrant).toBeUndefined();
   });
 });

@@ -1,11 +1,13 @@
 // Thin per-tab container: owns the Employees tab's data + modal state (via
 // useEmployeesAdmin) and renders the tab plus its modal.
+import { useAuth } from '@/contexts/AuthContext';
 import { AdminSpinner } from '../components/AdminSpinner';
 import { useEmployeesAdmin } from '../hooks/useEmployeesAdmin';
 import EmployeesTab from '../tabs/EmployeesTab';
 import EmployeeModal from '../modals/EmployeeModal';
 
 export default function EmployeesContainer() {
+  const { can } = useAuth();
   const {
     employees,
     developerCapacities,
@@ -33,6 +35,7 @@ export default function EmployeesContainer() {
         availableSpecs={availableSpecs}
         onEditEmployee={handleEditEmployee}
         onDeleteEmployee={handleDeleteEmployee}
+        canWriteEmployees={can('admin.employees_write')}
       />
       <EmployeeModal
         open={showEmployeeModal}

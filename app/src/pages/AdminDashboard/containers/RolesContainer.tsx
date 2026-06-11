@@ -1,12 +1,19 @@
 // Thin per-tab container for the Roles tab. Owns role-editor state via
 // useRolesAdmin and renders the Roles tab plus the role create/edit modal.
+import { useAuth } from '@/contexts/AuthContext';
 import { AdminSpinner } from '../components/AdminSpinner';
 import { useRolesAdmin } from '../hooks/useRolesAdmin';
-import { isItemChecked, isItemEffectivelyChecked, toPascalCase } from '../lib/capabilityPicker';
+import {
+  isGrantHeld,
+  isSideEffective,
+  isGroupEffective,
+  toPascalCase,
+} from '../lib/capabilityPicker';
 import RolesTab from '../tabs/RolesTab';
 import RoleModal from '../modals/RoleModal';
 
 export default function RolesContainer() {
+  const { can } = useAuth();
   const {
     roles,
     isLoading,
@@ -18,13 +25,18 @@ export default function RolesContainer() {
     isSavingRole,
     PICKER_CATALOG,
     toggleGrant,
-    toggleCatalogItem,
+    toggleGroupWildcard,
+    togglePickerCheckbox,
     handleOpenCreateRole,
     handleOpenEditRole,
     handleSaveRole,
     handleDeleteRole,
     deleteRoleMutation,
   } = useRolesAdmin();
+
+  // Gate create/edit/delete affordances on roles-write (backend enforces the
+  // same cap on the role-mutation endpoints).
+  const canWriteRoles = can('admin.roles_write');
 
   if (isLoading) return <AdminSpinner />;
 
@@ -36,6 +48,7 @@ export default function RolesContainer() {
         onCreateRole={handleOpenCreateRole}
         onEditRole={handleOpenEditRole}
         onDeleteRole={handleDeleteRole}
+        canWriteRoles={canWriteRoles}
       />
 
       <RoleModal
@@ -47,9 +60,11 @@ export default function RolesContainer() {
         isSavingRole={isSavingRole}
         pickerCatalog={PICKER_CATALOG}
         toggleGrant={toggleGrant}
-        toggleCatalogItem={toggleCatalogItem}
-        isItemChecked={isItemChecked}
-        isItemEffectivelyChecked={isItemEffectivelyChecked}
+        toggleGroupWildcard={toggleGroupWildcard}
+        togglePickerCheckbox={togglePickerCheckbox}
+        isGrantHeld={isGrantHeld}
+        isSideEffective={isSideEffective}
+        isGroupEffective={isGroupEffective}
         toPascalCase={toPascalCase}
         handleSaveRole={handleSaveRole}
       />

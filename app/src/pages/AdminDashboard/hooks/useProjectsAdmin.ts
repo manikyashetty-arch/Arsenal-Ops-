@@ -69,14 +69,17 @@ export function useProjectsAdmin() {
   });
 
   // ── Category CRUD mutations ───────────────────────────────────────────
-  // Invalidate three keys on any category mutation: categories list (manager
-  // modal), projects (cards show category badges), weekly report (rows include
-  // category_name). A rename reflows into cards AND report; an assignment change
-  // re-buckets which projects show in a filtered report.
+  // Invalidate four keys on any category mutation: categories list (manager
+  // modal), admin projects (cards show category badges), weekly report (rows
+  // include category_name), and the home-page CreateProjectDialog picker which
+  // reads the non-admin ['projectCategories'] key. A rename reflows into cards
+  // AND report; an assignment change re-buckets which projects show in a
+  // filtered report.
   const invalidateCategoryScope = () => {
     queryClient.invalidateQueries({ queryKey: ['admin', 'projectCategories'] });
     queryClient.invalidateQueries({ queryKey: ['admin', 'projects'] });
     queryClient.invalidateQueries({ queryKey: ['admin', 'projectsWeeklyReport'] });
+    queryClient.invalidateQueries({ queryKey: ['projectCategories'] });
   };
 
   const createCategoryMutation = useMutation({
@@ -116,11 +119,13 @@ export function useProjectsAdmin() {
     onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to delete category'),
   });
 
-  // Assigning a category to a single project. Uses the existing
-  // PUT /api/projects/{id} surface. Passing null clears the assignment.
+  // Assigning a category to a single project. Uses the dedicated admin endpoint
+  // — gated on `admin.projects_write` so a read-only admin (or a per-project
+  // admin only) can't reorganize the admin-wide categorization. Passing null
+  // clears the assignment.
   const setProjectCategoryMutation = useMutation({
     mutationFn: ({ projectId, categoryId }: { projectId: number; categoryId: number | null }) =>
-      apiFetch(`/api/projects/${projectId}`, {
+      apiFetch(`/api/admin/projects/${projectId}/category`, {
         method: 'PUT',
         body: JSON.stringify({ category_id: categoryId }),
       }),

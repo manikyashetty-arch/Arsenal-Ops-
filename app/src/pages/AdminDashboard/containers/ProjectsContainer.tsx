@@ -1,6 +1,7 @@
 // Thin container for the Projects admin tab: owns data, mutations, and modal
 // state via useProjectsAdmin (plus the employees list for the add-member
 // dropdown), then renders the tab and its three modals.
+import { useAuth } from '@/contexts/AuthContext';
 import { AdminSpinner } from '../components/AdminSpinner';
 import { useProjectsAdmin } from '../hooks/useProjectsAdmin';
 import { useEmployeesList } from '../hooks/useEmployeesList';
@@ -48,6 +49,7 @@ export default function ProjectsContainer() {
   } = useProjectsAdmin();
 
   const { employees } = useEmployeesList();
+  const { can } = useAuth();
 
   if (isLoading) return <AdminSpinner />;
 
@@ -68,6 +70,7 @@ export default function ProjectsContainer() {
         onEditGitHubSettings={handleEditGitHubSettings}
         onSendGitHubInvites={handleSendGitHubInvites}
         onOpenProjectMembers={handleOpenProjectMembers}
+        canWriteProjects={can('admin.projects_write')}
       />
 
       <GitHubModal

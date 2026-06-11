@@ -5,9 +5,12 @@ import { apiFetch } from '@/lib/api';
 import { invalidateAdminRoles } from '@/lib/invalidations';
 import type { Capability, Role } from '../types';
 import {
-  type CatalogNode,
-  applyToggleCatalogItem,
+  type PickerChild,
+  type PickerGroup,
+  type PickerItem,
   applyToggleGrant,
+  applyToggleGroupWildcard,
+  applyTogglePickerCheckbox,
   buildPickerCatalog,
 } from '../lib/capabilityPicker';
 import { ADMIN_REFETCH } from './adminRefetch';
@@ -192,10 +195,19 @@ export function useRolesAdmin() {
     }));
   };
 
-  const toggleCatalogItem = (node: CatalogNode) => {
+  // "Grant all <Group>" wildcard toggle (e.g. project.* / admin.*).
+  const toggleGroupWildcard = (group: PickerGroup) => {
     setRoleForm((f) => ({
       ...f,
-      capability_keys: applyToggleCatalogItem(f.capability_keys, node),
+      capability_keys: applyToggleGroupWildcard(f.capability_keys, group),
+    }));
+  };
+
+  // Toggle one side (read/write) of a picker row, enforcing the W→R dependency.
+  const togglePickerCheckbox = (item: PickerChild | PickerItem, side: 'read' | 'write') => {
+    setRoleForm((f) => ({
+      ...f,
+      capability_keys: applyTogglePickerCheckbox(f.capability_keys, item, side),
     }));
   };
 
@@ -211,7 +223,8 @@ export function useRolesAdmin() {
     isSavingRole,
     PICKER_CATALOG,
     toggleGrant,
-    toggleCatalogItem,
+    toggleGroupWildcard,
+    togglePickerCheckbox,
     handleOpenCreateRole,
     handleOpenEditRole,
     handleSaveRole,

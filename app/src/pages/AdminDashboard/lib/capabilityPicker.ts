@@ -3,21 +3,32 @@
  *
  * This was inline in AdminDashboard.tsx as a mix of pure predicates and
  * `setRoleForm`-wrapping closures. Extracted here as pure functions
- * (grants in → grants out) so the wildcard/auto-promote rules can be unit
- * tested directly and reused. The component keeps `roleForm` state and wraps
- * the `apply*` helpers in `setRoleForm`.
+ * (grants in → grants out) so the wildcard / auto-promote / Write→Read rules
+ * can be unit-tested directly and reused. The component keeps `roleForm` state
+ * and wraps the `apply*` helpers in `setRoleForm`.
+ *
+ * R/W model: every picker row carries up to two grants — `readGrant` (view)
+ * and `writeGrant` (edit/create/delete) — and the editor renders 0–2 checkboxes
+ * per row. The Write→Read dependency (ticking Write also ticks Read; unticking
+ * Read also unticks Write) is enforced in `applyTogglePickerCheckbox`.
  */
 import { PROJECT_TABS } from '@/lib/projectTabs';
 import type { Capability } from '../types';
 
-/** A pickable capability surface. Optional sub-rows render indented under the
- *  parent; when the parent's grant (typically a wildcard) is active, children
- *  render as covered + disabled. */
-export interface PickerItem {
+/** One pickable capability surface — a tab/feature row or a sub-row (child).
+ *  Each row exposes up to two grants; rows render a checkbox per present side. */
+export interface PickerChild {
   label: string;
-  grant: string;
   description: string;
-  children?: { label: string; grant: string; description: string }[];
+  readGrant?: string;
+  writeGrant?: string;
+  footnote?: string;
+}
+
+export interface PickerItem extends PickerChild {
+  /** Optional sub-rows shown indented under the parent. `readonly` to stay
+   *  assignable from the modal's `CatalogItem` (which declares it readonly). */
+  children?: readonly PickerChild[];
 }
 
 export interface PickerGroup {
@@ -27,20 +38,32 @@ export interface PickerGroup {
   items: PickerItem[];
 }
 
-/** Minimal shape the toggle/checked helpers need from a catalog node. Recursive
- *  because `isItemEffectivelyChecked` walks children depth-first; real catalogs
- *  are only 2 levels deep, but the type allows arbitrary nesting honestly. */
-export type CatalogNode = { grant: string; children?: readonly CatalogNode[] };
+/** Minimal structural shape the toggle/checked helpers need from a catalog
+ *  node. Recursive because `isSideEffective` walks children depth-first; real
+ *  catalogs are only 2 levels deep, but the type allows arbitrary nesting. */
+export type ToggleNode = {
+  readGrant?: string;
+  writeGrant?: string;
+  children?: readonly { readGrant?: string; writeGrant?: string }[];
+};
 
-/** Loose shape of a project-tab entry that `buildPickerCatalog` reads. Real
+/** Loose shape of a project-tab entry that `buildPickerCatalog` reads. The real
  *  `ProjectTabSpec` is wider (id/icon/capabilities) and assignable to this;
  *  tests can pass a minimal fake without constructing a full tab spec. */
 export interface ProjectTabLike {
   label: string;
   picker: {
-    grant: string;
     description: string;
-    children?: readonly { label: string; grant: string; description: string }[];
+    readGrant?: string;
+    writeGrant?: string;
+    footnote?: string;
+    children?: readonly {
+      label: string;
+      description: string;
+      readGrant?: string;
+      writeGrant?: string;
+      footnote?: string;
+    }[];
   };
 }
 
@@ -70,10 +93,10 @@ export function keyIsUnderGrant(key: string, grant: string): boolean {
   return key === grant;
 }
 
-/** Strict "is this exact grant or a wildcard ancestor in the grant set?"
- *  Sibling sub-caps and descendants do NOT count. This is the LEAF check —
- *  for nodes with children use `isItemEffectivelyChecked`. */
-export function isItemChecked(grant: string, grants: string[]): boolean {
+/** Strict check: is this exact grant (or a wildcard ancestor) in `grants`?
+ *  Sibling sub-caps and descendants do NOT count. The leaf primitive used by
+ *  all the effective-check helpers below. */
+export function isGrantHeld(grant: string, grants: string[]): boolean {
   if (grants.includes('*')) return true;
   if (grants.includes(grant)) return true;
   for (const g of grants) {
@@ -86,17 +109,72 @@ export function isItemChecked(grant: string, grants: string[]): boolean {
   return false;
 }
 
-/** Recursive "effectively checked" for any catalog node: directly granted /
- *  wildcard-covered, OR (has children AND every child is effectively checked). */
-export function isItemEffectivelyChecked(node: CatalogNode, grants: string[]): boolean {
-  if (isItemChecked(node.grant, grants)) return true;
-  if (!node.children || node.children.length === 0) return false;
-  return node.children.every((c) => isItemEffectivelyChecked(c, grants));
+/** Effective check for one *side* (read or write) of a picker row.
+ *
+ *  - Direct: the item's side-grant is in `grants` (or covered by an ancestor
+ *    wildcard).
+ *  - Auto-promote: the item has a side-grant AND children whose same-side
+ *    grants are all effectively held — e.g. Overview's Read shows checked when
+ *    all sub-tab Reads are granted, because Overview has `readGrant` to promote
+ *    to. Children with no side-grant are vacuously held for that side.
+ *
+ *  Auto-promote is only meaningful when the parent itself has a side-grant to
+ *  promote to; without one there is no checkbox to show checked. */
+export function isSideEffective(
+  item: ToggleNode,
+  side: 'read' | 'write',
+  grants: string[],
+): boolean {
+  const grant = side === 'read' ? item.readGrant : item.writeGrant;
+  if (grant && isGrantHeld(grant, grants)) return true;
+  if (!grant) return false;
+  if (!item.children || item.children.length === 0) return false;
+  return item.children.every((c) => {
+    const cg = side === 'read' ? c.readGrant : c.writeGrant;
+    if (!cg) return true; // vacuous — child doesn't expose this side
+    return isSideEffective(c, side, grants);
+  });
 }
 
-/** Toggle a single leaf grant. When unchecking a key that's only covered by a
- *  wildcard, the wildcard is expanded into its explicit sub-caps (minus the
- *  unchecked key) so the rest stay granted. Returns the next grant set. */
+/** True when every defined side across the group is effectively held. Drives
+ *  the "Grant all <Group>" checkbox: checked when the group wildcard is granted
+ *  directly OR every R/W across every item (and its children) is covered. */
+export function isGroupEffective(
+  group: { wildcard: string; items: readonly ToggleNode[] },
+  grants: string[],
+): boolean {
+  if (isGrantHeld(group.wildcard, grants)) return true;
+  return group.items.every((item) => {
+    const readOk = !item.readGrant || isSideEffective(item, 'read', grants);
+    const writeOk = !item.writeGrant || isSideEffective(item, 'write', grants);
+    const childrenReadOk =
+      !item.children ||
+      item.children.every((c) => !c.readGrant || isSideEffective(c, 'read', grants));
+    const childrenWriteOk =
+      !item.children ||
+      item.children.every((c) => !c.writeGrant || isSideEffective(c, 'write', grants));
+    return readOk && writeOk && childrenReadOk && childrenWriteOk;
+  });
+}
+
+/** Sweep every explicit grant under a wildcard's prefix from `grants`. Used
+ *  both when granting a wildcard (clean up redundant sub-caps) and when
+ *  revoking one (purge everything it covered). Mutates the passed Set. */
+function sweepUnder(wildcard: string, grants: Set<string>): void {
+  if (!wildcard.endsWith('.*')) {
+    grants.delete(wildcard);
+    return;
+  }
+  const prefix = wildcard.slice(0, -2);
+  for (const g of [...grants]) {
+    if (g === wildcard || g === prefix || g.startsWith(prefix + '.')) grants.delete(g);
+  }
+}
+
+/** Toggle a single leaf grant (the global `*` full-access checkbox). When
+ *  unchecking a key that's only covered by a wildcard, the wildcard is expanded
+ *  into its explicit sub-caps (minus the unchecked key) so the rest stay
+ *  granted. Returns the next grant set. */
 export function applyToggleGrant(grants: string[], key: string, registry: Capability[]): string[] {
   if (grants.includes(key)) {
     return grants.filter((g) => g !== key);
@@ -116,44 +194,76 @@ export function applyToggleGrant(grants: string[], key: string, registry: Capabi
   return [...grants, key];
 }
 
-/** Toggle a catalog node (leaf, parent-with-children, or group wildcard) using
- *  the EFFECTIVE checked state. Uncheck removes the exact grant and, for
- *  wildcards, sweeps every explicit sub-cap underneath. Check adds the grant
- *  and, for wildcards, drops now-redundant explicit sub-caps. Returns the next
+/** Toggle the group-level wildcard (the "Grant all Project / Admin" checkbox).
+ *  Revoke drops the wildcard plus any explicit sub-caps under it; grant sweeps
+ *  redundant sub-caps and adds the wildcard. Returns the next grant set. */
+export function applyToggleGroupWildcard(
+  grants: string[],
+  group: { wildcard: string; items: readonly ToggleNode[] },
+): string[] {
+  const next = new Set(grants);
+  const held = isGroupEffective(group, grants);
+  sweepUnder(group.wildcard, next);
+  if (!held) next.add(group.wildcard);
+  return [...next];
+}
+
+/** Toggle one side (read or write) of a picker row. Implements the W→R
+ *  dependency:
+ *    - Ticking Write ON also adds Read ("edit but can't view" is incoherent).
+ *    - Ticking Read OFF also clears Write (and sweeps children both sides).
+ *  Single-side rows just toggle their one cap. When a side-grant is a wildcard,
+ *  sub-caps under it are swept to keep the grant list minimal. Returns the next
  *  grant set. */
-export function applyToggleCatalogItem(grants: string[], node: CatalogNode): string[] {
-  const { grant } = node;
-  const checked = isItemEffectivelyChecked(node, grants);
-  if (checked) {
-    let isUnderRemoved: (g: string) => boolean;
-    if (grant.endsWith('.*')) {
-      const prefix = grant.slice(0, -2);
-      isUnderRemoved = (g) => g === grant || g === prefix || g.startsWith(prefix + '.');
-    } else {
-      isUnderRemoved = (g) => g === grant;
+export function applyTogglePickerCheckbox(
+  grants: string[],
+  item: PickerChild | PickerItem,
+  side: 'read' | 'write',
+): string[] {
+  const next = new Set(grants);
+  const isOn = isSideEffective(item, side, grants);
+
+  if (side === 'read') {
+    if (isOn) {
+      // Read OFF → also clear Write, and sweep all child grants both sides.
+      if (item.readGrant) sweepUnder(item.readGrant, next);
+      if (item.writeGrant) next.delete(item.writeGrant);
+      const children = (item as PickerItem).children;
+      if (children) {
+        for (const c of children) {
+          if (c.readGrant) sweepUnder(c.readGrant, next);
+          if (c.writeGrant) next.delete(c.writeGrant);
+        }
+      }
+    } else if (item.readGrant) {
+      // Read ON
+      sweepUnder(item.readGrant, next); // dedup
+      next.add(item.readGrant);
     }
-    return grants.filter((g) => !isUnderRemoved(g));
-  }
-  let cleaned: string[];
-  if (grant.endsWith('.*')) {
-    const prefix = grant.slice(0, -2);
-    cleaned = grants.filter((g) => g !== prefix && !g.startsWith(prefix + '.'));
+  } else if (isOn) {
+    // Write OFF → Read stays.
+    if (item.writeGrant) next.delete(item.writeGrant);
   } else {
-    cleaned = grants.slice();
+    // Write ON → also ensure Read.
+    if (item.writeGrant) next.add(item.writeGrant);
+    if (item.readGrant && !isSideEffective(item, 'read', grants)) {
+      sweepUnder(item.readGrant, next);
+      next.add(item.readGrant);
+    }
   }
-  return [...cleaned, grant];
+  return [...next];
 }
 
 /**
  * Display catalog for the Roles role-editor picker.
  *
- * PROJECT items are derived from the single project-tab registry
- * (`lib/projectTabs.ts`) so adding a tab there automatically surfaces it in the
- * role editor with the right label, description, grant key, and sub-rows. The
- * two write-side entries and the ADMIN group are hand-curated since those
- * surfaces don't share the tab abstraction. Cap keys live outside the read
- * groups' wildcards on purpose (`project.tracker_write` is a sibling of
- * `project.tracker`, not nested) so granting read doesn't auto-grant write.
+ * PROJECT items are mapped from the single project-tab registry
+ * (`lib/projectTabs.ts`) so adding a tab there surfaces it here automatically
+ * with the right label/description/grants/sub-rows. The write-only project
+ * actions and the Project Board row live outside the tab registry and are
+ * appended manually. The ADMIN group is hand-curated; as of the R/W split every
+ * admin tab that has write actions exposes both a read cap (`admin.<tab>`) and a
+ * write cap (`admin.<tab>_write`). See backend/capabilities.py.
  *
  * Accepts `projectTabs` as a parameter (defaulting to the real registry) so the
  * builder can be tested without coupling to the live tab list.
@@ -169,29 +279,44 @@ export function buildPickerCatalog(
       items: [
         ...projectTabs.map((tab) => ({
           label: tab.label,
-          grant: tab.picker.grant,
           description: tab.picker.description,
-          children: tab.picker.children ? [...tab.picker.children] : undefined,
+          readGrant: tab.picker.readGrant,
+          writeGrant: tab.picker.writeGrant,
+          footnote: tab.picker.footnote,
+          children: tab.picker.children
+            ? tab.picker.children.map((c) => ({
+                label: c.label,
+                description: c.description,
+                readGrant: c.readGrant,
+                writeGrant: c.writeGrant,
+                footnote: c.footnote,
+              }))
+            : undefined,
         })),
         {
-          label: 'Manage items & sprints',
-          grant: 'project.tracker_write',
-          description: 'Create, edit, and delete work items and sprints',
+          // Project Board is a separate surface (`/project/{id}/board`) from the
+          // Project Tracker tab. Read = open & view the board; Write =
+          // create/edit/delete work items and sprints. Hand-added because it
+          // isn't a tab in PROJECT_TABS.
+          label: 'Project Board',
+          description: 'Open the board to view items and sprints; create/edit/delete with write',
+          readGrant: 'project.board',
+          writeGrant: 'project.tracker_write',
         },
         {
           label: 'AI Generators',
-          grant: 'project.ai.write',
-          description: 'Run PRD analyzer and roadmap parser (write)',
+          description: 'Run PRD analyzer and roadmap parser',
+          writeGrant: 'project.ai.write',
         },
         {
           label: 'Create new projects',
-          grant: 'project.create',
-          description: 'Create new projects from the home page (write)',
+          description: 'Create new projects from the home page',
+          writeGrant: 'project.create',
         },
         {
           label: 'Assign personal tasks to project',
-          grant: 'project.assign_personal_task',
-          description: 'Convert a personal task into a project ticket (write)',
+          description: 'Convert a personal task into a project ticket',
+          writeGrant: 'project.assign_personal_task',
         },
       ],
     },
@@ -200,11 +325,40 @@ export function buildPickerCatalog(
       label: 'Admin',
       wildcard: 'admin.*',
       items: [
-        { label: 'Dashboard', grant: 'admin.dashboard', description: 'Admin dashboard summary' },
-        { label: 'Employees', grant: 'admin.employees', description: 'Manage employees' },
-        { label: 'Projects', grant: 'admin.projects', description: 'Manage projects from admin' },
-        { label: 'Users', grant: 'admin.users', description: 'Manage users and role assignments' },
-        { label: 'Roles', grant: 'admin.roles', description: 'Manage roles and capability grants' },
+        {
+          label: 'Dashboard',
+          description: 'Admin dashboard summary',
+          readGrant: 'admin.dashboard',
+        },
+        {
+          label: 'Employees',
+          description: 'View, add, edit, and delete employees',
+          readGrant: 'admin.employees',
+          writeGrant: 'admin.employees_write',
+        },
+        {
+          label: 'Projects',
+          description: 'View admin projects list; edit GitHub settings',
+          readGrant: 'admin.projects',
+          writeGrant: 'admin.projects_write',
+        },
+        {
+          label: 'Time Entries',
+          description: 'View all time entries across projects',
+          readGrant: 'admin.time_entries',
+        },
+        {
+          label: 'Users',
+          description: 'View, create, edit, delete users; assign roles',
+          readGrant: 'admin.users',
+          writeGrant: 'admin.users_write',
+        },
+        {
+          label: 'Roles',
+          description: 'View, create, edit, delete roles and capability grants',
+          readGrant: 'admin.roles',
+          writeGrant: 'admin.roles_write',
+        },
       ],
     },
   ];

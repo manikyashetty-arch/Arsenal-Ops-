@@ -4,6 +4,7 @@
 // open-role-dropdown UI state. Renders the Users tab plus its three modals.
 import { useState } from 'react';
 import { Shield, KeyRound, X } from 'lucide-react';
+import { useAuth } from '@/contexts/AuthContext';
 import { AdminSpinner } from '../components/AdminSpinner';
 import { useUsersAdmin } from '../hooks/useUsersAdmin';
 import { useRolesList } from '../hooks/useRolesList';
@@ -37,6 +38,12 @@ export default function UsersContainer() {
   // with the Roles tab via react-query (same ['admin','roles'] key).
   const { roles } = useRolesList();
   const { handleToggleUserRoleById } = useUserRoleAssignment();
+  const { can } = useAuth();
+
+  // Write caps gate the action buttons. Edit-Roles gates on roles-write since it
+  // mutates user_roles (backend enforces the same cap).
+  const canWriteUsers = can('admin.users_write');
+  const canWriteRoles = can('admin.roles_write');
 
   // Per-user role-edit modal trigger.
   const [openRoleDropdown, setOpenRoleDropdown] = useState<number | null>(null);
@@ -51,6 +58,8 @@ export default function UsersContainer() {
         onAddUser={() => setShowUserModal(true)}
         onDeleteUser={handleDeleteUser}
         onEditUser={handleOpenEditUser}
+        canWriteUsers={canWriteUsers}
+        canWriteRoles={canWriteRoles}
       />
 
       {/* Role Management Modal (per-user role assignment) */}
@@ -195,6 +204,7 @@ export default function UsersContainer() {
         setUserForm={setUserForm}
         handleRoleToggle={handleRoleToggle}
         handleSaveUser={handleSaveUser}
+        roles={roles}
       />
 
       <EditUserModal
