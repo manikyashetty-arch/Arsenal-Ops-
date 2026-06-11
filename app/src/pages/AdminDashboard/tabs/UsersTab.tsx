@@ -8,8 +8,10 @@ import {
   Plus,
   Pencil,
   Trash2,
+  Search,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 
 interface User {
   id: number;
@@ -58,6 +60,7 @@ const UsersTab = ({
 }: UsersTabProps) => {
   // Users tab filters + sort (tab-local state per CONVENTIONS.md)
   const [usersRoleFilter, setUsersRoleFilter] = useState<string>('all');
+  const [usersSearch, setUsersSearch] = useState<string>('');
   const [usersSort, setUsersSort] = useState<{ key: UsersSortKey; dir: 'asc' | 'desc' }>({
     key: 'created',
     dir: 'desc',
@@ -83,15 +86,23 @@ const UsersTab = ({
   }, [users]);
 
   const visibleUsers = useMemo(() => {
-    const filtered =
-      usersRoleFilter === 'all'
-        ? users
-        : users.filter((u) =>
-            u.role
-              .split(',')
-              .map((r) => r.trim())
-              .includes(usersRoleFilter),
-          );
+    const search = usersSearch.trim().toLowerCase();
+    const filtered = users.filter((u) => {
+      // Role-filter test
+      if (usersRoleFilter !== 'all') {
+        const roles = u.role.split(',').map((r) => r.trim());
+        if (!roles.includes(usersRoleFilter)) return false;
+      }
+      // Search-filter test — match on name OR email so admins can search
+      // by either. Case-insensitive substring match keeps the UX
+      // predictable for partial typing.
+      if (search) {
+        const name = u.name.toLowerCase();
+        const email = u.email.toLowerCase();
+        if (!name.includes(search) && !email.includes(search)) return false;
+      }
+      return true;
+    });
 
     return [...filtered].sort((a, b) => {
       let av: number | string;
@@ -119,7 +130,7 @@ const UsersTab = ({
       if (av > bv) return usersSort.dir === 'asc' ? 1 : -1;
       return 0;
     });
-  }, [users, usersRoleFilter, usersSort]);
+  }, [users, usersRoleFilter, usersSearch, usersSort]);
 
   return (
     <div className="space-y-4">
@@ -138,6 +149,17 @@ const UsersTab = ({
 
       {/* Filter bar */}
       <div className="flex flex-wrap items-center gap-2">
+        {/* Search — matches name or email. Same styling as other admin
+            tab searches so the admin shell stays visually consistent. */}
+        <div className="relative">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#737373]" />
+          <Input
+            placeholder="Search name or email…"
+            value={usersSearch}
+            onChange={(e) => setUsersSearch(e.target.value)}
+            className="pl-8 w-56 bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl h-9 text-sm focus:border-[#E0B954]/50"
+          />
+        </div>
         <select
           value={usersRoleFilter}
           onChange={(e) => setUsersRoleFilter(e.target.value)}
@@ -151,14 +173,17 @@ const UsersTab = ({
             </option>
           ))}
         </select>
-        {usersRoleFilter !== 'all' && (
+        {(usersRoleFilter !== 'all' || usersSearch !== '') && (
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => setUsersRoleFilter('all')}
+            onClick={() => {
+              setUsersRoleFilter('all');
+              setUsersSearch('');
+            }}
             className="h-9 text-xs text-[#737373] hover:text-white rounded-xl px-3"
           >
-            Clear filter
+            Clear filters
           </Button>
         )}
         <div className="ml-auto text-xs text-[#737373]">
@@ -336,7 +361,9 @@ const UsersTab = ({
         )}
         {users.length > 0 && visibleUsers.length === 0 && (
           <div className="text-center py-12 text-sm text-[#737373]">
-            No users match the current filter.
+            {usersSearch.trim()
+              ? 'No users match your search.'
+              : 'No users match the current filter.'}
           </div>
         )}
       </div>

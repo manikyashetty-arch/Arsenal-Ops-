@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
@@ -19,8 +19,10 @@ import {
   TableProperties,
   ChevronDown,
   ChevronRight,
+  Search,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import {
   Select,
   SelectContent,
@@ -194,17 +196,43 @@ const ProjectsTab = ({
   // apply to both views.
   const [view, setView] = useState<'cards' | 'reports'>('cards');
 
+  // Free-text search applied on top of the category filter. Matches the
+  // project name and description (case-insensitive substring). Local state
+  // because it's purely UI — the parent stays unaware of search semantics.
+  const [projectSearch, setProjectSearch] = useState<string>('');
+
   // Which row in the reports table is expanded — null when none. Reset to
   // null whenever the user switches back to 'cards' so re-entering 'reports'
   // starts collapsed.
   const [expandedProjectId, setExpandedProjectId] = useState<number | null>(null);
 
+  // Apply the search filter on top of the category-filtered list the parent
+  // passes in. Memoized so the cards view and the reports table see the
+  // same reference and the downstream `.sort()`/`.map()` chains don't
+  // recompute when unrelated state changes.
+  const searchedProjects = useMemo(() => {
+    const q = projectSearch.trim().toLowerCase();
+    if (!q) return projects;
+    return projects.filter(
+      (p) => p.name.toLowerCase().includes(q) || (p.description ?? '').toLowerCase().includes(q),
+    );
+  }, [projects, projectSearch]);
+
   // Sort report rows alphabetically by project name (case- and
   // accent-insensitive), matching the order used by the project cards
   // view, the home-page Projects box, and the task-dialog dropdowns.
   // `.slice()` copies before sorting so we don't mutate the cache payload.
+  // Search filter applied here too so both views (cards + reports) honor
+  // the same user-typed query. WeeklyReportRow only carries `project_name`,
+  // so search is name-only on the reports side — description isn't part of
+  // that payload.
   const reportRows = (weeklyReport?.rows ?? [])
     .slice()
+    .filter((r) => {
+      const q = projectSearch.trim().toLowerCase();
+      if (!q) return true;
+      return r.project_name.toLowerCase().includes(q);
+    })
     .sort((a, b) =>
       a.project_name.localeCompare(b.project_name, undefined, { sensitivity: 'base' }),
     );
@@ -229,6 +257,18 @@ const ProjectsTab = ({
         <h2 className="text-lg font-semibold text-white">All Projects</h2>
 
         <div className="flex items-center gap-2">
+          {/* Free-text search — matches name + description across the
+              category-filtered list. Same input style as the Users tab
+              search so the admin shell stays uniform. */}
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#737373]" />
+            <Input
+              placeholder="Search projects…"
+              value={projectSearch}
+              onChange={(e) => setProjectSearch(e.target.value)}
+              className="pl-8 w-56 bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl h-9 text-sm focus:border-[#E0B954]/50"
+            />
+          </div>
           <div className="flex items-center gap-1.5 text-xs text-[#737373]">
             <Filter className="w-3.5 h-3.5" />
             Category
@@ -251,6 +291,33 @@ const ProjectsTab = ({
               ))}
             </SelectContent>
           </Select>
+          {/* Clear-filters affordance — surfaces when search OR a non-"all"
+              category is active. Mirrors the UsersTab pattern so both
+              tabs reset the same way. Resets both at once, even if only
+              one of them is set, so the "back to default" expectation is
+              consistent. */}
+          {(projectSearch !== '' || categoryFilter !== 'all') && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setProjectSearch('');
+                onCategoryFilterChange('all');
+              }}
+              className="h-9 text-xs text-[#737373] hover:text-white rounded-xl px-3"
+            >
+              Clear filters
+            </Button>
+          )}
+          {/* Result count — always shown so the admin sees the size of
+              the current list at a glance. Mirrors UsersTab's "{x} of {y}"
+              indicator. `projects` here is the parent's category-filtered
+              list; the count denominator is therefore "after category
+              filter", which is the largest meaningful baseline given the
+              parent owns the category filter. */}
+          <div className="text-xs text-[#737373]">
+            {searchedProjects.length} of {projects.length}
+          </div>
           {/* Match "Back to Projects" button style — ghost variant, muted
               foreground that brightens on hover. Keeps the header visual
               hierarchy consistent across the admin shell.
@@ -354,7 +421,9 @@ const ProjectsTab = ({
               <TableProperties className="w-7 h-7 text-[#525252] mx-auto mb-2" />
               <p className="text-sm text-[#a3a3a3] font-medium">No report data</p>
               <p className="text-xs text-[#525252] mt-1">
-                Nothing matches the current category filter.
+                {projectSearch.trim()
+                  ? 'No projects match your search.'
+                  : 'Nothing matches the current category filter.'}
               </p>
             </div>
           ) : (
@@ -529,15 +598,17 @@ const ProjectsTab = ({
       {/* Cards view — the original project-card grid. Hidden when Reports is
           active so the page doesn't double-scroll. */}
       {view === 'cards' &&
-        (projects.length === 0 ? (
+        (searchedProjects.length === 0 ? (
           <div className="border border-dashed border-[rgba(255,255,255,0.08)] rounded-xl p-10 text-center text-sm text-[#737373]">
-            {categoryFilter === 'all'
-              ? 'No projects yet.'
-              : 'No projects match this category filter.'}
+            {projectSearch.trim()
+              ? 'No projects match your search.'
+              : categoryFilter === 'all'
+                ? 'No projects yet.'
+                : 'No projects match this category filter.'}
           </div>
         ) : (
           <div className="grid grid-cols-3 gap-4">
-            {[...projects]
+            {[...searchedProjects]
               .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }))
               .map((project) => (
                 <div
