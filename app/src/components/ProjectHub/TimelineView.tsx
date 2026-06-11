@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { ChevronLeft, ChevronRight, ZoomIn, ZoomOut, X } from 'lucide-react';
 import { parseLocalDate } from '@/lib/dateUtils';
+import { isPastDue } from '@/components/ProjectsPage/utils';
 import { TYPE_CONFIG, getStatusColor } from '@/lib/workItemConfig';
 
 interface WorkItem {
@@ -142,8 +143,7 @@ const TimelineView: React.FC<TimelineViewProps> = ({
       .map((item) => {
         const start = parseLocalDate((item.start_date || item.due_date)!)!;
         const end = parseLocalDate((item.due_date || item.start_date)!)!;
-        const isOverdue =
-          item.due_date && parseLocalDate(item.due_date)! < new Date() && item.status !== 'done';
+        const isOverdue = isPastDue(item.due_date, item.status);
         const color = isOverdue ? '#EF4444' : getStatusColor(item.status);
         return {
           id: item.id,

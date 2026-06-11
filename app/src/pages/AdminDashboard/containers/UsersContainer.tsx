@@ -6,6 +6,7 @@ import { useState } from 'react';
 import { Shield, KeyRound } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Modal } from '@/components/ui/modal';
+import { useConfirm } from '@/components/ui/confirm-dialog';
 import { AdminSpinner } from '../components/AdminSpinner';
 import { useUsersAdmin } from '../hooks/useUsersAdmin';
 import { useRolesList } from '../hooks/useRolesList';
@@ -16,6 +17,7 @@ import UserModal from '../modals/UserModal';
 import EditUserModal from '../modals/EditUserModal';
 
 export default function UsersContainer() {
+  const { confirm, confirmDialog } = useConfirm();
   const {
     users,
     isLoading,
@@ -33,7 +35,7 @@ export default function UsersContainer() {
     handleSaveEditUser,
     updateUserMutation,
     handleDeleteUser,
-  } = useUsersAdmin();
+  } = useUsersAdmin(confirm);
 
   // Roles list + assignment feed the inline per-user "Edit Roles" modal. Shared
   // with the Roles tab via react-query (same ['admin','roles'] key).
@@ -209,6 +211,7 @@ export default function UsersContainer() {
         onSave={handleSaveEditUser}
         isSaving={updateUserMutation.isPending}
       />
+      {confirmDialog}
     </>
   );
 }

@@ -6,6 +6,7 @@ import 'react-big-calendar/lib/css/react-big-calendar.css';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { parseLocalDate } from '@/lib/dateUtils';
+import { isPastDue } from '@/components/ProjectsPage/utils';
 import { getStatusColor } from '@/lib/workItemConfig';
 
 interface WorkItem {
@@ -143,9 +144,8 @@ const CalendarView: React.FC<CalendarViewProps> = ({
     const item = event.resource;
     let backgroundColor = getStatusColor(item.status);
 
-    // Check if overdue
-    const isOverdue =
-      item.due_date && parseLocalDate(item.due_date)! < new Date() && item.status !== 'done';
+    // Check if overdue (canonical date-only semantics: due-today is not overdue)
+    const isOverdue = isPastDue(item.due_date, item.status);
     if (isOverdue) {
       backgroundColor = '#EF4444';
     }

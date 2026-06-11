@@ -24,6 +24,10 @@ interface ConfirmState extends ConfirmOptions {
   open: boolean;
 }
 
+/** The `confirm` function returned by {@link useConfirm}. Accept this in hooks
+ *  that gate a destructive action so the component can own the dialog. */
+export type ConfirmFn = (opts?: ConfirmOptions) => Promise<boolean>;
+
 /**
  * Promise-based confirmation dialog — a themed, accessible replacement for the
  * native `window.confirm` that was scattered across ~10 delete handlers. The
@@ -42,6 +46,9 @@ export function useConfirm() {
 
   const confirm = useCallback((opts: ConfirmOptions = {}) => {
     return new Promise<boolean>((resolve) => {
+      // Re-entrancy guard: if a prior confirm is still pending, resolve it false
+      // so its awaiter can't hang forever when overwritten.
+      resolveRef.current?.(false);
       resolveRef.current = resolve;
       setState({ ...opts, open: true });
     });
@@ -65,11 +72,13 @@ export function useConfirm() {
           <AlertDialogTitle className="text-white">
             {state.title ?? 'Are you sure?'}
           </AlertDialogTitle>
-          {state.description != null && (
-            <AlertDialogDescription className="text-[#a3a3a3]">
-              {state.description}
-            </AlertDialogDescription>
-          )}
+          {/* Always render a description: Radix warns when AlertDialogContent
+              has no aria-describedby. Hide it visually when none was provided. */}
+          <AlertDialogDescription
+            className={cn('text-[#a3a3a3]', state.description == null && 'sr-only')}
+          >
+            {state.description ?? state.title ?? 'Please confirm this action.'}
+          </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel onClick={() => settle(false)}>
