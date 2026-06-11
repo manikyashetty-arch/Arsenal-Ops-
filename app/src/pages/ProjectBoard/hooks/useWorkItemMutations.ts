@@ -1,0 +1,298 @@
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
+import { toast } from 'sonner';
+import { apiFetch, ApiError, permissionAwareError } from '@/lib/api';
+import { invalidateProjectScope } from '@/lib/invalidations';
+import type { WorkItem } from '@/types/workItems';
+import type { CreateItemFormValues } from '../modals/CreateItemModal';
+import { applyStatusChange } from '../lib/optimisticStatus';
+
+interface UseWorkItemMutationsArgs {
+  // The SAME memoized `workItemFilters` reference returned by useBoardData. The
+  // optimistic mutations read/write/rollback the cache at the EXACT key
+  // ['workItems', workItemFilters, 'board'] — rebuilding `{ project_id: id }`
+  // here would change the key identity and break the optimistic invariant (R2).
+  workItemFilters: { project_id: string | undefined };
+  invalidateWorkItems: () => void;
+  invalidateProject: () => void;
+  // Read fresh each render so it never snapshots a stale value (R11).
+  selectedItem: WorkItem | null;
+  // UI callback: close the create-item modal on a successful create. Mirrors
+  // the orchestrator's original `setShowCreateForm(false)`.
+  onCreateSuccess: () => void;
+}
+
+/**
+ * Owns the board's work-item mutations (create / save edit / delete / log hours
+ * / status change / move) plus their handler wrappers. Moved verbatim from the
+ * ProjectBoard orchestrator. Called ONCE there; the returned mutation objects
+ * (with `.mutate`/`.isPending`) and handlers are threaded into the JSX, drawer,
+ * and DnD handlers.
+ *
+ * R2: the optimistic `moveMutation`/`statusChangeMutation` key their
+ * `getQueryData`/`setQueryData`/rollback against the SAME memoized
+ * `workItemFilters` reference passed in — never a rebuilt object — and keep the
+ * prefix-cancel (`['workItems']`) vs exact read/write asymmetry verbatim (F-C3).
+ */
+export function useWorkItemMutations(
+  id: string | undefined,
+  {
+    workItemFilters,
+    invalidateWorkItems,
+    invalidateProject,
+    selectedItem,
+    onCreateSuccess,
+  }: UseWorkItemMutationsArgs,
+) {
+  const queryClient = useQueryClient();
+  const navigate = useNavigate();
+
+  // Drag-drop: optimistic status update
+  const moveMutation = useMutation({
+    mutationFn: ({ itemId, newStatus }: { itemId: string; newStatus: string }) =>
+      apiFetch(`/api/workitems/${itemId}`, {
+        method: 'PUT',
+        body: JSON.stringify({ status: newStatus }),
+      }),
+    onMutate: async ({ itemId, newStatus }) => {
+      // Cancel by prefix so sibling ['workItems', ...] queries (with other
+      // filters) can't overwrite the optimistic state mid-flight. F-C3.
+      await queryClient.cancelQueries({ queryKey: ['workItems'] });
+      const previous = queryClient.getQueryData<WorkItem[]>([
+        'workItems',
+        workItemFilters,
+        'board',
+      ]);
+      queryClient.setQueryData<WorkItem[]>(['workItems', workItemFilters, 'board'], (old) =>
+        applyStatusChange(old, itemId, newStatus),
+      );
+      return { previous };
+    },
+    onError: (err, _vars, ctx) => {
+      if (ctx?.previous)
+        queryClient.setQueryData(['workItems', workItemFilters, 'board'], ctx.previous);
+      // Surface backend validation errors (e.g. "subtask still open" when
+      // marking a parent done) so the user knows why the move was rejected
+      // instead of seeing a generic toast.
+      const detail = err instanceof ApiError ? err.message : 'Failed to move ticket';
+      toast.error(detail);
+    },
+    onSettled: (_data, _err, { itemId }) => {
+      invalidateWorkItems();
+      invalidateProject();
+      // Backend writes "Marked as done" / "Reopened ticket" auto-comments on
+      // done-boundary status changes — keep this item's comments in sync.
+      queryClient.invalidateQueries({ queryKey: ['workItem', itemId, 'comments'] });
+    },
+  });
+
+  // Create work item mutation. Form values are supplied by the
+  // CreateItemModal (which owns the form state).
+  const createItemMutation = useMutation({
+    mutationFn: (form: CreateItemFormValues) => {
+      const payload: any = {
+        type: form.type,
+        title: form.title,
+        description: form.description,
+        priority: form.priority,
+        story_points: form.type !== 'task' ? form.story_points : 0,
+        assignee_id: form.assignee_id,
+        project_id: id,
+        status: 'todo',
+        tags: Array.isArray(form.tags) ? form.tags : [],
+        epic_id: form.epic_id || null,
+        parent_id: form.parent_id || null,
+        due_date: form.due_date || null,
+        estimated_hours: form.estimated_hours ? parseInt(form.estimated_hours as string) : 0,
+      };
+      if (form.type !== 'task') {
+        payload.assigned_hours = form.story_points * 4;
+        payload.remaining_hours = form.story_points * 4;
+      } else {
+        payload.assigned_hours = payload.estimated_hours || 0;
+        payload.remaining_hours = payload.estimated_hours || 0;
+      }
+      return apiFetch<WorkItem>('/api/workitems/', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+    },
+    onSuccess: () => {
+      onCreateSuccess();
+      toast.success('Work item created!', { duration: 1000 });
+    },
+    onError: (err: any) => {
+      console.error('Failed to create item:', err);
+      toast.error(permissionAwareError(err, 'Failed to create item'));
+    },
+    onSettled: () => {
+      invalidateWorkItems();
+      invalidateProject();
+    },
+  });
+  const isCreatingItem = createItemMutation.isPending;
+
+  // Move ticket to sprint mutation
+  const moveSprintMutation = useMutation({
+    mutationFn: ({ itemId, targetSprintId }: { itemId: string; targetSprintId: number | null }) =>
+      apiFetch<WorkItem>(`/api/workitems/${itemId}/move-sprint`, {
+        method: 'PUT',
+        body: JSON.stringify({ target_sprint_id: targetSprintId }),
+      }),
+    onSuccess: (_data, { targetSprintId }) => {
+      toast.success(targetSprintId ? 'Moved to sprint' : 'Moved to backlog');
+    },
+    onError: (err) => {
+      const detail = err instanceof ApiError ? err.message : 'Failed to move ticket';
+      toast.error(detail);
+    },
+    onSettled: () => {
+      invalidateWorkItems();
+      invalidateProjectScope(queryClient, id);
+    },
+  });
+
+  const handleMoveToSprint = (itemId: string, targetSprintId: number | null) => {
+    moveSprintMutation.mutate({ itemId, targetSprintId });
+  };
+
+  // Save edited item mutation. Accepts the form payload from the drawer so
+  // the mutation stays at the parent (R3) while the form state lives in the
+  // child.
+  const saveEditMutation = useMutation({
+    mutationFn: ({ itemId, edits }: { itemId: string; edits: Partial<WorkItem> }) =>
+      apiFetch<WorkItem>(`/api/workitems/${itemId}`, {
+        method: 'PUT',
+        body: JSON.stringify(edits),
+      }),
+    onSuccess: (updated, { edits }) => {
+      // Merge: backend may omit fields like due_date; prefer edit form values
+      queryClient.setQueryData<WorkItem[]>(['workItems', workItemFilters, 'board'], (old) =>
+        (old ?? []).map((wi) =>
+          wi.id === updated.id ? ({ ...wi, ...edits, ...updated } as WorkItem) : wi,
+        ),
+      );
+      toast.success('Item updated!');
+    },
+    onError: (err) => toast.error(permissionAwareError(err, 'Failed to update item')),
+    onSettled: () => {
+      invalidateWorkItems();
+      invalidateProject();
+    },
+  });
+  const isSavingEdit = saveEditMutation.isPending;
+
+  const handleSaveEdit = (edits: Partial<WorkItem>) => {
+    if (!selectedItem || isSavingEdit) return;
+    saveEditMutation.mutate({ itemId: selectedItem.id, edits });
+  };
+
+  // Delete item mutation
+  const deleteItemMutation = useMutation({
+    mutationFn: (itemId: string) => apiFetch(`/api/workitems/${itemId}`, { method: 'DELETE' }),
+    onSuccess: () => {
+      navigate(`/project/${id}/board`);
+      toast.success('Item deleted');
+    },
+    onError: (err) => toast.error(permissionAwareError(err, 'Failed to delete item')),
+    onSettled: () => {
+      invalidateWorkItems();
+      invalidateProject();
+    },
+  });
+
+  const handleDeleteItem = (itemId: string) => {
+    if (!confirm('Delete this work item?')) return;
+    deleteItemMutation.mutate(itemId);
+  };
+
+  // Log hours mutation
+  const logHoursMutation = useMutation({
+    mutationFn: ({ itemId, hours }: { itemId: string; hours: number }) =>
+      apiFetch<{ logged_hours: number; remaining_hours: number }>(
+        `/api/workitems/${itemId}/log-hours`,
+        { method: 'POST', body: JSON.stringify({ hours }) },
+      ),
+    onSuccess: (data, { itemId, hours }) => {
+      queryClient.setQueryData<WorkItem[]>(['workItems', workItemFilters, 'board'], (old) =>
+        (old ?? []).map((wi) =>
+          wi.id === itemId
+            ? { ...wi, logged_hours: data.logged_hours, remaining_hours: data.remaining_hours }
+            : wi,
+        ),
+      );
+      toast.success(`Logged ${hours}h! Remaining: ${data.remaining_hours}h`);
+    },
+    onError: (err) => toast.error(permissionAwareError(err, 'Failed to log hours')),
+    onSettled: (_data, _err, { itemId }) => {
+      invalidateWorkItems();
+      invalidateProject();
+      // Backend writes a "Logged Xh" auto-comment alongside the TimeEntry —
+      // invalidate this item's comments so the drawer surfaces it without
+      // forcing the user to close and reopen the panel.
+      queryClient.invalidateQueries({ queryKey: ['workItem', itemId, 'comments'] });
+    },
+  });
+
+  const handleLogHours = (item: WorkItem, hoursToLog: number) => {
+    logHoursMutation.mutate({ itemId: item.id, hours: hoursToLog });
+  };
+
+  // Quick status change — optimistic via the same cache key as drag-drop
+  const statusChangeMutation = useMutation({
+    mutationFn: ({ itemId, newStatus }: { itemId: string; newStatus: string }) =>
+      apiFetch(`/api/workitems/${itemId}`, {
+        method: 'PUT',
+        body: JSON.stringify({ status: newStatus }),
+      }),
+    onMutate: async ({ itemId, newStatus }) => {
+      // Prefix cancel — see moveMutation above. F-C3.
+      await queryClient.cancelQueries({ queryKey: ['workItems'] });
+      const previous = queryClient.getQueryData<WorkItem[]>([
+        'workItems',
+        workItemFilters,
+        'board',
+      ]);
+      queryClient.setQueryData<WorkItem[]>(['workItems', workItemFilters, 'board'], (old) =>
+        applyStatusChange(old, itemId, newStatus),
+      );
+      return { previous };
+    },
+    onError: (err, _vars, ctx) => {
+      if (ctx?.previous)
+        queryClient.setQueryData(['workItems', workItemFilters, 'board'], ctx.previous);
+      // Surface backend validation messages (e.g. "subtask still open" when
+      // marking a parent done) instead of the generic toast.
+      const detail = err instanceof ApiError ? err.message : 'Failed to update status';
+      toast.error(detail);
+    },
+    onSettled: (_data, _err, { itemId }) => {
+      invalidateWorkItems();
+      invalidateProject();
+      // Backend writes a "Moved to <Status>" auto-comment on every status
+      // change — keep this item's comments in sync.
+      queryClient.invalidateQueries({ queryKey: ['workItem', itemId, 'comments'] });
+    },
+  });
+
+  const handleStatusChange = (item: WorkItem, newStatus: string) => {
+    statusChangeMutation.mutate({ itemId: item.id, newStatus });
+  };
+
+  return {
+    moveMutation,
+    createItemMutation,
+    isCreatingItem,
+    moveSprintMutation,
+    handleMoveToSprint,
+    saveEditMutation,
+    isSavingEdit,
+    handleSaveEdit,
+    deleteItemMutation,
+    handleDeleteItem,
+    logHoursMutation,
+    handleLogHours,
+    statusChangeMutation,
+    handleStatusChange,
+  };
+}
