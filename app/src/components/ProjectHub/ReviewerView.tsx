@@ -2,6 +2,14 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Spinner } from '@/components/ui/spinner';
+import {
+  Empty,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+  EmptyDescription,
+} from '@/components/ui/empty';
 import {
   Eye,
   Clock,
@@ -16,6 +24,7 @@ import {
 import { toast } from 'sonner';
 import { API_BASE_URL } from '@/config/api';
 import { useAuth } from '@/contexts/AuthContext';
+import { PRIORITY_COLOR } from '@/lib/workItemConfig';
 import CommentThread, {
   type CommentThreadComment,
   type CommentThreadDeveloper,
@@ -46,14 +55,6 @@ interface ReviewerViewProps {
    *  developers" and the rest of the comment UX still works. */
   allDevelopers?: CommentThreadDeveloper[];
 }
-
-// Priority chip colours match the rest of the work-item UI surface.
-const PRIORITY_COLOR: Record<string, string> = {
-  critical: '#DC2626',
-  high: '#EF4444',
-  medium: '#F59E0B',
-  low: '#E0B954',
-};
 
 const ReviewerView: React.FC<ReviewerViewProps> = ({
   workItems,
@@ -211,15 +212,17 @@ const ReviewerView: React.FC<ReviewerViewProps> = ({
 
   if (reviewItems.length === 0) {
     return (
-      <div className="rounded-2xl border border-[rgba(255,255,255,0.07)] bg-[rgba(255,255,255,0.02)] p-12 text-center">
-        <div className="w-12 h-12 rounded-2xl bg-[rgba(224,185,84,0.1)] flex items-center justify-center mx-auto mb-3">
-          <Inbox className="w-6 h-6 text-[#E0B954]" />
-        </div>
-        <p className="text-sm font-medium text-white">Review queue is empty</p>
-        <p className="text-xs text-[#737373] mt-1.5">
-          Items moved to <span className="text-[#a3a3a3]">In&nbsp;Review</span> will show up here.
-        </p>
-      </div>
+      <Empty className="border border-[rgba(255,255,255,0.07)] bg-[rgba(255,255,255,0.02)]">
+        <EmptyHeader>
+          <EmptyMedia variant="icon" className="bg-[rgba(224,185,84,0.1)]">
+            <Inbox className="text-[#E0B954]" />
+          </EmptyMedia>
+          <EmptyTitle className="text-white">Review queue is empty</EmptyTitle>
+          <EmptyDescription>
+            Items moved to <span className="text-[#a3a3a3]">In&nbsp;Review</span> will show up here.
+          </EmptyDescription>
+        </EmptyHeader>
+      </Empty>
     );
   }
 
@@ -292,7 +295,7 @@ const ReviewerView: React.FC<ReviewerViewProps> = ({
                 className="h-8 text-xs text-[#a3a3a3] hover:text-white hover:bg-[rgba(255,255,255,0.06)] rounded-lg disabled:opacity-60"
               >
                 {loading[`status-in_progress-${item.id}`] ? (
-                  <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  <Spinner size="xs" tone="white" />
                 ) : (
                   <>
                     <Undo2 className="w-3.5 h-3.5 mr-1" />
@@ -307,7 +310,7 @@ const ReviewerView: React.FC<ReviewerViewProps> = ({
                 className="h-8 text-xs bg-[#E0B954] hover:bg-[#C79E3B] text-[#080808] font-semibold rounded-lg disabled:opacity-60"
               >
                 {loading[`status-done-${item.id}`] ? (
-                  <div className="w-3.5 h-3.5 border-2 border-[#080808]/30 border-t-[#080808] rounded-full animate-spin" />
+                  <Spinner size="xs" tone="white" />
                 ) : (
                   <>
                     <CheckCircle2 className="w-3.5 h-3.5 mr-1" />
@@ -363,11 +366,7 @@ const ReviewerView: React.FC<ReviewerViewProps> = ({
                 disabled={loading[`log-${item.id}`]}
                 className="h-8 text-xs bg-[#F59E0B] hover:bg-[#D97706] text-white rounded-lg disabled:opacity-60"
               >
-                {loading[`log-${item.id}`] ? (
-                  <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                ) : (
-                  'Log'
-                )}
+                {loading[`log-${item.id}`] ? <Spinner size="xs" tone="white" /> : 'Log'}
               </Button>
               <Button
                 variant="ghost"
