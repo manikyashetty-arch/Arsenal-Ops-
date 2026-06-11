@@ -20,11 +20,7 @@ interface OverviewTabProps {
   /** Undefined when the user lacks `project.board` — hides the "AI Generate"
    *  / Open Board entry point inside ArchitectureSection. */
   onOpenBoard?: () => void;
-  onAddDeveloper: (form: {
-    developer_id: string;
-    role: string;
-    responsibilities: string;
-  }) => void;
+  onAddDeveloper: (form: { developer_id: string; role: string; responsibilities: string }) => void;
   onRemoveDeveloper: (developerId: number) => void;
   onPromoteToAdmin: (developerId: number) => void;
   onDemoteFromAdmin: (developerId: number) => void;
