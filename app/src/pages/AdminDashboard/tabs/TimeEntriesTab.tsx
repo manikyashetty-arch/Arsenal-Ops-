@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Clock, AlertTriangle, X, Filter, Calendar } from 'lucide-react';
+import { Clock, AlertTriangle, X, Filter, Calendar, ChevronRight, ChevronDown } from 'lucide-react';
 import { apiFetch } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -70,16 +70,39 @@ type DatePreset = 'today' | 'this_week' | 'this_month' | 'last_week' | 'last_mon
 /** Table layout — flat list, grouped by Sat→Fri week, or grouped by month. */
 type GroupBy = 'none' | 'week' | 'month';
 
+/**
+ * Display row produced by the (employee, project, day) aggregation pass.
+ * Multiple raw TimeEntry rows collapse into one of these, with `hours`
+ * summed and `logged_at` set to the latest entry in the bucket (so the
+ * date cell renders sensibly).
+ *
+ * Drops fields that don't make sense after collapsing — ticket key/title,
+ * description — because they'd vary across the underlying entries.
+ */
+interface AggregatedRow {
+  /** Synthetic stable string for React keys + outer sort.
+   *  Shape: `YYYY-MM-DD|emp-{id|name}|proj-{id|name}`. */
+  key: string;
+  /** Local-time YYYY-MM-DD; drives the outer descending sort and matches
+   *  what the user actually sees in the date cell after formatting. */
+  dayKey: string;
+  logged_at: string;
+  hours: number;
+  developer_name: string | null;
+  project_name: string | null;
+}
+
 /** A group bucket — shared shape for week + month grouping so the render
  *  branch can treat them identically. `key` is a stable YYYY-MM-DD string
  *  used for React keys and Map lookups; `label` is the already-formatted
  *  header text ("Jun 6 → Jun 12, 2026" for week, "June 2026" for month).
+ *  Entries are post-aggregation AggregatedRows.
  */
 interface EntryGroup {
   key: string;
   label: string;
   totalHours: number;
-  entries: TimeEntryRow[];
+  entries: AggregatedRow[];
   sortDate: Date;
 }
 
@@ -209,7 +232,7 @@ function formatRangeDate(yyyyMmDd: string): string {
  * "Group by week" branch share the same cell markup — otherwise the same
  * four `<td>`s lived in two places and could silently drift apart.
  */
-const EntryRow: React.FC<{ row: TimeEntryRow }> = ({ row }) => (
+const EntryRow: React.FC<{ row: AggregatedRow }> = ({ row }) => (
   <tr className="hover:bg-[rgba(255,255,255,0.025)]">
     <td className="px-4 py-3 text-[#a3a3a3] whitespace-nowrap">{formatLoggedAt(row.logged_at)}</td>
     <td className="px-4 py-3 text-white">
@@ -348,6 +371,22 @@ const TimeEntriesTab: React.FC<TimeEntriesTabProps> = ({ projects, employees }) 
     groupBy: 'none',
   });
 
+  // Which week/month group rows are expanded. Default = empty set → all
+  // groups start collapsed; entries inside a group only render when the
+  // user explicitly clicks the header row. Reset is implicit: switching
+  // between week and month produces different group keys, so neither
+  // mode's expanded state leaks into the other.
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+
+  const toggleGroup = (key: string) => {
+    setExpandedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
   // Sorted project + employee lists (alphabetical, locale-aware). Recomputed
   // only when the source arrays change — admin tabs share these queries with
   // sibling tabs so the references are already stable.
@@ -400,8 +439,60 @@ const TimeEntriesTab: React.FC<TimeEntriesTabProps> = ({ projects, employees }) 
   // any downstream memos. Per app/CLAUDE.md "Stabilize empty-default arrays".
   const rows = useMemo(() => entriesQuery.data?.rows ?? [], [entriesQuery.data?.rows]);
   const totalHours = entriesQuery.data?.total_hours ?? 0;
-  const totalRows = entriesQuery.data?.total_rows ?? 0;
+  const totalRawRows = entriesQuery.data?.total_rows ?? 0;
   const truncated = entriesQuery.data?.truncated ?? false;
+
+  // Aggregation: collapse raw TimeEntry rows by (employee, project, day in
+  // local time). Multiple log-hours actions by the same person on the same
+  // project on the same day become a single row with hours summed.
+  //
+  // Bucket key prefers `developer_id` / `project_id` over names so renames
+  // don't fragment a bucket. Falls back to name when id is null (e.g. a
+  // developer row was deleted but their time entries survived).
+  //
+  // Sort: dayKey descending (latest day first), then employee name asc,
+  // then project name asc — deterministic order across re-renders.
+  const aggregatedRows = useMemo<AggregatedRow[]>(() => {
+    const buckets = new Map<string, AggregatedRow>();
+    for (const row of rows) {
+      const d = new Date(row.logged_at);
+      if (Number.isNaN(d.getTime())) continue;
+      const dayKey = formatLocalDate(d);
+      const empPart =
+        row.developer_id != null ? `e${row.developer_id}` : `n${row.developer_name ?? ''}`;
+      const projPart = row.project_id != null ? `p${row.project_id}` : `n${row.project_name ?? ''}`;
+      const key = `${dayKey}|${empPart}|${projPart}`;
+      const existing = buckets.get(key);
+      if (existing) {
+        existing.hours += row.hours || 0;
+        // Keep the latest raw timestamp so the date cell shows the most
+        // recent action in the bucket (relevant if the day boundary is
+        // close — purely cosmetic).
+        if (new Date(row.logged_at).getTime() > new Date(existing.logged_at).getTime()) {
+          existing.logged_at = row.logged_at;
+        }
+      } else {
+        buckets.set(key, {
+          key,
+          dayKey,
+          logged_at: row.logged_at,
+          hours: row.hours || 0,
+          developer_name: row.developer_name,
+          project_name: row.project_name,
+        });
+      }
+    }
+    return [...buckets.values()].sort((a, b) => {
+      // dayKey is YYYY-MM-DD, so lexicographic comparison is correct.
+      if (a.dayKey !== b.dayKey) return a.dayKey < b.dayKey ? 1 : -1;
+      const ea = (a.developer_name ?? '').toLowerCase();
+      const eb = (b.developer_name ?? '').toLowerCase();
+      if (ea !== eb) return ea < eb ? -1 : 1;
+      const pa = (a.project_name ?? '').toLowerCase();
+      const pb = (b.project_name ?? '').toLowerCase();
+      return pa < pb ? -1 : pa > pb ? 1 : 0;
+    });
+  }, [rows]);
 
   // When `groupBy !== 'none'`, bucket each entry into the period
   // (Sat→Fri week or calendar month) containing its logged_at timestamp.
@@ -438,8 +529,12 @@ const TimeEntriesTab: React.FC<TimeEntriesTabProps> = ({ projects, employees }) 
       return { start, label: `${startStr} → ${endStr}` };
     };
 
+    // Iterate the AGGREGATED rows so each week/month bucket also reflects
+    // the (employee, project, day) collapse — without this, group totals
+    // would still equal raw entry sums (numerically the same) but the
+    // entry list inside each group would show pre-collapse rows.
     const buckets = new Map<string, EntryGroup>();
-    for (const row of rows) {
+    for (const row of aggregatedRows) {
       const logged = new Date(row.logged_at);
       if (Number.isNaN(logged.getTime())) continue;
       const { start, label } = bucketize(logged);
@@ -453,7 +548,7 @@ const TimeEntriesTab: React.FC<TimeEntriesTabProps> = ({ projects, employees }) 
       bucket.entries.push(row);
     }
     return [...buckets.values()].sort((a, b) => b.sortDate.getTime() - a.sortDate.getTime());
-  }, [filters.groupBy, rows]);
+  }, [filters.groupBy, aggregatedRows]);
 
   // Reset button activates when any non-default field is set. Keep this in
   // lockstep with `resetFilters` below — if you add a field to one, add it
@@ -466,7 +561,7 @@ const TimeEntriesTab: React.FC<TimeEntriesTabProps> = ({ projects, employees }) 
     filters.customTo !== '' ||
     filters.groupBy !== 'none';
 
-  const resetFilters = () =>
+  const resetFilters = () => {
     setFilters({
       projectId: null,
       developerId: null,
@@ -475,6 +570,12 @@ const TimeEntriesTab: React.FC<TimeEntriesTabProps> = ({ projects, employees }) 
       customTo: '',
       groupBy: 'none',
     });
+    // Match the mode-switch behaviour: a full reset returns to the empty
+    // collapsed state. Without this, expanded keys from a previous
+    // grouping mode would persist invisibly and re-open on next group-by
+    // click.
+    setExpandedGroups(new Set());
+  };
 
   return (
     <div className="space-y-5">
@@ -594,7 +695,11 @@ const TimeEntriesTab: React.FC<TimeEntriesTabProps> = ({ projects, employees }) 
         </div>
         <div className="rounded-xl border border-[rgba(255,255,255,0.07)] bg-[rgba(255,255,255,0.02)] p-4">
           <p className="text-[11px] uppercase tracking-wider text-[#737373]">Entries</p>
-          <p className="text-2xl font-bold text-white mt-1">{totalRows}</p>
+          {/* After-aggregation count so the number on this card matches
+              the number of rows the user sees below. Total hours stays
+              from the server's `total_hours` (sum is preserved across
+              the collapse — we sum, we don't drop). */}
+          <p className="text-2xl font-bold text-white mt-1">{aggregatedRows.length}</p>
         </div>
         <div className="rounded-xl border border-[rgba(255,255,255,0.07)] bg-[rgba(255,255,255,0.02)] p-4">
           <p className="text-[11px] uppercase tracking-wider text-[#737373]">Range</p>
@@ -605,11 +710,16 @@ const TimeEntriesTab: React.FC<TimeEntriesTabProps> = ({ projects, employees }) 
         </div>
       </div>
 
-      {/* Truncation warning */}
+      {/* Truncation warning — `totalRawRows` is the pre-aggregation count
+          the server returned. After collapsing, the user sees fewer rows
+          (the aggregated count is in the Entries card above), but the
+          truncation actually happened on raw entries server-side, so we
+          quote that number here. */}
       {truncated && (
         <div className="rounded-lg border border-[#E0B954]/30 bg-[#E0B954]/10 p-3 flex items-center gap-2 text-xs text-[#E0B954]">
           <AlertTriangle className="w-4 h-4 shrink-0" />
-          Showing the first {totalRows} entries. Refine your filters to see the rest.
+          Capped at {totalRawRows} raw entries before aggregation. Refine your filters to include
+          older data.
         </div>
       )}
 
@@ -630,7 +740,16 @@ const TimeEntriesTab: React.FC<TimeEntriesTabProps> = ({ projects, employees }) 
             <button
               key={opt.id}
               type="button"
-              onClick={() => setFilters((f) => ({ ...f, groupBy: opt.id }))}
+              onClick={() => {
+                setFilters((f) => ({ ...f, groupBy: opt.id }));
+                // Mode switch clears expanded state. Without this, week
+                // keys would linger after switching to Month (and vice
+                // versa); when the user later switched back, previously
+                // expanded groups would silently re-open. Per the
+                // "default = collapsed" requirement, every entry into a
+                // grouping mode should start collapsed.
+                setExpandedGroups(new Set());
+              }}
               className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors ${
                 active
                   ? 'bg-[#E0B954]/20 text-[#E0B954] border border-[#E0B954]/40'
@@ -651,7 +770,7 @@ const TimeEntriesTab: React.FC<TimeEntriesTabProps> = ({ projects, employees }) 
           </div>
         ) : entriesQuery.isError ? (
           <div className="p-8 text-center text-sm text-red-400">Failed to load time entries.</div>
-        ) : rows.length === 0 ? (
+        ) : aggregatedRows.length === 0 ? (
           <div className="p-12 text-center">
             <Clock className="w-8 h-8 text-[#525252] mx-auto mb-2" />
             <p className="text-sm text-[#737373]">No time entries match your filters.</p>
@@ -661,7 +780,7 @@ const TimeEntriesTab: React.FC<TimeEntriesTabProps> = ({ projects, employees }) 
             <table className="w-full text-sm">
               <thead className="bg-[rgba(255,255,255,0.02)]">
                 <tr className="text-left text-[11px] uppercase tracking-wider text-[#737373]">
-                  <th className="px-4 py-2.5 font-medium">Logged at</th>
+                  <th className="px-4 py-2.5 font-medium">Date</th>
                   <th className="px-4 py-2.5 font-medium">Employee</th>
                   <th className="px-4 py-2.5 font-medium">Project</th>
                   <th className="px-4 py-2.5 font-medium text-right">Hours</th>
@@ -669,35 +788,64 @@ const TimeEntriesTab: React.FC<TimeEntriesTabProps> = ({ projects, employees }) 
               </thead>
               {groupedRows ? (
                 // Grouped view — one <tbody> per group (week or month),
-                // each with a header row (sub-total) and an entry row per
-                // TimeEntry. Multiple <tbody>s in one <table> is valid
-                // HTML and lets us scope the row dividers per group.
-                groupedRows.map((group) => (
-                  <tbody key={group.key} className="divide-y divide-[rgba(255,255,255,0.04)]">
-                    <tr className="bg-[rgba(224,185,84,0.06)] border-t border-[#E0B954]/20">
-                      <td
-                        colSpan={3}
-                        className="px-4 py-2 text-xs font-semibold text-[#E0B954] uppercase tracking-wider"
+                // each with a header row (sub-total) and (when expanded)
+                // an entry row per AggregatedRow. Multiple <tbody>s in
+                // one <table> is valid HTML and lets us scope the row
+                // dividers per group.
+                //
+                // Header is clickable to toggle expand/collapse; entries
+                // are gated on `expandedGroups.has(group.key)` so the
+                // default state is fully collapsed.
+                groupedRows.map((group) => {
+                  const isExpanded = expandedGroups.has(group.key);
+                  return (
+                    <tbody key={group.key} className="divide-y divide-[rgba(255,255,255,0.04)]">
+                      <tr
+                        className="bg-[rgba(224,185,84,0.06)] border-t border-[#E0B954]/20 cursor-pointer hover:bg-[rgba(224,185,84,0.1)] transition-colors"
+                        onClick={() => toggleGroup(group.key)}
+                        // Keyboard a11y — header rows act as expand/collapse
+                        // toggles, so we need the role + key handler that an
+                        // actual <button> would have for free.
+                        role="button"
+                        tabIndex={0}
+                        aria-expanded={isExpanded}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            toggleGroup(group.key);
+                          }
+                        }}
                       >
-                        {group.label}
-                        <span className="ml-2 text-[10px] font-normal text-[#a3a3a3]">
-                          ({group.entries.length} {group.entries.length === 1 ? 'entry' : 'entries'}
-                          )
-                        </span>
-                      </td>
-                      <td className="px-4 py-2 text-right text-xs font-bold text-[#E0B954]">
-                        {group.totalHours}h
-                      </td>
-                    </tr>
-                    {group.entries.map((row) => (
-                      <EntryRow key={row.id} row={row} />
-                    ))}
-                  </tbody>
-                ))
+                        <td
+                          colSpan={3}
+                          className="px-4 py-2 text-xs font-semibold text-[#E0B954] uppercase tracking-wider"
+                        >
+                          <span className="inline-flex items-center gap-1.5">
+                            {isExpanded ? (
+                              <ChevronDown className="w-3.5 h-3.5" />
+                            ) : (
+                              <ChevronRight className="w-3.5 h-3.5" />
+                            )}
+                            {group.label}
+                          </span>
+                          <span className="ml-2 text-[10px] font-normal text-[#a3a3a3]">
+                            ({group.entries.length}{' '}
+                            {group.entries.length === 1 ? 'entry' : 'entries'})
+                          </span>
+                        </td>
+                        <td className="px-4 py-2 text-right text-xs font-bold text-[#E0B954]">
+                          {group.totalHours}h
+                        </td>
+                      </tr>
+                      {isExpanded &&
+                        group.entries.map((row) => <EntryRow key={row.key} row={row} />)}
+                    </tbody>
+                  );
+                })
               ) : (
                 <tbody className="divide-y divide-[rgba(255,255,255,0.04)]">
-                  {rows.map((row) => (
-                    <EntryRow key={row.id} row={row} />
+                  {aggregatedRows.map((row) => (
+                    <EntryRow key={row.key} row={row} />
                   ))}
                 </tbody>
               )}
