@@ -15,9 +15,6 @@ import {
   ArrowLeft,
   Plus,
   Sparkles,
-  BookOpen,
-  ClipboardList,
-  Bug,
   Target,
   Clock,
   CheckCircle2,
@@ -29,8 +26,6 @@ import {
   List,
   Layers,
   BarChart3,
-  AlertCircle,
-  Inbox,
   Eye,
   EyeOff,
   ChevronDown,
@@ -43,12 +38,19 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Spinner } from '@/components/ui/spinner';
+import { Empty, EmptyTitle } from '@/components/ui/empty';
+import { useConfirm } from '@/components/ui/confirm-dialog';
 import { toast, Toaster } from 'sonner';
 import StatusDotMenu from '@/components/ProjectsPage/StatusDotMenu';
 import { useAuth } from '@/contexts/AuthContext';
 import { buildEpicGroups } from '@/lib/hierarchy/buildEpicGroups';
 import { apiFetch, ApiError, permissionAwareError } from '@/lib/api';
 import { invalidateProjectScope, invalidateWorkItemScope } from '@/lib/invalidations';
+import { parseLocalDate } from '@/lib/dateUtils';
+import { toastErrorHandler } from '@/lib/mutationToast';
+import { TYPE_CONFIG, STATUS_CONFIG, PRIORITY_COLOR } from '@/lib/workItemConfig';
+import { useAllDevelopers } from '@/hooks/useAllDevelopers';
 import type { CreateItemFormValues } from './modals/CreateItemModal';
 // EditSprintModal's file also exports the CompleteSprintConfirm /
 // DeleteSprintConfirm confirmation modals as named exports, which must be
@@ -67,13 +69,6 @@ const ItemDetailDrawer = lazy(() => import('./ItemDetailDrawer'));
 import BoardColumn from './components/BoardColumn';
 import ReviewerPanel from './ReviewerPanel';
 import ArchitectureEditorWrapper from './ArchitectureEditorWrapper';
-
-// Helper function to parse YYYY-MM-DD string to local Date object (avoids UTC timezone issues)
-const parseLocalDate = (dateString: string | undefined): Date | undefined => {
-  if (!dateString) return undefined;
-  const [year, month, day] = dateString.split('-');
-  return new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
-};
 
 // Returns YYYY-MM-DD for the Monday of the week containing `d`, in local time.
 const getWeekStart = (d: Date): string => {
@@ -187,63 +182,10 @@ interface Sprint {
   completion_pct: number;
 }
 
-const STATUS_CONFIG = {
-  backlog: { label: 'Backlog', color: '#555555', icon: Inbox, gradient: 'from-[#555555]/10' },
-  todo: { label: 'To Do', color: '#60A5FA', icon: Plus, gradient: 'from-[#60A5FA]/10' },
-  in_progress: {
-    label: 'In Progress',
-    color: '#E0B954',
-    icon: Clock,
-    gradient: 'from-[#E0B954]/10',
-  },
-  in_review: {
-    label: 'In Review',
-    color: '#A78BFA',
-    icon: AlertCircle,
-    gradient: 'from-[#A78BFA]/10',
-  },
-  done: { label: 'Done', color: '#34D399', icon: CheckCircle2, gradient: 'from-[#34D399]/10' },
-} as const;
-
-const TYPE_CONFIG = {
-  user_story: { icon: BookOpen, color: '#E0B954', label: 'Story', bg: 'rgba(224,185,84,0.15)' },
-  task: { icon: ClipboardList, color: '#F59E0B', label: 'Task', bg: 'rgba(245,158,11,0.15)' },
-  bug: { icon: Bug, color: '#EF4444', label: 'Bug', bg: 'rgba(239,68,68,0.15)' },
-  epic: { icon: Target, color: '#A78BFA', label: 'Epic', bg: 'rgba(167,139,250,0.15)' },
-  subtask: {
-    icon: ClipboardList,
-    color: '#FBBF24',
-    label: 'Subtask',
-    bg: 'rgba(251,191,36,0.15)',
-  },
-};
-
-const PRIORITY_COLORS = {
-  critical: {
-    border: 'border-[#EF4444]/60',
-    text: 'text-[#EF4444]',
-    bg: 'bg-[#EF4444]/10',
-    hex: '#EF4444',
-  },
-  high: {
-    border: 'border-[#F97316]/60',
-    text: 'text-[#F97316]',
-    bg: 'bg-[#F97316]/10',
-    hex: '#F97316',
-  },
-  medium: {
-    border: 'border-[#F59E0B]/50',
-    text: 'text-[#F59E0B]',
-    bg: 'bg-[#F59E0B]/10',
-    hex: '#F59E0B',
-  },
-  low: {
-    border: 'border-[#737373]/50',
-    text: 'text-[#737373]',
-    bg: 'bg-[#737373]/10',
-    hex: '#737373',
-  },
-};
+// Board column order. The shared STATUS_CONFIG lists backlog last, but the
+// kanban board has always shown Backlog as the first column — keep that order
+// explicit here rather than relying on Object.keys(STATUS_CONFIG).
+const BOARD_STATUS_ORDER = ['backlog', 'todo', 'in_progress', 'in_review', 'done'] as const;
 
 // Canonical orderings for the sortable list-view columns.
 const LIST_SORT_TYPE_ORDER: Record<string, number> = {
@@ -278,6 +220,7 @@ const ProjectBoard = () => {
   // PUT /api/workitems/{id} and DELETE /api/workitems/{id}.
   const canWriteTracker = can('project.tracker_write');
   const queryClient = useQueryClient();
+  const { confirm, confirmDialog } = useConfirm();
   const [showReviewer, setShowReviewer] = useState(false);
   // Defense-in-depth gate for the slide-in Reviewer panel. The Reviewer
   // entry takes the user into a queue where they can mark items as done
@@ -495,10 +438,7 @@ const ProjectBoard = () => {
   // actually hold instead of busting on a fresh [] every render.
   const sprints = useMemo(() => sprintsQuery.data ?? [], [sprintsQuery.data]);
 
-  const developersQuery = useQuery<Array<{ id: number; name: string; email: string }>>({
-    queryKey: ['developers'],
-    queryFn: () => apiFetch('/api/developers/'),
-  });
+  const developersQuery = useAllDevelopers<Developer>();
   const allDevelopers = developersQuery.data ?? [];
 
   // Selected ticket — derived from URL param + workItems cache (no extra fetch)
@@ -957,7 +897,7 @@ const ProjectBoard = () => {
       toast.success('Sprint created!');
       setShowCreateSprintModal(false);
     },
-    onError: (err) => toast.error(permissionAwareError(err, 'Failed to create sprint')),
+    onError: toastErrorHandler('create sprint'),
     onSettled: () => {
       invalidateProjectScope(queryClient, id);
     },
@@ -1045,7 +985,7 @@ const ProjectBoard = () => {
       toast.success('Sprint updated!');
       setEditingSprint(null);
     },
-    onError: (err) => toast.error(permissionAwareError(err, 'Failed to update sprint')),
+    onError: toastErrorHandler('update sprint'),
     onSettled: () => {
       invalidateProjectScope(queryClient, id);
     },
@@ -1111,7 +1051,7 @@ const ProjectBoard = () => {
       toast.success(`"${sprint?.name}" has been completed.`);
       setCompletingSprintId(null);
     },
-    onError: (err) => toast.error(permissionAwareError(err, 'Failed to complete sprint')),
+    onError: toastErrorHandler('complete sprint'),
     onSettled: () => {
       invalidateProjectScope(queryClient, id);
       invalidateWorkItemScope(queryClient, id);
@@ -1131,7 +1071,7 @@ const ProjectBoard = () => {
       toast.success('Sprint deleted');
       setDeletingSprintId(null);
     },
-    onError: (err) => toast.error(permissionAwareError(err, 'Failed to delete sprint')),
+    onError: toastErrorHandler('delete sprint'),
     onSettled: () => {
       invalidateWorkItems();
       invalidateProjectScope(queryClient, id);
@@ -1174,7 +1114,7 @@ const ProjectBoard = () => {
       } as const;
       toast.success(messages[commentType]);
     },
-    onError: () => toast.error('Failed to add comment'),
+    onError: toastErrorHandler('add comment'),
     onSettled: (_data, _err, { workItemId }) => {
       queryClient.invalidateQueries({ queryKey: ['workItem', workItemId, 'comments'] });
     },
@@ -1240,7 +1180,7 @@ const ProjectBoard = () => {
       );
       toast.success('Item updated!');
     },
-    onError: (err) => toast.error(permissionAwareError(err, 'Failed to update item')),
+    onError: toastErrorHandler('update item'),
     onSettled: () => {
       invalidateWorkItems();
       invalidateProject();
@@ -1260,15 +1200,23 @@ const ProjectBoard = () => {
       navigate(`/project/${id}/board`);
       toast.success('Item deleted');
     },
-    onError: (err) => toast.error(permissionAwareError(err, 'Failed to delete item')),
+    onError: toastErrorHandler('delete item'),
     onSettled: () => {
       invalidateWorkItems();
       invalidateProject();
     },
   });
 
-  const handleDeleteItem = (itemId: string) => {
-    if (!confirm('Delete this work item?')) return;
+  const handleDeleteItem = async (itemId: string) => {
+    if (
+      !(await confirm({
+        title: 'Delete work item?',
+        description: 'Delete this work item?',
+        destructive: true,
+        confirmText: 'Delete',
+      }))
+    )
+      return;
     deleteItemMutation.mutate(itemId);
   };
 
@@ -1289,7 +1237,7 @@ const ProjectBoard = () => {
       );
       toast.success(`Logged ${hours}h! Remaining: ${data.remaining_hours}h`);
     },
-    onError: (err) => toast.error(permissionAwareError(err, 'Failed to log hours')),
+    onError: toastErrorHandler('log hours'),
     onSettled: (_data, _err, { itemId }) => {
       invalidateWorkItems();
       invalidateProject();
@@ -1456,6 +1404,7 @@ const ProjectBoard = () => {
   return (
     <div className="min-h-screen bg-[#080808] text-[#F4F6FF] flex flex-col">
       <Toaster position="top-right" theme="dark" richColors />
+      {confirmDialog}
 
       {/* Top Header */}
       <header className="border-b border-[rgba(255,255,255,0.05)] bg-[#080808]/90 backdrop-blur-xl sticky top-0 z-40">
@@ -1511,7 +1460,7 @@ const ProjectBoard = () => {
               >
                 {isGenerating ? (
                   <>
-                    <div className="w-3.5 h-3.5 border-2 border-[#080808]/30 border-t-[#080808] rounded-full animate-spin mr-2" />
+                    <Spinner size="xs" className="border-[#080808]/30 border-t-[#080808] mr-2" />
                     Generating...
                   </>
                 ) : (
@@ -1682,7 +1631,7 @@ const ProjectBoard = () => {
                         <p className="text-[10px] font-semibold text-[#555] uppercase tracking-wider px-1 mb-1">
                           Priority
                         </p>
-                        {Object.entries(PRIORITY_COLORS).map(([key, colors]) => {
+                        {Object.keys(PRIORITY_COLOR).map((key) => {
                           const checked = filterPriorities.includes(key);
                           return (
                             <button
@@ -1696,7 +1645,8 @@ const ProjectBoard = () => {
                                 {checked && <Check className="w-2.5 h-2.5 text-[#080808]" />}
                               </div>
                               <div
-                                className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${colors.bg}`}
+                                className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+                                style={{ backgroundColor: PRIORITY_COLOR[key] + '1a' }}
                               />
                               <span className="text-xs text-[#d4d4d4]">
                                 {key.charAt(0).toUpperCase() + key.slice(1)}
@@ -1940,7 +1890,7 @@ const ProjectBoard = () => {
             aria-labelledby="tab-board"
             className="flex gap-4 p-6 min-h-[calc(100vh-140px)]"
           >
-            {(Object.keys(STATUS_CONFIG) as Array<keyof typeof STATUS_CONFIG>).map((status) => {
+            {BOARD_STATUS_ORDER.map((status) => {
               const config = STATUS_CONFIG[status];
               const columnItems = columnItemsByStatus[status] ?? [];
               const isDropTarget = dragOverColumn === status;
@@ -1975,7 +1925,11 @@ const ProjectBoard = () => {
             className="p-6 space-y-3"
           >
             {listViewEpicGroups.length === 0 ? (
-              <div className="py-16 text-center text-[#737373] text-sm">No items found</div>
+              <Empty className="py-16">
+                <EmptyTitle className="text-[#737373] text-sm font-normal">
+                  No items found
+                </EmptyTitle>
+              </Empty>
             ) : (
               listViewEpicGroups.map((group) => {
                 const isCollapsed = collapsedSprints.has(group.key);
@@ -2056,8 +2010,8 @@ const ProjectBoard = () => {
                         ).map(({ item, depth }) => {
                           const typeInfo = TYPE_CONFIG[item.type] || TYPE_CONFIG.task;
                           const TypeIcon = typeInfo.icon;
-                          const priorityStyle =
-                            PRIORITY_COLORS[item.priority] || PRIORITY_COLORS.medium;
+                          const priorityHex =
+                            PRIORITY_COLOR[item.priority] ?? PRIORITY_COLOR.medium;
                           return (
                             <div
                               key={item.id}
@@ -2105,8 +2059,8 @@ const ProjectBoard = () => {
                                 <span
                                   className="text-[10px] px-1.5 py-0.5 rounded font-medium"
                                   style={{
-                                    backgroundColor: priorityStyle.hex + '33',
-                                    color: priorityStyle.hex,
+                                    backgroundColor: priorityHex + '33',
+                                    color: priorityHex,
                                   }}
                                 >
                                   {item.priority.charAt(0).toUpperCase() + item.priority.slice(1)}
@@ -2211,7 +2165,11 @@ const ProjectBoard = () => {
 
             {listGroupBy === 'week' ? (
               listViewWeekGroups.length === 0 ? (
-                <div className="py-16 text-center text-[#737373] text-sm">No items found</div>
+                <Empty className="py-16">
+                  <EmptyTitle className="text-[#737373] text-sm font-normal">
+                    No items found
+                  </EmptyTitle>
+                </Empty>
               ) : (
                 listViewWeekGroups.map((group) => {
                   const isCollapsed = collapsedSprints.has(group.key);
@@ -2270,8 +2228,8 @@ const ProjectBoard = () => {
                           ).map((item) => {
                             const typeInfo = TYPE_CONFIG[item.type] || TYPE_CONFIG.task;
                             const TypeIcon = typeInfo.icon;
-                            const priorityStyle =
-                              PRIORITY_COLORS[item.priority] || PRIORITY_COLORS.medium;
+                            const priorityHex =
+                              PRIORITY_COLOR[item.priority] ?? PRIORITY_COLOR.medium;
                             const dueDate = item.due_date ? parseLocalDate(item.due_date) : null;
                             const isOverdue =
                               !!dueDate &&
@@ -2319,8 +2277,8 @@ const ProjectBoard = () => {
                                   <span
                                     className="text-[10px] px-1.5 py-0.5 rounded font-medium"
                                     style={{
-                                      backgroundColor: priorityStyle.hex + '33',
-                                      color: priorityStyle.hex,
+                                      backgroundColor: priorityHex + '33',
+                                      color: priorityHex,
                                     }}
                                   >
                                     {item.priority.charAt(0).toUpperCase() + item.priority.slice(1)}
@@ -2380,7 +2338,11 @@ const ProjectBoard = () => {
                 })
               )
             ) : listViewGroups.length === 0 ? (
-              <div className="py-16 text-center text-[#737373] text-sm">No items found</div>
+              <Empty className="py-16">
+                <EmptyTitle className="text-[#737373] text-sm font-normal">
+                  No items found
+                </EmptyTitle>
+              </Empty>
             ) : (
               listViewGroups.map((group) => {
                 const isCollapsed = collapsedSprints.has(group.key);
@@ -2484,8 +2446,8 @@ const ProjectBoard = () => {
                         ).map((item) => {
                           const typeInfo = TYPE_CONFIG[item.type] || TYPE_CONFIG.task;
                           const TypeIcon = typeInfo.icon;
-                          const priorityStyle =
-                            PRIORITY_COLORS[item.priority] || PRIORITY_COLORS.medium;
+                          const priorityHex =
+                            PRIORITY_COLOR[item.priority] ?? PRIORITY_COLOR.medium;
                           return (
                             <div
                               key={item.id}
@@ -2528,8 +2490,8 @@ const ProjectBoard = () => {
                                 <span
                                   className="text-[10px] px-1.5 py-0.5 rounded font-medium"
                                   style={{
-                                    backgroundColor: priorityStyle.hex + '33',
-                                    color: priorityStyle.hex,
+                                    backgroundColor: priorityHex + '33',
+                                    color: priorityHex,
                                   }}
                                 >
                                   {item.priority.charAt(0).toUpperCase() + item.priority.slice(1)}
