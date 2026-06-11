@@ -25,11 +25,12 @@ in work_item_assignment_history that overlaps the week (or they logged hours on 
 this week — same outcome).
 """
 
+from collections import defaultdict
 from collections.abc import Iterable
 from datetime import datetime, timedelta
 
 from sqlalchemy import func, or_
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from models.time_entry import TimeEntry
 from models.work_item_assignment_history import WorkItemAssignmentHistory
@@ -97,6 +98,88 @@ def _ticket_to_dict_for_dev(
     }
 
 
+def _aggregate_capacity(
+    item_by_id: dict,
+    *,
+    developer_id: int,
+    week_start: datetime,
+    week_end: datetime,
+    week_capacity: int,
+    total_logged_by_item: dict[int, int],
+    this_week_logged_by_item: dict[int, int],
+) -> dict:
+    """Per-developer bucket/basis aggregation over an already-resolved item set.
+
+    Both the single-developer path (``compute_capacity_breakdown``) and the
+    batched path (``compute_capacity_breakdowns_batch``) funnel through here so
+    the bucket assignment and "counted" basis rules can't drift between them.
+
+    Inputs are precomputed lookups keyed by ``item.id``:
+      • ``total_logged_by_item`` — all-time TimeEntry sum per item (dev-independent).
+      • ``this_week_logged_by_item`` — this-week TimeEntry sum on each item by
+        THIS developer.
+    """
+    in_progress_hours = 0
+    in_review_hours = 0
+    done_hours = 0
+    tickets_out: list = []
+
+    for item in item_by_id.values():
+        if not _ticket_belongs_this_week(item, week_start, week_end):
+            continue
+        bucket = _bucket_for(item)
+        if bucket is None:
+            continue
+
+        logged_sum = this_week_logged_by_item.get(item.id, 0)
+        is_current_holder = item.assignee_id == developer_id
+
+        # Use live TimeEntry sum (source of truth) rather than item.logged_hours,
+        # which can drift when the work item is edited directly.
+        total_logged = total_logged_by_item.get(item.id, 0)
+
+        if bucket == "done":
+            # Carry-over rule: only THIS week's logged hours count, regardless of
+            # how many earlier-week hours the ticket already had.
+            counted = logged_sum
+            basis = "logged this week"
+        else:
+            remaining = max(0, (item.estimated_hours or 0) - total_logged)
+            remaining_added = remaining if is_current_holder else 0
+            counted = logged_sum + remaining_added
+            if logged_sum > 0 and remaining_added > 0:
+                basis = "logged this week + remaining"
+            elif logged_sum > 0:
+                basis = "logged this week"
+            elif remaining_added > 0:
+                basis = "remaining (current holder)"
+            else:
+                # Neither logged this week nor current holder — skip.
+                continue
+
+        if counted == 0:
+            continue
+
+        if bucket == "in_progress":
+            in_progress_hours += counted
+        elif bucket == "in_review":
+            in_review_hours += counted
+        elif bucket == "done":
+            done_hours += counted
+
+        tickets_out.append(_ticket_to_dict_for_dev(item, counted, basis, logged_sum, total_logged))
+
+    capacity_used = in_progress_hours + in_review_hours + done_hours
+    return {
+        "this_week_in_progress_hours": in_progress_hours,
+        "this_week_in_review_hours": in_review_hours,
+        "this_week_done_hours": done_hours,
+        "this_week_capacity_used": capacity_used,
+        "this_week_remaining_capacity": max(0, week_capacity - capacity_used),
+        "tickets": tickets_out,
+    }
+
+
 def compute_capacity_breakdown(
     items: Iterable,
     week_start: datetime,
@@ -153,7 +236,13 @@ def compute_capacity_breakdown(
 
     extra_ids = (logged_ids | history_ids) - set(item_by_id.keys())
     if extra_ids:
-        extras_q = db.query(WorkItem).filter(WorkItem.id.in_(extra_ids))
+        # Eager-load .project — _ticket_to_dict_for_dev reads item.project.name,
+        # which would otherwise lazy-load one SELECT per extra ticket.
+        extras_q = (
+            db.query(WorkItem)
+            .options(joinedload(WorkItem.project))
+            .filter(WorkItem.id.in_(extra_ids))
+        )
         if restrict_to_project_ids is not None:
             extras_q = extras_q.filter(WorkItem.project_id.in_(restrict_to_project_ids))
         for ex in extras_q.all():
@@ -200,66 +289,172 @@ def compute_capacity_breakdown(
         )
         this_week_logged_by_item = {wid: int(total or 0) for wid, total in week_rows}
 
-    in_progress_hours = 0
-    in_review_hours = 0
-    done_hours = 0
-    tickets_out: list = []
+    # Logged hours this week by THIS developer per ticket came from the single
+    # grouped query above (was an O(tickets) per-item query here). The shared
+    # aggregator applies the bucket/basis rules.
+    return _aggregate_capacity(
+        item_by_id,
+        developer_id=developer_id,
+        week_start=week_start,
+        week_end=week_end,
+        week_capacity=week_capacity,
+        total_logged_by_item=total_logged_by_item,
+        this_week_logged_by_item=this_week_logged_by_item,
+    )
 
-    for item in item_by_id.values():
-        if not _ticket_belongs_this_week(item, week_start, week_end):
-            continue
-        bucket = _bucket_for(item)
-        if bucket is None:
-            continue
 
-        # Logged hours this week by THIS developer on this ticket. Sourced from
-        # the single grouped query precomputed above (was an O(tickets) per-item
-        # query here). Missing keys → 0, preserving the bucket/basis logic below.
-        logged_sum = this_week_logged_by_item.get(item.id, 0)
+def compute_capacity_breakdowns_batch(
+    developers: list,
+    week_start: datetime,
+    *,
+    db: Session,
+    week_capacity: int = 40,
+) -> dict[int, dict]:
+    """Cross-project capacity breakdown for MANY developers in a fixed number
+    of queries.
 
-        is_current_holder = item.assignee_id == developer_id
+    Calling ``compute_capacity_breakdown`` once per developer (as the admin
+    capacity endpoint used to) issues ~5 queries per developer — an
+    O(developers) N+1 that dominated that endpoint. This batched variant
+    precomputes the same lookups across all developers in 4 queries total
+    (logged-this-week ids, assignment-history ids, all-time per-item sums,
+    this-week per-(dev,item) sums) plus one fetch for "extra" tickets, then
+    runs the shared in-memory aggregator per developer.
 
-        # Use live TimeEntry sum (source of truth) rather than item.logged_hours,
-        # which can drift when the work item is edited directly.
-        total_logged = total_logged_by_item.get(item.id, 0)
+    Each developer's ``assigned_work_items`` must already be loaded (the caller
+    eager-loads them). Returns ``{developer_id: breakdown}`` where each value
+    matches ``compute_capacity_breakdown(...)`` with no ``restrict_to_project_ids``.
+    This is the cross-project (admin) path only; per-project callers keep using
+    ``compute_capacity_breakdown`` with their restriction set.
+    """
+    from models.work_item import WorkItem
 
-        if bucket == "done":
-            # Carry-over rule: only THIS week's logged hours count, regardless of
-            # how many earlier-week hours the ticket already had.
-            counted = logged_sum
-            basis = "logged this week"
-        else:
-            remaining = max(0, (item.estimated_hours or 0) - total_logged)
-            remaining_added = remaining if is_current_holder else 0
-            counted = logged_sum + remaining_added
-            if logged_sum > 0 and remaining_added > 0:
-                basis = "logged this week + remaining"
-            elif logged_sum > 0:
-                basis = "logged this week"
-            elif remaining_added > 0:
-                basis = "remaining (current holder)"
-            else:
-                # Neither logged this week nor current holder — skip.
-                continue
+    week_end = week_start + timedelta(days=6, hours=23, minutes=59, seconds=59)
+    dev_ids = [d.id for d in developers]
+    if not dev_ids:
+        return {}
 
-        if counted == 0:
-            continue
-
-        if bucket == "in_progress":
-            in_progress_hours += counted
-        elif bucket == "in_review":
-            in_review_hours += counted
-        elif bucket == "done":
-            done_hours += counted
-
-        tickets_out.append(_ticket_to_dict_for_dev(item, counted, basis, logged_sum, total_logged))
-
-    capacity_used = in_progress_hours + in_review_hours + done_hours
-    return {
-        "this_week_in_progress_hours": in_progress_hours,
-        "this_week_in_review_hours": in_review_hours,
-        "this_week_done_hours": done_hours,
-        "this_week_capacity_used": capacity_used,
-        "this_week_remaining_capacity": max(0, week_capacity - capacity_used),
-        "tickets": tickets_out,
+    # Currently-assigned items per developer — eager-loaded by the caller.
+    items_by_dev: dict[int, dict[int, object]] = {
+        d.id: {it.id: it for it in (d.assigned_work_items or [])} for d in developers
     }
+
+    # (1) Tickets each dev logged on this week — covers transferred-away cases.
+    logged_ids_by_dev: dict[int, set] = defaultdict(set)
+    for dev_id, wi_id in (
+        db.query(TimeEntry.developer_id, TimeEntry.work_item_id)
+        .filter(
+            TimeEntry.developer_id.in_(dev_ids),
+            TimeEntry.logged_at >= week_start,
+            TimeEntry.logged_at <= week_end,
+        )
+        .distinct()
+        .all()
+    ):
+        logged_ids_by_dev[dev_id].add(wi_id)
+
+    # (2) Tickets each dev was assigned to at any point this week.
+    history_ids_by_dev: dict[int, set] = defaultdict(set)
+    for dev_id, wi_id in (
+        db.query(
+            WorkItemAssignmentHistory.developer_id,
+            WorkItemAssignmentHistory.work_item_id,
+        )
+        .filter(
+            WorkItemAssignmentHistory.developer_id.in_(dev_ids),
+            WorkItemAssignmentHistory.assigned_at <= week_end,
+            or_(
+                WorkItemAssignmentHistory.unassigned_at.is_(None),
+                WorkItemAssignmentHistory.unassigned_at >= week_start,
+            ),
+        )
+        .distinct()
+        .all()
+    ):
+        history_ids_by_dev[dev_id].add(wi_id)
+
+    # (3) Resolve "extra" tickets (logged/held this week but not currently
+    # assigned) for every dev in one query.
+    extra_ids_by_dev: dict[int, set] = {}
+    all_extra_ids: set = set()
+    for dev_id in dev_ids:
+        own = set(items_by_dev[dev_id].keys())
+        extras = (logged_ids_by_dev[dev_id] | history_ids_by_dev[dev_id]) - own
+        extra_ids_by_dev[dev_id] = extras
+        all_extra_ids |= extras
+    extra_items_by_id: dict[int, object] = {}
+    if all_extra_ids:
+        # Eager-load .project to keep this O(1)-in-developer-count fetch from
+        # lazy-loading one SELECT per extra ticket in _ticket_to_dict_for_dev.
+        extras_rows = (
+            db.query(WorkItem)
+            .options(joinedload(WorkItem.project))
+            .filter(WorkItem.id.in_(all_extra_ids))
+            .all()
+        )
+        for ex in extras_rows:
+            extra_items_by_id[ex.id] = ex
+
+    # Union of every item we'll score — drives the two grouped TimeEntry sums.
+    all_item_ids: set = set(all_extra_ids)
+    for dev_id in dev_ids:
+        all_item_ids |= set(items_by_dev[dev_id].keys())
+
+    # (4) All-time logged hours per item (dev-independent) — one grouped query.
+    total_logged_by_item: dict[int, int] = {}
+    if all_item_ids:
+        for wid, total in (
+            db.query(
+                TimeEntry.work_item_id,
+                func.coalesce(func.sum(TimeEntry.hours), 0),
+            )
+            .filter(TimeEntry.work_item_id.in_(all_item_ids))
+            .group_by(TimeEntry.work_item_id)
+            .all()
+        ):
+            total_logged_by_item[wid] = int(total or 0)
+
+    # (5) This-week logged hours per (dev, item) — one grouped query.
+    week_logged_by_dev_item: dict[tuple, int] = {}
+    if all_item_ids:
+        for dev_id, wid, total in (
+            db.query(
+                TimeEntry.developer_id,
+                TimeEntry.work_item_id,
+                func.coalesce(func.sum(TimeEntry.hours), 0),
+            )
+            .filter(
+                TimeEntry.developer_id.in_(dev_ids),
+                TimeEntry.logged_at >= week_start,
+                TimeEntry.logged_at <= week_end,
+                TimeEntry.work_item_id.in_(all_item_ids),
+            )
+            .group_by(TimeEntry.developer_id, TimeEntry.work_item_id)
+            .all()
+        ):
+            week_logged_by_dev_item[(dev_id, wid)] = int(total or 0)
+
+    result: dict[int, dict] = {}
+    for dev_id in dev_ids:
+        item_by_id = dict(items_by_dev[dev_id])
+        for ex_id in extra_ids_by_dev[dev_id]:
+            ex = extra_items_by_id.get(ex_id)
+            if ex is not None:
+                item_by_id[ex_id] = ex
+
+        # Per-dev view of this-week sums keyed by item.id, matching the shape
+        # the shared aggregator expects.
+        this_week_for_dev = {
+            item_id: week_logged_by_dev_item.get((dev_id, item_id), 0) for item_id in item_by_id
+        }
+
+        result[dev_id] = _aggregate_capacity(
+            item_by_id,
+            developer_id=dev_id,
+            week_start=week_start,
+            week_end=week_end,
+            week_capacity=week_capacity,
+            total_logged_by_item=total_logged_by_item,
+            this_week_logged_by_item=this_week_for_dev,
+        )
+    return result
