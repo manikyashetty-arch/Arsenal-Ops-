@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar as CalendarIcon } from '@/components/ui/calendar';
+import type { Project } from '../types';
 
 // Helper function to parse YYYY-MM-DD string to local Date object (avoids UTC timezone issues)
 const parseLocalDate = (dateString: string | undefined): Date | undefined => {
@@ -12,30 +13,6 @@ const parseLocalDate = (dateString: string | undefined): Date | undefined => {
   const [year, month, day] = dateString.split('-');
   return new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
 };
-
-interface ProjectDeveloper {
-  id: number;
-  name: string;
-  email: string;
-  github_username: string;
-  role: string;
-  responsibilities: string;
-  is_admin: boolean;
-}
-
-interface Project {
-  id: number;
-  name: string;
-  description: string;
-  key_prefix: string;
-  status: string;
-  github_repo_url: string;
-  github_repo_urls?: string[];
-  github_repo_name?: string;
-  created_at: string;
-  end_date?: string;
-  developers?: ProjectDeveloper[];
-}
 
 interface ProjectInfoSectionProps {
   project: Project;
