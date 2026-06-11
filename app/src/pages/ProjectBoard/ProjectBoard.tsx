@@ -52,7 +52,7 @@ const AIPlanningModal = lazy(() => import('./modals/AIPlanningModal'));
 const CreateItemModal = lazy(() => import('./modals/CreateItemModal'));
 const CreateSprintModal = lazy(() => import('./modals/CreateSprintModal'));
 const ItemDetailDrawer = lazy(() => import('./ItemDetailDrawer'));
-import BoardColumn from './components/BoardColumn';
+import BoardView from './views/BoardView';
 import ReviewerPanel from './ReviewerPanel';
 import ArchitectureEditorWrapper from './ArchitectureEditorWrapper';
 import { parseLocalDate, formatWeekRange } from './lib/listGrouping';
@@ -1022,38 +1022,21 @@ const ProjectBoard = () => {
       <div className="flex-1 overflow-x-auto">
         {viewMode === 'board' ? (
           /* KANBAN BOARD VIEW */
-          <div
-            role="tabpanel"
-            id="tabpanel-board"
-            aria-labelledby="tab-board"
-            className="flex gap-4 p-6 min-h-[calc(100vh-140px)]"
-          >
-            {(Object.keys(STATUS_CONFIG) as Array<keyof typeof STATUS_CONFIG>).map((status) => {
-              const config = STATUS_CONFIG[status];
-              const columnItems = columnItemsByStatus[status] ?? [];
-              const isDropTarget = dragOverColumn === status;
-
-              return (
-                <BoardColumn
-                  key={status}
-                  status={status}
-                  config={config}
-                  items={columnItems}
-                  workItems={workItems}
-                  isDropTarget={isDropTarget}
-                  draggedItem={draggedItem}
-                  token={token || ''}
-                  onDragOver={handleDragOver}
-                  onDragLeave={handleDragLeave}
-                  onDrop={handleDrop}
-                  onCardDragStart={handleDragStart}
-                  onCardPrefetchComments={prefetchComments}
-                  onCardOpen={handleCardOpen}
-                  onCardOpenByNumericId={openItemByNumericId}
-                />
-              );
-            })}
-          </div>
+          <BoardView
+            columnItemsByStatus={columnItemsByStatus}
+            workItems={workItems}
+            statusConfig={STATUS_CONFIG}
+            token={token || ''}
+            draggedItem={draggedItem}
+            dragOverColumn={dragOverColumn}
+            onDragStart={handleDragStart}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+            onCardOpen={handleCardOpen}
+            onCardOpenByNumericId={openItemByNumericId}
+            onPrefetchComments={prefetchComments}
+          />
         ) : viewMode === 'epic' ? (
           /* EPIC VIEW */
           <div
