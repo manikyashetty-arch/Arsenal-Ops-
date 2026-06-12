@@ -19,16 +19,16 @@ import type { WorkItemPanelProps } from '../WorkItemPanel';
  * `['workItems']` + `['myTasks']` dual-invalidation (`invalidateWorkItems`) the
  * board contract requires — see app/CLAUDE.md.
  *
- * UI-state setters (`setIsEditing`, `setEditForm`, `setNewComment`) and the
- * current `editForm` snapshot are passed in from the orchestrator so the
- * mutation `onSuccess` callbacks behave identically to the original closures.
+ * UI-state setters (`setIsEditing`, `setEditForm`) and the current `editForm`
+ * snapshot are passed in from the orchestrator so the mutation `onSuccess`
+ * callbacks behave identically to the original closures. Comment input state is
+ * owned by the shared <CommentThread>, which clears itself on submit.
  */
 interface UseWorkItemPanelArgs {
   props: WorkItemPanelProps;
   editForm: Partial<WorkItem>;
   setIsEditing: (v: boolean) => void;
   setEditForm: (v: Partial<WorkItem>) => void;
-  setNewComment: (v: string) => void;
   setShowAddSubtaskModal: (v: boolean) => void;
   logHoursRef: RefObject<HTMLInputElement | null>;
 }
@@ -38,7 +38,6 @@ export function useWorkItemPanel({
   editForm,
   setIsEditing,
   setEditForm,
-  setNewComment,
   setShowAddSubtaskModal,
   logHoursRef,
 }: UseWorkItemPanelArgs) {
@@ -241,7 +240,6 @@ export function useWorkItemPanel({
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['workItem', item.id, 'comments'] });
-      setNewComment('');
     },
     onError: toastErrorHandler('add comment'),
   });

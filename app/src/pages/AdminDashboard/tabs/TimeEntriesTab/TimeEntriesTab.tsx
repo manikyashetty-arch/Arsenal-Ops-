@@ -8,9 +8,11 @@ import TimeEntriesSummary from './TimeEntriesSummary';
 import TimeEntriesTable from './TimeEntriesTable';
 import { addDays, resolveDateRange, startOfWeek } from './types';
 import type {
+  AggregatedRow,
   EmployeeOption,
   EntryGroup,
   FiltersState,
+  GroupBy,
   ProjectOption,
   TimeEntriesResponse,
 } from './types';
@@ -46,6 +48,25 @@ const TimeEntriesTab: React.FC<TimeEntriesTabProps> = ({ projects, employees }) 
     customTo: '',
     groupBy: 'none',
   });
+
+  // Collapsible groups start fully collapsed; the user expands the periods they
+  // care about. Cleared on reset / group-by switch so stale keys can't re-open.
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+  const toggleGroup = (key: string) => {
+    setExpandedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  // Switch grouping mode and reset which groups are expanded (every entry into
+  // a grouping mode starts collapsed, per the default-collapsed contract).
+  const handleGroupByChange = (groupBy: GroupBy) => {
+    setFilters((f) => ({ ...f, groupBy }));
+    setExpandedGroups(new Set());
+  };
 
   // Sorted project + employee lists (alphabetical, locale-aware). Recomputed
   // only when the source arrays change — admin tabs share these queries with
@@ -99,8 +120,53 @@ const TimeEntriesTab: React.FC<TimeEntriesTabProps> = ({ projects, employees }) 
   // any downstream memos. Per app/CLAUDE.md "Stabilize empty-default arrays".
   const rows = useMemo(() => entriesQuery.data?.rows ?? [], [entriesQuery.data?.rows]);
   const totalHours = entriesQuery.data?.total_hours ?? 0;
-  const totalRows = entriesQuery.data?.total_rows ?? 0;
+  // Pre-aggregation row count from the server (used for the truncation notice);
+  // the Entries card shows the post-aggregation count below.
+  const totalRawRows = entriesQuery.data?.total_rows ?? 0;
   const truncated = entriesQuery.data?.truncated ?? false;
+
+  // Collapse raw entries by (employee, project, local-day), summing hours. This
+  // is the row set the table actually renders — both flat and grouped.
+  const aggregatedRows = useMemo<AggregatedRow[]>(() => {
+    const buckets = new Map<string, AggregatedRow>();
+    for (const row of rows) {
+      const d = new Date(row.logged_at);
+      if (Number.isNaN(d.getTime())) continue;
+      const dayKey = formatLocalDate(d);
+      const empPart =
+        row.developer_id != null ? `e${row.developer_id}` : `n${row.developer_name ?? ''}`;
+      const projPart = row.project_id != null ? `p${row.project_id}` : `n${row.project_name ?? ''}`;
+      const key = `${dayKey}|${empPart}|${projPart}`;
+      const existing = buckets.get(key);
+      if (existing) {
+        existing.hours += row.hours || 0;
+        // Keep the latest raw timestamp so the date cell reflects the most
+        // recent action in the bucket (cosmetic near a day boundary).
+        if (new Date(row.logged_at).getTime() > new Date(existing.logged_at).getTime()) {
+          existing.logged_at = row.logged_at;
+        }
+      } else {
+        buckets.set(key, {
+          key,
+          dayKey,
+          logged_at: row.logged_at,
+          hours: row.hours || 0,
+          developer_name: row.developer_name,
+          project_name: row.project_name,
+        });
+      }
+    }
+    return [...buckets.values()].sort((a, b) => {
+      // dayKey is YYYY-MM-DD, so lexicographic comparison is correct.
+      if (a.dayKey !== b.dayKey) return a.dayKey < b.dayKey ? 1 : -1;
+      const ea = (a.developer_name ?? '').toLowerCase();
+      const eb = (b.developer_name ?? '').toLowerCase();
+      if (ea !== eb) return ea < eb ? -1 : 1;
+      const pa = (a.project_name ?? '').toLowerCase();
+      const pb = (b.project_name ?? '').toLowerCase();
+      return pa < pb ? -1 : pa > pb ? 1 : 0;
+    });
+  }, [rows]);
 
   // When `groupBy !== 'none'`, bucket each entry into the period
   // (Sat→Fri week or calendar month) containing its logged_at timestamp.
@@ -137,8 +203,11 @@ const TimeEntriesTab: React.FC<TimeEntriesTabProps> = ({ projects, employees }) 
       return { start, label: `${startStr} → ${endStr}` };
     };
 
+    // Iterate the AGGREGATED rows so each week/month bucket reflects the
+    // (employee, project, day) collapse — group totals are unchanged (sum is
+    // preserved) but the entry list shows collapsed rows, not raw entries.
     const buckets = new Map<string, EntryGroup>();
-    for (const row of rows) {
+    for (const row of aggregatedRows) {
       const logged = new Date(row.logged_at);
       if (Number.isNaN(logged.getTime())) continue;
       const { start, label } = bucketize(logged);
@@ -152,7 +221,7 @@ const TimeEntriesTab: React.FC<TimeEntriesTabProps> = ({ projects, employees }) 
       bucket.entries.push(row);
     }
     return [...buckets.values()].sort((a, b) => b.sortDate.getTime() - a.sortDate.getTime());
-  }, [filters.groupBy, rows]);
+  }, [filters.groupBy, aggregatedRows]);
 
   // Reset button activates when any non-default field is set. Keep this in
   // lockstep with `resetFilters` below — if you add a field to one, add it
@@ -165,7 +234,7 @@ const TimeEntriesTab: React.FC<TimeEntriesTabProps> = ({ projects, employees }) 
     filters.customTo !== '' ||
     filters.groupBy !== 'none';
 
-  const resetFilters = () =>
+  const resetFilters = () => {
     setFilters({
       projectId: null,
       developerId: null,
@@ -174,6 +243,10 @@ const TimeEntriesTab: React.FC<TimeEntriesTabProps> = ({ projects, employees }) 
       customTo: '',
       groupBy: 'none',
     });
+    // A full reset returns to the empty collapsed state so stale expanded keys
+    // can't linger and re-open on the next group-by.
+    setExpandedGroups(new Set());
+  };
 
   return (
     <div className="space-y-5">
@@ -201,19 +274,22 @@ const TimeEntriesTab: React.FC<TimeEntriesTabProps> = ({ projects, employees }) 
 
       <TimeEntriesSummary
         totalHours={totalHours}
-        totalRows={totalRows}
+        entriesCount={aggregatedRows.length}
+        totalRawRows={totalRawRows}
         truncated={truncated}
         from={from}
         to={to}
         groupBy={filters.groupBy}
-        setFilters={setFilters}
+        onGroupByChange={handleGroupByChange}
       />
 
       <TimeEntriesTable
         isLoading={entriesQuery.isLoading}
         isError={entriesQuery.isError}
-        rows={rows}
+        rows={aggregatedRows}
         groupedRows={groupedRows}
+        expandedGroups={expandedGroups}
+        onToggleGroup={toggleGroup}
       />
     </div>
   );

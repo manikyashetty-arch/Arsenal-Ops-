@@ -39,6 +39,24 @@ export interface TimeEntriesResponse {
   truncated: boolean;
 }
 
+/**
+ * A raw row collapsed by (employee, project, local-day). The table renders
+ * these — multiple log-hours entries the same employee made against the same
+ * project on the same day fold into one row whose `hours` is the sum. Drops the
+ * per-entry fields (ticket, description, ids) that vary within a bucket.
+ */
+export interface AggregatedRow {
+  /** Synthetic stable string for React keys + outer sort.
+   *  Shape: `YYYY-MM-DD|emp-{id|name}|proj-{id|name}`. */
+  key: string;
+  /** Local-time YYYY-MM-DD; drives the outer descending sort. */
+  dayKey: string;
+  logged_at: string;
+  hours: number;
+  developer_name: string | null;
+  project_name: string | null;
+}
+
 export type DatePreset =
   | 'today'
   | 'this_week'
@@ -59,7 +77,7 @@ export interface EntryGroup {
   key: string;
   label: string;
   totalHours: number;
-  entries: TimeEntryRow[];
+  entries: AggregatedRow[];
   sortDate: Date;
 }
 

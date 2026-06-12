@@ -2,18 +2,21 @@ import React from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
-import { Clock, CheckCircle2, MessageSquare, Send, User, Calendar, Clock3 } from 'lucide-react';
+import { Clock, CheckCircle2, MessageSquare, User, Calendar, Clock3, Undo2 } from 'lucide-react';
 import { PRIORITY_COLOR } from '@/lib/workItemConfig';
 import { Spinner } from '@/components/ui/spinner';
-import type { Comment, WorkItem } from '../types';
+import CommentThread, {
+  type CommentThreadComment,
+  type CommentThreadDeveloper,
+  type CommentType,
+} from '@/components/CommentThread';
+import type { WorkItem } from '../types';
 
 interface ReviewItemCardProps {
   item: WorkItem;
   isAssignee: boolean;
-  comments: Comment[] | undefined;
-  newComment: string;
-  onChangeNewComment: (value: string) => void;
+  comments: CommentThreadComment[] | undefined;
+  allDevelopers: CommentThreadDeveloper[];
   logHoursInput: string;
   onChangeLogHoursInput: (value: string) => void;
   showLogHours: boolean;
@@ -22,9 +25,11 @@ interface ReviewItemCardProps {
   commentLoading: boolean;
   logLoading: boolean;
   doneLoading: boolean;
-  onAddComment: () => void;
+  sendBackLoading: boolean;
+  onAddComment: (content: string, type: CommentType) => void;
   onLogHours: () => void;
   onMarkDone: () => void;
+  onSendBack: () => void;
   formatDate: (dateStr?: string) => string;
 }
 
@@ -32,8 +37,7 @@ const ReviewItemCard: React.FC<ReviewItemCardProps> = ({
   item,
   isAssignee,
   comments,
-  newComment,
-  onChangeNewComment,
+  allDevelopers,
   logHoursInput,
   onChangeLogHoursInput,
   showLogHours,
@@ -42,21 +46,24 @@ const ReviewItemCard: React.FC<ReviewItemCardProps> = ({
   commentLoading,
   logLoading,
   doneLoading,
+  sendBackLoading,
   onAddComment,
   onLogHours,
   onMarkDone,
+  onSendBack,
   formatDate,
 }) => {
   return (
-    <div className="bg-[#0A0A14] rounded-lg p-4 border border-[rgba(255,255,255,0.05)] hover:border-[rgba(255,255,255,0.08)] transition-colors">
-      {/* Header */}
-      <div className="flex items-start justify-between mb-3">
-        <div className="flex-1">
-          <div className="flex items-center gap-2 mb-1">
-            <span className="text-[#C79E3B] font-mono text-sm">{item.key}</span>
+    <div className="rounded-2xl border border-[rgba(255,255,255,0.07)] bg-[rgba(255,255,255,0.02)] hover:border-[rgba(224,185,84,0.25)] transition-colors p-4 space-y-3">
+      {/* Title row — ticket key + priority chip + title, plus right-aligned
+          primary actions. */}
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-1.5">
+            <span className="text-xs font-mono font-semibold text-[#E0B954]">{item.key}</span>
             <Badge
               variant="outline"
-              className="text-xs"
+              className="text-[10px] uppercase tracking-wider px-1.5 py-0 h-5"
               style={{
                 borderColor: PRIORITY_COLOR[item.priority] || '#737373',
                 color: PRIORITY_COLOR[item.priority] || '#737373',
@@ -65,61 +72,89 @@ const ReviewItemCard: React.FC<ReviewItemCardProps> = ({
               {item.priority}
             </Badge>
           </div>
-          <h3 className="text-white font-medium">{item.title}</h3>
+          <h3 className="text-sm font-semibold text-white leading-snug">{item.title}</h3>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 shrink-0">
           {isAssignee && (
             <Button
               variant="ghost"
               size="sm"
               onClick={onToggleLogHours}
-              className="text-[#737373] hover:text-[#F59E0B] hover:bg-[#F59E0B]/10"
+              className="h-8 text-xs text-[#737373] hover:text-[#F59E0B] hover:bg-[rgba(245,158,11,0.1)] rounded-lg"
             >
-              <Clock className="w-4 h-4 mr-1" />
-              Log Time
+              <Clock className="w-3.5 h-3.5 mr-1" />
+              Log time
             </Button>
           )}
+          {/* Send back to In Progress — reviewer rejection path. Ghost variant
+              so Mark Done stays the visual primary; its own loading key keeps
+              it from spinning when Mark Done is in flight. */}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onSendBack}
+            disabled={sendBackLoading}
+            className="h-8 text-xs text-[#a3a3a3] hover:text-white hover:bg-[rgba(255,255,255,0.06)] rounded-lg disabled:opacity-60"
+          >
+            {sendBackLoading ? (
+              <Spinner size="xs" tone="white" />
+            ) : (
+              <>
+                <Undo2 className="w-3.5 h-3.5 mr-1" />
+                Move to In Progress
+              </>
+            )}
+          </Button>
           <Button
             size="sm"
             onClick={onMarkDone}
             disabled={doneLoading}
-            className="bg-[#E0B954] hover:bg-[#C79E3B] text-white"
+            className="h-8 text-xs bg-[#E0B954] hover:bg-[#C79E3B] text-[#080808] font-semibold rounded-lg disabled:opacity-60"
           >
             {doneLoading ? (
-              <Spinner size="xs" tone="white" className="w-4 h-4" />
+              <Spinner size="xs" tone="white" />
             ) : (
-              <CheckCircle2 className="w-4 h-4 mr-1" />
+              <>
+                <CheckCircle2 className="w-3.5 h-3.5 mr-1" />
+                Mark done
+              </>
             )}
-            Mark Done
           </Button>
         </div>
       </div>
 
-      {/* Meta */}
-      <div className="flex items-center gap-4 text-xs text-[#737373] mb-3">
-        <div className="flex items-center gap-1">
-          <User className="w-3.5 h-3.5" />
-          {item.assignee || 'Unassigned'}
-        </div>
-        <div className="flex items-center gap-1">
-          <Calendar className="w-3.5 h-3.5" />
+      {/* Meta strip — assignee · due · hours. */}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[#a3a3a3]">
+        <span className="inline-flex items-center gap-1.5">
+          <User className="w-3.5 h-3.5 text-[#737373]" />
+          <span className="text-[#f5f5f5]">{item.assignee || 'Unassigned'}</span>
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <Calendar className="w-3.5 h-3.5 text-[#737373]" />
           {formatDate(item.due_date)}
-        </div>
-        <div className="flex items-center gap-1">
-          <Clock3 className="w-3.5 h-3.5" />
-          {item.estimated_hours || 0}h est / {item.logged_hours || 0}h logged
-        </div>
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <Clock3 className="w-3.5 h-3.5 text-[#737373]" />
+          <span className="font-mono tabular-nums">
+            {item.logged_hours || 0}h<span className="text-[#525252]"> / </span>
+            {item.estimated_hours || 0}h
+          </span>
+          <span className="text-[#525252] text-[10px] uppercase tracking-wider">
+            logged / estimated
+          </span>
+        </span>
       </div>
 
-      {/* Log Hours Input — only renders when the toggle is on AND user is assignee */}
+      {/* Log Hours input — only renders when the toggle is on AND user is the
+          assignee. */}
       {showLogHours && isAssignee && (
-        <div className="flex items-center gap-2 mb-3 p-3 bg-[#0d0d0d] rounded-lg">
+        <div className="flex items-center gap-2 p-3 bg-[rgba(245,158,11,0.04)] border border-[rgba(245,158,11,0.18)] rounded-xl">
           <Input
             type="number"
             placeholder="Hours"
             min="0.5"
             step="0.5"
-            className="w-24 bg-[#0A0A14] border-[rgba(255,255,255,0.08)] text-white"
+            className="w-24 h-8 bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] text-sm rounded-lg"
             value={logHoursInput || ''}
             onChange={(e) => onChangeLogHoursInput(e.target.value)}
           />
@@ -127,60 +162,40 @@ const ReviewItemCard: React.FC<ReviewItemCardProps> = ({
             size="sm"
             onClick={onLogHours}
             disabled={logLoading}
-            className="bg-[#F59E0B] hover:bg-[#D97706] text-white"
+            className="h-8 text-xs bg-[#F59E0B] hover:bg-[#D97706] text-white rounded-lg disabled:opacity-60"
           >
-            {logLoading ? <Spinner size="xs" tone="white" className="w-4 h-4" /> : 'Log'}
+            {logLoading ? <Spinner size="xs" tone="white" /> : 'Log'}
           </Button>
-          <Button variant="ghost" size="sm" onClick={onCancelLogHours} className="text-[#737373]">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onCancelLogHours}
+            className="h-8 text-xs text-[#737373] hover:text-white rounded-lg"
+          >
             Cancel
           </Button>
         </div>
       )}
 
-      {/* Comments Section */}
-      <div className="border-t border-[rgba(255,255,255,0.05)] pt-3">
-        <div className="flex items-center gap-2 mb-2 text-sm text-[#737373]">
-          <MessageSquare className="w-4 h-4" />
-          Comments ({comments?.length || 0})
+      {/* Comments — shared CommentThread (variant 'simple': single Send, no
+          blocker/business-review chips since the item is already in review). */}
+      <div className="pt-2.5 border-t border-[rgba(255,255,255,0.05)]">
+        <div className="flex items-center gap-2 mb-2.5 text-xs font-semibold uppercase tracking-wider text-[#8A8A8A]">
+          <MessageSquare className="w-3.5 h-3.5" />
+          Comments
+          <span className="text-[#525252] normal-case tracking-normal font-normal">
+            ({comments?.length || 0})
+          </span>
         </div>
-
-        {/* Comment List */}
-        <div className="space-y-2 mb-3 max-h-40 overflow-y-auto">
-          {comments?.map((comment) => (
-            <div key={comment.id} className="bg-[#0d0d0d] rounded p-2 text-sm">
-              <div className="flex items-center gap-2 mb-1">
-                <span className="text-[#C79E3B] font-medium">{comment.author_name}</span>
-                <span className="text-[#737373] text-xs">
-                  {new Date(comment.created_at).toLocaleString()}
-                </span>
-              </div>
-              <p className="text-[#d4d4d4]">{comment.content}</p>
-            </div>
-          ))}
-          {!comments?.length && <p className="text-[#737373] text-sm italic">No comments yet</p>}
-        </div>
-
-        {/* Add Comment */}
-        <div className="flex items-start gap-2">
-          <Textarea
-            placeholder="Add a review comment..."
-            className="flex-1 bg-[#0d0d0d] border-[rgba(255,255,255,0.08)] text-white text-sm min-h-[60px] resize-none"
-            value={newComment || ''}
-            onChange={(e) => onChangeNewComment(e.target.value)}
-          />
-          <Button
-            size="sm"
-            onClick={onAddComment}
-            disabled={commentLoading || !newComment?.trim()}
-            className="bg-[#E0B954] hover:bg-[#B8872A] text-white h-[60px]"
-          >
-            {commentLoading ? (
-              <Spinner size="xs" tone="white" className="w-4 h-4" />
-            ) : (
-              <Send className="w-4 h-4" />
-            )}
-          </Button>
-        </div>
+        <CommentThread
+          comments={comments || []}
+          allDevelopers={allDevelopers}
+          isPosting={commentLoading}
+          onSubmit={onAddComment}
+          variant="simple"
+          placeholder="Add a review comment… Use @ to mention someone"
+          listMaxHeightPx={240}
+        />
       </div>
     </div>
   );

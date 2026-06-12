@@ -1,20 +1,37 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { toast } from 'sonner';
 import { API_BASE_URL } from '@/config/api';
-import type { Comment, WorkItem } from '../types';
+import type { CommentThreadComment, CommentType } from '@/components/CommentThread';
+import type { WorkItem } from '../types';
 
 interface UseReviewerActionsArgs {
   reviewItems: WorkItem[];
   token: string;
-  onTaskUpdate?: (itemId: string, updates: any) => void;
+  onTaskUpdate?: (itemId: string, updates: Record<string, unknown>) => void;
 }
 
 export function useReviewerActions({ reviewItems, token, onTaskUpdate }: UseReviewerActionsArgs) {
-  const [comments, setComments] = useState<Record<string, Comment[]>>({});
-  const [newComment, setNewComment] = useState<Record<string, string>>({});
+  const [comments, setComments] = useState<Record<string, CommentThreadComment[]>>({});
   const [logHoursInput, setLogHoursInput] = useState<Record<string, string>>({});
   const [showLogHours, setShowLogHours] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState<Record<string, boolean>>({});
+
+  const fetchComments = useCallback(
+    async (itemId: string) => {
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/comments/workitem/${itemId}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (res.ok) {
+          const data: CommentThreadComment[] = await res.json();
+          setComments((prev) => ({ ...prev, [itemId]: data }));
+        }
+      } catch (err) {
+        console.error('Failed to fetch comments:', err);
+      }
+    },
+    [token],
+  );
 
   // Fetch comments for each review item. Keyed on the SET of item ids (not just
   // the count): an equal-count membership swap — one item leaving review as
@@ -24,49 +41,24 @@ export function useReviewerActions({ reviewItems, token, onTaskUpdate }: UseRevi
     reviewItems.forEach((item) => {
       fetchComments(item.id);
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the id set; fetchComments is a stable fire-and-forget fetch
-  }, [reviewItemIds]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the id set; reviewItems is read fresh each run
+  }, [reviewItemIds, fetchComments]);
 
-  const fetchComments = async (itemId: string) => {
-    try {
-      const res = await fetch(`${API_BASE_URL}/api/comments/workitem/${itemId}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setComments((prev) => ({ ...prev, [itemId]: data }));
-      }
-    } catch (err) {
-      console.error('Failed to fetch comments:', err);
-    }
-  };
-
-  const handleAddComment = async (itemId: string) => {
-    const content = newComment[itemId]?.trim();
-    if (!content) return;
-
+  const handleAddComment = async (itemId: string, content: string, type: CommentType) => {
     setLoading((prev) => ({ ...prev, [`comment-${itemId}`]: true }));
     try {
       const res = await fetch(`${API_BASE_URL}/api/comments/`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          work_item_id: parseInt(itemId),
-          content,
-        }),
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ work_item_id: parseInt(itemId), content, comment_type: type }),
       });
-
       if (res.ok) {
-        setNewComment((prev) => ({ ...prev, [itemId]: '' }));
         await fetchComments(itemId);
         toast.success('Comment added');
       } else {
         toast.error('Failed to add comment');
       }
-    } catch (err) {
+    } catch {
       toast.error('Failed to add comment');
     } finally {
       setLoading((prev) => ({ ...prev, [`comment-${itemId}`]: false }));
@@ -79,52 +71,49 @@ export function useReviewerActions({ reviewItems, token, onTaskUpdate }: UseRevi
       toast.error('Please enter valid hours');
       return;
     }
-
     setLoading((prev) => ({ ...prev, [`log-${itemId}`]: true }));
     try {
       const res = await fetch(`${API_BASE_URL}/api/workitems/${itemId}/log-hours`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ hours, description: 'Reviewed and logged' }),
       });
-
       if (res.ok) {
         setLogHoursInput((prev) => ({ ...prev, [itemId]: '' }));
         setShowLogHours((prev) => ({ ...prev, [itemId]: false }));
         toast.success(`${hours}h logged`);
-        // Refresh parent
         onTaskUpdate?.(itemId, {});
       } else {
         toast.error('Failed to log hours');
       }
-    } catch (err) {
+    } catch {
       toast.error('Failed to log hours');
     } finally {
       setLoading((prev) => ({ ...prev, [`log-${itemId}`]: false }));
     }
   };
 
-  const handleMarkDone = async (itemId: string) => {
-    setLoading((prev) => ({ ...prev, [`done-${itemId}`]: true }));
+  // Generic status mutator used by both reviewer actions (Mark Done / Send
+  // Back). Loading keys are per-status so the two buttons spin independently.
+  // Backend `PUT /api/workitems/{id}` validates the target (e.g. "subtask still
+  // open" blocks marking a parent done); surface those messages verbatim.
+  const handleStatusChange = async (
+    itemId: string,
+    newStatus: 'done' | 'in_progress',
+    successMessage: string,
+  ) => {
+    const loadingKey = `status-${newStatus}-${itemId}`;
+    setLoading((prev) => ({ ...prev, [loadingKey]: true }));
     try {
       const res = await fetch(`${API_BASE_URL}/api/workitems/${itemId}`, {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ status: 'done' }),
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ status: newStatus }),
       });
-
       if (res.ok) {
-        toast.success('Marked as done');
-        onTaskUpdate?.(itemId, { status: 'done' });
+        toast.success(successMessage);
+        onTaskUpdate?.(itemId, { status: newStatus });
       } else {
-        // Surface backend validation messages (e.g. "subtask still open"
-        // when marking a parent done) instead of a generic toast.
         let detail = 'Failed to update status';
         try {
           const body = await res.json();
@@ -137,14 +126,12 @@ export function useReviewerActions({ reviewItems, token, onTaskUpdate }: UseRevi
     } catch {
       toast.error('Failed to update status');
     } finally {
-      setLoading((prev) => ({ ...prev, [`done-${itemId}`]: false }));
+      setLoading((prev) => ({ ...prev, [loadingKey]: false }));
     }
   };
 
   return {
     comments,
-    newComment,
-    setNewComment,
     logHoursInput,
     setLogHoursInput,
     showLogHours,
@@ -152,6 +139,6 @@ export function useReviewerActions({ reviewItems, token, onTaskUpdate }: UseRevi
     loading,
     handleAddComment,
     handleLogHours,
-    handleMarkDone,
+    handleStatusChange,
   };
 }

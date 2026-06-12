@@ -2,7 +2,7 @@ import { useState, useRef } from 'react';
 import TicketContributors from '@/components/TicketContributors';
 import { useAuth } from '@/contexts/AuthContext';
 import { apiFetch } from '@/lib/api';
-import type { WorkItem, Sprint, ProjectLite, Comment, ProjectDeveloper } from './types';
+import type { WorkItem, Sprint, ProjectLite, ProjectDeveloper } from './types';
 import { AddSubtaskModal } from './AddSubtaskModal';
 import { useWorkItemPanel } from './hooks/useWorkItemPanel';
 import { WorkItemPanelHeader } from './components/WorkItemPanelHeader';
@@ -13,7 +13,7 @@ import { WorkItemFullHierarchy } from './components/WorkItemFullHierarchy';
 import { WorkItemCompactHierarchy } from './components/WorkItemCompactHierarchy';
 import { hasCompactHierarchy } from './lib/renderContent';
 import { WorkItemSprintActions } from './components/WorkItemSprintActions';
-import { WorkItemComments } from './components/WorkItemComments';
+import CommentThread from '@/components/CommentThread';
 import { ExternalLink, Pencil } from 'lucide-react';
 
 // ─── Prop types ──────────────────────────────────────────────────────────────
@@ -69,10 +69,7 @@ const WorkItemPanel = (props: WorkItemPanelProps) => {
 
   const [showAddSubtaskModal, setShowAddSubtaskModal] = useState(false);
 
-  // ─── Comment state ─────────────────────────────────────────────────────────
-  const [newComment, setNewComment] = useState('');
-  const [showMentions, setShowMentions] = useState(false);
-  const [mentionFilter, setMentionFilter] = useState('');
+  // Comment input + @mention state is owned by the shared <CommentThread>.
 
   // ─── Log hours ref (replaces getElementById anti-pattern) ─────────────────
   const logHoursRef = useRef<HTMLInputElement>(null);
@@ -82,7 +79,6 @@ const WorkItemPanel = (props: WorkItemPanelProps) => {
     itemDetail,
     comments,
     allDevelopers,
-    devMap,
     isAssignee,
     fullWorkItems,
     parentExcludeIds,
@@ -99,7 +95,6 @@ const WorkItemPanel = (props: WorkItemPanelProps) => {
     editForm,
     setIsEditing,
     setEditForm,
-    setNewComment,
     setShowAddSubtaskModal,
     logHoursRef,
   });
@@ -182,34 +177,6 @@ const WorkItemPanel = (props: WorkItemPanelProps) => {
     setIsEditing(true);
   };
 
-  // ─── Comment helpers ───────────────────────────────────────────────────────
-  const handleCommentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    const value = e.target.value;
-    setNewComment(value);
-    const lastAt = value.lastIndexOf('@');
-    if (lastAt !== -1) {
-      const after = value.substring(lastAt + 1);
-      if (!after.includes(' ')) {
-        setMentionFilter(after);
-        setShowMentions(true);
-      } else setShowMentions(false);
-    } else {
-      setShowMentions(false);
-    }
-  };
-
-  const insertMention = (dev: { id: number; name: string }) => {
-    const lastAt = newComment.lastIndexOf('@');
-    setNewComment(`${newComment.substring(0, lastAt)}@${dev.name} `);
-    setShowMentions(false);
-    setMentionFilter('');
-  };
-
-  const handleSubmitComment = (type: Comment['comment_type'] = 'comment') => {
-    if (!newComment.trim()) return;
-    submitComment.mutate({ content: newComment, type });
-  };
-
   // ─── Render ────────────────────────────────────────────────────────────────
   const isDoneAndNotEditing = item.status === 'done' && !isEditing;
 
@@ -242,18 +209,18 @@ const WorkItemPanel = (props: WorkItemPanelProps) => {
     ) : null;
 
   const commentsNode = (
-    <WorkItemComments
-      newComment={newComment}
-      onCommentChange={handleCommentChange}
-      showMentions={showMentions}
-      mentionFilter={mentionFilter}
-      allDevelopers={allDevelopers}
-      onInsertMention={insertMention}
-      onSubmitComment={handleSubmitComment}
-      isSubmitting={submitComment.isPending}
-      comments={comments}
-      devMap={devMap}
-    />
+    <div className="pt-4 border-t border-[rgba(255,255,255,0.05)]">
+      <div className="text-xs text-[#8A8A8A] mb-3 font-semibold uppercase tracking-wider">
+        Activity &amp; Comments
+      </div>
+      <CommentThread
+        comments={comments}
+        allDevelopers={allDevelopers}
+        isPosting={submitComment.isPending}
+        onSubmit={(content, type) => submitComment.mutate({ content, type })}
+        variant="full"
+      />
+    </div>
   );
 
   return (

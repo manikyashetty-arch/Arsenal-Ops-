@@ -26,62 +26,9 @@ export function renderTextWithNewlines(text: string) {
     .filter(Boolean);
 }
 
-export function renderCommentContent(
-  content: string,
-  mentions: number[] = [],
-  devMap: Map<number, string>,
-) {
-  let result = content;
-  mentions.forEach((devId) => {
-    const devName = devMap.get(devId);
-    if (devName) {
-      const regex = new RegExp(`@${devName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'g');
-      result = result.replace(regex, `<<<M_${devId}>>>`);
-    }
-  });
-  const urls: string[] = [];
-  result = result.replace(/(https?:\/\/[^\s]+)/g, (m) => {
-    urls.push(m);
-    return `<<<U_${urls.length - 1}>>>`;
-  });
-  const parts = result.split(/(<<<M_\d+>>>|<<<U_\d+>>>)/g);
-  let idx = 0;
-  return parts.flatMap((part) => {
-    const mm = part.match(/<<<M_(\d+)>>>/);
-    if (mm) {
-      return (
-        <span
-          key={`m-${idx++}`}
-          className="bg-[rgba(224,185,84,0.2)] text-[#E0B954] px-1.5 py-0.5 rounded-md font-medium"
-        >
-          @{devMap.get(parseInt(mm[1]))}
-        </span>
-      );
-    }
-    const um = part.match(/<<<U_(\d+)>>>/);
-    if (um) {
-      const url = urls[parseInt(um[1])];
-      return (
-        <a
-          key={`u-${idx++}`}
-          href={url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-[#E0B954] hover:text-[#C79E3B] underline hover:no-underline transition-colors break-all"
-        >
-          {url}
-        </a>
-      );
-    }
-    return part
-      .split('\n')
-      .flatMap((line, li, arr) => [
-        <span key={`t-${idx}-${li}`}>{line}</span>,
-        li < arr.length - 1 ? <br key={`tb-${idx}-${li}`} /> : null,
-      ])
-      .filter(Boolean);
-  });
-}
+// Comment-body rendering (mention pills + inline links) now lives in the shared
+// `@/components/CommentThread`, which owns the single renderer for both the
+// work-item panel and the Reviewer queue.
 
 export const AVATAR_PALETTE = ['#E0B954', '#60A5FA', '#34D399', '#A78BFA', '#F97316', '#F43F5E'];
 

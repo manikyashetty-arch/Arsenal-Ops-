@@ -1,26 +1,30 @@
 import { AlertTriangle } from 'lucide-react';
 import { formatRangeDate } from './types';
-import type { FiltersState, GroupBy } from './types';
+import type { GroupBy } from './types';
 
 interface TimeEntriesSummaryProps {
   totalHours: number;
-  totalRows: number;
+  /** Post-aggregation row count — matches what the table shows. */
+  entriesCount: number;
+  /** Pre-aggregation raw count from the server — quoted in the truncation notice. */
+  totalRawRows: number;
   truncated: boolean;
   from: string | null;
   to: string | null;
   groupBy: GroupBy;
-  setFilters: React.Dispatch<React.SetStateAction<FiltersState>>;
+  onGroupByChange: (groupBy: GroupBy) => void;
 }
 
 /** Totals strip + truncation warning + group-by view-mode toggle. */
 const TimeEntriesSummary: React.FC<TimeEntriesSummaryProps> = ({
   totalHours,
-  totalRows,
+  entriesCount,
+  totalRawRows,
   truncated,
   from,
   to,
   groupBy,
-  setFilters,
+  onGroupByChange,
 }) => {
   return (
     <>
@@ -32,7 +36,9 @@ const TimeEntriesSummary: React.FC<TimeEntriesSummaryProps> = ({
         </div>
         <div className="rounded-xl border border-[rgba(255,255,255,0.07)] bg-[rgba(255,255,255,0.02)] p-4">
           <p className="text-[11px] uppercase tracking-wider text-[#737373]">Entries</p>
-          <p className="text-2xl font-bold text-white mt-1">{totalRows}</p>
+          {/* After-aggregation count so this matches the rows shown below.
+              Total hours stays the server's sum (preserved across the collapse). */}
+          <p className="text-2xl font-bold text-white mt-1">{entriesCount}</p>
         </div>
         <div className="rounded-xl border border-[rgba(255,255,255,0.07)] bg-[rgba(255,255,255,0.02)] p-4">
           <p className="text-[11px] uppercase tracking-wider text-[#737373]">Range</p>
@@ -47,7 +53,8 @@ const TimeEntriesSummary: React.FC<TimeEntriesSummaryProps> = ({
       {truncated && (
         <div className="rounded-lg border border-[#E0B954]/30 bg-[#E0B954]/10 p-3 flex items-center gap-2 text-xs text-[#E0B954]">
           <AlertTriangle className="w-4 h-4 shrink-0" />
-          Showing the first {totalRows} entries. Refine your filters to see the rest.
+          Capped at {totalRawRows} raw entries before aggregation. Refine your filters to include
+          older data.
         </div>
       )}
 
@@ -68,7 +75,7 @@ const TimeEntriesSummary: React.FC<TimeEntriesSummaryProps> = ({
             <button
               key={opt.id}
               type="button"
-              onClick={() => setFilters((f) => ({ ...f, groupBy: opt.id }))}
+              onClick={() => onGroupByChange(opt.id)}
               className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors ${
                 active
                   ? 'bg-[#E0B954]/20 text-[#E0B954] border border-[#E0B954]/40'

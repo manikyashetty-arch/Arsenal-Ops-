@@ -1,3 +1,5 @@
+import type { CommentThreadComment, CommentThreadDeveloper } from '@/components/CommentThread';
+
 export interface WorkItem {
   id: string;
   key: string;
@@ -12,16 +14,17 @@ export interface WorkItem {
   remaining_hours?: number;
 }
 
-export interface Comment {
-  id: number;
-  content: string;
-  author_name: string;
-  created_at: string;
-}
+// The Reviewer queue renders comments via the shared <CommentThread>, so it
+// reuses that component's comment shape rather than declaring its own.
+export type ReviewComment = CommentThreadComment;
 
 export interface ReviewerViewProps {
   workItems: WorkItem[];
   projectId: string;
   token: string;
-  onTaskUpdate?: (itemId: string, updates: any) => void;
+  onTaskUpdate?: (itemId: string, updates: Record<string, unknown>) => void;
+  /** Project developer roster used by the @mention picker. Optional — when
+   *  absent (legacy callers), the picker shows "No matching developers" and
+   *  the rest of the comment UX still works. */
+  allDevelopers?: CommentThreadDeveloper[];
 }
