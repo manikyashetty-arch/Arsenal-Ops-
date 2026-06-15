@@ -2,6 +2,7 @@ import { useCallback, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
 import type { WorkItem, Sprint } from '@/types/workItems';
+import type { DeveloperResponse } from '@/client';
 
 export interface Developer {
   id: number;
@@ -79,7 +80,7 @@ export function useBoardData(id: string | undefined) {
   // actually hold instead of busting on a fresh [] every render.
   const sprints = useMemo(() => sprintsQuery.data ?? [], [sprintsQuery.data]);
 
-  const developersQuery = useQuery<Array<{ id: number; name: string; email: string }>>({
+  const developersQuery = useQuery<DeveloperResponse[]>({
     queryKey: ['developers'],
     queryFn: () => apiFetch('/api/developers/'),
   });
