@@ -469,6 +469,10 @@ class SlimWorkItem(BaseModel):
     logged_hours: int = 0
     due_date: str | None = None
     completed_at: str | None = None
+    # True when the ticket has at least one unresolved blocker comment.
+    # Derived in the board endpoint via a single batch query — no per-row
+    # JOIN, so this stays O(1) extra round-trip regardless of item count.
+    is_blocked: bool = False
 
 
 @router.get("/board", response_model=list[SlimWorkItem])
@@ -506,6 +510,27 @@ def list_board_items(
         related = db.query(WorkItem.id, WorkItem.key).filter(WorkItem.id.in_(all_lookup_ids)).all()
         id_to_key = {r.id: r.key for r in related}
 
+    # Batch query for "ticket has at least one unresolved blocker comment".
+    # One IN(...) over the comments table for every item on this board —
+    # cheap and avoids per-row joins. Resolved-blocker comments are
+    # excluded so a ticket whose blockers were all resolved isn't flagged.
+    from models.comment import Comment
+
+    item_ids = [item.id for item in items]
+    blocked_ids: set[int] = set()
+    if item_ids:
+        blocked_rows = (
+            db.query(Comment.work_item_id)
+            .filter(
+                Comment.work_item_id.in_(item_ids),
+                Comment.comment_type == "blocker",
+                Comment.is_resolved.is_(False),
+            )
+            .distinct()
+            .all()
+        )
+        blocked_ids = {r[0] for r in blocked_rows}
+
     return [
         SlimWorkItem(
             id=str(item.id),
@@ -528,6 +553,7 @@ def list_board_items(
             logged_hours=item.logged_hours or 0,
             due_date=item.due_date.isoformat() if item.due_date else None,
             completed_at=item.completed_at.isoformat() if item.completed_at else None,
+            is_blocked=item.id in blocked_ids,
         )
         for item in items
     ]
@@ -1357,6 +1383,71 @@ class LogHoursRequest(BaseModel):
     hours: int
     description: str | None = None
     developer_id: int | None = None  # Optional: specify who did the work (defaults to current user)
+
+
+@router.post("/{item_id}/unblock")
+def unblock_work_item(
+    item_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_capability("project.tracker_write")),
+):
+    """Resolve every unresolved blocker comment on this ticket in one shot.
+
+    "Blocked" in Arsenal Ops isn't a separate work-item field — it's
+    derived from whether the ticket has any open `comment_type='blocker'`
+    comments. Unblocking flips them all to `is_resolved=True` so the
+    blocker chronology is preserved (the comment text + @mentions stay
+    visible, just marked as resolved). An activity row records the bulk
+    unblock so the audit trail captures who unblocked + when.
+
+    Returns the number of comments resolved — 0 is a legal response when
+    the ticket was already unblocked (idempotent).
+    """
+    from models.activity_log import ActivityLog
+    from models.comment import Comment
+
+    item = db.query(WorkItem).filter(WorkItem.id == item_id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Work item not found")
+
+    resolved_count = (
+        db.query(Comment)
+        .filter(
+            Comment.work_item_id == item_id,
+            Comment.comment_type == "blocker",
+            Comment.is_resolved.is_(False),
+        )
+        .update(
+            {"is_resolved": True, "updated_at": datetime.utcnow()},
+            synchronize_session=False,
+        )
+    )
+    db.commit()
+
+    # Log activity only when we actually resolved something — a no-op
+    # unblock (item wasn't blocked) shouldn't litter the feed.
+    if resolved_count:
+        try:
+            db.add(
+                ActivityLog(
+                    project_id=item.project_id,
+                    user_id=current_user.id,
+                    action="unblocked",
+                    entity_type="work_item",
+                    entity_id=item.id,
+                    title=(
+                        f"Unblocked {item.key}: resolved {resolved_count} "
+                        f"blocker comment{'s' if resolved_count != 1 else ''}"
+                    ),
+                )
+            )
+            db.commit()
+        except Exception as e:
+            # Non-fatal: the resolve already committed above.
+            db.rollback()
+            print(f"[ActivityLog] Failed to log unblock for #{item_id}: {e}")
+
+    return {"resolved_count": resolved_count}
 
 
 @router.post("/{item_id}/log-hours")

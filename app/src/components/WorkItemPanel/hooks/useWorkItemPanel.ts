@@ -238,8 +238,21 @@ export function useWorkItemPanel({
           author_id: currentUserId ?? 1,
         }),
       }),
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['workItem', item.id, 'comments'] });
+      // A blocker comment flips the ticket's server-computed `is_blocked`
+      // flag from false → true. The board cache carries that flag and
+      // drives the Blocked-queue count + the per-card red badge, so it
+      // must refetch when one lands. Non-blocker comments don't affect
+      // the board response, so we skip the wider invalidation in that
+      // case to avoid a refetch on every plain comment.
+      if (variables.type === 'blocker') {
+        queryClient.invalidateQueries({ queryKey: ['workItems'] });
+        // Cross-cutting: myTasks reads the same underlying data via a
+        // different endpoint — keeps the home-page Blocked indicator
+        // (when we add one) in sync. See app/CLAUDE.md.
+        queryClient.invalidateQueries({ queryKey: ['myTasks'] });
+      }
     },
     onError: toastErrorHandler('add comment'),
   });

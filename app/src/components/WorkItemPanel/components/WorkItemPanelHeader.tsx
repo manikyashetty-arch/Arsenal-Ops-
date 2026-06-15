@@ -1,4 +1,4 @@
-import { Pencil, Trash2, X } from 'lucide-react';
+import { Pencil, Trash2, X, Ban, ShieldCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { WorkItem } from '../types';
 import { TYPE_CONFIG } from '../constants';
@@ -12,6 +12,13 @@ export interface WorkItemPanelHeaderProps {
   onToggleEdit: () => void;
   onDelete: () => void;
   onClose: () => void;
+  /** True while the bulk unblock mutation is in flight. Drives the spinner
+   *  on the Unblock button and prevents double-clicks. */
+  isUnblocking?: boolean;
+  /** Fires bulk unblock: resolves all unresolved blocker comments on the
+   *  ticket in one shot. Parent owns the mutation lifecycle (toast +
+   *  invalidations). When omitted, the button is hidden. */
+  onUnblock?: () => void;
 }
 
 export const WorkItemPanelHeader = ({
@@ -23,6 +30,8 @@ export const WorkItemPanelHeader = ({
   onToggleEdit,
   onDelete,
   onClose,
+  isUnblocking = false,
+  onUnblock,
 }: WorkItemPanelHeaderProps) => {
   const typeConfig = TYPE_CONFIG[item.type] ?? TYPE_CONFIG.task;
 
@@ -37,8 +46,36 @@ export const WorkItemPanelHeader = ({
           {typeConfig.label}
         </div>
         <span className="text-sm font-mono text-[#E0B954]">{item.key}</span>
+        {/* Blocked chip — sits next to the key so it's the first thing
+            readers see when opening a blocked ticket. Derived from the
+            server-computed `is_blocked` field. */}
+        {item.is_blocked && (
+          <span
+            className="flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-[rgba(239,68,68,0.15)] text-[#EF4444] border border-[rgba(239,68,68,0.3)]"
+            title="This ticket has unresolved blocker comments"
+          >
+            <Ban className="w-3 h-3" />
+            Blocked
+          </span>
+        )}
       </div>
       <div className="flex items-center gap-1.5">
+        {/* Unblock — only shown when the ticket is blocked AND the user
+            holds the write cap (matches backend `project.tracker_write`
+            gate on POST /unblock). Resolves every unresolved blocker
+            comment in one shot; idempotent if already unblocked. */}
+        {item.is_blocked && canWriteTracker && onUnblock && (
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={onUnblock}
+            disabled={isUnblocking}
+            className="text-[#34D399] hover:text-[#10B981] hover:bg-[rgba(52,211,153,0.1)] rounded-lg h-8 px-2.5 disabled:opacity-60"
+          >
+            <ShieldCheck className="w-3.5 h-3.5 mr-1" />
+            {isUnblocking ? 'Unblocking…' : 'Unblock'}
+          </Button>
+        )}
         {/* Edit (full variant — in header). Hidden when caller lacks
             project.tracker_write so users don't see an action that would 403. */}
         {variant === 'full' && canWriteTracker && (

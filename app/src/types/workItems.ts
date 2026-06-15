@@ -43,6 +43,11 @@ export interface WorkItem {
   due_date?: string | null;
   completed_at?: string | null;
   estimated_hours?: number | null;
+  /** True when the ticket has at least one unresolved blocker comment.
+   *  Server-side derived from `comments WHERE comment_type='blocker' AND
+   *  NOT is_resolved`. The "Unblock" action posts to
+   *  `POST /api/workitems/{id}/unblock`, which resolves all of them. */
+  is_blocked?: boolean;
 }
 
 // Rich board-side sprint shape (the superset across the board's usages). The

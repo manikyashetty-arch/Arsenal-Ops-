@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Send, MessageSquare, AlertCircle, Target } from 'lucide-react';
+import { Send, MessageSquare, AlertCircle, Target, ShieldCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 
@@ -36,6 +36,10 @@ export interface CommentThreadComment {
   comment_type?: CommentType;
   mentions?: number[];
   created_at: string;
+  /** Only meaningful on blocker / business_review comments. When true, the
+   *  comment is "closed" — the comment stays visible in the thread but
+   *  with a RESOLVED pill instead of BLOCKER. */
+  is_resolved?: boolean;
 }
 
 export interface CommentThreadDeveloper {
@@ -47,6 +51,15 @@ export interface CommentThreadDeveloper {
 interface CommentThreadProps {
   comments: CommentThreadComment[];
   allDevelopers: CommentThreadDeveloper[];
+  /** Per-comment Resolve handler. When provided, an inline "Resolve"
+   *  button appears on every unresolved blocker comment. Omit to hide
+   *  the affordance (e.g. read-only contexts). Backend mutation lives
+   *  in the parent so each consumer can wire its own invalidation. */
+  onResolveComment?: (commentId: number) => void;
+  /** Comment id currently being resolved (drives per-row spinner so two
+   *  Resolves in quick succession don't both spin). null/undefined when
+   *  no Resolve is in flight. */
+  resolvingCommentId?: number | null;
   isPosting: boolean;
   onSubmit: (content: string, type: CommentType) => void;
   /**
@@ -135,6 +148,8 @@ const CommentThread: React.FC<CommentThreadProps> = ({
   variant = 'full',
   placeholder = 'Add a comment… Use @ to mention someone',
   listMaxHeightPx = 256,
+  onResolveComment,
+  resolvingCommentId,
 }) => {
   const [newComment, setNewComment] = useState('');
   const [showMentions, setShowMentions] = useState(false);
@@ -285,15 +300,23 @@ const CommentThread: React.FC<CommentThreadProps> = ({
           comments.map((comment) => {
             const isBlocker = comment.comment_type === 'blocker';
             const isBusinessReview = comment.comment_type === 'business_review';
+            const isResolved = !!comment.is_resolved;
+            // Resolved blocker comments are kept in the thread for audit
+            // (the "why blocked" context survives) but visually demoted —
+            // muted bg + 60% opacity — so the eye is drawn to the still-
+            // open ones. The pill flips BLOCKER → RESOLVED.
+            const resolvedDemote = isBlocker && isResolved;
             return (
               <div
                 key={comment.id}
                 className={`p-3 rounded-xl ${
-                  isBlocker
-                    ? 'bg-[rgba(239,68,68,0.05)] border border-[rgba(239,68,68,0.2)]'
-                    : isBusinessReview
-                      ? 'bg-[rgba(167,139,250,0.05)] border border-[rgba(167,139,250,0.2)]'
-                      : 'bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)]'
+                  resolvedDemote
+                    ? 'bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] opacity-60'
+                    : isBlocker
+                      ? 'bg-[rgba(239,68,68,0.05)] border border-[rgba(239,68,68,0.2)]'
+                      : isBusinessReview
+                        ? 'bg-[rgba(167,139,250,0.05)] border border-[rgba(167,139,250,0.2)]'
+                        : 'bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)]'
                 }`}
               >
                 <div className="flex items-center gap-2 mb-2">
@@ -309,11 +332,16 @@ const CommentThread: React.FC<CommentThreadProps> = ({
                     {comment.author_name?.charAt?.(0)?.toUpperCase() || '?'}
                   </div>
                   <span className="text-sm font-medium text-[#f5f5f5]">{comment.author_name}</span>
-                  {isBlocker && (
-                    <span className="px-1.5 py-0.5 rounded-md bg-[rgba(239,68,68,0.2)] text-[#EF4444] text-[10px] font-medium">
-                      BLOCKER
-                    </span>
-                  )}
+                  {isBlocker &&
+                    (isResolved ? (
+                      <span className="px-1.5 py-0.5 rounded-md bg-[rgba(52,211,153,0.15)] text-[#34D399] text-[10px] font-medium border border-[rgba(52,211,153,0.3)]">
+                        RESOLVED
+                      </span>
+                    ) : (
+                      <span className="px-1.5 py-0.5 rounded-md bg-[rgba(239,68,68,0.2)] text-[#EF4444] text-[10px] font-medium">
+                        BLOCKER
+                      </span>
+                    ))}
                   {isBusinessReview && (
                     <span className="px-1.5 py-0.5 rounded-md bg-[rgba(167,139,250,0.2)] text-[#A78BFA] text-[10px] font-medium">
                       BUSINESS REVIEW
@@ -322,6 +350,23 @@ const CommentThread: React.FC<CommentThreadProps> = ({
                   <span className="text-xs text-[#737373] ml-auto">
                     {new Date(comment.created_at).toLocaleDateString()}
                   </span>
+                  {/* Per-comment Resolve affordance — only on unresolved
+                      blocker comments, and only when the parent passed in
+                      a handler. Lets the reviewer clear a single blocker
+                      (e.g. "API team confirmed they'll ship") without
+                      bulk-resolving the rest. */}
+                  {isBlocker && !isResolved && onResolveComment && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => onResolveComment(comment.id)}
+                      disabled={resolvingCommentId === comment.id}
+                      className="h-6 text-[10px] px-2 text-[#34D399] hover:text-[#10B981] hover:bg-[rgba(52,211,153,0.1)] rounded-md disabled:opacity-60"
+                    >
+                      <ShieldCheck className="w-3 h-3 mr-1" />
+                      {resolvingCommentId === comment.id ? 'Resolving…' : 'Resolve'}
+                    </Button>
+                  )}
                 </div>
                 <p className="text-sm text-[#a3a3a3] leading-relaxed">
                   {renderCommentContent(comment.content, comment.mentions, devMap)}

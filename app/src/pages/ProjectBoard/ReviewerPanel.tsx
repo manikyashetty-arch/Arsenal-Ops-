@@ -1,7 +1,7 @@
-import { useEffect } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Eye, X } from 'lucide-react';
-import { ReviewerView } from '@/components/ProjectHub';
+import { Eye, X, Ban } from 'lucide-react';
+import { ReviewerView, BlockedQueueView } from '@/components/ProjectHub';
 import { apiFetch } from '@/lib/api';
 import type { CommentThreadDeveloper } from '@/components/CommentThread';
 
@@ -20,6 +20,9 @@ interface WorkItemIn {
   estimated_hours?: number | null;
   logged_hours?: number;
   remaining_hours?: number;
+  /** Server-computed: true when ≥1 unresolved blocker comment exists.
+   *  Drives the Blocked-queue tab and its count badge. */
+  is_blocked?: boolean;
 }
 
 export interface ReviewerPanelProps {
@@ -30,6 +33,8 @@ export interface ReviewerPanelProps {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   onTaskUpdate: (itemId: string, updates: any) => void;
 }
+
+type QueueTab = 'review' | 'blocked';
 
 const ReviewerPanel = ({
   workItems,
@@ -46,6 +51,36 @@ const ReviewerPanel = ({
     queryFn: () => apiFetch<CommentThreadDeveloper[]>('/api/developers/'),
   });
   const allDevelopers = developersQuery.data ?? [];
+
+  // Active tab — defaults to Review since that's the panel's primary
+  // historic purpose. Blocked is a sibling queue surfaced as a tab so we
+  // don't add another toolbar button.
+  const [activeTab, setActiveTab] = useState<QueueTab>('review');
+
+  // Map the panel's WorkItemIn shape into the shape both views expect.
+  // The mapping was duplicated when there was only one view; pulling it
+  // out keeps the two consumers consistent (same id/sprint coercions,
+  // same `is_blocked` passthrough).
+  const mappedItems = useMemo(
+    () =>
+      workItems.map((item) => ({
+        ...item,
+        assignee_id: item.assignee_id ?? undefined,
+        sprint_id: item.sprint_id ?? undefined,
+        parent_id: item.parent_id ?? undefined,
+        epic_id: item.epic_id ?? undefined,
+        due_date: item.due_date ?? undefined,
+        estimated_hours: item.estimated_hours ?? undefined,
+        is_blocked: item.is_blocked,
+      })),
+    [workItems],
+  );
+
+  // Pre-compute the per-tab counts shown on the tab triggers. Driven off
+  // the same data the views filter from so the counts can never diverge
+  // from "what's actually inside each tab".
+  const reviewCount = mappedItems.filter((item) => item.status === 'in_review').length;
+  const blockedCount = mappedItems.filter((item) => !!item.is_blocked).length;
 
   // Escape-to-close. Mounted only while the panel itself is mounted (the
   // parent already controls visibility via `showReviewer`), so the
@@ -78,12 +113,20 @@ const ReviewerPanel = ({
         <div className="flex items-center justify-between px-6 py-4 border-b border-[rgba(255,255,255,0.05)] flex-shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl bg-[rgba(224,185,84,0.1)] flex items-center justify-center">
-              <Eye className="w-4 h-4 text-[#E0B954]" />
+              {activeTab === 'review' ? (
+                <Eye className="w-4 h-4 text-[#E0B954]" />
+              ) : (
+                <Ban className="w-4 h-4 text-[#EF4444]" />
+              )}
             </div>
             <div>
-              <h2 className="text-sm font-semibold text-white">Review Queue</h2>
+              <h2 className="text-sm font-semibold text-white">
+                {activeTab === 'review' ? 'Review Queue' : 'Blocked Queue'}
+              </h2>
               <p className="text-xs text-[#737373]">
-                Approve, comment, or send back items pending review
+                {activeTab === 'review'
+                  ? 'Approve, comment, or send back items pending review'
+                  : 'Resolve blockers to clear tickets'}
               </p>
             </div>
           </div>
@@ -95,22 +138,85 @@ const ReviewerPanel = ({
             <X className="w-4 h-4" />
           </button>
         </div>
+
+        {/* Tab strip — switches between Review and Blocked queues without
+            adding another toolbar button. Active tab gets the gold/red
+            underline matching the icon color theme used inside the view.
+            role="tablist" + aria-selected per WAI-ARIA so screen readers
+            announce the switch. */}
+        <div
+          role="tablist"
+          aria-label="Queue type"
+          className="flex border-b border-[rgba(255,255,255,0.05)] flex-shrink-0 px-6"
+        >
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === 'review'}
+            onClick={() => setActiveTab('review')}
+            className={`relative px-3 py-2.5 text-xs font-semibold transition-colors flex items-center gap-2 ${
+              activeTab === 'review' ? 'text-[#E0B954]' : 'text-[#737373] hover:text-[#a3a3a3]'
+            }`}
+          >
+            <Eye className="w-3.5 h-3.5" />
+            In Review
+            <span
+              className={`inline-flex items-center justify-center min-w-[18px] h-[18px] px-1.5 rounded-full text-[10px] font-semibold ${
+                activeTab === 'review'
+                  ? 'bg-[rgba(224,185,84,0.2)] text-[#E0B954]'
+                  : 'bg-[rgba(255,255,255,0.05)] text-[#737373]'
+              }`}
+            >
+              {reviewCount}
+            </span>
+            {activeTab === 'review' && (
+              <span className="absolute inset-x-0 -bottom-px h-0.5 bg-[#E0B954]" />
+            )}
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === 'blocked'}
+            onClick={() => setActiveTab('blocked')}
+            className={`relative px-3 py-2.5 text-xs font-semibold transition-colors flex items-center gap-2 ${
+              activeTab === 'blocked' ? 'text-[#EF4444]' : 'text-[#737373] hover:text-[#a3a3a3]'
+            }`}
+          >
+            <Ban className="w-3.5 h-3.5" />
+            Blocked
+            <span
+              className={`inline-flex items-center justify-center min-w-[18px] h-[18px] px-1.5 rounded-full text-[10px] font-semibold ${
+                activeTab === 'blocked'
+                  ? 'bg-[rgba(239,68,68,0.2)] text-[#EF4444]'
+                  : 'bg-[rgba(255,255,255,0.05)] text-[#737373]'
+              }`}
+            >
+              {blockedCount}
+            </span>
+            {activeTab === 'blocked' && (
+              <span className="absolute inset-x-0 -bottom-px h-0.5 bg-[#EF4444]" />
+            )}
+          </button>
+        </div>
+
         <div className="flex-1 overflow-y-auto px-6 py-5">
-          <ReviewerView
-            workItems={workItems.map((item) => ({
-              ...item,
-              assignee_id: item.assignee_id ?? undefined,
-              sprint_id: item.sprint_id ?? undefined,
-              parent_id: item.parent_id ?? undefined,
-              epic_id: item.epic_id ?? undefined,
-              due_date: item.due_date ?? undefined,
-              estimated_hours: item.estimated_hours ?? undefined,
-            }))}
-            projectId={projectId}
-            token={token}
-            onTaskUpdate={onTaskUpdate}
-            allDevelopers={allDevelopers}
-          />
+          {activeTab === 'review' ? (
+            <ReviewerView
+              workItems={mappedItems}
+              projectId={projectId}
+              token={token}
+              onTaskUpdate={onTaskUpdate}
+              allDevelopers={allDevelopers}
+            />
+          ) : (
+            <BlockedQueueView
+              workItems={mappedItems}
+              projectId={projectId}
+              token={token}
+              onTaskUpdate={onTaskUpdate}
+              allDevelopers={allDevelopers}
+            />
+          )}
         </div>
       </div>
     </>

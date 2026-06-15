@@ -1,4 +1,6 @@
 import { useState, useRef } from 'react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import TicketContributors from '@/components/TicketContributors';
 import { useAuth } from '@/contexts/AuthContext';
 import { apiFetch } from '@/lib/api';
@@ -181,6 +183,55 @@ const WorkItemPanel = (props: WorkItemPanelProps) => {
   // being edited. Mirrors the server-side "frozen until re-opened" rule.
   const isDoneAndNotEditing = item.status === 'done' && !isEditing;
 
+  // Shared by the resolve-one + bulk-unblock mutations below.
+  const queryClient = useQueryClient();
+
+  // ── Resolve-a-single-blocker-comment mutation ─────────────────────────────
+  // Fires when the user clicks the inline "Resolve" pill on one blocker
+  // comment. Backend: PATCH /api/comments/{id}/resolve?is_resolved=true.
+  // Invalidations match the bulk unblock — board card's red badge and the
+  // ticket's comments cache both need to refresh.
+  const resolveCommentMutation = useMutation({
+    mutationFn: (commentId: number) =>
+      apiFetch(`/api/comments/${commentId}/resolve?is_resolved=true`, { method: 'PATCH' }),
+    onSuccess: () => toast.success('Blocker comment resolved'),
+    onError: () => toast.error('Failed to resolve comment'),
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['workItems'] });
+      queryClient.invalidateQueries({ queryKey: ['workItem', item.id, 'comments'] });
+      queryClient.invalidateQueries({ queryKey: ['myTasks'] });
+    },
+  });
+
+  // ── Unblock mutation (bulk-resolve every unresolved blocker comment) ──────
+  // Backend gates on `project.tracker_write`. Invalidates the board list
+  // (so the kanban card's red Blocked badge clears) and this item's
+  // comments cache (so the resolved-pill shows up immediately). Also
+  // invalidates myTasks per CONVENTIONS.md cross-cutting rule.
+  const unblockMutation = useMutation({
+    mutationFn: () =>
+      apiFetch<{ resolved_count: number }>(`/api/workitems/${item.id}/unblock`, {
+        method: 'POST',
+      }),
+    onSuccess: (data) => {
+      if (data.resolved_count > 0) {
+        toast.success(
+          `Unblocked — resolved ${data.resolved_count} blocker comment${data.resolved_count === 1 ? '' : 's'}`,
+        );
+      } else {
+        // Idempotent success when ticket wasn't actually blocked anymore
+        // (e.g. someone resolved the last blocker from another tab).
+        toast.success('Ticket was already unblocked');
+      }
+    },
+    onError: () => toast.error('Failed to unblock ticket'),
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['workItems'] });
+      queryClient.invalidateQueries({ queryKey: ['workItem', item.id, 'comments'] });
+      queryClient.invalidateQueries({ queryKey: ['myTasks'] });
+    },
+  });
+
   // Hierarchy block fed into WorkItemViewMode. Full variant shows the
   // epic/parent/subtask tree; compact shows only the immediate ref. `null`
   // when there's nothing meaningful to show (e.g. a top-level epic in
@@ -212,6 +263,14 @@ const WorkItemPanel = (props: WorkItemPanelProps) => {
         isPosting={submitComment.isPending}
         onSubmit={(content, type) => submitComment.mutate({ content, type })}
         variant="full"
+        // Per-comment Resolve gated on the same write cap as bulk Unblock.
+        // Hidden entirely for read-only viewers — they won't see the pill.
+        onResolveComment={
+          canWriteTracker ? (commentId) => resolveCommentMutation.mutate(commentId) : undefined
+        }
+        resolvingCommentId={
+          resolveCommentMutation.isPending ? (resolveCommentMutation.variables ?? null) : null
+        }
       />
     </div>
   );
@@ -239,6 +298,8 @@ const WorkItemPanel = (props: WorkItemPanelProps) => {
           }}
           onDelete={() => props.variant === 'full' && props.onDeleteItem(item.id)}
           onClose={onClose}
+          isUnblocking={unblockMutation.isPending}
+          onUnblock={() => unblockMutation.mutate()}
         />
 
         {/* Body */}
