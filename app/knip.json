@@ -13,15 +13,7 @@
     // form / use-mobile imports they pull in are still counted as used. Plain
     // `ignore` would drop them from the graph and produce ~20 false-positive
     // "unused dependency" reports.
-    "src/components/ui/**",
-
-    // Decomposition output from commit 2f12d8ab ("decompose 7 ProjectHub views
-    // into orchestrators + sections") that is built but not yet wired into a
-    // ProjectDetail tab. Kept intentionally pending wiring; listed as entry so
-    // their default export isn't flagged. Remove from this list once they're
-    // imported by a tab (then knip will track them normally).
-    "src/components/ProjectHub/BusinessReviewView/**",
-    "src/components/ProjectHub/ListView/**"
+    "src/components/ui/**"
   ],
   "project": ["src/**/*.{ts,tsx}"],
   "ignoreExportsUsedInFile": true,
