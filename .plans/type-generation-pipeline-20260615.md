@@ -1,6 +1,42 @@
 # Backend → Frontend Type Generation Pipeline
 
-**Status:** Proposed · **Date:** 2026-06-15 · **Owner:** TBD
+**Status:** In progress · **Date:** 2026-06-15 · **Owner:** TBD
+
+## Progress (what landed in the implementing PR)
+
+- ✅ **Phase 1 — pipeline.** `backend/scripts/export_openapi.py` (static dump),
+  committed `backend/openapi.json`, `@hey-api/openapi-ts` (typescript plugin
+  only) + `openapi-ts.config.ts`, `gen:schema`/`gen:types`/`gen:api` scripts,
+  generated `app/src/client` (eslint-ignored, README), and the `api-types` CI
+  drift-check job. Two clean adoptions proving the loop end-to-end:
+  `AuthContext.User → UserResponse`, `WorkItemPanel.AllDeveloper →
+  DeveloperResponse` (+ fixed `useBoardData`'s inline `{id,name,email}` drift).
+- ✅ **Phase 2a — contract harness.** `backend/tests/contract/` captures the
+  exact JSON of 6 endpoints through `TestClient` and asserts byte-identical
+  goldens. The regression oracle for response-model work.
+- ✅ **Phase 2b — response schemas (`responses=`, no runtime change).**
+  `ProjectDetailResponse`, `WorkItemListResponse`, `MyTaskResponse`,
+  `PersonalTaskResponse` (+ nested) added and flowing into generated TS. Contract
+  harness stays green, proving zero wire-format change.
+
+### Deferred to follow-up PRs (deliberately not in the first PR)
+
+- ⏭️ **Broad FE migration — collapse the ~35 duplicate hand-types onto generated
+  types.** This is per-consumer work, not a swap: the generated types correctly
+  mark fields nullable that the FE currently reads as non-null (e.g.
+  `PersonalTaskResponse.description`/`created_at` are `string | null`), so each
+  adoption surfaces real null-handling fixes across consumers. Do it entity by
+  entity (`PersonalTask`, then `Project`, then the 6 `WorkItem` / 8 `Sprint`
+  copies via `@/types/workItems` re-export), each its own reviewable change. The
+  generated types are available now; `src/types/workItems.ts` is the re-export
+  seam.
+- ⏭️ **Phase 3 — promote `responses=` → `response_model=`** for runtime
+  validation, one endpoint at a time, gated on the contract harness staying
+  byte-identical. Note the serialization quirks the harness already exposed
+  (int `0` vs float `0.0` for `completion_pct`; raw `datetime` on
+  `GET /workitems/{id}`) — some endpoints need handler normalization first and
+  may stay `responses=`-only. `get_workitems/{id}`, `overview`, `pulse` remain
+  explicitly deferred.
 
 Make the backend API schema the single source of truth for frontend
 request/response types, replacing the ~57 hand-written API-shape declarations
