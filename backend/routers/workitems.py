@@ -334,7 +334,48 @@ class SprintCreate(BaseModel):
     capacity_hours: int | None = None
 
 
-@router.get("/")
+class WorkItemListResponse(BaseModel):
+    """Response shape for ``GET /api/workitems/`` (one item per row).
+
+    Documents the wire format for OpenAPI/codegen only — the handler returns
+    plain dicts at runtime, so this is never used to re-serialize. Field
+    optionality mirrors the dict-building code in ``list_work_items``: the
+    numeric fields use an ``or 0`` default (never None), the string fields
+    ``assignee``/``sprint``/``epic``/``description`` use literal defaults
+    ("Unassigned"/"Backlog"/""), and the *_id / *_key / date fields are
+    nullable. ``id`` is stringified (matches ``SlimWorkItem.id``).
+    """
+
+    id: str
+    key: str
+    type: str
+    title: str
+    description: str = ""
+    status: str
+    priority: str
+    story_points: int = 0
+    assigned_hours: int = 0
+    estimated_hours: int = 0
+    remaining_hours: int = 0
+    logged_hours: int = 0
+    assignee: str = "Unassigned"
+    assignee_id: int | None = None
+    sprint: str = "Backlog"
+    sprint_id: int | None = None
+    epic: str = ""
+    tags: list[str] = []
+    acceptance_criteria: list = []
+    parent_id: int | None = None
+    epic_id: int | None = None
+    parent_key: str | None = None
+    epic_key: str | None = None
+    due_date: str | None = None
+    start_date: str | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
+
+
+@router.get("/", responses={200: {"model": list[WorkItemListResponse]}})
 def list_work_items(
     response: Response = None,
     project_id: int = None,
@@ -533,7 +574,49 @@ def list_board_items(
     ]
 
 
-@router.get("/my-tasks")
+class MyTaskResponse(BaseModel):
+    """Response shape for ``GET /api/workitems/my-tasks``.
+
+    OpenAPI/codegen documentation only — the handler returns plain dicts at
+    runtime. Overlaps heavily with ``WorkItemListResponse`` but is a distinct
+    shape: it adds ``is_overdue``/``project_id``/``project_name``/
+    ``reporter_name``/``completed_at``, drops ``start_date``/``created_at``/
+    ``updated_at``/``epic`` (string), and — unlike the list endpoint — passes
+    ``estimated_hours``/``logged_hours``/``remaining_hours`` straight from the
+    (nullable) columns without an ``or 0`` guard, so those are ``int | None``.
+    ``assigned_hours`` and ``story_points`` keep the ``or 0`` default.
+    """
+
+    id: str
+    key: str
+    title: str
+    type: str
+    status: str
+    priority: str
+    project_id: int | None = None
+    project_name: str = "Unknown"
+    due_date: str | None = None
+    estimated_hours: int | None = None
+    logged_hours: int | None = None
+    remaining_hours: int | None = None
+    is_overdue: bool
+    completed_at: str | None = None
+    story_points: int = 0
+    assigned_hours: int = 0
+    assignee: str
+    reporter_name: str | None = None
+    description: str = ""
+    tags: list[str] = []
+    acceptance_criteria: list = []
+    parent_id: int | None = None
+    parent_key: str | None = None
+    epic_id: int | None = None
+    epic_key: str | None = None
+    sprint_id: int | None = None
+    sprint: str = "Backlog"
+
+
+@router.get("/my-tasks", responses={200: {"model": list[MyTaskResponse]}})
 def get_my_tasks(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Get all tasks assigned to the current user across all projects"""
     from models.developer import Developer

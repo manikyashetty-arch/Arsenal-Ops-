@@ -1250,6 +1250,226 @@
         "title": "MoveTicketRequest",
         "type": "object"
       },
+      "MyTaskResponse": {
+        "description": "Response shape for ``GET /api/workitems/my-tasks``.\n\nOpenAPI/codegen documentation only \u2014 the handler returns plain dicts at\nruntime. Overlaps heavily with ``WorkItemListResponse`` but is a distinct\nshape: it adds ``is_overdue``/``project_id``/``project_name``/\n``reporter_name``/``completed_at``, drops ``start_date``/``created_at``/\n``updated_at``/``epic`` (string), and \u2014 unlike the list endpoint \u2014 passes\n``estimated_hours``/``logged_hours``/``remaining_hours`` straight from the\n(nullable) columns without an ``or 0`` guard, so those are ``int | None``.\n``assigned_hours`` and ``story_points`` keep the ``or 0`` default.",
+        "properties": {
+          "acceptance_criteria": {
+            "default": [],
+            "items": {},
+            "title": "Acceptance Criteria",
+            "type": "array"
+          },
+          "assigned_hours": {
+            "default": 0,
+            "title": "Assigned Hours",
+            "type": "integer"
+          },
+          "assignee": {
+            "title": "Assignee",
+            "type": "string"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "description": {
+            "default": "",
+            "title": "Description",
+            "type": "string"
+          },
+          "due_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Due Date"
+          },
+          "epic_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Epic Id"
+          },
+          "epic_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Epic Key"
+          },
+          "estimated_hours": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estimated Hours"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "is_overdue": {
+            "title": "Is Overdue",
+            "type": "boolean"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "logged_hours": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Logged Hours"
+          },
+          "parent_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Id"
+          },
+          "parent_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Key"
+          },
+          "priority": {
+            "title": "Priority",
+            "type": "string"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "project_name": {
+            "default": "Unknown",
+            "title": "Project Name",
+            "type": "string"
+          },
+          "remaining_hours": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remaining Hours"
+          },
+          "reporter_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reporter Name"
+          },
+          "sprint": {
+            "default": "Backlog",
+            "title": "Sprint",
+            "type": "string"
+          },
+          "sprint_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sprint Id"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "story_points": {
+            "default": 0,
+            "title": "Story Points",
+            "type": "integer"
+          },
+          "tags": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Tags",
+            "type": "array"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "key",
+          "title",
+          "type",
+          "status",
+          "priority",
+          "is_overdue",
+          "assignee"
+        ],
+        "title": "MyTaskResponse",
+        "type": "object"
+      },
       "PasswordChange": {
         "properties": {
           "current_password": {
@@ -1284,6 +1504,287 @@
           "new_password"
         ],
         "title": "PasswordReset",
+        "type": "object"
+      },
+      "PersonalTaskResponse": {
+        "description": "OpenAPI/codegen response shape for a single personal task.\n\nMirrors PersonalTask.to_dict() exactly. Documentation only \u2014 the routes\nkeep returning their existing dicts unchanged at runtime (this is wired via\n`responses=`, not `response_model=`, so there is no runtime re-serialization).\nNullability is taken from the to_dict serialization, not the DB columns:\n`created_at`/`updated_at` are guarded with `... if ... else None`.",
+        "properties": {
+          "converted_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Converted At"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "due_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Due Date"
+          },
+          "estimated_hours": {
+            "title": "Estimated Hours",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "is_converted": {
+            "title": "Is Converted",
+            "type": "boolean"
+          },
+          "priority": {
+            "title": "Priority",
+            "type": "string"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tags",
+            "type": "array"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "user_id": {
+            "title": "User Id",
+            "type": "integer"
+          },
+          "work_item_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Work Item Id"
+          }
+        },
+        "required": [
+          "id",
+          "user_id",
+          "title",
+          "status",
+          "priority",
+          "estimated_hours",
+          "tags",
+          "is_converted"
+        ],
+        "title": "PersonalTaskResponse",
+        "type": "object"
+      },
+      "ProjectArchitectureResponse": {
+        "description": "Shape of `selected_architecture` \u2014 the output of\n`Architecture.to_dict()` (models/architecture.py). It is `null` in the\ngolden (no selected architecture), so field optionality is inferred from\n`to_dict()` and the underlying nullable columns rather than the golden.",
+        "properties": {
+          "architecture_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Architecture Type"
+          },
+          "complexity": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Complexity"
+          },
+          "cons": {
+            "items": {},
+            "title": "Cons",
+            "type": "array"
+          },
+          "cost_analysis": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Analysis"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "estimated_cost": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estimated Cost"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "is_selected": {
+            "title": "Is Selected",
+            "type": "boolean"
+          },
+          "mermaid_code": {
+            "title": "Mermaid Code",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "project_id": {
+            "title": "Project Id",
+            "type": "integer"
+          },
+          "pros": {
+            "items": {},
+            "title": "Pros",
+            "type": "array"
+          },
+          "selected_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Selected At"
+          },
+          "time_to_implement": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Time To Implement"
+          },
+          "tools_recommended": {
+            "additionalProperties": true,
+            "title": "Tools Recommended",
+            "type": "object"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "required": [
+          "id",
+          "project_id",
+          "name",
+          "mermaid_code",
+          "tools_recommended",
+          "pros",
+          "cons",
+          "is_selected"
+        ],
+        "title": "ProjectArchitectureResponse",
         "type": "object"
       },
       "ProjectCategoryAssignment": {
@@ -1437,6 +1938,192 @@
           "description"
         ],
         "title": "ProjectCreate",
+        "type": "object"
+      },
+      "ProjectDetailResponse": {
+        "description": "Full project payload returned by the list (`GET /`) and detail\n(`GET /{project_id}`) endpoints. Mirrors `format_projects_batch` exactly.",
+        "properties": {
+          "category_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category Id"
+          },
+          "category_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category Name"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "developers": {
+            "items": {
+              "$ref": "#/components/schemas/ProjectDeveloperEntry"
+            },
+            "title": "Developers",
+            "type": "array"
+          },
+          "end_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Date"
+          },
+          "github_repo_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Github Repo Name"
+          },
+          "github_repo_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Github Repo Url"
+          },
+          "github_repo_urls": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Github Repo Urls",
+            "type": "array"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "key_prefix": {
+            "title": "Key Prefix",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "selected_architecture": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProjectArchitectureResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "work_item_stats": {
+            "$ref": "#/components/schemas/ProjectWorkItemStatsResponse"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "key_prefix",
+          "status",
+          "github_repo_urls",
+          "created_at",
+          "work_item_stats",
+          "developers"
+        ],
+        "title": "ProjectDetailResponse",
+        "type": "object"
+      },
+      "ProjectDeveloperEntry": {
+        "description": "One entry in the `developers` list, built by `_developers_by_project`.",
+        "properties": {
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "github_username": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Github Username"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "is_admin": {
+            "title": "Is Admin",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "responsibilities": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Responsibilities"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "email",
+          "role",
+          "is_admin"
+        ],
+        "title": "ProjectDeveloperEntry",
         "type": "object"
       },
       "ProjectGitHubUpdate": {
@@ -1866,6 +2553,43 @@
           "done_this_week"
         ],
         "title": "ProjectWeeklyTicketsResponse",
+        "type": "object"
+      },
+      "ProjectWorkItemStatsResponse": {
+        "description": "Shape of the `work_item_stats` block, built by\n`get_work_item_stats_batch` / `_empty_stats`.",
+        "properties": {
+          "by_status": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "By Status",
+            "type": "object"
+          },
+          "completed": {
+            "title": "Completed",
+            "type": "integer"
+          },
+          "completion_pct": {
+            "title": "Completion Pct",
+            "type": "number"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          },
+          "total_points": {
+            "title": "Total Points",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total",
+          "by_status",
+          "total_points",
+          "completed",
+          "completion_pct"
+        ],
+        "title": "ProjectWorkItemStatsResponse",
         "type": "object"
       },
       "PulseOverridePayload": {
@@ -2980,6 +3704,214 @@
           "project_id"
         ],
         "title": "WorkItemCreate",
+        "type": "object"
+      },
+      "WorkItemListResponse": {
+        "description": "Response shape for ``GET /api/workitems/`` (one item per row).\n\nDocuments the wire format for OpenAPI/codegen only \u2014 the handler returns\nplain dicts at runtime, so this is never used to re-serialize. Field\noptionality mirrors the dict-building code in ``list_work_items``: the\nnumeric fields use an ``or 0`` default (never None), the string fields\n``assignee``/``sprint``/``epic``/``description`` use literal defaults\n(\"Unassigned\"/\"Backlog\"/\"\"), and the *_id / *_key / date fields are\nnullable. ``id`` is stringified (matches ``SlimWorkItem.id``).",
+        "properties": {
+          "acceptance_criteria": {
+            "default": [],
+            "items": {},
+            "title": "Acceptance Criteria",
+            "type": "array"
+          },
+          "assigned_hours": {
+            "default": 0,
+            "title": "Assigned Hours",
+            "type": "integer"
+          },
+          "assignee": {
+            "default": "Unassigned",
+            "title": "Assignee",
+            "type": "string"
+          },
+          "assignee_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assignee Id"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "description": {
+            "default": "",
+            "title": "Description",
+            "type": "string"
+          },
+          "due_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Due Date"
+          },
+          "epic": {
+            "default": "",
+            "title": "Epic",
+            "type": "string"
+          },
+          "epic_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Epic Id"
+          },
+          "epic_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Epic Key"
+          },
+          "estimated_hours": {
+            "default": 0,
+            "title": "Estimated Hours",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "logged_hours": {
+            "default": 0,
+            "title": "Logged Hours",
+            "type": "integer"
+          },
+          "parent_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Id"
+          },
+          "parent_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Key"
+          },
+          "priority": {
+            "title": "Priority",
+            "type": "string"
+          },
+          "remaining_hours": {
+            "default": 0,
+            "title": "Remaining Hours",
+            "type": "integer"
+          },
+          "sprint": {
+            "default": "Backlog",
+            "title": "Sprint",
+            "type": "string"
+          },
+          "sprint_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sprint Id"
+          },
+          "start_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Date"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "story_points": {
+            "default": 0,
+            "title": "Story Points",
+            "type": "integer"
+          },
+          "tags": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Tags",
+            "type": "array"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "required": [
+          "id",
+          "key",
+          "type",
+          "title",
+          "status",
+          "priority"
+        ],
+        "title": "WorkItemListResponse",
         "type": "object"
       },
       "WorkItemUpdate": {
@@ -5690,7 +6622,13 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PersonalTaskResponse"
+                  },
+                  "title": "Response 200 Get Personal Tasks Api Personal Tasks  Get",
+                  "type": "array"
+                }
               }
             },
             "description": "Successful Response"
@@ -5823,7 +6761,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/PersonalTaskResponse"
+                }
               }
             },
             "description": "Successful Response"
@@ -6640,7 +7580,13 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ProjectDetailResponse"
+                  },
+                  "title": "Response 200 List Projects Api Projects  Get",
+                  "type": "array"
+                }
               }
             },
             "description": "Successful Response"
@@ -7044,7 +7990,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectDetailResponse"
+                }
               }
             },
             "description": "Successful Response"
@@ -8483,7 +9431,13 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/WorkItemListResponse"
+                  },
+                  "title": "Response 200 List Work Items Api Workitems  Get",
+                  "type": "array"
+                }
               }
             },
             "description": "Successful Response"
@@ -8723,7 +9677,13 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/MyTaskResponse"
+                  },
+                  "title": "Response 200 Get My Tasks Api Workitems My Tasks Get",
+                  "type": "array"
+                }
               }
             },
             "description": "Successful Response"

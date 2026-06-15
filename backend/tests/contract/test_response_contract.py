@@ -22,7 +22,6 @@ import os
 from pathlib import Path
 
 import pytest
-
 from conftest import PROJECT_WITH_DEVS
 
 GOLDEN_DIR = Path(__file__).parent / "golden"
@@ -38,13 +37,9 @@ def _check_or_regen(slug: str, payload):
     path = _golden_path(slug)
     if REGEN:
         GOLDEN_DIR.mkdir(parents=True, exist_ok=True)
-        path.write_text(
-            json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8"
-        )
+        path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
         return
-    assert path.exists(), (
-        f"Golden file missing: {path}. Run with REGEN_CONTRACT=1 to capture it."
-    )
+    assert path.exists(), f"Golden file missing: {path}. Run with REGEN_CONTRACT=1 to capture it."
     expected = json.loads(path.read_text(encoding="utf-8"))
     # Compare via canonical JSON so dict key order never matters, mirroring the
     # sort_keys=True serialization used to write the golden.
@@ -67,7 +62,5 @@ ENDPOINTS = [
 @pytest.mark.parametrize("slug,path,params", ENDPOINTS, ids=[e[0] for e in ENDPOINTS])
 def test_response_contract(client, slug, path, params):
     resp = client.get(path, params=params)
-    assert resp.status_code == 200, (
-        f"{path} returned {resp.status_code}: {resp.text[:500]}"
-    )
+    assert resp.status_code == 200, f"{path} returned {resp.status_code}: {resp.text[:500]}"
     _check_or_regen(slug, resp.json())

@@ -715,6 +715,131 @@ export type MoveTicketRequest = {
 };
 
 /**
+ * MyTaskResponse
+ *
+ * Response shape for ``GET /api/workitems/my-tasks``.
+ *
+ * OpenAPI/codegen documentation only — the handler returns plain dicts at
+ * runtime. Overlaps heavily with ``WorkItemListResponse`` but is a distinct
+ * shape: it adds ``is_overdue``/``project_id``/``project_name``/
+ * ``reporter_name``/``completed_at``, drops ``start_date``/``created_at``/
+ * ``updated_at``/``epic`` (string), and — unlike the list endpoint — passes
+ * ``estimated_hours``/``logged_hours``/``remaining_hours`` straight from the
+ * (nullable) columns without an ``or 0`` guard, so those are ``int | None``.
+ * ``assigned_hours`` and ``story_points`` keep the ``or 0`` default.
+ */
+export type MyTaskResponse = {
+  /**
+   * Acceptance Criteria
+   */
+  acceptance_criteria?: Array<unknown>;
+  /**
+   * Assigned Hours
+   */
+  assigned_hours?: number;
+  /**
+   * Assignee
+   */
+  assignee: string;
+  /**
+   * Completed At
+   */
+  completed_at?: string | null;
+  /**
+   * Description
+   */
+  description?: string;
+  /**
+   * Due Date
+   */
+  due_date?: string | null;
+  /**
+   * Epic Id
+   */
+  epic_id?: number | null;
+  /**
+   * Epic Key
+   */
+  epic_key?: string | null;
+  /**
+   * Estimated Hours
+   */
+  estimated_hours?: number | null;
+  /**
+   * Id
+   */
+  id: string;
+  /**
+   * Is Overdue
+   */
+  is_overdue: boolean;
+  /**
+   * Key
+   */
+  key: string;
+  /**
+   * Logged Hours
+   */
+  logged_hours?: number | null;
+  /**
+   * Parent Id
+   */
+  parent_id?: number | null;
+  /**
+   * Parent Key
+   */
+  parent_key?: string | null;
+  /**
+   * Priority
+   */
+  priority: string;
+  /**
+   * Project Id
+   */
+  project_id?: number | null;
+  /**
+   * Project Name
+   */
+  project_name?: string;
+  /**
+   * Remaining Hours
+   */
+  remaining_hours?: number | null;
+  /**
+   * Reporter Name
+   */
+  reporter_name?: string | null;
+  /**
+   * Sprint
+   */
+  sprint?: string;
+  /**
+   * Sprint Id
+   */
+  sprint_id?: number | null;
+  /**
+   * Status
+   */
+  status: string;
+  /**
+   * Story Points
+   */
+  story_points?: number;
+  /**
+   * Tags
+   */
+  tags?: Array<string>;
+  /**
+   * Title
+   */
+  title: string;
+  /**
+   * Type
+   */
+  type: string;
+};
+
+/**
  * PasswordChange
  */
 export type PasswordChange = {
@@ -740,6 +865,163 @@ export type PasswordReset = {
    * User Id
    */
   user_id: number;
+};
+
+/**
+ * PersonalTaskResponse
+ *
+ * OpenAPI/codegen response shape for a single personal task.
+ *
+ * Mirrors PersonalTask.to_dict() exactly. Documentation only — the routes
+ * keep returning their existing dicts unchanged at runtime (this is wired via
+ * `responses=`, not `response_model=`, so there is no runtime re-serialization).
+ * Nullability is taken from the to_dict serialization, not the DB columns:
+ * `created_at`/`updated_at` are guarded with `... if ... else None`.
+ */
+export type PersonalTaskResponse = {
+  /**
+   * Converted At
+   */
+  converted_at?: string | null;
+  /**
+   * Created At
+   */
+  created_at?: string | null;
+  /**
+   * Description
+   */
+  description?: string | null;
+  /**
+   * Due Date
+   */
+  due_date?: string | null;
+  /**
+   * Estimated Hours
+   */
+  estimated_hours: number;
+  /**
+   * Id
+   */
+  id: number;
+  /**
+   * Is Converted
+   */
+  is_converted: boolean;
+  /**
+   * Priority
+   */
+  priority: string;
+  /**
+   * Project Id
+   */
+  project_id?: number | null;
+  /**
+   * Status
+   */
+  status: string;
+  /**
+   * Tags
+   */
+  tags: Array<string>;
+  /**
+   * Title
+   */
+  title: string;
+  /**
+   * Updated At
+   */
+  updated_at?: string | null;
+  /**
+   * User Id
+   */
+  user_id: number;
+  /**
+   * Work Item Id
+   */
+  work_item_id?: number | null;
+};
+
+/**
+ * ProjectArchitectureResponse
+ *
+ * Shape of `selected_architecture` — the output of
+ * `Architecture.to_dict()` (models/architecture.py). It is `null` in the
+ * golden (no selected architecture), so field optionality is inferred from
+ * `to_dict()` and the underlying nullable columns rather than the golden.
+ */
+export type ProjectArchitectureResponse = {
+  /**
+   * Architecture Type
+   */
+  architecture_type?: string | null;
+  /**
+   * Complexity
+   */
+  complexity?: string | null;
+  /**
+   * Cons
+   */
+  cons: Array<unknown>;
+  /**
+   * Cost Analysis
+   */
+  cost_analysis?: {
+    [key: string]: unknown;
+  } | null;
+  /**
+   * Created At
+   */
+  created_at?: string | null;
+  /**
+   * Description
+   */
+  description?: string | null;
+  /**
+   * Estimated Cost
+   */
+  estimated_cost?: string | null;
+  /**
+   * Id
+   */
+  id: number;
+  /**
+   * Is Selected
+   */
+  is_selected: boolean;
+  /**
+   * Mermaid Code
+   */
+  mermaid_code: string;
+  /**
+   * Name
+   */
+  name: string;
+  /**
+   * Project Id
+   */
+  project_id: number;
+  /**
+   * Pros
+   */
+  pros: Array<unknown>;
+  /**
+   * Selected At
+   */
+  selected_at?: string | null;
+  /**
+   * Time To Implement
+   */
+  time_to_implement?: string | null;
+  /**
+   * Tools Recommended
+   */
+  tools_recommended: {
+    [key: string]: unknown;
+  };
+  /**
+   * Updated At
+   */
+  updated_at?: string | null;
 };
 
 /**
@@ -815,6 +1097,105 @@ export type ProjectCreate = {
    * Name
    */
   name: string;
+};
+
+/**
+ * ProjectDetailResponse
+ *
+ * Full project payload returned by the list (`GET /`) and detail
+ * (`GET /{project_id}`) endpoints. Mirrors `format_projects_batch` exactly.
+ */
+export type ProjectDetailResponse = {
+  /**
+   * Category Id
+   */
+  category_id?: number | null;
+  /**
+   * Category Name
+   */
+  category_name?: string | null;
+  /**
+   * Created At
+   */
+  created_at: string;
+  /**
+   * Description
+   */
+  description?: string | null;
+  /**
+   * Developers
+   */
+  developers: Array<ProjectDeveloperEntry>;
+  /**
+   * End Date
+   */
+  end_date?: string | null;
+  /**
+   * Github Repo Name
+   */
+  github_repo_name?: string | null;
+  /**
+   * Github Repo Url
+   */
+  github_repo_url?: string | null;
+  /**
+   * Github Repo Urls
+   */
+  github_repo_urls: Array<string>;
+  /**
+   * Id
+   */
+  id: number;
+  /**
+   * Key Prefix
+   */
+  key_prefix: string;
+  /**
+   * Name
+   */
+  name: string;
+  selected_architecture?: ProjectArchitectureResponse | null;
+  /**
+   * Status
+   */
+  status: string;
+  work_item_stats: ProjectWorkItemStatsResponse;
+};
+
+/**
+ * ProjectDeveloperEntry
+ *
+ * One entry in the `developers` list, built by `_developers_by_project`.
+ */
+export type ProjectDeveloperEntry = {
+  /**
+   * Email
+   */
+  email: string;
+  /**
+   * Github Username
+   */
+  github_username?: string | null;
+  /**
+   * Id
+   */
+  id: number;
+  /**
+   * Is Admin
+   */
+  is_admin: boolean;
+  /**
+   * Name
+   */
+  name: string;
+  /**
+   * Responsibilities
+   */
+  responsibilities?: string | null;
+  /**
+   * Role
+   */
+  role: string;
 };
 
 /**
@@ -1054,6 +1435,37 @@ export type ProjectWeeklyTicketsResponse = {
    * Todo Backlog
    */
   todo_backlog: Array<WeeklyTicket>;
+};
+
+/**
+ * ProjectWorkItemStatsResponse
+ *
+ * Shape of the `work_item_stats` block, built by
+ * `get_work_item_stats_batch` / `_empty_stats`.
+ */
+export type ProjectWorkItemStatsResponse = {
+  /**
+   * By Status
+   */
+  by_status: {
+    [key: string]: number;
+  };
+  /**
+   * Completed
+   */
+  completed: number;
+  /**
+   * Completion Pct
+   */
+  completion_pct: number;
+  /**
+   * Total
+   */
+  total: number;
+  /**
+   * Total Points
+   */
+  total_points: number;
 };
 
 /**
@@ -1661,6 +2073,130 @@ export type WorkItemCreate = {
    * Type
    */
   type?: string;
+};
+
+/**
+ * WorkItemListResponse
+ *
+ * Response shape for ``GET /api/workitems/`` (one item per row).
+ *
+ * Documents the wire format for OpenAPI/codegen only — the handler returns
+ * plain dicts at runtime, so this is never used to re-serialize. Field
+ * optionality mirrors the dict-building code in ``list_work_items``: the
+ * numeric fields use an ``or 0`` default (never None), the string fields
+ * ``assignee``/``sprint``/``epic``/``description`` use literal defaults
+ * ("Unassigned"/"Backlog"/""), and the *_id / *_key / date fields are
+ * nullable. ``id`` is stringified (matches ``SlimWorkItem.id``).
+ */
+export type WorkItemListResponse = {
+  /**
+   * Acceptance Criteria
+   */
+  acceptance_criteria?: Array<unknown>;
+  /**
+   * Assigned Hours
+   */
+  assigned_hours?: number;
+  /**
+   * Assignee
+   */
+  assignee?: string;
+  /**
+   * Assignee Id
+   */
+  assignee_id?: number | null;
+  /**
+   * Created At
+   */
+  created_at?: string | null;
+  /**
+   * Description
+   */
+  description?: string;
+  /**
+   * Due Date
+   */
+  due_date?: string | null;
+  /**
+   * Epic
+   */
+  epic?: string;
+  /**
+   * Epic Id
+   */
+  epic_id?: number | null;
+  /**
+   * Epic Key
+   */
+  epic_key?: string | null;
+  /**
+   * Estimated Hours
+   */
+  estimated_hours?: number;
+  /**
+   * Id
+   */
+  id: string;
+  /**
+   * Key
+   */
+  key: string;
+  /**
+   * Logged Hours
+   */
+  logged_hours?: number;
+  /**
+   * Parent Id
+   */
+  parent_id?: number | null;
+  /**
+   * Parent Key
+   */
+  parent_key?: string | null;
+  /**
+   * Priority
+   */
+  priority: string;
+  /**
+   * Remaining Hours
+   */
+  remaining_hours?: number;
+  /**
+   * Sprint
+   */
+  sprint?: string;
+  /**
+   * Sprint Id
+   */
+  sprint_id?: number | null;
+  /**
+   * Start Date
+   */
+  start_date?: string | null;
+  /**
+   * Status
+   */
+  status: string;
+  /**
+   * Story Points
+   */
+  story_points?: number;
+  /**
+   * Tags
+   */
+  tags?: Array<string>;
+  /**
+   * Title
+   */
+  title: string;
+  /**
+   * Type
+   */
+  type: string;
+  /**
+   * Updated At
+   */
+  updated_at?: string | null;
 };
 
 /**
@@ -3254,10 +3790,15 @@ export type GetPersonalTasksApiPersonalTasksGetError =
 
 export type GetPersonalTasksApiPersonalTasksGetResponses = {
   /**
+   * Response 200 Get Personal Tasks Api Personal Tasks  Get
+   *
    * Successful Response
    */
-  200: unknown;
+  200: Array<PersonalTaskResponse>;
 };
+
+export type GetPersonalTasksApiPersonalTasksGetResponse =
+  GetPersonalTasksApiPersonalTasksGetResponses[keyof GetPersonalTasksApiPersonalTasksGetResponses];
 
 export type CreatePersonalTaskApiPersonalTasksPostData = {
   body: CreatePersonalTaskRequest;
@@ -3338,8 +3879,11 @@ export type GetPersonalTaskApiPersonalTasksTaskIdGetResponses = {
   /**
    * Successful Response
    */
-  200: unknown;
+  200: PersonalTaskResponse;
 };
+
+export type GetPersonalTaskApiPersonalTasksTaskIdGetResponse =
+  GetPersonalTaskApiPersonalTasksTaskIdGetResponses[keyof GetPersonalTaskApiPersonalTasksTaskIdGetResponses];
 
 export type UpdatePersonalTaskApiPersonalTasksTaskIdPutData = {
   body: UpdatePersonalTaskRequest;
@@ -3794,10 +4338,15 @@ export type ListProjectsApiProjectsGetError =
 
 export type ListProjectsApiProjectsGetResponses = {
   /**
+   * Response 200 List Projects Api Projects  Get
+   *
    * Successful Response
    */
-  200: unknown;
+  200: Array<ProjectDetailResponse>;
 };
+
+export type ListProjectsApiProjectsGetResponse =
+  ListProjectsApiProjectsGetResponses[keyof ListProjectsApiProjectsGetResponses];
 
 export type CreateProjectApiProjectsPostData = {
   body: ProjectCreate;
@@ -4037,8 +4586,11 @@ export type GetProjectApiProjectsProjectIdGetResponses = {
   /**
    * Successful Response
    */
-  200: unknown;
+  200: ProjectDetailResponse;
 };
+
+export type GetProjectApiProjectsProjectIdGetResponse =
+  GetProjectApiProjectsProjectIdGetResponses[keyof GetProjectApiProjectsProjectIdGetResponses];
 
 export type UpdateProjectApiProjectsProjectIdPutData = {
   body: ProjectUpdate;
@@ -4874,10 +5426,15 @@ export type ListWorkItemsApiWorkitemsGetError =
 
 export type ListWorkItemsApiWorkitemsGetResponses = {
   /**
+   * Response 200 List Work Items Api Workitems  Get
+   *
    * Successful Response
    */
-  200: unknown;
+  200: Array<WorkItemListResponse>;
 };
+
+export type ListWorkItemsApiWorkitemsGetResponse =
+  ListWorkItemsApiWorkitemsGetResponses[keyof ListWorkItemsApiWorkitemsGetResponses];
 
 export type CreateWorkItemApiWorkitemsPostData = {
   body: WorkItemCreate;
@@ -5002,10 +5559,15 @@ export type GetMyTasksApiWorkitemsMyTasksGetData = {
 
 export type GetMyTasksApiWorkitemsMyTasksGetResponses = {
   /**
+   * Response 200 Get My Tasks Api Workitems My Tasks Get
+   *
    * Successful Response
    */
-  200: unknown;
+  200: Array<MyTaskResponse>;
 };
+
+export type GetMyTasksApiWorkitemsMyTasksGetResponse =
+  GetMyTasksApiWorkitemsMyTasksGetResponses[keyof GetMyTasksApiWorkitemsMyTasksGetResponses];
 
 export type GetProjectAnalyticsApiWorkitemsProjectsProjectIdAnalyticsGetData = {
   body?: never;

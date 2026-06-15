@@ -112,9 +112,7 @@ def _seed(db):
     db.flush()
 
     # --- Developers (admin matches admin user's email so my-tasks resolves) ---
-    admin_dev = Developer(
-        id=1, name="Admin User", email=ADMIN_EMAIL, github_username="adminhub"
-    )
+    admin_dev = Developer(id=1, name="Admin User", email=ADMIN_EMAIL, github_username="adminhub")
     other_dev = Developer(
         id=2, name="Other Dev", email="dev@arsenalai.com", github_username="devhub"
     )
