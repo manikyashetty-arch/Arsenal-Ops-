@@ -62,7 +62,16 @@ def _ticket_belongs_this_week(item, week_start: datetime, week_end: datetime) ->
 
     Done is eligible only if completed_at is within the week.
     in_progress / in_review are always eligible (work in flight).
+
+    Epics are never eligible: their `logged_hours` / `remaining_hours` are
+    rollups from child tickets (see the epic recompute in
+    `routers/workitems.py`), so including an assigned-and-in-flight epic
+    would double-count its children's hours. Excluding by type here keeps
+    the rule one place — all three callers (admin Employees, home capacity,
+    project PM tab) go through this function.
     """
+    if getattr(item, "type", None) == "epic":
+        return False
     if item.status == "done":
         return bool(item.completed_at and week_start <= item.completed_at <= week_end)
     return item.status in ("in_progress", "in_review")

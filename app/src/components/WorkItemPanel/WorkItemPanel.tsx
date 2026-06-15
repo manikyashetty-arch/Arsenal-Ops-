@@ -815,7 +815,11 @@ const WorkItemPanel = (props: WorkItemPanelProps) => {
           </select>
         </div>
       </div>
-      <div className="grid grid-cols-2 gap-3">
+      {/* Hours grid — Allocated Hours is hidden for epics (its value is a
+          rollup from child estimates, not directly editable). Grid drops
+          to 1-col so Story Points doesn't sit lonely in a half-empty row.
+          Mirrors the equivalent gating in the full variant above. */}
+      <div className={item.type === 'epic' ? 'grid grid-cols-1 gap-3' : 'grid grid-cols-2 gap-3'}>
         <div>
           <label className="text-xs font-medium text-[#737373] block mb-1.5">Story Points</label>
           <NumberInput
@@ -826,16 +830,20 @@ const WorkItemPanel = (props: WorkItemPanelProps) => {
             className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl"
           />
         </div>
-        <div>
-          <label className="text-xs font-medium text-[#737373] block mb-1.5">Allocated Hours</label>
-          <NumberInput
-            value={editForm.assigned_hours ?? 0}
-            onChange={(e) =>
-              setEditForm({ ...editForm, assigned_hours: parseInt(e.target.value) || 0 })
-            }
-            className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl"
-          />
-        </div>
+        {item.type !== 'epic' && (
+          <div>
+            <label className="text-xs font-medium text-[#737373] block mb-1.5">
+              Allocated Hours
+            </label>
+            <NumberInput
+              value={editForm.assigned_hours ?? 0}
+              onChange={(e) =>
+                setEditForm({ ...editForm, assigned_hours: parseInt(e.target.value) || 0 })
+              }
+              className="bg-[rgba(255,255,255,0.025)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl"
+            />
+          </div>
+        )}
       </div>
       <div>
         <label className="text-xs font-medium text-[#737373] block mb-1.5">Status</label>
