@@ -6,6 +6,7 @@ export { default as GoalsView } from './GoalsView';
 export { default as MyTasksView } from './MyTasksView';
 export { default as ActivityFeed } from './ActivityFeed';
 export { default as ReviewerView } from './ReviewerView';
+export { default as BlockedQueueView } from './BlockedQueueView';
 export { default as BusinessReviewView } from './BusinessReviewView';
 export { default as ProjectPulseView } from './ProjectPulseView';
 export { default as PulseSettingsView } from './PulseSettingsView';

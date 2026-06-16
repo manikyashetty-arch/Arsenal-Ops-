@@ -12,6 +12,9 @@ export interface WorkItem {
   estimated_hours?: number;
   logged_hours?: number;
   remaining_hours?: number;
+  /** Server-computed: true when the ticket has ≥1 unresolved blocker
+   *  comment. Used by sibling BlockedQueueView; ReviewerView ignores it. */
+  is_blocked?: boolean;
 }
 
 // The Reviewer queue renders comments via the shared <CommentThread>, so it

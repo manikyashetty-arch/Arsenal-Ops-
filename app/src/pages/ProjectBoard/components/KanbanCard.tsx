@@ -1,5 +1,5 @@
 import React from 'react';
-import { BookOpen, ClipboardList, Bug, Target, Clock } from 'lucide-react';
+import { BookOpen, ClipboardList, Bug, Target, Clock, Ban } from 'lucide-react';
 import TimeEntriesTable from '@/components/TimeEntriesTable';
 import { EpicChip } from '@/components/board/EpicChip';
 import { ParentChip } from '@/components/board/ParentChip';
@@ -70,7 +70,7 @@ const KanbanCard = ({
         draggedItem === item.id ? 'opacity-40 scale-95' : ''
       }`}
     >
-      {/* Type + Key */}
+      {/* Type + Key + Blocked badge */}
       <div className="flex items-center gap-2 mb-2.5">
         <div
           className="flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium"
@@ -80,6 +80,19 @@ const KanbanCard = ({
           {typeInfo.label}
         </div>
         <span className="text-[10px] text-[#E0B954] font-mono font-medium">{item.key}</span>
+        {/* Blocked badge — derived from `is_blocked` (server-computed:
+            ticket has ≥1 unresolved blocker comment). Red so it pops at
+            a glance on the kanban; the side panel's Unblock button is
+            the cleanest way to clear it. */}
+        {item.is_blocked && (
+          <span
+            className="ml-auto flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-semibold bg-[rgba(239,68,68,0.15)] text-[#EF4444] border border-[rgba(239,68,68,0.3)]"
+            title="This ticket has unresolved blocker comments"
+          >
+            <Ban className="w-2.5 h-2.5" />
+            Blocked
+          </span>
+        )}
       </div>
 
       {/* Hierarchy chips */}
