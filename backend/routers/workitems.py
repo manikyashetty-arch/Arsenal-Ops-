@@ -2134,7 +2134,7 @@ def move_ticket_to_sprint(
     }
 
 
-@router.get("/projects/{project_id}/sprints")
+@router.get("/projects/{project_id}/sprints")  # conflict-test marker for GitHub app
 def list_project_sprints(
     project_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
 ):
