@@ -361,7 +361,7 @@ export const useProjectsPageData = ({ user, confirm }: UseProjectsPageDataArgs) 
     setEditingPersonalTask(task);
     setEditPersonalTaskForm({
       title: task.title,
-      description: task.description,
+      description: task.description ?? '',
       priority: task.priority,
       due_date: task.due_date || '',
     });

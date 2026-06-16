@@ -71,8 +71,11 @@ class PersonalTaskResponse(BaseModel):
     tags: list[str]
     is_converted: bool
     converted_at: str | None = None
-    created_at: str | None = None
-    updated_at: str | None = None
+    # Always present on a persisted row (server-default timestamps); the
+    # to_dict() `else None` guards are defensive only. Typed non-null so the
+    # generated FE type doesn't force null-guards on never-null fields.
+    created_at: str
+    updated_at: str
 
 
 @router.get("/", responses={200: {"model": list[PersonalTaskResponse]}})

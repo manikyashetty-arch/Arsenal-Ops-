@@ -1916,15 +1916,8 @@
             "title": "Converted At"
           },
           "created_at": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Created At"
+            "title": "Created At",
+            "type": "string"
           },
           "description": {
             "anyOf": [
@@ -1991,15 +1984,8 @@
             "type": "string"
           },
           "updated_at": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Updated At"
+            "title": "Updated At",
+            "type": "string"
           },
           "user_id": {
             "title": "User Id",
@@ -2025,7 +2011,9 @@
           "priority",
           "estimated_hours",
           "tags",
-          "is_converted"
+          "is_converted",
+          "created_at",
+          "updated_at"
         ],
         "title": "PersonalTaskResponse",
         "type": "object"

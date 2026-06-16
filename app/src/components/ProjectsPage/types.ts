@@ -1,80 +1,22 @@
-import type { ProjectDeveloperEntry } from '@/client';
+import type {
+  DeveloperResponse,
+  MyTaskResponse,
+  PersonalTaskResponse,
+  ProjectDetailResponse,
+  ProjectWorkItemStatsResponse,
+} from '@/client';
 
-export interface ProjectStats {
-  total: number;
-  by_status: Record<string, number>;
-  total_points: number;
-  completed: number;
-  completion_pct: number;
-}
+export type ProjectStats = ProjectWorkItemStatsResponse;
 
-export interface Developer {
-  id: number;
-  name: string;
-  email: string;
-  github_username?: string;
-  avatar_url?: string;
-}
+export type Developer = DeveloperResponse;
 
-export interface Project {
-  id: number;
-  name: string;
-  description: string;
-  key_prefix: string;
-  status: string;
-  github_repo_url?: string;
-  github_repo_urls?: string[];
-  github_repo_name?: string;
-  created_at: string;
-  work_item_stats: ProjectStats;
-  developers: ProjectDeveloperEntry[];
-}
+export type Project = ProjectDetailResponse;
 
-export interface MyTask {
-  id: string;
-  key: string;
-  title: string;
-  type: string;
-  status: string;
-  priority: string;
-  project_id: number;
-  project_name: string;
-  due_date: string | null;
-  completed_at: string | null;
-  estimated_hours: number | null;
-  logged_hours: number | null;
-  remaining_hours: number | null;
-  is_overdue: boolean;
-  story_points?: number;
-  assigned_hours?: number;
-  assignee?: string;
-  assignee_id?: number | null;
-  reporter_name?: string | null;
-  description?: string;
-  tags?: string[];
-  acceptance_criteria?: string[];
-  parent_id?: number | null;
-  epic_id?: number | null;
-  sprint_id?: number | null;
-  sprint?: string;
-  parent_key?: string | null;
-  epic_key?: string | null;
-  is_personal?: boolean;
-}
+// Genuine FE-composition: the backend my-tasks response PLUS a frontend-only
+// `is_personal` flag (MyTasksBox merges personal tasks into the my-tasks list).
+export type MyTask = MyTaskResponse & { is_personal?: boolean };
 
-export interface PersonalTask {
-  id: number;
-  title: string;
-  description: string;
-  status: string;
-  priority: string;
-  estimated_hours: number;
-  due_date?: string;
-  tags: string[];
-  is_converted: boolean;
-  project_id?: number;
-  work_item_id?: number;
-}
+export type PersonalTask = PersonalTaskResponse;
 
 export interface ProjectMember {
   id: number;
