@@ -1011,7 +1011,24 @@ class GoalUpdate(BaseModel):
     due_date: datetime | None = None
 
 
-@router.get("/{project_id}/goals")
+class GoalResponse(BaseModel):
+    """Shape of one project goal — mirrors `ProjectGoal.to_dict()`
+    (models/project_goal.py). OpenAPI/codegen typing only (attached via
+    `responses=`); the handler returns the plain dict unchanged."""
+
+    id: int
+    project_id: int
+    title: str
+    description: str | None = None
+    status: str
+    progress: int
+    due_date: str | None = None
+    completed_at: str | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
+
+
+@router.get("/{project_id}/goals", responses={200: {"model": list[GoalResponse]}})
 def get_project_goals(
     project_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
 ):
@@ -1151,7 +1168,22 @@ class MilestoneCreate(BaseModel):
     due_date: datetime | None = None
 
 
-@router.get("/{project_id}/milestones")
+class MilestoneResponse(BaseModel):
+    """Shape of one project milestone — mirrors `ProjectMilestone.to_dict()`
+    (models/project_milestone.py). OpenAPI/codegen typing only (attached via
+    `responses=`); the handler returns the plain dict unchanged."""
+
+    id: int
+    project_id: int
+    title: str
+    description: str | None = None
+    due_date: str | None = None
+    completed_at: str | None = None
+    created_at: str | None = None
+    is_completed: bool
+
+
+@router.get("/{project_id}/milestones", responses={200: {"model": list[MilestoneResponse]}})
 def get_project_milestones(
     project_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
 ):
@@ -1293,7 +1325,26 @@ def delete_project_milestone(
 # --- Activity Feed ---
 
 
-@router.get("/{project_id}/activity")
+class ActivityResponse(BaseModel):
+    """Shape of one activity-feed entry — mirrors `ActivityLog.to_dict()`
+    (models/activity_log.py). OpenAPI/codegen typing only (attached via
+    `responses=`); the handler returns the plain dict unchanged. `details` is
+    an opaque JSON column, so it is typed loosely as a dict."""
+
+    id: int
+    project_id: int
+    user_id: int | None = None
+    action: str
+    entity_type: str
+    entity_id: int | None = None
+    title: str | None = None
+    details: dict | None = None
+    created_at: str | None = None
+    user_name: str
+    user_email: str | None = None
+
+
+@router.get("/{project_id}/activity", responses={200: {"model": list[ActivityResponse]}})
 def get_project_activity(
     project_id: int,
     limit: int = 50,

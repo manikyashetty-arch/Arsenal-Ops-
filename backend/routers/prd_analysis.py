@@ -25,7 +25,7 @@ from models.sprint import Sprint, SprintStatus
 from models.user import User
 from models.work_item import WorkItem
 from routers.auth import get_current_user, require_capability
-from routers.projects import require_project_admin
+from routers.projects import ProjectArchitectureResponse, require_project_admin
 from services.architecture_generator import architecture_generator
 from services.prd_processor import prd_processor
 from services.roadmap_generator import build_week_dates, roadmap_generator
@@ -62,6 +62,27 @@ class GenerateRoadmapTemplateRequest(BaseModel):
     start_date: str  # YYYY-MM-DD
     end_date: str  # YYYY-MM-DD
     sprint_weeks: int = Field(default=2, ge=1, le=6)
+
+
+class PRDAnalysisResponse(BaseModel):
+    """Shape of `PRDAnalysis.to_dict()` (models/architecture.py). Field
+    optionality is inferred from `to_dict()` and the underlying nullable
+    columns: `summary` is a nullable Text column; the JSON list columns are
+    coalesced to `[]`/`{}` so they are non-null but loosely typed.
+    `cost_analysis` is passed through unchanged and can be null."""
+
+    id: int
+    project_id: int
+    filename: str | None = None
+    summary: str | None = None
+    key_features: list[str]
+    technical_requirements: list[str]
+    # Opaque JSON blobs — kept loosely typed to match the untyped columns.
+    cost_analysis: dict | None = None
+    recommended_tools: dict
+    risks: list[dict]
+    timeline: list[dict]
+    created_at: str | None = None
 
 
 # Max accepted PRD upload size. PRDs are text-heavy and rarely exceed a few MB;
@@ -277,7 +298,10 @@ async def analyze_prd_text(
     )
 
 
-@router.get("/projects/{project_id}/architectures")
+@router.get(
+    "/projects/{project_id}/architectures",
+    responses={200: {"model": list[ProjectArchitectureResponse]}},
+)
 def get_project_architectures(
     project_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
 ):
@@ -292,7 +316,10 @@ def get_project_architectures(
     return [arch.to_dict() for arch in architectures]
 
 
-@router.get("/projects/{project_id}/analysis")
+@router.get(
+    "/projects/{project_id}/analysis",
+    responses={200: {"model": PRDAnalysisResponse}},
+)
 def get_project_analysis(
     project_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
 ):
@@ -310,7 +337,10 @@ def get_project_analysis(
     return analysis.to_dict()
 
 
-@router.get("/architectures/{architecture_id}")
+@router.get(
+    "/architectures/{architecture_id}",
+    responses={200: {"model": ProjectArchitectureResponse}},
+)
 def get_architecture(
     architecture_id: int,
     db: Session = Depends(get_db),

@@ -19,6 +19,107 @@
         "title": "AIRefineRequest",
         "type": "object"
       },
+      "ActivityResponse": {
+        "description": "Shape of one activity-feed entry \u2014 mirrors `ActivityLog.to_dict()`\n(models/activity_log.py). OpenAPI/codegen typing only (attached via\n`responses=`); the handler returns the plain dict unchanged. `details` is\nan opaque JSON column, so it is typed loosely as a dict.",
+        "properties": {
+          "action": {
+            "title": "Action",
+            "type": "string"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "details": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Details"
+          },
+          "entity_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entity Id"
+          },
+          "entity_type": {
+            "title": "Entity Type",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "project_id": {
+            "title": "Project Id",
+            "type": "integer"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "user_email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Email"
+          },
+          "user_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Id"
+          },
+          "user_name": {
+            "title": "User Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "project_id",
+          "action",
+          "entity_type",
+          "user_name"
+        ],
+        "title": "ActivityResponse",
+        "type": "object"
+      },
       "ArchitectureUpdate": {
         "properties": {
           "description": {
@@ -198,6 +299,30 @@
           "file"
         ],
         "title": "Body_upload_project_file_api_projects__project_id__files_post",
+        "type": "object"
+      },
+      "BurndownPoint": {
+        "description": "One day of the analytics burndown series.",
+        "properties": {
+          "completed": {
+            "title": "Completed",
+            "type": "integer"
+          },
+          "date": {
+            "title": "Date",
+            "type": "string"
+          },
+          "remaining": {
+            "title": "Remaining",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "date",
+          "remaining",
+          "completed"
+        ],
+        "title": "BurndownPoint",
         "type": "object"
       },
       "CommentCreate": {
@@ -465,12 +590,16 @@
             "type": "integer"
           },
           "tickets_by_priority": {
-            "additionalProperties": true,
+            "additionalProperties": {
+              "type": "integer"
+            },
             "title": "Tickets By Priority",
             "type": "object"
           },
           "tickets_by_status": {
-            "additionalProperties": true,
+            "additionalProperties": {
+              "type": "integer"
+            },
             "title": "Tickets By Status",
             "type": "object"
           },
@@ -1073,6 +1202,95 @@
         "title": "GoalCreate",
         "type": "object"
       },
+      "GoalResponse": {
+        "description": "Shape of one project goal \u2014 mirrors `ProjectGoal.to_dict()`\n(models/project_goal.py). OpenAPI/codegen typing only (attached via\n`responses=`); the handler returns the plain dict unchanged.",
+        "properties": {
+          "completed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "due_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Due Date"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "progress": {
+            "title": "Progress",
+            "type": "integer"
+          },
+          "project_id": {
+            "title": "Project Id",
+            "type": "integer"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "required": [
+          "id",
+          "project_id",
+          "title",
+          "status",
+          "progress"
+        ],
+        "title": "GoalResponse",
+        "type": "object"
+      },
       "GoalUpdate": {
         "properties": {
           "description": {
@@ -1231,6 +1449,79 @@
           "title"
         ],
         "title": "MilestoneCreate",
+        "type": "object"
+      },
+      "MilestoneResponse": {
+        "description": "Shape of one project milestone \u2014 mirrors `ProjectMilestone.to_dict()`\n(models/project_milestone.py). OpenAPI/codegen typing only (attached via\n`responses=`); the handler returns the plain dict unchanged.",
+        "properties": {
+          "completed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "due_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Due Date"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "is_completed": {
+            "title": "Is Completed",
+            "type": "boolean"
+          },
+          "project_id": {
+            "title": "Project Id",
+            "type": "integer"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "project_id",
+          "title",
+          "is_completed"
+        ],
+        "title": "MilestoneResponse",
         "type": "object"
       },
       "MoveTicketRequest": {
@@ -1470,6 +1761,110 @@
         "title": "MyTaskResponse",
         "type": "object"
       },
+      "PRDAnalysisResponse": {
+        "description": "Shape of `PRDAnalysis.to_dict()` (models/architecture.py). Field\noptionality is inferred from `to_dict()` and the underlying nullable\ncolumns: `summary` is a nullable Text column; the JSON list columns are\ncoalesced to `[]`/`{}` so they are non-null but loosely typed.\n`cost_analysis` is passed through unchanged and can be null.",
+        "properties": {
+          "cost_analysis": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Analysis"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "filename": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Filename"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "key_features": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Key Features",
+            "type": "array"
+          },
+          "project_id": {
+            "title": "Project Id",
+            "type": "integer"
+          },
+          "recommended_tools": {
+            "additionalProperties": true,
+            "title": "Recommended Tools",
+            "type": "object"
+          },
+          "risks": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Risks",
+            "type": "array"
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Summary"
+          },
+          "technical_requirements": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Technical Requirements",
+            "type": "array"
+          },
+          "timeline": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Timeline",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "project_id",
+          "key_features",
+          "technical_requirements",
+          "recommended_tools",
+          "risks",
+          "timeline"
+        ],
+        "title": "PRDAnalysisResponse",
+        "type": "object"
+      },
       "PasswordChange": {
         "properties": {
           "current_password": {
@@ -1633,6 +2028,78 @@
           "is_converted"
         ],
         "title": "PersonalTaskResponse",
+        "type": "object"
+      },
+      "ProjectAnalyticsResponse": {
+        "description": "OpenAPI response shape for the project analytics endpoint.\n\nAttached via ``responses=`` only \u2014 the handler still returns a plain dict, so\nthere is NO runtime re-serialization. Distribution fields are ``dict[str, int]``\nbecause the builders always emit integer counts.",
+        "properties": {
+          "burndown_data": {
+            "items": {
+              "$ref": "#/components/schemas/BurndownPoint"
+            },
+            "title": "Burndown Data",
+            "type": "array"
+          },
+          "completed_points": {
+            "title": "Completed Points",
+            "type": "integer"
+          },
+          "priority_distribution": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Priority Distribution",
+            "type": "object"
+          },
+          "status_distribution": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Status Distribution",
+            "type": "object"
+          },
+          "team_performance": {
+            "items": {
+              "$ref": "#/components/schemas/TeamPerformanceEntry"
+            },
+            "title": "Team Performance",
+            "type": "array"
+          },
+          "total_items": {
+            "title": "Total Items",
+            "type": "integer"
+          },
+          "total_story_points": {
+            "title": "Total Story Points",
+            "type": "integer"
+          },
+          "type_distribution": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Type Distribution",
+            "type": "object"
+          },
+          "velocity_data": {
+            "items": {
+              "$ref": "#/components/schemas/SprintVelocityPoint"
+            },
+            "title": "Velocity Data",
+            "type": "array"
+          }
+        },
+        "required": [
+          "total_items",
+          "total_story_points",
+          "completed_points",
+          "status_distribution",
+          "type_distribution",
+          "priority_distribution",
+          "velocity_data",
+          "burndown_data",
+          "team_performance"
+        ],
+        "title": "ProjectAnalyticsResponse",
         "type": "object"
       },
       "ProjectArchitectureResponse": {
@@ -2674,6 +3141,82 @@
         "title": "RoleCreateRequest",
         "type": "object"
       },
+      "RoleResponse": {
+        "description": "Role shape produced by _role_to_dict().\n\nUsed for OpenAPI/TS typing only (no runtime serialization). user_count is\nomitted by _role_to_dict when None, so it is optional/nullable here.",
+        "properties": {
+          "capability_keys": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Capability Keys",
+            "type": "array"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "is_system": {
+            "title": "Is System",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "user_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Count"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "is_system",
+          "capability_keys"
+        ],
+        "title": "RoleResponse",
+        "type": "object"
+      },
       "RoleUpdate": {
         "properties": {
           "role": {
@@ -2937,6 +3480,120 @@
         "title": "SprintCreate",
         "type": "object"
       },
+      "SprintResponse": {
+        "description": "OpenAPI response shape for the project sprints list (counts/points enriched).\n\nAttached via ``responses=`` only \u2014 the handler still returns plain dicts, so\nthere is NO runtime re-serialization. Nullability mirrors the Sprint ORM model\nand the dict builder in ``list_project_sprints``.",
+        "properties": {
+          "capacity_hours": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Capacity Hours"
+          },
+          "completed_points": {
+            "title": "Completed Points",
+            "type": "integer"
+          },
+          "completion_pct": {
+            "title": "Completion Pct",
+            "type": "number"
+          },
+          "done_count": {
+            "title": "Done Count",
+            "type": "integer"
+          },
+          "end_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Date"
+          },
+          "goal": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Goal"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "in_progress_count": {
+            "title": "In Progress Count",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "start_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Date"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "todo_count": {
+            "title": "Todo Count",
+            "type": "integer"
+          },
+          "total_items": {
+            "title": "Total Items",
+            "type": "integer"
+          },
+          "total_points": {
+            "title": "Total Points",
+            "type": "integer"
+          },
+          "velocity": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Velocity"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "status",
+          "total_items",
+          "todo_count",
+          "in_progress_count",
+          "done_count",
+          "total_points",
+          "completed_points",
+          "completion_pct"
+        ],
+        "title": "SprintResponse",
+        "type": "object"
+      },
       "SprintUpdate": {
         "properties": {
           "capacity_hours": {
@@ -2996,6 +3653,75 @@
           }
         },
         "title": "SprintUpdate",
+        "type": "object"
+      },
+      "SprintVelocityPoint": {
+        "description": "One sprint's committed/completed points for the analytics velocity chart.",
+        "properties": {
+          "committed": {
+            "title": "Committed",
+            "type": "integer"
+          },
+          "completed": {
+            "title": "Completed",
+            "type": "integer"
+          },
+          "sprint_name": {
+            "title": "Sprint Name",
+            "type": "string"
+          },
+          "start_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Date"
+          }
+        },
+        "required": [
+          "sprint_name",
+          "committed",
+          "completed"
+        ],
+        "title": "SprintVelocityPoint",
+        "type": "object"
+      },
+      "TeamPerformanceEntry": {
+        "description": "Per-assignee rollup for the analytics team-performance section.",
+        "properties": {
+          "completed_items": {
+            "title": "Completed Items",
+            "type": "integer"
+          },
+          "completed_points": {
+            "title": "Completed Points",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "total_items": {
+            "title": "Total Items",
+            "type": "integer"
+          },
+          "total_points": {
+            "title": "Total Points",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "total_items",
+          "completed_items",
+          "total_points",
+          "completed_points"
+        ],
+        "title": "TeamPerformanceEntry",
         "type": "object"
       },
       "TextAnalysisRequest": {
@@ -3368,6 +4094,78 @@
           "name"
         ],
         "title": "UserCreate",
+        "type": "object"
+      },
+      "UserListItemResponse": {
+        "description": "Rich admin user shape returned by GET /api/auth/admin/users.\n\nMirrors User.to_dict() plus the github_username joined from the linked\nDeveloper row. Used for OpenAPI/TS typing only (no runtime serialization).",
+        "properties": {
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "github_username": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Github Username"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "is_active": {
+            "title": "Is Active",
+            "type": "boolean"
+          },
+          "is_first_login": {
+            "title": "Is First Login",
+            "type": "boolean"
+          },
+          "last_login_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Login At"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "email",
+          "name",
+          "role",
+          "is_active",
+          "is_first_login"
+        ],
+        "title": "UserListItemResponse",
         "type": "object"
       },
       "UserProfileUpdate": {
@@ -5116,7 +5914,13 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/RoleResponse"
+                  },
+                  "title": "Response 200 List Roles Api Auth Admin Roles Get",
+                  "type": "array"
+                }
               }
             },
             "description": "Successful Response"
@@ -5148,7 +5952,9 @@
           "201": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/RoleResponse"
+                }
               }
             },
             "description": "Successful Response"
@@ -5236,7 +6042,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/RoleResponse"
+                }
               }
             },
             "description": "Successful Response"
@@ -5380,8 +6188,10 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "items": {},
-                  "title": "Response List Users Api Auth Admin Users Get",
+                  "items": {
+                    "$ref": "#/components/schemas/UserListItemResponse"
+                  },
+                  "title": "Response 200 List Users Api Auth Admin Users Get",
                   "type": "array"
                 }
               }
@@ -7009,7 +7819,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectArchitectureResponse"
+                }
               }
             },
             "description": "Successful Response"
@@ -7211,7 +8023,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/PRDAnalysisResponse"
+                }
               }
             },
             "description": "Successful Response"
@@ -7257,7 +8071,13 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ProjectArchitectureResponse"
+                  },
+                  "title": "Response 200 Get Project Architectures Api Prd Projects  Project Id  Architectures Get",
+                  "type": "array"
+                }
               }
             },
             "description": "Successful Response"
@@ -8102,7 +8922,13 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ActivityResponse"
+                  },
+                  "title": "Response 200 Get Project Activity Api Projects  Project Id  Activity Get",
+                  "type": "array"
+                }
               }
             },
             "description": "Successful Response"
@@ -8681,7 +9507,13 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/GoalResponse"
+                  },
+                  "title": "Response 200 Get Project Goals Api Projects  Project Id  Goals Get",
+                  "type": "array"
+                }
               }
             },
             "description": "Successful Response"
@@ -8944,7 +9776,13 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/MilestoneResponse"
+                  },
+                  "title": "Response 200 Get Project Milestones Api Projects  Project Id  Milestones Get",
+                  "type": "array"
+                }
               }
             },
             "description": "Successful Response"
@@ -9719,7 +10557,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectAnalyticsResponse"
+                }
               }
             },
             "description": "Successful Response"
@@ -9913,7 +10753,13 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SprintResponse"
+                  },
+                  "title": "Response 200 List Project Sprints Api Workitems Projects  Project Id  Sprints Get",
+                  "type": "array"
+                }
               }
             },
             "description": "Successful Response"

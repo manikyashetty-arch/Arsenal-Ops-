@@ -84,6 +84,24 @@ class UserResponse(BaseModel):
     is_first_login: bool
 
 
+class UserListItemResponse(BaseModel):
+    """Rich admin user shape returned by GET /api/auth/admin/users.
+
+    Mirrors User.to_dict() plus the github_username joined from the linked
+    Developer row. Used for OpenAPI/TS typing only (no runtime serialization).
+    """
+
+    id: int
+    email: str
+    name: str
+    role: str
+    is_active: bool
+    is_first_login: bool
+    created_at: str | None = None
+    last_login_at: str | None = None
+    github_username: str | None = None
+
+
 class PasswordChange(BaseModel):
     current_password: str
     new_password: str
@@ -334,7 +352,7 @@ def create_user(
     }
 
 
-@router.get("/admin/users", response_model=list)
+@router.get("/admin/users", responses={200: {"model": list[UserListItemResponse]}})
 def list_users(
     admin: User = Depends(require_capability("admin.users")),
     db: Session = Depends(get_db),
@@ -750,6 +768,23 @@ class RoleCapabilitiesRequest(BaseModel):
     capability_keys: list[str]
 
 
+class RoleResponse(BaseModel):
+    """Role shape produced by _role_to_dict().
+
+    Used for OpenAPI/TS typing only (no runtime serialization). user_count is
+    omitted by _role_to_dict when None, so it is optional/nullable here.
+    """
+
+    id: int
+    name: str
+    description: str | None = None
+    is_system: bool
+    capability_keys: list[str]
+    user_count: int | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
+
+
 def _role_to_dict(role: Role, user_count: int | None = None) -> dict:
     out = {
         "id": role.id,
@@ -851,7 +886,7 @@ def get_my_capabilities(current_user: User = Depends(get_current_user)):
     return payload
 
 
-@router.get("/admin/roles")
+@router.get("/admin/roles", responses={200: {"model": list[RoleResponse]}})
 def list_roles(
     db: Session = Depends(get_db), current_user: User = Depends(require_capability("admin.roles"))
 ):
@@ -867,7 +902,11 @@ def list_roles(
     return [_role_to_dict(r, user_count=counts.get(r.id, 0)) for r in roles]
 
 
-@router.post("/admin/roles", status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/admin/roles",
+    status_code=status.HTTP_201_CREATED,
+    responses={201: {"model": RoleResponse}},
+)
 def create_role(
     req: RoleCreateRequest,
     db: Session = Depends(get_db),
@@ -892,7 +931,7 @@ def create_role(
     return _role_to_dict(role, user_count=0)
 
 
-@router.get("/admin/roles/{role_id}")
+@router.get("/admin/roles/{role_id}", responses={200: {"model": RoleResponse}})
 def get_role(
     role_id: int,
     db: Session = Depends(get_db),

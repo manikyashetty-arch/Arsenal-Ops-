@@ -2043,7 +2043,81 @@ def move_ticket_to_sprint(
     }
 
 
-@router.get("/projects/{project_id}/sprints")
+class SprintResponse(BaseModel):
+    """OpenAPI response shape for the project sprints list (counts/points enriched).
+
+    Attached via ``responses=`` only — the handler still returns plain dicts, so
+    there is NO runtime re-serialization. Nullability mirrors the Sprint ORM model
+    and the dict builder in ``list_project_sprints``.
+    """
+
+    id: int
+    name: str
+    goal: str | None = None
+    status: str
+    start_date: str | None = None
+    end_date: str | None = None
+    capacity_hours: int | None = None
+    velocity: int | None = None
+    total_items: int
+    todo_count: int
+    in_progress_count: int
+    done_count: int
+    total_points: int
+    completed_points: int
+    completion_pct: float
+
+
+class SprintVelocityPoint(BaseModel):
+    """One sprint's committed/completed points for the analytics velocity chart."""
+
+    sprint_name: str
+    committed: int
+    completed: int
+    start_date: str | None = None
+
+
+class BurndownPoint(BaseModel):
+    """One day of the analytics burndown series."""
+
+    date: str
+    remaining: int
+    completed: int
+
+
+class TeamPerformanceEntry(BaseModel):
+    """Per-assignee rollup for the analytics team-performance section."""
+
+    name: str
+    total_items: int
+    completed_items: int
+    total_points: int
+    completed_points: int
+
+
+class ProjectAnalyticsResponse(BaseModel):
+    """OpenAPI response shape for the project analytics endpoint.
+
+    Attached via ``responses=`` only — the handler still returns a plain dict, so
+    there is NO runtime re-serialization. Distribution fields are ``dict[str, int]``
+    because the builders always emit integer counts.
+    """
+
+    total_items: int
+    total_story_points: int
+    completed_points: int
+    status_distribution: dict[str, int]
+    type_distribution: dict[str, int]
+    priority_distribution: dict[str, int]
+    velocity_data: list[SprintVelocityPoint]
+    burndown_data: list[BurndownPoint]
+    team_performance: list[TeamPerformanceEntry]
+
+
+@router.get(
+    "/projects/{project_id}/sprints",
+    responses={200: {"model": list[SprintResponse]}},
+)
 def list_project_sprints(
     project_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
 ):
@@ -2148,7 +2222,10 @@ def list_project_sprints(
     return result
 
 
-@router.get("/projects/{project_id}/analytics")
+@router.get(
+    "/projects/{project_id}/analytics",
+    responses={200: {"model": ProjectAnalyticsResponse}},
+)
 def get_project_analytics(
     project_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
 ):
