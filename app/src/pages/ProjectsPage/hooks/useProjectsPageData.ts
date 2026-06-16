@@ -12,12 +12,12 @@ import type {
   Developer,
   MyTask,
   PersonalTask,
-  ProjectMember,
   NewPersonalTaskForm,
   EditPersonalTaskForm,
   CreateProjectForm,
   SelectedDeveloper,
 } from '@/components/ProjectsPage';
+import type { ProjectDeveloperEntry } from '@/client';
 
 type AuthUser = ReturnType<typeof useAuth>['user'];
 
@@ -123,14 +123,14 @@ export const useProjectsPageData = ({ user, confirm }: UseProjectsPageDataArgs) 
 
   // ── react-query: project members (drives convert + add-task dialogs) ──────
   const projectMembersQuery = useQuery<{
-    developers?: ProjectMember[];
+    developers?: ProjectDeveloperEntry[];
   }>({
     queryKey: ['project', memberLookupProjectId],
     queryFn: () =>
-      apiFetch<{ developers?: ProjectMember[] }>(`/api/projects/${memberLookupProjectId}`),
+      apiFetch<{ developers?: ProjectDeveloperEntry[] }>(`/api/projects/${memberLookupProjectId}`),
     enabled: !!memberLookupProjectId,
   });
-  const projectMembers: ProjectMember[] = projectMembersQuery.data?.developers ?? [];
+  const projectMembers: ProjectDeveloperEntry[] = projectMembersQuery.data?.developers ?? [];
 
   // ── react-query: my tasks ─────────────────────────────────────────────────
   const myTasksQuery = useQuery<MyTask[]>({

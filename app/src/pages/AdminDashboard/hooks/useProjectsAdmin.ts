@@ -4,7 +4,7 @@ import { toast } from 'sonner';
 import { apiFetch } from '@/lib/api';
 import { invalidateProjectScope, invalidateAdminMembershipImpact } from '@/lib/invalidations';
 import type { ConfirmFn } from '@/components/ui/confirm-dialog';
-import type { ProjectResponse, ProjectWeeklyReportResponse } from '@/client';
+import type { ProjectResponse, ProjectWeeklyReportResponse, ProjectDetailResponse } from '@/client';
 import type { CategoryFormPayload, ProjectCategory } from '../types';
 import { ADMIN_REFETCH } from './adminRefetch';
 
@@ -220,16 +220,7 @@ export function useProjectsAdmin(confirm: ConfirmFn) {
     role: 'developer',
   });
 
-  const projectMembersQuery = useQuery<{
-    developers: Array<{
-      id: number;
-      name: string;
-      email: string;
-      role?: string;
-      responsibilities?: string;
-      is_admin?: boolean;
-    }>;
-  }>({
+  const projectMembersQuery = useQuery<ProjectDetailResponse>({
     queryKey: ['project', selectedProjectForMembers?.id],
     queryFn: () => apiFetch(`/api/projects/${selectedProjectForMembers!.id}`),
     enabled: !!selectedProjectForMembers,

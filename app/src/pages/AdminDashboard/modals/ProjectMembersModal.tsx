@@ -4,19 +4,11 @@ import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
 import { Empty, EmptyDescription } from '@/components/ui/empty';
 import { Modal } from '@/components/ui/modal';
+import type { ProjectDeveloperEntry } from '@/client';
 
 interface ProjectLike {
   id: number;
   name: string;
-}
-
-interface ProjectMember {
-  id: number;
-  name: string;
-  email: string;
-  role?: string;
-  responsibilities?: string;
-  is_admin?: boolean;
 }
 
 interface EmployeeLike {
@@ -34,7 +26,7 @@ interface ProjectMembersModalProps {
   open: boolean;
   onClose: () => void;
   selectedProjectForMembers: ProjectLike | null;
-  projectMembers: ProjectMember[];
+  projectMembers: ProjectDeveloperEntry[];
   projectMembersLoading: boolean;
   employees: EmployeeLike[];
   addMemberForm: AddMemberFormState;

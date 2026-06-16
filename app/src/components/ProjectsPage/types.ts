@@ -18,12 +18,6 @@ export type MyTask = MyTaskResponse & { is_personal?: boolean };
 
 export type PersonalTask = PersonalTaskResponse;
 
-export interface ProjectMember {
-  id: number;
-  name: string;
-  email: string;
-}
-
 export interface NewPersonalTaskForm {
   title: string;
   description: string;
