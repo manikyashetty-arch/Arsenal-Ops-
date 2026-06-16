@@ -2,7 +2,8 @@ import { useCallback, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
 import type { WorkItem } from '@/types/workItems';
-import type { SprintResponse } from '@/client';
+import { slimToWorkItem } from '@/types/workItemMappers';
+import type { SprintResponse, SlimWorkItem } from '@/client';
 import type { DeveloperResponse, ProjectDeveloperEntry } from '@/client';
 
 export interface Project {
@@ -54,9 +55,16 @@ export function useBoardData(id: string | undefined) {
   // bandwidth drops without breaking the detail view. Query key has a 'board'
   // suffix so it doesn't collide with the Hub view's full-shape cache.
   const workItemFilters = useMemo(() => ({ project_id: id }), [id]);
+  // The cache holds the canonical WorkItem[] view-model so the optimistic
+  // mutation hooks (which read/write this exact key) stay consistent. The wire
+  // shape (SlimWorkItem) is normalized inside the queryFn, so a backend change
+  // to the board payload surfaces as a type error here rather than silently.
   const workItemsQuery = useQuery<WorkItem[]>({
     queryKey: ['workItems', workItemFilters, 'board'],
-    queryFn: () => apiFetch<WorkItem[]>(`/api/workitems/board?project_id=${id}`),
+    queryFn: async () => {
+      const slim = await apiFetch<SlimWorkItem[]>(`/api/workitems/board?project_id=${id}`);
+      return slim.map(slimToWorkItem);
+    },
     enabled: !!id,
   });
   // Stabilize ref so downstream useMemos (parentExcludeIds, existingTags) don't bust on every render.

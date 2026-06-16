@@ -22,6 +22,7 @@ import type {
   MilestoneResponse,
   ActivityResponse,
   ProjectLinkResponse,
+  WorkItemListResponse,
 } from '@/client';
 
 /**
@@ -142,8 +143,8 @@ export const useProjectDetailData = (
   const hubWorkItemsQuery = useQuery<HubWorkItem[]>({
     queryKey: ['workItems', { project_id: id }],
     queryFn: async () => {
-      const data = await apiFetch<any[]>(`/api/workitems/?project_id=${id}`);
-      return data.map((item: any) => ({
+      const data = await apiFetch<WorkItemListResponse[]>(`/api/workitems/?project_id=${id}`);
+      return data.map((item) => ({
         id: item.id,
         key: item.key,
         title: item.title,
@@ -152,9 +153,12 @@ export const useProjectDetailData = (
         status: item.status,
         priority: item.priority,
         assignee: item.assignee,
-        assignee_id: item.assignee_id,
-        due_date: item.due_date,
-        start_date: item.start_date || item.started_at,
+        // HubWorkItem uses `T | undefined`; the wire type is `T | null`.
+        assignee_id: item.assignee_id ?? undefined,
+        due_date: item.due_date ?? undefined,
+        // The list endpoint exposes `start_date` (Gantt planned start); it does
+        // not carry the runtime `started_at` column.
+        start_date: item.start_date ?? undefined,
         estimated_hours: item.estimated_hours,
         logged_hours: item.logged_hours,
         remaining_hours: item.remaining_hours,

@@ -382,6 +382,11 @@
             "title": "Id",
             "type": "integer"
           },
+          "is_resolved": {
+            "default": false,
+            "title": "Is Resolved",
+            "type": "boolean"
+          },
           "mentions": {
             "items": {
               "type": "integer"
@@ -3552,6 +3557,11 @@
             "title": "Id",
             "type": "string"
           },
+          "is_blocked": {
+            "default": false,
+            "title": "Is Blocked",
+            "type": "boolean"
+          },
           "key": {
             "title": "Key",
             "type": "string"
@@ -4712,6 +4722,287 @@
           "project_id"
         ],
         "title": "WorkItemCreate",
+        "type": "object"
+      },
+      "WorkItemDetailResponse": {
+        "description": "Response shape for ``GET /api/workitems/{id}`` (the side-panel detail).\n\nDocuments the wire format for OpenAPI/codegen only \u2014 the handler returns a\nplain column dict at runtime, so this is never used to re-serialize. Unlike\nthe list endpoints, this one returns the *raw* model columns with no\nnormalization: ``id`` stays an int (not stringified), dates are serialized\nby FastAPI's jsonable_encoder, and there is no ``or 0`` / \"Unassigned\"\ndefaulting. Field nullability therefore mirrors the ORM columns directly \u2014\nonly the ``nullable=False`` columns are non-optional. The two trailing\nfields (``reporter_name``/``assignee_name``) are relation-derived and added\nby the handler. Gated byte-for-byte by tests/contract (workitems_detail).",
+        "properties": {
+          "acceptance_criteria": {
+            "default": [],
+            "items": {},
+            "title": "Acceptance Criteria",
+            "type": "array"
+          },
+          "assignee_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assignee Id"
+          },
+          "assignee_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assignee Name"
+          },
+          "attachments": {
+            "default": [],
+            "items": {},
+            "title": "Attachments",
+            "type": "array"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "due_date": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Due Date"
+          },
+          "epic_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Epic Id"
+          },
+          "estimated_hours": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estimated Hours"
+          },
+          "goal_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Goal Id"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "last_assigned_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Assigned At"
+          },
+          "logged_hours": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": 0,
+            "title": "Logged Hours"
+          },
+          "parent_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Id"
+          },
+          "priority": {
+            "title": "Priority",
+            "type": "string"
+          },
+          "project_id": {
+            "title": "Project Id",
+            "type": "integer"
+          },
+          "remaining_hours": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remaining Hours"
+          },
+          "reporter_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reporter Id"
+          },
+          "reporter_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reporter Name"
+          },
+          "sprint_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sprint Id"
+          },
+          "start_date": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Date"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "story_points": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": 0,
+            "title": "Story Points"
+          },
+          "tags": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Tags",
+            "type": "array"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "project_id",
+          "key",
+          "type",
+          "title",
+          "status",
+          "priority",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "WorkItemDetailResponse",
         "type": "object"
       },
       "WorkItemListResponse": {
@@ -11395,7 +11686,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/WorkItemDetailResponse"
+                }
               }
             },
             "description": "Successful Response"
@@ -11794,6 +12087,52 @@
           }
         ],
         "summary": "Get Work Item Time Entries",
+        "tags": [
+          "Work Items"
+        ]
+      }
+    },
+    "/api/workitems/{item_id}/unblock": {
+      "post": {
+        "description": "Resolve every unresolved blocker comment on this ticket in one shot.\n\n\"Blocked\" in Arsenal Ops isn't a separate work-item field \u2014 it's\nderived from whether the ticket has any open `comment_type='blocker'`\ncomments. Unblocking flips them all to `is_resolved=True` so the\nblocker chronology is preserved (the comment text + @mentions stay\nvisible, just marked as resolved). An activity row records the bulk\nunblock so the audit trail captures who unblocked + when.\n\nReturns the number of comments resolved \u2014 0 is a legal response when\nthe ticket was already unblocked (idempotent).",
+        "operationId": "unblock_work_item_api_workitems__item_id__unblock_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "item_id",
+            "required": true,
+            "schema": {
+              "title": "Item Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Unblock Work Item",
         "tags": [
           "Work Items"
         ]
