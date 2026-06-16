@@ -1,18 +1,9 @@
 import { useCallback, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
-import type { WorkItem, Sprint } from '@/types/workItems';
-import type { DeveloperResponse } from '@/client';
-
-export interface Developer {
-  id: number;
-  name: string;
-  email: string;
-  github_username?: string;
-  role: string;
-  responsibilities?: string;
-  is_admin?: boolean;
-}
+import type { WorkItem } from '@/types/workItems';
+import type { SprintResponse } from '@/client';
+import type { DeveloperResponse, ProjectDeveloperEntry } from '@/client';
 
 export interface Project {
   id: number;
@@ -28,7 +19,7 @@ export interface Project {
     completed: number;
     completion_pct: number;
   };
-  developers?: Developer[];
+  developers?: ProjectDeveloperEntry[];
 }
 
 /**
@@ -71,9 +62,9 @@ export function useBoardData(id: string | undefined) {
   // Stabilize ref so downstream useMemos (parentExcludeIds, existingTags) don't bust on every render.
   const workItems = useMemo(() => workItemsQuery.data ?? [], [workItemsQuery.data]);
 
-  const sprintsQuery = useQuery<Sprint[]>({
+  const sprintsQuery = useQuery<SprintResponse[]>({
     queryKey: ['sprints', id],
-    queryFn: () => apiFetch<Sprint[]>(`/api/workitems/projects/${id}/sprints`),
+    queryFn: () => apiFetch<SprintResponse[]>(`/api/workitems/projects/${id}/sprints`),
     enabled: !!id,
   });
   // Stable ref so the list-view memos below (orderedListSprints, listViewGroups)

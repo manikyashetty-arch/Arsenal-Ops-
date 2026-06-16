@@ -122,7 +122,7 @@ export const usePersonalTasksData = (confirm: ConfirmFn) => {
     setEditingTask(task);
     setNewTask({
       title: task.title,
-      description: task.description,
+      description: task.description ?? '',
       priority: task.priority,
       due_date: task.due_date || '',
       project_id: '',

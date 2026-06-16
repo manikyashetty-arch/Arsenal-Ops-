@@ -33,7 +33,11 @@ export interface CommentThreadComment {
   id: number;
   content: string;
   author_name: string;
-  comment_type?: CommentType;
+  // The backend serializes comment_type as a free-form string (it's one of
+  // CommentType in practice, but not constrained to it at the API boundary).
+  // Kept wide so generated API types (CommentResponse) assign cleanly; the
+  // render-time `=== 'blocker'` checks below work fine on a string.
+  comment_type?: string;
   mentions?: number[];
   created_at: string;
   /** Only meaningful on blocker / business_review comments. When true, the

@@ -4,7 +4,8 @@ import { toast } from 'sonner';
 import { apiFetch } from '@/lib/api';
 import { useAllDevelopers } from '@/hooks/useAllDevelopers';
 import { toastErrorHandler } from '@/lib/mutationToast';
-import type { WorkItem, AllDeveloper, Comment } from '../types';
+import type { WorkItem } from '../types';
+import type { CommentResponse, DeveloperResponse } from '@/client';
 import type { AddSubtaskFormValues } from '../AddSubtaskModal';
 import type { WorkItemPanelProps } from '../WorkItemPanel';
 
@@ -55,14 +56,14 @@ export function useWorkItemPanel({
     [item, itemDetailQuery.data],
   );
 
-  const commentsQuery = useQuery<Comment[]>({
+  const commentsQuery = useQuery<CommentResponse[]>({
     queryKey: ['workItem', item.id, 'comments'],
     queryFn: () => apiFetch(`/api/comments/workitem/${item.id}`),
     enabled: !!item.id,
   });
   const comments = useMemo(() => commentsQuery.data ?? [], [commentsQuery.data]);
 
-  const developersQuery = useAllDevelopers<AllDeveloper>();
+  const developersQuery = useAllDevelopers<DeveloperResponse>();
   const allDevelopers = useMemo(() => developersQuery.data ?? [], [developersQuery.data]);
   const devMap = useMemo(() => new Map(allDevelopers.map((d) => [d.id, d.name])), [allDevelopers]);
 
@@ -228,7 +229,7 @@ export function useWorkItemPanel({
 
   // ─── Comment mutation (both variants) ─────────────────────────────────────
   const submitComment = useMutation({
-    mutationFn: ({ content, type }: { content: string; type: Comment['comment_type'] }) =>
+    mutationFn: ({ content, type }: { content: string; type: CommentResponse['comment_type'] }) =>
       apiFetch('/api/comments/', {
         method: 'POST',
         body: JSON.stringify({

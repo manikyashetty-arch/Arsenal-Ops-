@@ -6,10 +6,10 @@ import type { ConfirmFn } from '@/components/ui/confirm-dialog';
 import { usePersonalTaskMutations } from '@/hooks/usePersonalTaskMutations';
 import type {
   PersonalTask,
-  ProjectMember,
   NewPersonalTaskForm,
   EditPersonalTaskForm,
 } from '@/components/ProjectsPage';
+import type { ProjectDeveloperEntry } from '@/client';
 
 const EMPTY_NEW_TASK: NewPersonalTaskForm = {
   title: '',
@@ -59,13 +59,13 @@ export const usePersonalTasksPanel = (confirm: ConfirmFn) => {
   const personalTasks = personalTasksQuery.data ?? [];
 
   // Project members drive the convert + add-task dialog assignee pickers.
-  const projectMembersQuery = useQuery<{ developers?: ProjectMember[] }>({
+  const projectMembersQuery = useQuery<{ developers?: ProjectDeveloperEntry[] }>({
     queryKey: ['project', memberLookupProjectId],
     queryFn: () =>
-      apiFetch<{ developers?: ProjectMember[] }>(`/api/projects/${memberLookupProjectId}`),
+      apiFetch<{ developers?: ProjectDeveloperEntry[] }>(`/api/projects/${memberLookupProjectId}`),
     enabled: !!memberLookupProjectId,
   });
-  const projectMembers: ProjectMember[] = projectMembersQuery.data?.developers ?? [];
+  const projectMembers: ProjectDeveloperEntry[] = projectMembersQuery.data?.developers ?? [];
 
   const cancelEditPersonalTask = () => {
     setIsEditingPersonalTask(false);
@@ -138,7 +138,7 @@ export const usePersonalTasksPanel = (confirm: ConfirmFn) => {
     setEditingPersonalTask(task);
     setEditPersonalTaskForm({
       title: task.title,
-      description: task.description,
+      description: task.description ?? '',
       priority: task.priority,
       due_date: task.due_date || '',
     });

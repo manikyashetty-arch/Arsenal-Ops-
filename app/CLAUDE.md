@@ -77,13 +77,28 @@ changes a backend schema but doesn't commit the regenerated `backend/openapi.jso
   invisible to the generator. So "add a type to the frontend" = "type the backend
   route."
 - **Consuming:** `import type { UserResponse } from '@/client';`
-- **Migration is in progress.** Today only a couple of entities consume generated
-  types (`AuthContext` `User` → `UserResponse`; `WorkItemPanel` `AllDeveloper` →
-  `DeveloperResponse`). Many API shapes are still hand-declared (see the F-T1 row
-  below and `src/pages/CONVENTIONS.md` rules 5–6). When you touch one and a
-  generated equivalent exists, prefer migrating it — but expect real null-handling
-  fixes, since generated types correctly mark fields nullable that hand-types
-  often read as non-null. Migrate entity-by-entity, not in bulk.
+- **Most API shapes now use generated types directly** (no aliases). Migrated:
+  User, Developer, Comment, ProjectDeveloper, Sprint, Project (list/admin),
+  Goal, Milestone, ActivityItem, ProjectLink, ProjectAnalytics, PersonalTask,
+  Employee, Role, DashboardStats, the weekly-report/time-entry shapes, and more.
+  When adding code, import the generated type from `@/client` — don't redeclare.
+- **Still hand-written, on purpose:**
+  - **FE compositions** — `WorkItem` (`@/types/workItems`; no single backend
+    response matches it — the board reads `SlimWorkItem`, the list
+    `WorkItemListResponse`, my-tasks `MyTaskResponse`; carries FE-only
+    `product_id`), `MyTask` (= `MyTaskResponse & { is_personal? }`),
+    `ProjectOverview`, `HubWorkItem`, the per-view Hub WorkItem subsets, and the
+    pulse `PulseData`/`Derived*` family. These compose or extend generated
+    pieces; keep them.
+    > Note: `Architecture`, `PRDAnalysis`, detail `Project`, and `ProjectMember`
+    > were previously kept but are now migrated — the backend models were
+    > tightened (nested `CostAnalysisResponse`, `pros`/`cons` → `list[str]`,
+    > `tools_recommended` → `dict[str, list[str]]`, `risks`/`timeline` nested) so
+    > the generated types are precise, and detail `Project`'s dead
+    > `architectures[]` field was dropped.
+- When you DO migrate one: prefer tightening the backend Pydantic model over FE
+  null-guards (generated types are honestly nullable; if a field is always
+  present, make it non-null in the response model and regenerate).
 
 > Backend note: a route exposes its type to the generator via either
 > `response_model=X` (runtime validation + the schema) or
@@ -301,7 +316,7 @@ See `.branch-review/frontend-audit-20260513-1726.md` for the full list and
 | `/admin` has no client-side role guard | `App.tsx:159` | Open |
 | JWT stored in localStorage (XSS-readable) | `AuthContext.tsx`, `lib/api.ts` | Open |
 | No global 401 handler — expired sessions fail silently | `lib/api.ts`, queryClient | Open |
-| `WorkItem` declared 6×, `PersonalTask` 3× — no shared types module | many files | In progress — generated-types pipeline now exists (`src/client`, see "API types"); migrate each onto the generated type as you touch it |
+| `WorkItem` declared 6×, `PersonalTask` 3× — no shared types module | many files | Largely fixed — most API shapes migrated to generated `src/client` types (see "API types"). Remaining hand-written types are FE-compositions or backend-too-loose cases, listed there. `WorkItem` canonical is intentionally kept (composition). |
 | `new Date('YYYY-MM-DD')` UTC-parses to local-previous-day | 6 files | Open — fix exists (`parseLocalDate`) in 3 files, not shared |
 | 4 fire-and-forget `apiFetch` mutations bypassing `useMutation` | `ProjectsPage`, `ProjectBoard` | Open — preserve current behaviour when extracting |
 | No error boundaries anywhere | entire tree | Open |

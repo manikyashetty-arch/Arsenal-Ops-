@@ -11,19 +11,18 @@ import { useAllDevelopers } from '@/hooks/useAllDevelopers';
 import type { ConfirmFn } from '@/components/ui/confirm-dialog';
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
+import type { HubWorkItem, ProjectOverview } from '../types';
 import type {
-  Developer,
-  Project,
-  PRDAnalysis,
-  Sprint,
-  ProjectAnalytics,
-  HubWorkItem,
-  Goal,
-  Milestone,
-  ActivityItem,
-  ProjectLink,
-  ProjectOverview,
-} from '../types';
+  SprintResponse,
+  ProjectDetailResponse,
+  PrdAnalysisResponse,
+  DeveloperResponse,
+  ProjectAnalyticsResponse,
+  GoalResponse,
+  MilestoneResponse,
+  ActivityResponse,
+  ProjectLinkResponse,
+} from '@/client';
 
 /**
  * All data concerns for ProjectDetail — the 11 queries, 9 mutations, their
@@ -52,24 +51,24 @@ export interface UseProjectDetailDataOptions {
   confirm?: ConfirmFn;
 }
 export interface UseProjectDetailDataResult {
-  project: Project | null;
+  project: ProjectDetailResponse | null;
   isLoading: boolean;
   accessDenied: boolean;
-  allDevelopers: Developer[];
-  sprints: Sprint[];
+  allDevelopers: DeveloperResponse[];
+  sprints: SprintResponse[];
   hubWorkItems: HubWorkItem[];
-  goals: Goal[];
-  milestones: Milestone[];
-  activities: ActivityItem[];
-  analytics: ProjectAnalytics | null;
-  prdAnalysis: PRDAnalysis | null;
-  links: ProjectLink[];
+  goals: GoalResponse[];
+  milestones: MilestoneResponse[];
+  activities: ActivityResponse[];
+  analytics: ProjectAnalyticsResponse | null;
+  prdAnalysis: PrdAnalysisResponse | null;
+  links: ProjectLinkResponse[];
   linksLoading: boolean;
   hubLoading: boolean;
   handleAddLink: (link: { name: string; url: string }) => void;
   handleDeleteLink: (linkId: number) => void;
   handleTaskUpdate: (itemId: string, updates: any) => void;
-  handleSaveEdit: (editForm: Partial<Project>) => void;
+  handleSaveEdit: (editForm: Partial<ProjectDetailResponse>) => void;
   handleAddDeveloper: (form: {
     developer_id: string;
     role: string;
@@ -118,9 +117,9 @@ export const useProjectDetailData = (
   }, [overviewQuery.data, id, queryClient]);
 
   // ── react-query: project ────────────────────────────────────────────────
-  const projectQuery = useQuery<Project>({
+  const projectQuery = useQuery<ProjectDetailResponse>({
     queryKey: ['project', id],
-    queryFn: () => apiFetch<Project>(`/api/projects/${id}`),
+    queryFn: () => apiFetch<ProjectDetailResponse>(`/api/projects/${id}`),
     enabled: !!id,
   });
   const project = projectQuery.data ?? null;
@@ -128,13 +127,13 @@ export const useProjectDetailData = (
   const accessDenied = projectQuery.error instanceof ApiError && projectQuery.error.status === 403;
 
   // ── react-query: developers (shared global query) ───────────────────────
-  const developersQuery = useAllDevelopers<Developer>();
+  const developersQuery = useAllDevelopers<DeveloperResponse>();
   const allDevelopers = developersQuery.data ?? [];
 
   // ── react-query: sprints ────────────────────────────────────────────────
-  const sprintsQuery = useQuery<Sprint[]>({
+  const sprintsQuery = useQuery<SprintResponse[]>({
     queryKey: ['sprints', id],
-    queryFn: () => apiFetch<Sprint[]>(`/api/workitems/projects/${id}/sprints`),
+    queryFn: () => apiFetch<SprintResponse[]>(`/api/workitems/projects/${id}/sprints`),
     enabled: !!id,
   });
   const sprints = sprintsQuery.data ?? [];
@@ -171,49 +170,49 @@ export const useProjectDetailData = (
   const hubWorkItems = useMemo(() => hubWorkItemsQuery.data ?? [], [hubWorkItemsQuery.data]);
 
   // ── react-query: goals ──────────────────────────────────────────────────
-  const goalsQuery = useQuery<Goal[]>({
+  const goalsQuery = useQuery<GoalResponse[]>({
     queryKey: ['hubData', id, 'goals'],
-    queryFn: () => apiFetch<Goal[]>(`/api/projects/${id}/goals`),
+    queryFn: () => apiFetch<GoalResponse[]>(`/api/projects/${id}/goals`),
     enabled: !!id,
   });
   const goals = useMemo(() => goalsQuery.data ?? [], [goalsQuery.data]);
 
   // ── react-query: milestones ─────────────────────────────────────────────
-  const milestonesQuery = useQuery<Milestone[]>({
+  const milestonesQuery = useQuery<MilestoneResponse[]>({
     queryKey: ['hubData', id, 'milestones'],
-    queryFn: () => apiFetch<Milestone[]>(`/api/projects/${id}/milestones`),
+    queryFn: () => apiFetch<MilestoneResponse[]>(`/api/projects/${id}/milestones`),
     enabled: !!id,
   });
   const milestones = useMemo(() => milestonesQuery.data ?? [], [milestonesQuery.data]);
 
   // ── react-query: activities ─────────────────────────────────────────────
-  const activitiesQuery = useQuery<ActivityItem[]>({
+  const activitiesQuery = useQuery<ActivityResponse[]>({
     queryKey: ['hubData', id, 'activities'],
-    queryFn: () => apiFetch<ActivityItem[]>(`/api/projects/${id}/activity`),
+    queryFn: () => apiFetch<ActivityResponse[]>(`/api/projects/${id}/activity`),
     enabled: !!id,
   });
   const activities = activitiesQuery.data ?? [];
 
   // ── react-query: analytics ──────────────────────────────────────────────
-  const analyticsQuery = useQuery<ProjectAnalytics>({
+  const analyticsQuery = useQuery<ProjectAnalyticsResponse>({
     queryKey: ['hubData', id, 'analytics'],
-    queryFn: () => apiFetch<ProjectAnalytics>(`/api/workitems/projects/${id}/analytics`),
+    queryFn: () => apiFetch<ProjectAnalyticsResponse>(`/api/workitems/projects/${id}/analytics`),
     enabled: !!id,
   });
   const analytics = analyticsQuery.data ?? null;
 
   // ── react-query: PRD analysis ───────────────────────────────────────────
-  const prdAnalysisQuery = useQuery<PRDAnalysis>({
+  const prdAnalysisQuery = useQuery<PrdAnalysisResponse>({
     queryKey: ['hubData', id, 'prd'],
-    queryFn: () => apiFetch<PRDAnalysis>(`/api/prd/projects/${id}/analysis`),
+    queryFn: () => apiFetch<PrdAnalysisResponse>(`/api/prd/projects/${id}/analysis`),
     enabled: !!id,
   });
   const prdAnalysis = prdAnalysisQuery.data ?? null;
 
   // ── react-query: links ──────────────────────────────────────────────────
-  const linksQuery = useQuery<ProjectLink[]>({
+  const linksQuery = useQuery<ProjectLinkResponse[]>({
     queryKey: ['project', id, 'links'],
-    queryFn: () => apiFetch<ProjectLink[]>(`/api/projects/${id}/links`),
+    queryFn: () => apiFetch<ProjectLinkResponse[]>(`/api/projects/${id}/links`),
     enabled: !!id,
   });
   const links = linksQuery.data ?? [];
@@ -231,7 +230,7 @@ export const useProjectDetailData = (
   // ── mutations: links ────────────────────────────────────────────────────
   const addLinkMutation = useMutation({
     mutationFn: (link: { name: string; url: string }) =>
-      apiFetch<ProjectLink>(`/api/projects/${id}/links`, {
+      apiFetch<ProjectLinkResponse>(`/api/projects/${id}/links`, {
         method: 'POST',
         body: JSON.stringify(link),
       }),
@@ -286,7 +285,7 @@ export const useProjectDetailData = (
 
   // ── mutation: save project edits ────────────────────────────────────────
   const saveEditMutation = useMutation({
-    mutationFn: (editForm: Partial<Project>) => {
+    mutationFn: (editForm: Partial<ProjectDetailResponse>) => {
       if (!project) throw new Error('No project');
       const updateData: any = {
         name: editForm.name || undefined,
@@ -299,7 +298,7 @@ export const useProjectDetailData = (
       Object.keys(updateData).forEach((key) => {
         if (updateData[key] === undefined) delete updateData[key];
       });
-      return apiFetch<Project>(`/api/projects/${project.id}`, {
+      return apiFetch<ProjectDetailResponse>(`/api/projects/${project.id}`, {
         method: 'PUT',
         body: JSON.stringify(updateData),
       });
@@ -320,7 +319,7 @@ export const useProjectDetailData = (
   });
 
   // Save project edits
-  const handleSaveEdit = (editForm: Partial<Project>) => {
+  const handleSaveEdit = (editForm: Partial<ProjectDetailResponse>) => {
     saveEditMutation.mutate(editForm);
   };
 

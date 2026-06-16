@@ -55,8 +55,8 @@ class DashboardStats(BaseModel):
     total_projects: int
     total_tickets: int
     active_sprints: int
-    tickets_by_status: dict
-    tickets_by_priority: dict
+    tickets_by_status: dict[str, int]
+    tickets_by_priority: dict[str, int]
 
 
 # Developer specialization mapping

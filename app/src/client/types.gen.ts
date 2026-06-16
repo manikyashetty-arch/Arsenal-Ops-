@@ -19,6 +19,63 @@ export type AiRefineRequest = {
 };
 
 /**
+ * ActivityResponse
+ *
+ * Shape of one activity-feed entry — mirrors `ActivityLog.to_dict()`
+ * (models/activity_log.py). OpenAPI/codegen typing only (attached via
+ * `responses=`); the handler returns the plain dict unchanged. `details` is
+ * an opaque JSON column, so it is typed loosely as a dict.
+ */
+export type ActivityResponse = {
+  /**
+   * Action
+   */
+  action: string;
+  /**
+   * Created At
+   */
+  created_at?: string | null;
+  /**
+   * Details
+   */
+  details?: {
+    [key: string]: unknown;
+  } | null;
+  /**
+   * Entity Id
+   */
+  entity_id?: number | null;
+  /**
+   * Entity Type
+   */
+  entity_type: string;
+  /**
+   * Id
+   */
+  id: number;
+  /**
+   * Project Id
+   */
+  project_id: number;
+  /**
+   * Title
+   */
+  title?: string | null;
+  /**
+   * User Email
+   */
+  user_email?: string | null;
+  /**
+   * User Id
+   */
+  user_id?: number | null;
+  /**
+   * User Name
+   */
+  user_name: string;
+};
+
+/**
  * ArchitectureUpdate
  */
 export type ArchitectureUpdate = {
@@ -124,6 +181,26 @@ export type BodyUploadProjectFileApiProjectsProjectIdFilesPost = {
    * File
    */
   file: string;
+};
+
+/**
+ * BurndownPoint
+ *
+ * One day of the analytics burndown series.
+ */
+export type BurndownPoint = {
+  /**
+   * Completed
+   */
+  completed: number;
+  /**
+   * Date
+   */
+  date: string;
+  /**
+   * Remaining
+   */
+  remaining: number;
 };
 
 /**
@@ -237,6 +314,37 @@ export type ConvertToTicketRequest = {
 };
 
 /**
+ * CostAnalysisResponse
+ *
+ * AI-produced cost breakdown. Best-effort shape — the AI output isn't
+ * validated, but these routes use `responses=` (not `response_model=`), so
+ * this only types the generated client; it never validates/filters at runtime.
+ * Shared by ProjectArchitectureResponse and PRDAnalysisResponse.
+ */
+export type CostAnalysisResponse = {
+  development?: DevelopmentCost | null;
+  infrastructure?: InfrastructureCost | null;
+  /**
+   * Total Estimated
+   */
+  total_estimated?: string | null;
+};
+
+/**
+ * CostBreakdownItem
+ */
+export type CostBreakdownItem = {
+  /**
+   * Cost
+   */
+  cost?: string | null;
+  /**
+   * Item
+   */
+  item?: string | null;
+};
+
+/**
  * CreatePersonalTaskRequest
  */
 export type CreatePersonalTaskRequest = {
@@ -278,13 +386,13 @@ export type DashboardStats = {
    * Tickets By Priority
    */
   tickets_by_priority: {
-    [key: string]: unknown;
+    [key: string]: number;
   };
   /**
    * Tickets By Status
    */
   tickets_by_status: {
-    [key: string]: unknown;
+    [key: string]: number;
   };
   /**
    * Total Employees
@@ -404,6 +512,20 @@ export type DeveloperUpdate = {
    * Name
    */
   name?: string | null;
+};
+
+/**
+ * DevelopmentCost
+ */
+export type DevelopmentCost = {
+  /**
+   * Breakdown
+   */
+  breakdown?: Array<CostBreakdownItem> | null;
+  /**
+   * Total
+   */
+  total?: string | null;
 };
 
 /**
@@ -621,6 +743,56 @@ export type GoalCreate = {
 };
 
 /**
+ * GoalResponse
+ *
+ * Shape of one project goal — mirrors `ProjectGoal.to_dict()`
+ * (models/project_goal.py). OpenAPI/codegen typing only (attached via
+ * `responses=`); the handler returns the plain dict unchanged.
+ */
+export type GoalResponse = {
+  /**
+   * Completed At
+   */
+  completed_at?: string | null;
+  /**
+   * Created At
+   */
+  created_at?: string | null;
+  /**
+   * Description
+   */
+  description?: string | null;
+  /**
+   * Due Date
+   */
+  due_date?: string | null;
+  /**
+   * Id
+   */
+  id: number;
+  /**
+   * Progress
+   */
+  progress: number;
+  /**
+   * Project Id
+   */
+  project_id: number;
+  /**
+   * Status
+   */
+  status: string;
+  /**
+   * Title
+   */
+  title: string;
+  /**
+   * Updated At
+   */
+  updated_at?: string | null;
+};
+
+/**
  * GoalUpdate
  */
 export type GoalUpdate = {
@@ -669,6 +841,24 @@ export type HttpValidationError = {
 };
 
 /**
+ * InfrastructureCost
+ */
+export type InfrastructureCost = {
+  /**
+   * Annual
+   */
+  annual?: string | null;
+  /**
+   * Breakdown
+   */
+  breakdown?: Array<CostBreakdownItem> | null;
+  /**
+   * Monthly
+   */
+  monthly?: string | null;
+};
+
+/**
  * LogHoursRequest
  */
 export type LogHoursRequest = {
@@ -698,6 +888,48 @@ export type MilestoneCreate = {
    * Due Date
    */
   due_date?: string | null;
+  /**
+   * Title
+   */
+  title: string;
+};
+
+/**
+ * MilestoneResponse
+ *
+ * Shape of one project milestone — mirrors `ProjectMilestone.to_dict()`
+ * (models/project_milestone.py). OpenAPI/codegen typing only (attached via
+ * `responses=`); the handler returns the plain dict unchanged.
+ */
+export type MilestoneResponse = {
+  /**
+   * Completed At
+   */
+  completed_at?: string | null;
+  /**
+   * Created At
+   */
+  created_at?: string | null;
+  /**
+   * Description
+   */
+  description?: string | null;
+  /**
+   * Due Date
+   */
+  due_date?: string | null;
+  /**
+   * Id
+   */
+  id: number;
+  /**
+   * Is Completed
+   */
+  is_completed: boolean;
+  /**
+   * Project Id
+   */
+  project_id: number;
   /**
    * Title
    */
@@ -840,6 +1072,99 @@ export type MyTaskResponse = {
 };
 
 /**
+ * PRDAnalysisResponse
+ *
+ * Shape of `PRDAnalysis.to_dict()` (models/architecture.py). Field
+ * optionality is inferred from `to_dict()` and the underlying nullable
+ * columns: `summary` is a nullable Text column; the JSON list columns are
+ * coalesced to `[]`/`{}`. The AI-produced blobs (cost_analysis / risks /
+ * timeline / recommended_tools) are best-effort shapes — typed for the
+ * generated client only (these routes use `responses=`, never
+ * `response_model=`, so nothing is validated/filtered at runtime).
+ */
+export type PrdAnalysisResponse = {
+  cost_analysis?: CostAnalysisResponse | null;
+  /**
+   * Created At
+   */
+  created_at?: string | null;
+  /**
+   * Filename
+   */
+  filename?: string | null;
+  /**
+   * Id
+   */
+  id: number;
+  /**
+   * Key Features
+   */
+  key_features: Array<string>;
+  /**
+   * Project Id
+   */
+  project_id: number;
+  /**
+   * Recommended Tools
+   */
+  recommended_tools: {
+    [key: string]: Array<string>;
+  };
+  /**
+   * Risks
+   */
+  risks: Array<PrdRisk>;
+  /**
+   * Summary
+   */
+  summary?: string | null;
+  /**
+   * Technical Requirements
+   */
+  technical_requirements: Array<string>;
+  /**
+   * Timeline
+   */
+  timeline: Array<PrdTimelinePhase>;
+};
+
+/**
+ * PRDRisk
+ */
+export type PrdRisk = {
+  /**
+   * Impact
+   */
+  impact?: string | null;
+  /**
+   * Mitigation
+   */
+  mitigation?: string | null;
+  /**
+   * Risk
+   */
+  risk?: string | null;
+};
+
+/**
+ * PRDTimelinePhase
+ */
+export type PrdTimelinePhase = {
+  /**
+   * Duration
+   */
+  duration?: string | null;
+  /**
+   * Phase
+   */
+  phase?: string | null;
+  /**
+   * Tasks
+   */
+  tasks?: Array<string> | null;
+};
+
+/**
  * PasswordChange
  */
 export type PasswordChange = {
@@ -886,7 +1211,7 @@ export type PersonalTaskResponse = {
   /**
    * Created At
    */
-  created_at?: string | null;
+  created_at: string;
   /**
    * Description
    */
@@ -930,7 +1255,7 @@ export type PersonalTaskResponse = {
   /**
    * Updated At
    */
-  updated_at?: string | null;
+  updated_at: string;
   /**
    * User Id
    */
@@ -939,6 +1264,60 @@ export type PersonalTaskResponse = {
    * Work Item Id
    */
   work_item_id?: number | null;
+};
+
+/**
+ * ProjectAnalyticsResponse
+ *
+ * OpenAPI response shape for the project analytics endpoint.
+ *
+ * Attached via ``responses=`` only — the handler still returns a plain dict, so
+ * there is NO runtime re-serialization. Distribution fields are ``dict[str, int]``
+ * because the builders always emit integer counts.
+ */
+export type ProjectAnalyticsResponse = {
+  /**
+   * Burndown Data
+   */
+  burndown_data: Array<BurndownPoint>;
+  /**
+   * Completed Points
+   */
+  completed_points: number;
+  /**
+   * Priority Distribution
+   */
+  priority_distribution: {
+    [key: string]: number;
+  };
+  /**
+   * Status Distribution
+   */
+  status_distribution: {
+    [key: string]: number;
+  };
+  /**
+   * Team Performance
+   */
+  team_performance: Array<TeamPerformanceEntry>;
+  /**
+   * Total Items
+   */
+  total_items: number;
+  /**
+   * Total Story Points
+   */
+  total_story_points: number;
+  /**
+   * Type Distribution
+   */
+  type_distribution: {
+    [key: string]: number;
+  };
+  /**
+   * Velocity Data
+   */
+  velocity_data: Array<SprintVelocityPoint>;
 };
 
 /**
@@ -961,13 +1340,8 @@ export type ProjectArchitectureResponse = {
   /**
    * Cons
    */
-  cons: Array<unknown>;
-  /**
-   * Cost Analysis
-   */
-  cost_analysis?: {
-    [key: string]: unknown;
-  } | null;
+  cons: Array<string>;
+  cost_analysis?: CostAnalysisResponse | null;
   /**
    * Created At
    */
@@ -1003,7 +1377,7 @@ export type ProjectArchitectureResponse = {
   /**
    * Pros
    */
-  pros: Array<unknown>;
+  pros: Array<string>;
   /**
    * Selected At
    */
@@ -1016,7 +1390,7 @@ export type ProjectArchitectureResponse = {
    * Tools Recommended
    */
   tools_recommended: {
-    [key: string]: unknown;
+    [key: string]: Array<string>;
   };
   /**
    * Updated At
@@ -1527,6 +1901,49 @@ export type RoleCreateRequest = {
 };
 
 /**
+ * RoleResponse
+ *
+ * Role shape produced by _role_to_dict().
+ *
+ * Used for OpenAPI/TS typing only (no runtime serialization). user_count is
+ * omitted by _role_to_dict when None, so it is optional/nullable here.
+ */
+export type RoleResponse = {
+  /**
+   * Capability Keys
+   */
+  capability_keys: Array<string>;
+  /**
+   * Created At
+   */
+  created_at?: string | null;
+  /**
+   * Description
+   */
+  description?: string | null;
+  /**
+   * Id
+   */
+  id: number;
+  /**
+   * Is System
+   */
+  is_system: boolean;
+  /**
+   * Name
+   */
+  name: string;
+  /**
+   * Updated At
+   */
+  updated_at?: string | null;
+  /**
+   * User Count
+   */
+  user_count?: number | null;
+};
+
+/**
  * RoleUpdate
  */
 export type RoleUpdate = {
@@ -1673,6 +2090,78 @@ export type SprintCreate = {
 };
 
 /**
+ * SprintResponse
+ *
+ * OpenAPI response shape for the project sprints list (counts/points enriched).
+ *
+ * Attached via ``responses=`` only — the handler still returns plain dicts, so
+ * there is NO runtime re-serialization. Nullability mirrors the Sprint ORM model
+ * and the dict builder in ``list_project_sprints``.
+ */
+export type SprintResponse = {
+  /**
+   * Capacity Hours
+   */
+  capacity_hours?: number | null;
+  /**
+   * Completed Points
+   */
+  completed_points: number;
+  /**
+   * Completion Pct
+   */
+  completion_pct: number;
+  /**
+   * Done Count
+   */
+  done_count: number;
+  /**
+   * End Date
+   */
+  end_date?: string | null;
+  /**
+   * Goal
+   */
+  goal?: string | null;
+  /**
+   * Id
+   */
+  id: number;
+  /**
+   * In Progress Count
+   */
+  in_progress_count: number;
+  /**
+   * Name
+   */
+  name: string;
+  /**
+   * Start Date
+   */
+  start_date?: string | null;
+  /**
+   * Status
+   */
+  status: string;
+  /**
+   * Todo Count
+   */
+  todo_count: number;
+  /**
+   * Total Items
+   */
+  total_items: number;
+  /**
+   * Total Points
+   */
+  total_points: number;
+  /**
+   * Velocity
+   */
+  velocity?: number | null;
+};
+
+/**
  * SprintUpdate
  */
 export type SprintUpdate = {
@@ -1696,6 +2185,58 @@ export type SprintUpdate = {
    * Start Date
    */
   start_date?: string | null;
+};
+
+/**
+ * SprintVelocityPoint
+ *
+ * One sprint's committed/completed points for the analytics velocity chart.
+ */
+export type SprintVelocityPoint = {
+  /**
+   * Committed
+   */
+  committed: number;
+  /**
+   * Completed
+   */
+  completed: number;
+  /**
+   * Sprint Name
+   */
+  sprint_name: string;
+  /**
+   * Start Date
+   */
+  start_date?: string | null;
+};
+
+/**
+ * TeamPerformanceEntry
+ *
+ * Per-assignee rollup for the analytics team-performance section.
+ */
+export type TeamPerformanceEntry = {
+  /**
+   * Completed Items
+   */
+  completed_items: number;
+  /**
+   * Completed Points
+   */
+  completed_points: number;
+  /**
+   * Name
+   */
+  name: string;
+  /**
+   * Total Items
+   */
+  total_items: number;
+  /**
+   * Total Points
+   */
+  total_points: number;
 };
 
 /**
@@ -1879,6 +2420,53 @@ export type UserCreate = {
    * Role
    */
   role?: string;
+};
+
+/**
+ * UserListItemResponse
+ *
+ * Rich admin user shape returned by GET /api/auth/admin/users.
+ *
+ * Mirrors User.to_dict() plus the github_username joined from the linked
+ * Developer row. Used for OpenAPI/TS typing only (no runtime serialization).
+ */
+export type UserListItemResponse = {
+  /**
+   * Created At
+   */
+  created_at: string;
+  /**
+   * Email
+   */
+  email: string;
+  /**
+   * Github Username
+   */
+  github_username?: string | null;
+  /**
+   * Id
+   */
+  id: number;
+  /**
+   * Is Active
+   */
+  is_active: boolean;
+  /**
+   * Is First Login
+   */
+  is_first_login: boolean;
+  /**
+   * Last Login At
+   */
+  last_login_at?: string | null;
+  /**
+   * Name
+   */
+  name: string;
+  /**
+   * Role
+   */
+  role: string;
 };
 
 /**
@@ -2864,10 +3452,15 @@ export type ListRolesApiAuthAdminRolesGetData = {
 
 export type ListRolesApiAuthAdminRolesGetResponses = {
   /**
+   * Response 200 List Roles Api Auth Admin Roles Get
+   *
    * Successful Response
    */
-  200: unknown;
+  200: Array<RoleResponse>;
 };
+
+export type ListRolesApiAuthAdminRolesGetResponse =
+  ListRolesApiAuthAdminRolesGetResponses[keyof ListRolesApiAuthAdminRolesGetResponses];
 
 export type CreateRoleApiAuthAdminRolesPostData = {
   body: RoleCreateRequest;
@@ -2890,8 +3483,11 @@ export type CreateRoleApiAuthAdminRolesPostResponses = {
   /**
    * Successful Response
    */
-  201: unknown;
+  201: RoleResponse;
 };
+
+export type CreateRoleApiAuthAdminRolesPostResponse =
+  CreateRoleApiAuthAdminRolesPostResponses[keyof CreateRoleApiAuthAdminRolesPostResponses];
 
 export type DeleteRoleApiAuthAdminRolesRoleIdDeleteData = {
   body?: never;
@@ -2948,8 +3544,11 @@ export type GetRoleApiAuthAdminRolesRoleIdGetResponses = {
   /**
    * Successful Response
    */
-  200: unknown;
+  200: RoleResponse;
 };
+
+export type GetRoleApiAuthAdminRolesRoleIdGetResponse =
+  GetRoleApiAuthAdminRolesRoleIdGetResponses[keyof GetRoleApiAuthAdminRolesRoleIdGetResponses];
 
 export type UpdateRoleApiAuthAdminRolesRoleIdPutData = {
   body: RoleUpdateRequest;
@@ -3018,11 +3617,11 @@ export type ListUsersApiAuthAdminUsersGetData = {
 
 export type ListUsersApiAuthAdminUsersGetResponses = {
   /**
-   * Response List Users Api Auth Admin Users Get
+   * Response 200 List Users Api Auth Admin Users Get
    *
    * Successful Response
    */
-  200: Array<unknown>;
+  200: Array<UserListItemResponse>;
 };
 
 export type ListUsersApiAuthAdminUsersGetResponse =
@@ -4017,8 +4616,11 @@ export type GetArchitectureApiPrdArchitecturesArchitectureIdGetResponses = {
   /**
    * Successful Response
    */
-  200: unknown;
+  200: ProjectArchitectureResponse;
 };
+
+export type GetArchitectureApiPrdArchitecturesArchitectureIdGetResponse =
+  GetArchitectureApiPrdArchitecturesArchitectureIdGetResponses[keyof GetArchitectureApiPrdArchitecturesArchitectureIdGetResponses];
 
 export type UpdateArchitectureApiPrdArchitecturesArchitectureIdPutData = {
   body: ArchitectureUpdate;
@@ -4133,8 +4735,11 @@ export type GetProjectAnalysisApiPrdProjectsProjectIdAnalysisGetResponses = {
   /**
    * Successful Response
    */
-  200: unknown;
+  200: PrdAnalysisResponse;
 };
+
+export type GetProjectAnalysisApiPrdProjectsProjectIdAnalysisGetResponse =
+  GetProjectAnalysisApiPrdProjectsProjectIdAnalysisGetResponses[keyof GetProjectAnalysisApiPrdProjectsProjectIdAnalysisGetResponses];
 
 export type GetProjectArchitecturesApiPrdProjectsProjectIdArchitecturesGetData = {
   body?: never;
@@ -4160,10 +4765,15 @@ export type GetProjectArchitecturesApiPrdProjectsProjectIdArchitecturesGetError 
 
 export type GetProjectArchitecturesApiPrdProjectsProjectIdArchitecturesGetResponses = {
   /**
+   * Response 200 Get Project Architectures Api Prd Projects  Project Id  Architectures Get
+   *
    * Successful Response
    */
-  200: unknown;
+  200: Array<ProjectArchitectureResponse>;
 };
+
+export type GetProjectArchitecturesApiPrdProjectsProjectIdArchitecturesGetResponse =
+  GetProjectArchitecturesApiPrdProjectsProjectIdArchitecturesGetResponses[keyof GetProjectArchitecturesApiPrdProjectsProjectIdArchitecturesGetResponses];
 
 export type CommitArchitectureApiPrdProjectsProjectIdCommitArchitecturePostData = {
   body: CommitArchitectureRequest;
@@ -4650,10 +5260,15 @@ export type GetProjectActivityApiProjectsProjectIdActivityGetError =
 
 export type GetProjectActivityApiProjectsProjectIdActivityGetResponses = {
   /**
+   * Response 200 Get Project Activity Api Projects  Project Id  Activity Get
+   *
    * Successful Response
    */
-  200: unknown;
+  200: Array<ActivityResponse>;
 };
+
+export type GetProjectActivityApiProjectsProjectIdActivityGetResponse =
+  GetProjectActivityApiProjectsProjectIdActivityGetResponses[keyof GetProjectActivityApiProjectsProjectIdActivityGetResponses];
 
 export type AddDeveloperToProjectApiProjectsProjectIdDevelopersPostData = {
   body: DeveloperAssignment;
@@ -4994,10 +5609,15 @@ export type GetProjectGoalsApiProjectsProjectIdGoalsGetError =
 
 export type GetProjectGoalsApiProjectsProjectIdGoalsGetResponses = {
   /**
+   * Response 200 Get Project Goals Api Projects  Project Id  Goals Get
+   *
    * Successful Response
    */
-  200: unknown;
+  200: Array<GoalResponse>;
 };
+
+export type GetProjectGoalsApiProjectsProjectIdGoalsGetResponse =
+  GetProjectGoalsApiProjectsProjectIdGoalsGetResponses[keyof GetProjectGoalsApiProjectsProjectIdGoalsGetResponses];
 
 export type CreateProjectGoalApiProjectsProjectIdGoalsPostData = {
   body: GoalCreate;
@@ -5151,10 +5771,15 @@ export type GetProjectMilestonesApiProjectsProjectIdMilestonesGetError =
 
 export type GetProjectMilestonesApiProjectsProjectIdMilestonesGetResponses = {
   /**
+   * Response 200 Get Project Milestones Api Projects  Project Id  Milestones Get
+   *
    * Successful Response
    */
-  200: unknown;
+  200: Array<MilestoneResponse>;
 };
+
+export type GetProjectMilestonesApiProjectsProjectIdMilestonesGetResponse =
+  GetProjectMilestonesApiProjectsProjectIdMilestonesGetResponses[keyof GetProjectMilestonesApiProjectsProjectIdMilestonesGetResponses];
 
 export type CreateProjectMilestoneApiProjectsProjectIdMilestonesPostData = {
   body: MilestoneCreate;
@@ -5595,8 +6220,11 @@ export type GetProjectAnalyticsApiWorkitemsProjectsProjectIdAnalyticsGetResponse
   /**
    * Successful Response
    */
-  200: unknown;
+  200: ProjectAnalyticsResponse;
 };
+
+export type GetProjectAnalyticsApiWorkitemsProjectsProjectIdAnalyticsGetResponse =
+  GetProjectAnalyticsApiWorkitemsProjectsProjectIdAnalyticsGetResponses[keyof GetProjectAnalyticsApiWorkitemsProjectsProjectIdAnalyticsGetResponses];
 
 export type GetHoursAnalyticsApiWorkitemsProjectsProjectIdHoursAnalyticsGetData = {
   body?: never;
@@ -5714,10 +6342,15 @@ export type ListProjectSprintsApiWorkitemsProjectsProjectIdSprintsGetError =
 
 export type ListProjectSprintsApiWorkitemsProjectsProjectIdSprintsGetResponses = {
   /**
+   * Response 200 List Project Sprints Api Workitems Projects  Project Id  Sprints Get
+   *
    * Successful Response
    */
-  200: unknown;
+  200: Array<SprintResponse>;
 };
+
+export type ListProjectSprintsApiWorkitemsProjectsProjectIdSprintsGetResponse =
+  ListProjectSprintsApiWorkitemsProjectsProjectIdSprintsGetResponses[keyof ListProjectSprintsApiWorkitemsProjectsProjectIdSprintsGetResponses];
 
 export type CreateSprintApiWorkitemsSprintsPostData = {
   body: SprintCreate;
