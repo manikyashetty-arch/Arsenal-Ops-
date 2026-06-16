@@ -9,11 +9,10 @@ export interface Sprint {
   status: string;
 }
 
-export interface AllDeveloper {
-  id: number;
-  name: string;
-  email: string;
-}
+// Sourced from the backend's `DeveloperResponse` schema (generated from
+// `GET /api/developers/`). The generated shape is a superset of what consumers
+// read here (id/name/email) — it also carries avatar_url/github_username/created_at.
+export type { DeveloperResponse as AllDeveloper } from '@/client';
 
 export interface ProjectDeveloper {
   id: number;
