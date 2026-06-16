@@ -74,6 +74,14 @@ generic `index.tsx`.
    is not that. (Page domain types; the canonical `WorkItem`/`Sprint` in rule 5
    still win for work-item shapes.)
 
+   **For API request/response shapes, that cross-page module now exists and is
+   generated:** `src/client` (from the backend OpenAPI schema — see
+   `app/CLAUDE.md` → "API types" and `.plans/type-generation-pipeline-20260615.md`).
+   New API shapes should come from there, not a fresh hand-written `interface`.
+   The F-T1 migration is to fold the existing hand-declared API duplicates onto
+   the generated types entity-by-entity; `src/types/workItems.ts` is the
+   re-export seam for the `WorkItem`/`Sprint` family.
+
 7. **No barrels until a folder has ≥4 files.** Explicit named imports keep
    the dependency graph readable.
 
