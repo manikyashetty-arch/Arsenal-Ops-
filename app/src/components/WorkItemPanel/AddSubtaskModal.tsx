@@ -7,7 +7,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Calendar as CalendarIcon } from '@/components/ui/calendar';
 import { parseLocalDate, formatLocalDate } from '@/components/ProjectsPage/utils';
 import { CALENDAR_CLASS_NAMES } from './constants';
-import type { ProjectDeveloper } from './types';
+import type { ProjectDeveloperEntry } from '@/client';
 
 export interface AddSubtaskFormValues {
   title: string;
@@ -17,7 +17,7 @@ export interface AddSubtaskFormValues {
 }
 
 interface AddSubtaskModalProps {
-  developers: ProjectDeveloper[];
+  developers: ProjectDeveloperEntry[];
   isPending: boolean;
   onClose: () => void;
   onSubmit: (form: AddSubtaskFormValues) => void;

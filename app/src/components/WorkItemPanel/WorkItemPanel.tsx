@@ -2,7 +2,8 @@ import { useState, useRef } from 'react';
 import TicketContributors from '@/components/TicketContributors';
 import { useAuth } from '@/contexts/AuthContext';
 import { apiFetch } from '@/lib/api';
-import type { WorkItem, Sprint, ProjectLite, ProjectDeveloper } from './types';
+import type { WorkItem, Sprint, ProjectLite } from './types';
+import type { ProjectDeveloperEntry } from '@/client';
 import { AddSubtaskModal } from './AddSubtaskModal';
 import { useWorkItemPanel } from './hooks/useWorkItemPanel';
 import { WorkItemPanelHeader } from './components/WorkItemPanelHeader';
@@ -65,7 +66,7 @@ const WorkItemPanel = (props: WorkItemPanelProps) => {
   const [editForm, setEditForm] = useState<Partial<WorkItem>>({});
   const [showCalendarEditForm, setShowCalendarEditForm] = useState(false);
   // Compact variant: project developers fetched on edit start
-  const [compactEditDevs, setCompactEditDevs] = useState<ProjectDeveloper[]>([]);
+  const [compactEditDevs, setCompactEditDevs] = useState<ProjectDeveloperEntry[]>([]);
 
   const [showAddSubtaskModal, setShowAddSubtaskModal] = useState(false);
 
@@ -167,7 +168,7 @@ const WorkItemPanel = (props: WorkItemPanelProps) => {
         const projectId = (item as WorkItem & { project_id?: number }).project_id;
         if (projectId) {
           const data = await apiFetch(`/api/projects/${projectId}`);
-          setCompactEditDevs((data as { developers?: ProjectDeveloper[] }).developers ?? []);
+          setCompactEditDevs((data as { developers?: ProjectDeveloperEntry[] }).developers ?? []);
         }
       } catch {
         /* proceed without project devs */

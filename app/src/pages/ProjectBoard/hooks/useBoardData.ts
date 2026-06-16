@@ -2,17 +2,7 @@ import { useCallback, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
 import type { WorkItem, Sprint } from '@/types/workItems';
-import type { DeveloperResponse } from '@/client';
-
-export interface Developer {
-  id: number;
-  name: string;
-  email: string;
-  github_username?: string;
-  role: string;
-  responsibilities?: string;
-  is_admin?: boolean;
-}
+import type { DeveloperResponse, ProjectDeveloperEntry } from '@/client';
 
 export interface Project {
   id: number;
@@ -28,7 +18,7 @@ export interface Project {
     completed: number;
     completion_pct: number;
   };
-  developers?: Developer[];
+  developers?: ProjectDeveloperEntry[];
 }
 
 /**

@@ -1,3 +1,5 @@
+import type { ProjectDeveloperEntry } from '@/client';
+
 export interface ProjectStats {
   total: number;
   by_status: Record<string, number>;
@@ -14,15 +16,6 @@ export interface Developer {
   avatar_url?: string;
 }
 
-export interface ProjectDeveloper {
-  id: number;
-  name: string;
-  email: string;
-  role: string;
-  responsibilities?: string;
-  is_admin: boolean;
-}
-
 export interface Project {
   id: number;
   name: string;
@@ -34,7 +27,7 @@ export interface Project {
   github_repo_name?: string;
   created_at: string;
   work_item_stats: ProjectStats;
-  developers: ProjectDeveloper[];
+  developers: ProjectDeveloperEntry[];
 }
 
 export interface MyTask {
@@ -81,17 +74,6 @@ export interface PersonalTask {
   is_converted: boolean;
   project_id?: number;
   work_item_id?: number;
-}
-
-export interface Comment {
-  id: number;
-  work_item_id: number;
-  author_id: number;
-  author_name: string;
-  content: string;
-  comment_type: 'comment' | 'blocker' | 'business_review';
-  mentions: number[];
-  created_at: string;
 }
 
 export interface ProjectMember {

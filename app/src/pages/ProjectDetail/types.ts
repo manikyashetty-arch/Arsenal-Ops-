@@ -8,22 +8,14 @@
  * that fix, mirroring the precedent set by AdminDashboard/types.ts.)
  */
 
+import type { ProjectDeveloperEntry } from '@/client';
+
 export interface Developer {
   id: number;
   name: string;
   email: string;
   github_username: string;
   avatar_url?: string;
-}
-
-export interface ProjectDeveloper {
-  id: number;
-  name: string;
-  email: string;
-  github_username: string;
-  role: string;
-  responsibilities: string;
-  is_admin: boolean;
 }
 
 export interface Architecture {
@@ -135,7 +127,7 @@ export interface Project {
   github_repo_name?: string;
   created_at: string;
   end_date?: string;
-  developers?: ProjectDeveloper[];
+  developers?: ProjectDeveloperEntry[];
   selected_architecture?: Architecture;
   architectures: Architecture[];
 }
