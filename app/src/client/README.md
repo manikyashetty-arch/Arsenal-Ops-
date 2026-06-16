@@ -31,12 +31,10 @@ job fails if the snapshot or these generated types are stale (see
 
 ## Consuming a type
 
-```ts
-import type { DeveloperResponse } from '@/client';
+Each backend schema is emitted as a flat named export — import it directly:
 
-// or pull a single schema by name:
-import type { components } from '@/client/types.gen';
-type Foo = components['schemas']['Foo'];
+```ts
+import type { DeveloperResponse, UserResponse } from '@/client';
 ```
 
 A field's source of truth is the backend Pydantic model. To change a type, change

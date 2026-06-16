@@ -20,9 +20,10 @@ specifically.
 - Tailwind + shadcn/ui + sonner
 - ESLint flat config (`eslint.config.js`) + Prettier
 
-CI runs `tsc --noEmit`, `npm run lint`, `npm run format:check` on every PR
-via `.github/workflows/lint.yml`. Loud but not blocking — failures show red
-but don't gate merge unless added to branch protection.
+CI runs `tsc --noEmit`, `npm run lint`, `npm run format:check`, unit tests, and
+a generated-types drift check on every PR via `.github/workflows/lint.yml` (see
+the CI section at the bottom). Loud but not blocking — failures show red but
+don't gate merge unless added to branch protection.
 
 ---
 
@@ -51,8 +52,15 @@ backend Pydantic response model  (referenced by a route via response_model= or r
 ```bash
 npm run gen:types   # regenerate TS from the committed ../backend/openapi.json (no backend needed)
 npm run gen:api     # re-dump the schema from the backend, THEN regenerate types
-                    #   (gen:schema needs the backend Python env importable)
 ```
+
+`gen:types` is backend-free and fully reproducible — it's the path most
+contributors want. `gen:api` additionally runs `gen:schema`
+(`cd ../backend && python scripts/export_openapi.py`), which invokes a bare
+`python`: activate the backend venv first and use **Python 3.11** (the backend
+uses `int | None` runtime syntax, needs 3.10+; CI pins 3.11). A different
+interpreter or missing deps will fail — or worse, emit a schema that drifts from
+CI.
 
 The CI `api-types` job regenerates both and **fails on drift** — a PR that
 changes a backend schema but doesn't commit the regenerated `backend/openapi.json`
@@ -77,10 +85,14 @@ changes a backend schema but doesn't commit the regenerated `backend/openapi.jso
   fixes, since generated types correctly mark fields nullable that hand-types
   often read as non-null. Migrate entity-by-entity, not in bulk.
 
-> Backend note: most response models are wired via `responses={200: {"model": X}}`
-> (OpenAPI/codegen typing only, no runtime change) rather than `response_model=`
-> (which re-serializes and can change the wire format). Promoting to runtime
-> validation is gated by the `backend/tests/contract/` byte-diff harness.
+> Backend note: a route exposes its type to the generator via either
+> `response_model=X` (runtime validation + the schema) or
+> `responses={200: {"model": X}}` (the schema only, no runtime change). Existing
+> typed routes (developers, auth, comments, admin) use `response_model=`; the
+> projects / workitems / personal-tasks models added for this pipeline use
+> `responses=` to avoid re-serializing a hand-built dict (which can change the
+> wire format — e.g. int `0` → float `0.0`). Promoting those to `response_model=`
+> is gated by the `backend/tests/contract/` byte-diff harness.
 
 ---
 
@@ -304,19 +316,26 @@ fixing them would expand scope, leave a `// TODO(audit-Fxx)` and move on.
 
 ## CI
 
-`.github/workflows/lint.yml` runs:
+`.github/workflows/lint.yml` runs four jobs:
 
 - **Python (Ruff):** `setup-python` + pip-installs `backend/requirements.txt`
   (which pins `ruff==0.15.12`), then `ruff check backend/` and
   `ruff format --check backend/`.
-- **Frontend (ESLint + Prettier):** `npm ci` + `npm run lint` + `npm run format:check`.
+- **Backend (pytest):** installs `requirements.txt` and runs `pytest` (incl. the
+  `tests/contract/` response-contract harness).
+- **Frontend (lint + types + tests):** `npm ci` + `npm run lint` +
+  `npm run format:check` + `tsc -b --noEmit` + `npm test`.
+- **API types (generated, in sync):** regenerates `backend/openapi.json` +
+  `app/src/client` (`npm run gen:api`) and fails on `git diff` drift.
 
-Both jobs are "loud but not blocking" — failures show red but don't gate
-merge unless "Lint" is added to required-status-checks for `main`.
+All jobs are "loud but not blocking" — failures show red but don't gate merge
+unless the corresponding check is added to required-status-checks for `main`.
 
 Pre-flight before pushing:
 
 ```bash
-cd app && npx tsc --noEmit && npm run lint && npm run format:check && npm run build
-cd ../ && uv tool run ruff check backend/ && uv tool run ruff format --check backend/
+cd app && npx tsc -b --noEmit && npm run lint && npm run format:check && npm test && npm run build
+cd ../backend && uv tool run ruff check . && uv tool run ruff format --check . && python -m pytest
+# if you changed any backend schema:
+cd ../app && npm run gen:api && git diff --exit-code ../backend/openapi.json src/client
 ```
