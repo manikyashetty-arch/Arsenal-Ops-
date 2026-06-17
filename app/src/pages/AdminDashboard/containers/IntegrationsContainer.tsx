@@ -2,10 +2,7 @@ import { useEffect, useRef } from 'react';
 import { toast } from 'sonner';
 import { useSearchParams } from 'react-router-dom';
 import { useConfirm } from '@/components/ui/confirm-dialog';
-import {
-  useRefreshWorkforceClients,
-  useWorkforceAdmin,
-} from '../hooks/useWorkforceAdmin';
+import { useRefreshWorkforceClients, useWorkforceAdmin } from '../hooks/useWorkforceAdmin';
 import IntegrationsTab from '../tabs/IntegrationsTab';
 
 // Maps the `?workforce=...` query params the OAuth callback redirects back
@@ -56,8 +53,7 @@ function useOAuthCallbackToasts(): void {
 
 export default function IntegrationsContainer() {
   const { confirm, confirmDialog } = useConfirm();
-  const { statusQuery, connectMutation, disconnectMutation, syncMutation } =
-    useWorkforceAdmin();
+  const { statusQuery, connectMutation, disconnectMutation, syncMutation } = useWorkforceAdmin();
   const refreshClientsMutation = useRefreshWorkforceClients();
 
   useOAuthCallbackToasts();
@@ -66,7 +62,7 @@ export default function IntegrationsContainer() {
     const ok = await confirm({
       title: 'Disconnect QuickBooks?',
       description:
-        'This revokes Arsenal Ops\' access at Intuit and stops future syncs. Per-project client tags are preserved so reconnecting later restores them.',
+        "This revokes Arsenal Ops' access at Intuit and stops future syncs. Per-project client tags are preserved so reconnecting later restores them.",
       confirmText: 'Disconnect',
       destructive: true,
     });

@@ -190,15 +190,10 @@ const ProjectCardsView: React.FC<ProjectCardsViewProps> = ({
                   <Select
                     value={project.workforce_client_id ?? NO_WORKFORCE_CLIENT_OPTION}
                     onValueChange={(value) => {
-                      const nextId =
-                        value === NO_WORKFORCE_CLIENT_OPTION ? null : value;
+                      const nextId = value === NO_WORKFORCE_CLIENT_OPTION ? null : value;
                       if (nextId === (project.workforce_client_id ?? null)) return;
                       const matched = workforceClients.find((c) => c.id === nextId);
-                      onSetProjectWorkforceClient(
-                        project.id,
-                        nextId,
-                        matched?.name ?? null,
-                      );
+                      onSetProjectWorkforceClient(project.id, nextId, matched?.name ?? null);
                     }}
                   >
                     <SelectTrigger
@@ -211,15 +206,10 @@ const ProjectCardsView: React.FC<ProjectCardsViewProps> = ({
                       }
                     >
                       <Building2 className="w-3 h-3" />
-                      <SelectValue>
-                        {project.workforce_client_name ?? 'No QB client'}
-                      </SelectValue>
+                      <SelectValue>{project.workforce_client_name ?? 'No QB client'}</SelectValue>
                     </SelectTrigger>
                     <SelectContent className="bg-[#0d0d0d] border-[rgba(255,255,255,0.08)] max-h-64">
-                      <SelectItem
-                        value={NO_WORKFORCE_CLIENT_OPTION}
-                        className="text-white"
-                      >
+                      <SelectItem value={NO_WORKFORCE_CLIENT_OPTION} className="text-white">
                         No QB client
                       </SelectItem>
                       {workforceClientsLoading && (

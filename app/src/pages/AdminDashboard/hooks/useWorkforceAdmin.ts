@@ -1,11 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { apiFetch } from '@/lib/api';
-import type {
-  WorkforceClient,
-  WorkforceStatus,
-  WorkforceSyncResult,
-} from '../types';
+import type { WorkforceClient, WorkforceStatus, WorkforceSyncResult } from '../types';
 import { ADMIN_REFETCH } from './adminRefetch';
 
 /**
@@ -68,9 +64,7 @@ export function useWorkforceAdmin() {
     },
     onError: (err) =>
       toast.error(
-        err instanceof Error
-          ? err.message
-          : 'Could not start the QuickBooks connect flow.',
+        err instanceof Error ? err.message : 'Could not start the QuickBooks connect flow.',
       ),
   });
 
@@ -84,8 +78,7 @@ export function useWorkforceAdmin() {
       queryClient.invalidateQueries({ queryKey: ['admin', 'workforceStatus'] });
       queryClient.invalidateQueries({ queryKey: ['admin', 'workforceClients'] });
     },
-    onError: (err) =>
-      toast.error(err instanceof Error ? err.message : 'Disconnect failed.'),
+    onError: (err) => toast.error(err instanceof Error ? err.message : 'Disconnect failed.'),
   });
 
   const syncMutation = useMutation({
@@ -101,9 +94,7 @@ export function useWorkforceAdmin() {
       const range = formatWindowRange(window_start, window_end);
       switch (status) {
         case 'ok':
-          toast.success(
-            `Synced ${synced} entr${synced === 1 ? 'y' : 'ies'} for ${range}.`,
-          );
+          toast.success(`Synced ${synced} entr${synced === 1 ? 'y' : 'ies'} for ${range}.`);
           break;
         case 'partial':
           toast.warning(
@@ -124,8 +115,7 @@ export function useWorkforceAdmin() {
       }
       queryClient.invalidateQueries({ queryKey: ['admin', 'workforceStatus'] });
     },
-    onError: (err) =>
-      toast.error(err instanceof Error ? err.message : 'Sync failed.'),
+    onError: (err) => toast.error(err instanceof Error ? err.message : 'Sync failed.'),
   });
 
   return {
@@ -173,10 +163,9 @@ export function useRefreshWorkforceClients() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: () =>
-      apiFetch<WorkforceClientsRefreshResult>(
-        '/api/admin/workforce/clients/refresh',
-        { method: 'POST' },
-      ),
+      apiFetch<WorkforceClientsRefreshResult>('/api/admin/workforce/clients/refresh', {
+        method: 'POST',
+      }),
     onSuccess: (result) => {
       const { added, updated, deactivated, total_active } = result;
       // Show the delta if anything changed, otherwise a quiet
@@ -192,9 +181,7 @@ export function useRefreshWorkforceClients() {
       queryClient.invalidateQueries({ queryKey: ['admin', 'workforceClients'] });
     },
     onError: (err) =>
-      toast.error(
-        err instanceof Error ? err.message : 'Could not refresh client list.',
-      ),
+      toast.error(err instanceof Error ? err.message : 'Could not refresh client list.'),
   });
 }
 
@@ -224,8 +211,6 @@ export function useSetProjectWorkforceClient() {
       queryClient.invalidateQueries({ queryKey: ['projects'] });
     },
     onError: (err) =>
-      toast.error(
-        err instanceof Error ? err.message : 'Could not update QuickBooks client.',
-      ),
+      toast.error(err instanceof Error ? err.message : 'Could not update QuickBooks client.'),
   });
 }

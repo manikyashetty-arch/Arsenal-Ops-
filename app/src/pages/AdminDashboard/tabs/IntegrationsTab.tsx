@@ -110,9 +110,7 @@ const IntegrationsTab: React.FC<IntegrationsTabProps> = ({
   onRefreshClients,
 }) => {
   if (loading) {
-    return (
-      <div className="text-sm text-[#737373]">Loading integration status…</div>
-    );
+    return <div className="text-sm text-[#737373]">Loading integration status…</div>;
   }
 
   return (
@@ -120,8 +118,8 @@ const IntegrationsTab: React.FC<IntegrationsTabProps> = ({
       <div>
         <h2 className="text-lg font-semibold text-white">Integrations</h2>
         <p className="mt-1 text-sm text-[#737373]">
-          Connect external services. Each integration's connection state and
-          credentials are managed here for the whole org, not per-user.
+          Connect external services. Each integration's connection state and credentials are managed
+          here for the whole org, not per-user.
         </p>
       </div>
 
@@ -185,9 +183,9 @@ const IntegrationsTab: React.FC<IntegrationsTabProps> = ({
           ) : (
             <>
               <p className="text-sm text-[#737373]">
-                Not connected. Connecting opens an Intuit consent page in this
-                window — your admin needs to sign in to QuickBooks and approve
-                Arsenal Ops' access. Tokens are stored encrypted on the server.
+                Not connected. Connecting opens an Intuit consent page in this window — your admin
+                needs to sign in to QuickBooks and approve Arsenal Ops' access. Tokens are stored
+                encrypted on the server.
               </p>
               <Button
                 onClick={onConnect}
@@ -224,8 +222,7 @@ function DetailGrid({ integration }: { integration: WorkforceIntegrationSafe }) 
   // if the name couldn't be resolved (e.g., a CompanyInfo API failure
   // mid-Connect). The realm id is opaque to non-engineers, so show it
   // only as a last resort.
-  const companyLabel =
-    integration.company_name ?? `Realm ${integration.realm_id}`;
+  const companyLabel = integration.company_name ?? `Realm ${integration.realm_id}`;
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
       <Field label="QuickBooks Company" value={companyLabel} />
@@ -237,9 +234,7 @@ function DetailGrid({ integration }: { integration: WorkforceIntegrationSafe }) 
       <Field label="Connected" value={formatTimestamp(integration.connected_at)} />
       <Field
         label="Last Sync"
-        value={
-          integration.last_sync_at ? formatTimestamp(integration.last_sync_at) : 'Never'
-        }
+        value={integration.last_sync_at ? formatTimestamp(integration.last_sync_at) : 'Never'}
       />
       <div className="md:col-span-2 flex items-center gap-3 mt-2">
         <span
@@ -253,9 +248,7 @@ function DetailGrid({ integration }: { integration: WorkforceIntegrationSafe }) 
         </span>
         <span className="text-xs text-[#737373]">
           {integration.last_synced_count} synced
-          {integration.last_failed_count > 0
-            ? ` • ${integration.last_failed_count} failed`
-            : ''}
+          {integration.last_failed_count > 0 ? ` • ${integration.last_failed_count} failed` : ''}
         </span>
       </div>
       {integration.last_sync_error && (
@@ -272,23 +265,11 @@ function DetailGrid({ integration }: { integration: WorkforceIntegrationSafe }) 
   );
 }
 
-function Field({
-  label,
-  value,
-  warning,
-}: {
-  label: string;
-  value: string;
-  warning?: boolean;
-}) {
+function Field({ label, value, warning }: { label: string; value: string; warning?: boolean }) {
   return (
     <div>
-      <div className="text-[11px] uppercase tracking-wide text-[#737373] mb-0.5">
-        {label}
-      </div>
-      <div className={`text-sm ${warning ? 'text-amber-400' : 'text-white'}`}>
-        {value}
-      </div>
+      <div className="text-[11px] uppercase tracking-wide text-[#737373] mb-0.5">{label}</div>
+      <div className={`text-sm ${warning ? 'text-amber-400' : 'text-white'}`}>{value}</div>
     </div>
   );
 }

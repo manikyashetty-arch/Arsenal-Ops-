@@ -297,8 +297,7 @@ const TimeEntriesTab: React.FC<TimeEntriesTabProps> = ({ projects, employees }) 
             title="Last successful sync of logged hours to QuickBooks. Manage from Admin → Integrations."
           >
             <RefreshCw className="w-3 h-3" />
-            Last QuickBooks sync:{' '}
-            <span className="text-[#a3a3a3]">{lastSyncLabel}</span>
+            Last QuickBooks sync: <span className="text-[#a3a3a3]">{lastSyncLabel}</span>
           </div>
         )}
       </div>

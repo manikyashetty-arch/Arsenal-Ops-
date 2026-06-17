@@ -722,9 +722,7 @@ def run_migrations():
             ("idx_time_entries_workforce_entry_id", "time_entries", "workforce_entry_id"),
         ]:
             try:
-                conn.execute(
-                    text(f"CREATE INDEX IF NOT EXISTS {idx_name} ON {table} ({column})")
-                )
+                conn.execute(text(f"CREATE INDEX IF NOT EXISTS {idx_name} ON {table} ({column})"))
                 conn.commit()
             except Exception as e:
                 print(f"[MIGRATION ERROR] {idx_name}: {e}")

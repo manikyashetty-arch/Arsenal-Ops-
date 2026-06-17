@@ -9,10 +9,7 @@ import { apiFetch } from '@/lib/api';
 import { AdminSpinner } from '../components/AdminSpinner';
 import { useProjectsAdmin } from '../hooks/useProjectsAdmin';
 import { useEmployeesList } from '../hooks/useEmployeesList';
-import {
-  useWorkforceClients,
-  useSetProjectWorkforceClient,
-} from '../hooks/useWorkforceAdmin';
+import { useWorkforceClients, useSetProjectWorkforceClient } from '../hooks/useWorkforceAdmin';
 import type { WorkforceStatus } from '../types';
 import ProjectsTab from '../tabs/ProjectsTab';
 import GitHubModal from '../modals/GitHubModal';
