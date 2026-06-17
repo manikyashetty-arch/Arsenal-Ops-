@@ -250,6 +250,10 @@ export type CommentResponse = {
    */
   id: number;
   /**
+   * Is Resolved
+   */
+  is_resolved?: boolean;
+  /**
    * Mentions
    */
   mentions: Array<number>;
@@ -2010,6 +2014,10 @@ export type SlimWorkItem = {
    */
   id: string;
   /**
+   * Is Blocked
+   */
+  is_blocked?: boolean;
+  /**
    * Key
    */
   key: string;
@@ -2661,6 +2669,144 @@ export type WorkItemCreate = {
    * Type
    */
   type?: string;
+};
+
+/**
+ * WorkItemDetailResponse
+ *
+ * Response shape for ``GET /api/workitems/{id}`` (the side-panel detail).
+ *
+ * Documents the wire format for OpenAPI/codegen only — the handler returns a
+ * plain column dict at runtime, so this is never used to re-serialize. Unlike
+ * the list endpoints, this one returns the *raw* model columns with no
+ * normalization: ``id`` stays an int (not stringified), dates are serialized
+ * by FastAPI's jsonable_encoder, and there is no ``or 0`` / "Unassigned"
+ * defaulting. Field nullability therefore mirrors the ORM columns directly —
+ * only the ``nullable=False`` columns are non-optional. The two trailing
+ * fields (``reporter_name``/``assignee_name``) are relation-derived and added
+ * by the handler. Gated byte-for-byte by tests/contract (workitems_detail).
+ */
+export type WorkItemDetailResponse = {
+  /**
+   * Acceptance Criteria
+   */
+  acceptance_criteria?: Array<unknown>;
+  /**
+   * Assignee Id
+   */
+  assignee_id?: number | null;
+  /**
+   * Assignee Name
+   */
+  assignee_name?: string | null;
+  /**
+   * Attachments
+   */
+  attachments?: Array<unknown>;
+  /**
+   * Completed At
+   */
+  completed_at?: string | null;
+  /**
+   * Created At
+   */
+  created_at: string;
+  /**
+   * Description
+   */
+  description?: string | null;
+  /**
+   * Due Date
+   */
+  due_date?: string | null;
+  /**
+   * Epic Id
+   */
+  epic_id?: number | null;
+  /**
+   * Estimated Hours
+   */
+  estimated_hours?: number | null;
+  /**
+   * Goal Id
+   */
+  goal_id?: number | null;
+  /**
+   * Id
+   */
+  id: number;
+  /**
+   * Key
+   */
+  key: string;
+  /**
+   * Last Assigned At
+   */
+  last_assigned_at?: string | null;
+  /**
+   * Logged Hours
+   */
+  logged_hours?: number | null;
+  /**
+   * Parent Id
+   */
+  parent_id?: number | null;
+  /**
+   * Priority
+   */
+  priority: string;
+  /**
+   * Project Id
+   */
+  project_id: number;
+  /**
+   * Remaining Hours
+   */
+  remaining_hours?: number | null;
+  /**
+   * Reporter Id
+   */
+  reporter_id?: number | null;
+  /**
+   * Reporter Name
+   */
+  reporter_name?: string | null;
+  /**
+   * Sprint Id
+   */
+  sprint_id?: number | null;
+  /**
+   * Start Date
+   */
+  start_date?: string | null;
+  /**
+   * Started At
+   */
+  started_at?: string | null;
+  /**
+   * Status
+   */
+  status: string;
+  /**
+   * Story Points
+   */
+  story_points?: number | null;
+  /**
+   * Tags
+   */
+  tags?: Array<string>;
+  /**
+   * Title
+   */
+  title: string;
+  /**
+   * Type
+   */
+  type: string;
+  /**
+   * Updated At
+   */
+  updated_at: string;
 };
 
 /**
@@ -6609,8 +6755,11 @@ export type GetWorkItemApiWorkitemsItemIdGetResponses = {
   /**
    * Successful Response
    */
-  200: unknown;
+  200: WorkItemDetailResponse;
 };
+
+export type GetWorkItemApiWorkitemsItemIdGetResponse =
+  GetWorkItemApiWorkitemsItemIdGetResponses[keyof GetWorkItemApiWorkitemsItemIdGetResponses];
 
 export type UpdateWorkItemApiWorkitemsItemIdPutData = {
   body: WorkItemUpdate;
@@ -6818,6 +6967,35 @@ export type GetWorkItemTimeEntriesApiWorkitemsItemIdTimeEntriesGetError =
   GetWorkItemTimeEntriesApiWorkitemsItemIdTimeEntriesGetErrors[keyof GetWorkItemTimeEntriesApiWorkitemsItemIdTimeEntriesGetErrors];
 
 export type GetWorkItemTimeEntriesApiWorkitemsItemIdTimeEntriesGetResponses = {
+  /**
+   * Successful Response
+   */
+  200: unknown;
+};
+
+export type UnblockWorkItemApiWorkitemsItemIdUnblockPostData = {
+  body?: never;
+  path: {
+    /**
+     * Item Id
+     */
+    item_id: number;
+  };
+  query?: never;
+  url: '/api/workitems/{item_id}/unblock';
+};
+
+export type UnblockWorkItemApiWorkitemsItemIdUnblockPostErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError;
+};
+
+export type UnblockWorkItemApiWorkitemsItemIdUnblockPostError =
+  UnblockWorkItemApiWorkitemsItemIdUnblockPostErrors[keyof UnblockWorkItemApiWorkitemsItemIdUnblockPostErrors];
+
+export type UnblockWorkItemApiWorkitemsItemIdUnblockPostResponses = {
   /**
    * Successful Response
    */

@@ -721,7 +721,62 @@ def get_my_tasks(db: Session = Depends(get_db), current_user: User = Depends(get
     return result
 
 
-@router.get("/{item_id}")
+class WorkItemDetailResponse(BaseModel):
+    """Response shape for ``GET /api/workitems/{id}`` (the side-panel detail).
+
+    Documents the wire format for OpenAPI/codegen only — the handler returns a
+    plain column dict at runtime, so this is never used to re-serialize. Unlike
+    the list endpoints, this one returns the *raw* model columns with no
+    normalization: ``id`` stays an int (not stringified), dates are serialized
+    by FastAPI's jsonable_encoder, and there is no ``or 0`` / "Unassigned"
+    defaulting. Field nullability therefore mirrors the ORM columns directly —
+    only the ``nullable=False`` columns are non-optional. The two trailing
+    fields (``reporter_name``/``assignee_name``) are relation-derived and added
+    by the handler. Gated byte-for-byte by tests/contract (workitems_detail).
+    """
+
+    id: int
+    project_id: int
+    sprint_id: int | None = None
+    key: str
+    type: str
+    title: str
+    description: str | None = None
+    status: str
+    priority: str
+    # `default=0` at the ORM layer is a Python-side INSERT default, NOT a DB
+    # `nullable=False` / `server_default` — so the columns are genuinely
+    # DB-nullable and a non-ORM insert path could leave them NULL. The detail
+    # handler returns them raw (no `or 0` guard), so type them honestly as
+    # nullable; the FE mapper coerces to the non-null view-model.
+    story_points: int | None = 0
+    logged_hours: int | None = 0
+    # No column default — genuinely nullable.
+    estimated_hours: int | None = None
+    remaining_hours: int | None = None
+    assignee_id: int | None = None
+    reporter_id: int | None = None
+    goal_id: int | None = None
+    parent_id: int | None = None
+    epic_id: int | None = None
+    acceptance_criteria: list = []
+    # tags are string labels (matches WorkItemListResponse.tags); the other two
+    # JSON columns hold heterogeneous objects, so they stay untyped lists.
+    tags: list[str] = []
+    attachments: list = []
+    created_at: datetime
+    updated_at: datetime
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+    last_assigned_at: datetime | None = None
+    due_date: datetime | None = None
+    start_date: datetime | None = None
+    # Relation-derived, appended by the handler (not table columns).
+    reporter_name: str | None = None
+    assignee_name: str | None = None
+
+
+@router.get("/{item_id}", responses={200: {"model": WorkItemDetailResponse}})
 def get_work_item(
     item_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
 ):

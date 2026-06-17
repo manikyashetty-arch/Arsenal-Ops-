@@ -5,7 +5,8 @@ import { apiFetch } from '@/lib/api';
 import { useAllDevelopers } from '@/hooks/useAllDevelopers';
 import { toastErrorHandler } from '@/lib/mutationToast';
 import type { WorkItem } from '../types';
-import type { CommentResponse, DeveloperResponse } from '@/client';
+import { applyWorkItemDetail } from '@/types/workItemMappers';
+import type { CommentResponse, DeveloperResponse, WorkItemDetailResponse } from '@/client';
 import type { AddSubtaskFormValues } from '../AddSubtaskModal';
 import type { WorkItemPanelProps } from '../WorkItemPanel';
 
@@ -46,13 +47,17 @@ export function useWorkItemPanel({
   const queryClient = useQueryClient();
 
   // ─── Queries ───────────────────────────────────────────────────────────────
-  const itemDetailQuery = useQuery<WorkItem>({
+  const itemDetailQuery = useQuery<WorkItemDetailResponse>({
     queryKey: ['workItem', item.id, 'detail'],
-    queryFn: () => apiFetch(`/api/workitems/${item.id}`),
+    queryFn: () => apiFetch<WorkItemDetailResponse>(`/api/workitems/${item.id}`),
     enabled: !!item.id,
   });
+  // Overlay the fresh detail response onto the base item. The detail endpoint
+  // returns raw columns (numeric id, loose enums, no display names), so the
+  // mapper re-narrows the conflicting fields and keeps the base's string id /
+  // assignee / sprint / epic. See applyWorkItemDetail.
   const itemDetail: WorkItem = useMemo(
-    () => ({ ...item, ...(itemDetailQuery.data ?? {}) }),
+    () => (itemDetailQuery.data ? applyWorkItemDetail(item, itemDetailQuery.data) : item),
     [item, itemDetailQuery.data],
   );
 

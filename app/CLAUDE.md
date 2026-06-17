@@ -83,13 +83,18 @@ changes a backend schema but doesn't commit the regenerated `backend/openapi.jso
   Employee, Role, DashboardStats, the weekly-report/time-entry shapes, and more.
   When adding code, import the generated type from `@/client` — don't redeclare.
 - **Still hand-written, on purpose:**
-  - **FE compositions** — `WorkItem` (`@/types/workItems`; no single backend
-    response matches it — the board reads `SlimWorkItem`, the list
-    `WorkItemListResponse`, my-tasks `MyTaskResponse`; carries FE-only
-    `product_id`), `MyTask` (= `MyTaskResponse & { is_personal? }`),
-    `ProjectOverview`, `HubWorkItem`, the per-view Hub WorkItem subsets, and the
-    pulse `PulseData`/`Derived*` family. These compose or extend generated
-    pieces; keep them.
+  - **FE compositions** — `WorkItem` (`@/types/workItems`) is the canonical
+    VIEW-MODEL: a normalized superset no single endpoint returns. The wire
+    shapes (`SlimWorkItem` board / `WorkItemDetailResponse` detail /
+    `WorkItemListResponse` list / `MyTaskResponse` my-tasks) are normalized into
+    it at the fetch boundaries via `@/types/workItemMappers` (`slimToWorkItem`,
+    `applyWorkItemDetail`) — the one place a backend change surfaces as a
+    compile error. It deliberately doesn't alias a generated type (string `id`,
+    non-null hours, narrowed enum unions, FE-only `assignee`/`sprint`/`epic`/
+    `product_id`). Also hand-written: `MyTask` (= `MyTaskResponse &
+    { is_personal? }`), `ProjectOverview`, `HubWorkItem`, the per-view Hub
+    WorkItem subsets, and the pulse `PulseData`/`Derived*` family. These compose
+    or extend generated pieces; keep them.
     > Note: `Architecture`, `PRDAnalysis`, detail `Project`, and `ProjectMember`
     > were previously kept but are now migrated — the backend models were
     > tightened (nested `CostAnalysisResponse`, `pros`/`cons` → `list[str]`,
@@ -316,7 +321,7 @@ See `.branch-review/frontend-audit-20260513-1726.md` for the full list and
 | `/admin` has no client-side role guard | `App.tsx:159` | Open |
 | JWT stored in localStorage (XSS-readable) | `AuthContext.tsx`, `lib/api.ts` | Open |
 | No global 401 handler — expired sessions fail silently | `lib/api.ts`, queryClient | Open |
-| `WorkItem` declared 6×, `PersonalTask` 3× — no shared types module | many files | Largely fixed — most API shapes migrated to generated `src/client` types (see "API types"). Remaining hand-written types are FE-compositions or backend-too-loose cases, listed there. `WorkItem` canonical is intentionally kept (composition). |
+| `WorkItem` declared 6×, `PersonalTask` 3× — no shared types module | many files | Largely fixed — most API shapes migrated to generated `src/client` types (see "API types"). Remaining hand-written types are FE-compositions or backend-too-loose cases, listed there. `WorkItem` canonical is intentionally kept as the view-model, now anchored to the generated wire types at the fetch boundaries via `@/types/workItemMappers`. |
 | `new Date('YYYY-MM-DD')` UTC-parses to local-previous-day | 6 files | Open — fix exists (`parseLocalDate`) in 3 files, not shared |
 | 4 fire-and-forget `apiFetch` mutations bypassing `useMutation` | `ProjectsPage`, `ProjectBoard` | Open — preserve current behaviour when extracting |
 | No error boundaries anywhere | entire tree | Open |
