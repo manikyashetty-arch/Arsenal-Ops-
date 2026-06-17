@@ -3,7 +3,7 @@
 import sys
 from datetime import datetime
 
-from sqlalchemy import Column, DateTime, ForeignKey, Index, Integer, Text
+from sqlalchemy import Column, DateTime, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.orm import relationship
 
 sys.path.append("..")
@@ -26,6 +26,12 @@ class TimeEntry(Base):
     # Timestamp
     logged_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
 
+    # ── QuickBooks sync state ────────────────────────────────────────────
+    # Once successfully pushed to QB, holds the returned TimeActivity Id.
+    # Indexed because the sync worker filters on `IS NULL`; presence of
+    # this column on a row also blocks re-syncing (idempotency).
+    workforce_entry_id = Column(String(64), nullable=True, index=True)
+
     # Relationships
     work_item = relationship("WorkItem", back_populates="time_entries")
     developer = relationship("Developer")
@@ -44,4 +50,5 @@ class TimeEntry(Base):
             "hours": self.hours,
             "description": self.description,
             "logged_at": self.logged_at.isoformat() if self.logged_at else None,
+            "workforce_entry_id": self.workforce_entry_id,
         }

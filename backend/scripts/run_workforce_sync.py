@@ -1,0 +1,113 @@
+"""CLI entry point for the QuickBooks (Workforce) hours sync.
+
+Triggered by:
+  • Render Cron Job (Saturday 08:00 UTC by default; see WORKFORCE_INTEGRATION_SETUP.md)
+  • Manual:  `docker compose exec backend python -m scripts.run_workforce_sync`
+
+Pushes the previous Mon-Fri's TimeEntries — for projects linked to a QB
+Customer — to QuickBooks Online's TimeActivity endpoint. See
+`services/workforce_sync.py::run_workforce_sync` for details.
+
+Exit codes (matches `scripts/send_weekly_report.py` conventions):
+
+  0 — everything ok, OR nothing to do (integration not connected, no
+      eligible entries, lock contention). The cron container shouldn't
+      flag these as failures.
+  1 — hard error: at least one entry failed to push, or the sync hit an
+      OAuth / service-item / employees-fetch error. The cron platform
+      should alert.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import os
+import sys
+
+# Allow running as `python -m scripts.run_workforce_sync` from /app
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from database import SessionLocal  # noqa: E402
+from services.workforce_sync import run_workforce_sync  # noqa: E402
+from services.workforce_sync_notify import send_sync_notification  # noqa: E402
+
+logging.basicConfig(
+    level=os.getenv("WORKFORCE_SYNC_LOG_LEVEL", "INFO"),
+    format="%(asctime)s %(levelname)s [workforce_sync] %(message)s",
+)
+log = logging.getLogger("workforce_sync")
+
+
+# Statuses that mean "no action needed / nothing to report as failure".
+# Mapped to exit 0 so a Saturday cron run on a quiet week (or one where
+# an admin hasn't connected QB yet) doesn't trigger ops alerts.
+_OK_STATUSES = {"ok", "no_eligible", "not_connected", "locked"}
+
+
+def _batch_cap() -> int:
+    """Optional override for the per-run cap. Empty / unset → use the
+    default in `workforce_sync.DEFAULT_BATCH_CAP`."""
+    raw = os.getenv("WORKFORCE_SYNC_BATCH_CAP", "").strip()
+    if not raw:
+        from services.workforce_sync import DEFAULT_BATCH_CAP  # local import
+
+        return DEFAULT_BATCH_CAP
+    try:
+        return max(1, int(raw))
+    except ValueError:
+        log.warning("WORKFORCE_SYNC_BATCH_CAP=%r is not an int; using default.", raw)
+        from services.workforce_sync import DEFAULT_BATCH_CAP
+
+        return DEFAULT_BATCH_CAP
+
+
+def _recipients() -> list[str]:
+    """Same env var as `scripts/send_weekly_report.py` — keep ops/finance
+    distribution lists in one place. Empty / unset → no email is sent."""
+    raw = os.getenv("WEEKLY_REPORT_RECIPIENTS", "")
+    return [r.strip() for r in raw.split(",") if r.strip()]
+
+
+def main() -> int:
+    db = SessionLocal()
+    try:
+        result = run_workforce_sync(
+            db,
+            triggered_by="cron",
+            batch_cap=_batch_cap(),
+        )
+    finally:
+        db.close()
+
+    # Always log the result dict — useful in Render's cron log view to
+    # see the window range and counts at a glance without having to dig
+    # through the integration row.
+    log.info("result: %s", json.dumps(result, sort_keys=True))
+
+    # Notify the configured ops recipients. Best-effort — if Gmail
+    # OAuth2 isn't configured, send_sync_notification logs and returns
+    # an empty dict; we still exit on the sync's status, not the
+    # email's. A misconfigured mailer shouldn't fail an otherwise-
+    # successful sync.
+    recipients = _recipients()
+    if recipients:
+        try:
+            send_sync_notification(
+                recipients,
+                result,
+                triggered_by_label="Saturday cron (scheduled)",
+            )
+        except Exception as e:  # noqa: BLE001
+            log.warning("Cron sync email notification failed: %s", e)
+    else:
+        log.info("WEEKLY_REPORT_RECIPIENTS is empty — skipping email notification.")
+
+    status = result.get("status", "error")
+    if status in _OK_STATUSES:
+        return 0
+    return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

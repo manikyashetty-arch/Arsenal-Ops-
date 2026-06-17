@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Clock } from 'lucide-react';
+import { Clock, RefreshCw } from 'lucide-react';
 import { apiFetch } from '@/lib/api';
 import { formatLocalDate } from '@/components/ProjectsPage/utils';
 import TimeEntriesFilterBar from './TimeEntriesFilterBar';
@@ -16,6 +16,7 @@ import type {
   ProjectOption,
   TimeEntriesResponse,
 } from './types';
+import type { WorkforceStatus } from '../../types';
 
 /**
  * Admin Time Entries tab — workforce-tool-style filterable grid of every
@@ -114,6 +115,35 @@ const TimeEntriesTab: React.FC<TimeEntriesTabProps> = ({ projects, employees }) 
     refetchOnWindowFocus: true,
     staleTime: 30_000,
   });
+
+  // Workforce / QuickBooks sync status — only used to display the last-sync
+  // timestamp on the header. Shares the cache key with the Integrations tab
+  // so switching tabs is free; we don't care if it's stale (UI just reads
+  // `last_sync_at`). The header hides itself when not connected.
+  const workforceStatusQuery = useQuery<WorkforceStatus>({
+    queryKey: ['admin', 'workforceStatus'],
+    queryFn: () => apiFetch<WorkforceStatus>('/api/admin/workforce/status'),
+    staleTime: 60_000,
+  });
+  const workforce = workforceStatusQuery.data;
+  const lastSyncLabel = useMemo(() => {
+    if (!workforce?.connected || !workforce.integration?.last_sync_at) return null;
+    try {
+      // Render in US Eastern with EST/EDT suffix — matches the Integrations
+      // tab's formatTimestamp so the two screens read the same way.
+      return new Date(workforce.integration.last_sync_at).toLocaleString('en-US', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        timeZone: 'America/New_York',
+        timeZoneName: 'short',
+      });
+    } catch {
+      return workforce.integration.last_sync_at;
+    }
+  }, [workforce]);
 
   // Stabilize the empty-default reference — `?? []` produces a fresh array
   // every render, which would otherwise re-trigger `groupedRows` below and
@@ -251,7 +281,7 @@ const TimeEntriesTab: React.FC<TimeEntriesTabProps> = ({ projects, employees }) 
   return (
     <div className="space-y-5">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-4">
         <div>
           <h2 className="text-xl font-bold text-white flex items-center gap-2">
             <Clock className="w-5 h-5 text-[#E0B954]" />
@@ -261,6 +291,16 @@ const TimeEntriesTab: React.FC<TimeEntriesTabProps> = ({ projects, employees }) 
             Audit every hour logged across projects. Filter by project, employee, or date range.
           </p>
         </div>
+        {lastSyncLabel && (
+          <div
+            className="inline-flex items-center gap-1.5 text-[11px] text-[#737373] shrink-0"
+            title="Last successful sync of logged hours to QuickBooks. Manage from Admin → Integrations."
+          >
+            <RefreshCw className="w-3 h-3" />
+            Last QuickBooks sync:{' '}
+            <span className="text-[#a3a3a3]">{lastSyncLabel}</span>
+          </div>
+        )}
       </div>
 
       <TimeEntriesFilterBar

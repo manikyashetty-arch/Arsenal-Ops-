@@ -37,6 +37,11 @@ export interface Project {
   // null when the project hasn't been assigned to any category.
   category_id: number | null;
   category_name: string | null;
+  // QuickBooks Customer link surface — flat fields, same endpoint.
+  // null when the project isn't synced to QB. id is a QB string id, not a
+  // numeric Arsenal id.
+  workforce_client_id: string | null;
+  workforce_client_name: string | null;
 }
 
 export interface DashboardStats {
@@ -81,7 +86,14 @@ export interface Capability {
   description: string;
 }
 
-export type AdminTab = 'dashboard' | 'employees' | 'projects' | 'time_entries' | 'users' | 'roles';
+export type AdminTab =
+  | 'dashboard'
+  | 'employees'
+  | 'projects'
+  | 'time_entries'
+  | 'users'
+  | 'roles'
+  | 'integrations';
 export const VALID_ADMIN_TABS: AdminTab[] = [
   'dashboard',
   'employees',
@@ -89,7 +101,49 @@ export const VALID_ADMIN_TABS: AdminTab[] = [
   'time_entries',
   'users',
   'roles',
+  'integrations',
 ];
+
+// Mirror of WorkforceIntegration.to_safe_dict() — what the
+// /api/admin/workforce/status endpoint returns inside `integration`.
+// Token ciphertext is REDACTED server-side; this shape never carries it.
+export interface WorkforceIntegrationSafe {
+  id: number;
+  realm_id: string;
+  // Friendly QB Company name fetched on Connect (and on each manual
+  // Refresh clients). Null until the first successful fetch — the UI
+  // falls back to the realm id in that case.
+  company_name: string | null;
+  service_item_id: string | null;
+  service_item_name: string | null;
+  connected_at: string | null;
+  connected_by_user_id: number | null;
+  last_sync_at: string | null;
+  last_sync_status: string | null; // 'ok' | 'partial' | 'error' | 'no_eligible' | 'locked' | 'not_connected'
+  last_sync_error: string | null;
+  last_synced_count: number;
+  last_failed_count: number;
+}
+
+export interface WorkforceStatus {
+  connected: boolean;
+  integration: WorkforceIntegrationSafe | null;
+}
+
+export interface WorkforceClient {
+  id: string;
+  name: string;
+}
+
+export interface WorkforceSyncResult {
+  status: string;
+  synced: number;
+  failed: number;
+  skipped: number;
+  window_start: string;
+  window_end: string;
+  reason?: string | null;
+}
 
 // Re-export the types owned by their component modules so downstream consumers
 // have a single `./types` import surface for everything admin.

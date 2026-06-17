@@ -561,6 +561,10 @@ class ProjectResponse(BaseModel):
     # filter without a second round trip.
     category_id: int | None = None
     category_name: str | None = None
+    # QuickBooks customer link — flat fields for the same reason. Null
+    # when the project isn't synced.
+    workforce_client_id: str | None = None
+    workforce_client_name: str | None = None
 
     class Config:
         from_attributes = True
@@ -606,6 +610,8 @@ def list_all_projects(db: Session = Depends(get_db)):
                 has_github_token=bool(project.github_token),
                 category_id=project.category_id,
                 category_name=project.category.name if project.category else None,
+                workforce_client_id=project.workforce_client_id,
+                workforce_client_name=project.workforce_client_name,
             )
         )
 
