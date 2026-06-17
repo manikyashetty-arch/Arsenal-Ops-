@@ -20,9 +20,99 @@ specifically.
 - Tailwind + shadcn/ui + sonner
 - ESLint flat config (`eslint.config.js`) + Prettier
 
-CI runs `tsc --noEmit`, `npm run lint`, `npm run format:check` on every PR
-via `.github/workflows/lint.yml`. Loud but not blocking — failures show red
-but don't gate merge unless added to branch protection.
+CI runs `tsc --noEmit`, `npm run lint`, `npm run format:check`, unit tests, and
+a generated-types drift check on every PR via `.github/workflows/lint.yml` (see
+the CI section at the bottom). Loud but not blocking — failures show red but
+don't gate merge unless added to branch protection.
+
+---
+
+## API types — generated from the backend
+
+The backend's OpenAPI schema is the **source of truth** for API request/response
+types. They are generated into `src/client/` by
+[`@hey-api/openapi-ts`](https://heyapi.dev) and are **never hand-edited**.
+
+We generate **types only** — no fetch SDK, no TanStack Query hooks, no Zod. The
+app keeps its hand-rolled `apiFetch` (`src/lib/api.ts`) and the React Query
+conventions below. The full architecture + rollout is in
+`.plans/type-generation-pipeline-20260615.md`.
+
+### The flow
+
+```
+backend Pydantic response model  (referenced by a route via response_model= or responses=)
+  → backend/openapi.json          (committed snapshot; `python backend/scripts/export_openapi.py`)
+  → app/src/client/types.gen.ts   (`npm run gen:types`)
+  → feature code                  (import the generated type)
+```
+
+### Regenerating
+
+```bash
+npm run gen:types   # regenerate TS from the committed ../backend/openapi.json (no backend needed)
+npm run gen:api     # re-dump the schema from the backend, THEN regenerate types
+```
+
+`gen:types` is backend-free and fully reproducible — it's the path most
+contributors want. `gen:api` additionally runs `gen:schema`
+(`cd ../backend && python scripts/export_openapi.py`), which invokes a bare
+`python`: activate the backend venv first and use **Python 3.11** (the backend
+uses `int | None` runtime syntax, needs 3.10+; CI pins 3.11). A different
+interpreter or missing deps will fail — or worse, emit a schema that drifts from
+CI.
+
+The CI `api-types` job regenerates both and **fails on drift** — a PR that
+changes a backend schema but doesn't commit the regenerated `backend/openapi.json`
++ `app/src/client` is stale by definition.
+
+### Rules
+
+- **Never hand-edit `src/client/**`** — it's eslint-ignored and overwritten on
+  regen. Need a different shape? Change the backend schema and regenerate, or
+  derive in feature code (`Pick`/`Omit` off the generated type). UI-only shapes
+  that aren't API responses live next to their component.
+- **A type only generates if a route references its schema** (via `response_model=`
+  or `responses={200: {"model": X}}`). A Pydantic model no route references is
+  invisible to the generator. So "add a type to the frontend" = "type the backend
+  route."
+- **Consuming:** `import type { UserResponse } from '@/client';`
+- **Most API shapes now use generated types directly** (no aliases). Migrated:
+  User, Developer, Comment, ProjectDeveloper, Sprint, Project (list/admin),
+  Goal, Milestone, ActivityItem, ProjectLink, ProjectAnalytics, PersonalTask,
+  Employee, Role, DashboardStats, the weekly-report/time-entry shapes, and more.
+  When adding code, import the generated type from `@/client` — don't redeclare.
+- **Still hand-written, on purpose:**
+  - **FE compositions** — `WorkItem` (`@/types/workItems`) is the canonical
+    VIEW-MODEL: a normalized superset no single endpoint returns. The wire
+    shapes (`SlimWorkItem` board / `WorkItemDetailResponse` detail /
+    `WorkItemListResponse` list / `MyTaskResponse` my-tasks) are normalized into
+    it at the fetch boundaries via `@/types/workItemMappers` (`slimToWorkItem`,
+    `applyWorkItemDetail`) — the one place a backend change surfaces as a
+    compile error. It deliberately doesn't alias a generated type (string `id`,
+    non-null hours, narrowed enum unions, FE-only `assignee`/`sprint`/`epic`/
+    `product_id`). Also hand-written: `MyTask` (= `MyTaskResponse &
+    { is_personal? }`), `ProjectOverview`, `HubWorkItem`, the per-view Hub
+    WorkItem subsets, and the pulse `PulseData`/`Derived*` family. These compose
+    or extend generated pieces; keep them.
+    > Note: `Architecture`, `PRDAnalysis`, detail `Project`, and `ProjectMember`
+    > were previously kept but are now migrated — the backend models were
+    > tightened (nested `CostAnalysisResponse`, `pros`/`cons` → `list[str]`,
+    > `tools_recommended` → `dict[str, list[str]]`, `risks`/`timeline` nested) so
+    > the generated types are precise, and detail `Project`'s dead
+    > `architectures[]` field was dropped.
+- When you DO migrate one: prefer tightening the backend Pydantic model over FE
+  null-guards (generated types are honestly nullable; if a field is always
+  present, make it non-null in the response model and regenerate).
+
+> Backend note: a route exposes its type to the generator via either
+> `response_model=X` (runtime validation + the schema) or
+> `responses={200: {"model": X}}` (the schema only, no runtime change). Existing
+> typed routes (developers, auth, comments, admin) use `response_model=`; the
+> projects / workitems / personal-tasks models added for this pipeline use
+> `responses=` to avoid re-serializing a hand-built dict (which can change the
+> wire format — e.g. int `0` → float `0.0`). Promoting those to `response_model=`
+> is gated by the `backend/tests/contract/` byte-diff harness.
 
 ---
 
@@ -231,7 +321,7 @@ See `.branch-review/frontend-audit-20260513-1726.md` for the full list and
 | `/admin` has no client-side role guard | `App.tsx:159` | Open |
 | JWT stored in localStorage (XSS-readable) | `AuthContext.tsx`, `lib/api.ts` | Open |
 | No global 401 handler — expired sessions fail silently | `lib/api.ts`, queryClient | Open |
-| `WorkItem` declared 6×, `PersonalTask` 3× — no shared types module | many files | Open (F-T1 slice) |
+| `WorkItem` declared 6×, `PersonalTask` 3× — no shared types module | many files | Largely fixed — most API shapes migrated to generated `src/client` types (see "API types"). Remaining hand-written types are FE-compositions or backend-too-loose cases, listed there. `WorkItem` canonical is intentionally kept as the view-model, now anchored to the generated wire types at the fetch boundaries via `@/types/workItemMappers`. |
 | `new Date('YYYY-MM-DD')` UTC-parses to local-previous-day | 6 files | Open — fix exists (`parseLocalDate`) in 3 files, not shared |
 | 4 fire-and-forget `apiFetch` mutations bypassing `useMutation` | `ProjectsPage`, `ProjectBoard` | Open — preserve current behaviour when extracting |
 | No error boundaries anywhere | entire tree | Open |
@@ -246,19 +336,26 @@ fixing them would expand scope, leave a `// TODO(audit-Fxx)` and move on.
 
 ## CI
 
-`.github/workflows/lint.yml` runs:
+`.github/workflows/lint.yml` runs four jobs:
 
 - **Python (Ruff):** `setup-python` + pip-installs `backend/requirements.txt`
   (which pins `ruff==0.15.12`), then `ruff check backend/` and
   `ruff format --check backend/`.
-- **Frontend (ESLint + Prettier):** `npm ci` + `npm run lint` + `npm run format:check`.
+- **Backend (pytest):** installs `requirements.txt` and runs `pytest` (incl. the
+  `tests/contract/` response-contract harness).
+- **Frontend (lint + types + tests):** `npm ci` + `npm run lint` +
+  `npm run format:check` + `tsc -b --noEmit` + `npm test`.
+- **API types (generated, in sync):** regenerates `backend/openapi.json` +
+  `app/src/client` (`npm run gen:api`) and fails on `git diff` drift.
 
-Both jobs are "loud but not blocking" — failures show red but don't gate
-merge unless "Lint" is added to required-status-checks for `main`.
+All jobs are "loud but not blocking" — failures show red but don't gate merge
+unless the corresponding check is added to required-status-checks for `main`.
 
 Pre-flight before pushing:
 
 ```bash
-cd app && npx tsc --noEmit && npm run lint && npm run format:check && npm run build
-cd ../ && uv tool run ruff check backend/ && uv tool run ruff format --check backend/
+cd app && npx tsc -b --noEmit && npm run lint && npm run format:check && npm test && npm run build
+cd ../backend && uv tool run ruff check . && uv tool run ruff format --check . && python -m pytest
+# if you changed any backend schema:
+cd ../app && npm run gen:api && git diff --exit-code ../backend/openapi.json src/client
 ```

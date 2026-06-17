@@ -25,7 +25,11 @@ from models.sprint import Sprint, SprintStatus
 from models.user import User
 from models.work_item import WorkItem
 from routers.auth import get_current_user, require_capability
-from routers.projects import require_project_admin
+from routers.projects import (
+    CostAnalysisResponse,
+    ProjectArchitectureResponse,
+    require_project_admin,
+)
 from services.architecture_generator import architecture_generator
 from services.prd_processor import prd_processor
 from services.roadmap_generator import build_week_dates, roadmap_generator
@@ -62,6 +66,40 @@ class GenerateRoadmapTemplateRequest(BaseModel):
     start_date: str  # YYYY-MM-DD
     end_date: str  # YYYY-MM-DD
     sprint_weeks: int = Field(default=2, ge=1, le=6)
+
+
+class PRDRisk(BaseModel):
+    risk: str | None = None
+    impact: str | None = None
+    mitigation: str | None = None
+
+
+class PRDTimelinePhase(BaseModel):
+    phase: str | None = None
+    duration: str | None = None
+    tasks: list[str] | None = None
+
+
+class PRDAnalysisResponse(BaseModel):
+    """Shape of `PRDAnalysis.to_dict()` (models/architecture.py). Field
+    optionality is inferred from `to_dict()` and the underlying nullable
+    columns: `summary` is a nullable Text column; the JSON list columns are
+    coalesced to `[]`/`{}`. The AI-produced blobs (cost_analysis / risks /
+    timeline / recommended_tools) are best-effort shapes — typed for the
+    generated client only (these routes use `responses=`, never
+    `response_model=`, so nothing is validated/filtered at runtime)."""
+
+    id: int
+    project_id: int
+    filename: str | None = None
+    summary: str | None = None
+    key_features: list[str]
+    technical_requirements: list[str]
+    cost_analysis: CostAnalysisResponse | None = None
+    recommended_tools: dict[str, list[str]]
+    risks: list[PRDRisk]
+    timeline: list[PRDTimelinePhase]
+    created_at: str | None = None
 
 
 # Max accepted PRD upload size. PRDs are text-heavy and rarely exceed a few MB;
@@ -277,7 +315,10 @@ async def analyze_prd_text(
     )
 
 
-@router.get("/projects/{project_id}/architectures")
+@router.get(
+    "/projects/{project_id}/architectures",
+    responses={200: {"model": list[ProjectArchitectureResponse]}},
+)
 def get_project_architectures(
     project_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
 ):
@@ -292,7 +333,10 @@ def get_project_architectures(
     return [arch.to_dict() for arch in architectures]
 
 
-@router.get("/projects/{project_id}/analysis")
+@router.get(
+    "/projects/{project_id}/analysis",
+    responses={200: {"model": PRDAnalysisResponse}},
+)
 def get_project_analysis(
     project_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
 ):
@@ -310,7 +354,10 @@ def get_project_analysis(
     return analysis.to_dict()
 
 
-@router.get("/architectures/{architecture_id}")
+@router.get(
+    "/architectures/{architecture_id}",
+    responses={200: {"model": ProjectArchitectureResponse}},
+)
 def get_architecture(
     architecture_id: int,
     db: Session = Depends(get_db),

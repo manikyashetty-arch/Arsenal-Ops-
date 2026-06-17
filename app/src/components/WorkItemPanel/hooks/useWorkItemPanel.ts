@@ -4,7 +4,9 @@ import { toast } from 'sonner';
 import { apiFetch } from '@/lib/api';
 import { useAllDevelopers } from '@/hooks/useAllDevelopers';
 import { toastErrorHandler } from '@/lib/mutationToast';
-import type { WorkItem, AllDeveloper, Comment } from '../types';
+import type { WorkItem } from '../types';
+import { applyWorkItemDetail } from '@/types/workItemMappers';
+import type { CommentResponse, DeveloperResponse, WorkItemDetailResponse } from '@/client';
 import type { AddSubtaskFormValues } from '../AddSubtaskModal';
 import type { WorkItemPanelProps } from '../WorkItemPanel';
 
@@ -45,24 +47,28 @@ export function useWorkItemPanel({
   const queryClient = useQueryClient();
 
   // ─── Queries ───────────────────────────────────────────────────────────────
-  const itemDetailQuery = useQuery<WorkItem>({
+  const itemDetailQuery = useQuery<WorkItemDetailResponse>({
     queryKey: ['workItem', item.id, 'detail'],
-    queryFn: () => apiFetch(`/api/workitems/${item.id}`),
+    queryFn: () => apiFetch<WorkItemDetailResponse>(`/api/workitems/${item.id}`),
     enabled: !!item.id,
   });
+  // Overlay the fresh detail response onto the base item. The detail endpoint
+  // returns raw columns (numeric id, loose enums, no display names), so the
+  // mapper re-narrows the conflicting fields and keeps the base's string id /
+  // assignee / sprint / epic. See applyWorkItemDetail.
   const itemDetail: WorkItem = useMemo(
-    () => ({ ...item, ...(itemDetailQuery.data ?? {}) }),
+    () => (itemDetailQuery.data ? applyWorkItemDetail(item, itemDetailQuery.data) : item),
     [item, itemDetailQuery.data],
   );
 
-  const commentsQuery = useQuery<Comment[]>({
+  const commentsQuery = useQuery<CommentResponse[]>({
     queryKey: ['workItem', item.id, 'comments'],
     queryFn: () => apiFetch(`/api/comments/workitem/${item.id}`),
     enabled: !!item.id,
   });
   const comments = useMemo(() => commentsQuery.data ?? [], [commentsQuery.data]);
 
-  const developersQuery = useAllDevelopers<AllDeveloper>();
+  const developersQuery = useAllDevelopers<DeveloperResponse>();
   const allDevelopers = useMemo(() => developersQuery.data ?? [], [developersQuery.data]);
   const devMap = useMemo(() => new Map(allDevelopers.map((d) => [d.id, d.name])), [allDevelopers]);
 
@@ -228,7 +234,7 @@ export function useWorkItemPanel({
 
   // ─── Comment mutation (both variants) ─────────────────────────────────────
   const submitComment = useMutation({
-    mutationFn: ({ content, type }: { content: string; type: Comment['comment_type'] }) =>
+    mutationFn: ({ content, type }: { content: string; type: CommentResponse['comment_type'] }) =>
       apiFetch('/api/comments/', {
         method: 'POST',
         body: JSON.stringify({

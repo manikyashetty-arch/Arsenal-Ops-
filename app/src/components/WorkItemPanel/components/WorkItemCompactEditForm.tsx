@@ -6,14 +6,15 @@ import { Textarea } from '@/components/ui/textarea';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar as CalendarIcon } from '@/components/ui/calendar';
 import { parseLocalDate, formatLocalDate } from '@/components/ProjectsPage/utils';
-import type { WorkItem, ProjectDeveloper } from '../types';
+import type { WorkItem } from '../types';
+import type { ProjectDeveloperEntry } from '@/client';
 import { CALENDAR_CLASS_NAMES } from '../constants';
 
 export interface WorkItemCompactEditFormProps {
   item: WorkItem;
   editForm: Partial<WorkItem>;
   setEditForm: React.Dispatch<React.SetStateAction<Partial<WorkItem>>>;
-  compactEditDevs: ProjectDeveloper[];
+  compactEditDevs: ProjectDeveloperEntry[];
   showCalendarEditForm: boolean;
   setShowCalendarEditForm: (v: boolean) => void;
   isSavingEdit: boolean;

@@ -139,24 +139,124 @@ class ProjectUpdate(BaseModel):
     category_id: int | None = None
 
 
-class ProjectDeveloperResponse(BaseModel):
+# ---------------------------------------------------------------------------
+# OpenAPI response models for the projects list + detail endpoints.
+#
+# These describe the EXACT runtime shape produced by `format_projects_batch`
+# / `format_project` (see ~line 269 and ~325) so the frontend can generate a
+# type. They are attached to the routes via the `responses=` parameter ONLY —
+# never `response_model=` — so FastAPI does NOT re-serialize/filter the handler
+# output at runtime (which would, e.g., coerce an int `completion_pct: 0` into
+# `0.0` and break the contract tests). The handlers keep returning their plain
+# dicts unchanged on the wire.
+#
+# Names are intentionally distinct from the unrelated `ProjectResponse` in
+# `routers/admin.py` (a different, flat admin shape) to avoid OpenAPI component
+# collisions.
+# ---------------------------------------------------------------------------
+
+
+class ProjectWorkItemStatsResponse(BaseModel):
+    """Shape of the `work_item_stats` block, built by
+    `get_work_item_stats_batch` / `_empty_stats`."""
+
+    total: int
+    by_status: dict[str, int]
+    total_points: int
+    completed: int
+    # `round(..., 1)` returns a float for the non-empty path, but `_empty_stats`
+    # and the empty-project path emit an int `0` (see golden `Beta`). `float`
+    # validates both at the schema level; the wire value is whatever the handler
+    # produced (int or float) since we only use `responses=`, not `response_model=`.
+    completion_pct: float
+
+
+class ProjectDeveloperEntry(BaseModel):
+    """One entry in the `developers` list, built by `_developers_by_project`."""
+
     id: int
     name: str
     email: str
+    github_username: str | None = None
     role: str
-    responsibilities: str | None
+    responsibilities: str | None = None
     is_admin: bool
 
 
-class ProjectResponse(BaseModel):
+class CostBreakdownItem(BaseModel):
+    item: str | None = None
+    cost: str | None = None
+
+
+class InfrastructureCost(BaseModel):
+    monthly: str | None = None
+    annual: str | None = None
+    breakdown: list[CostBreakdownItem] | None = None
+
+
+class DevelopmentCost(BaseModel):
+    total: str | None = None
+    breakdown: list[CostBreakdownItem] | None = None
+
+
+class CostAnalysisResponse(BaseModel):
+    """AI-produced cost breakdown. Best-effort shape — the AI output isn't
+    validated, but these routes use `responses=` (not `response_model=`), so
+    this only types the generated client; it never validates/filters at runtime.
+    Shared by ProjectArchitectureResponse and PRDAnalysisResponse."""
+
+    infrastructure: InfrastructureCost | None = None
+    development: DevelopmentCost | None = None
+    total_estimated: str | None = None
+
+
+class ProjectArchitectureResponse(BaseModel):
+    """Shape of `selected_architecture` — the output of
+    `Architecture.to_dict()` (models/architecture.py). It is `null` in the
+    golden (no selected architecture), so field optionality is inferred from
+    `to_dict()` and the underlying nullable columns rather than the golden."""
+
+    id: int
+    project_id: int
+    name: str
+    description: str | None = None
+    architecture_type: str | None = None
+    mermaid_code: str
+    # JSON columns. `cost_analysis` (AI-produced) can be null; the others are
+    # coalesced to {}/[] in to_dict(). tools_recommended maps tech areas
+    # (frontend/backend/database/devops/...) → string lists.
+    cost_analysis: CostAnalysisResponse | None = None
+    tools_recommended: dict[str, list[str]]
+    pros: list[str]
+    cons: list[str]
+    estimated_cost: str | None = None
+    complexity: str | None = None
+    time_to_implement: str | None = None
+    is_selected: bool
+    selected_at: str | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
+
+
+class ProjectDetailResponse(BaseModel):
+    """Full project payload returned by the list (`GET /`) and detail
+    (`GET /{project_id}`) endpoints. Mirrors `format_projects_batch` exactly."""
+
     id: int
     name: str
-    description: str
+    description: str | None = None
     key_prefix: str
     status: str
+    github_repo_url: str | None = None
+    github_repo_urls: list[str]
+    github_repo_name: str | None = None
     created_at: str
-    work_item_stats: dict
-    developers: list[ProjectDeveloperResponse]
+    end_date: str | None = None
+    work_item_stats: ProjectWorkItemStatsResponse
+    developers: list[ProjectDeveloperEntry]
+    selected_architecture: ProjectArchitectureResponse | None = None
+    category_id: int | None = None
+    category_name: str | None = None
 
 
 def _empty_stats() -> dict:
@@ -482,7 +582,7 @@ def create_project(
     return format_project(new_project, db)
 
 
-@router.get("/")
+@router.get("/", responses={200: {"model": list[ProjectDetailResponse]}})
 def list_projects(
     category_id: int | None = None,
     uncategorized: bool = False,
@@ -522,7 +622,7 @@ def list_projects(
     return format_projects_batch(projects, db)
 
 
-@router.get("/{project_id}")
+@router.get("/{project_id}", responses={200: {"model": ProjectDetailResponse}})
 def get_project(
     project_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
 ):
@@ -939,7 +1039,24 @@ class GoalUpdate(BaseModel):
     due_date: datetime | None = None
 
 
-@router.get("/{project_id}/goals")
+class GoalResponse(BaseModel):
+    """Shape of one project goal — mirrors `ProjectGoal.to_dict()`
+    (models/project_goal.py). OpenAPI/codegen typing only (attached via
+    `responses=`); the handler returns the plain dict unchanged."""
+
+    id: int
+    project_id: int
+    title: str
+    description: str | None = None
+    status: str
+    progress: int
+    due_date: str | None = None
+    completed_at: str | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
+
+
+@router.get("/{project_id}/goals", responses={200: {"model": list[GoalResponse]}})
 def get_project_goals(
     project_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
 ):
@@ -1079,7 +1196,22 @@ class MilestoneCreate(BaseModel):
     due_date: datetime | None = None
 
 
-@router.get("/{project_id}/milestones")
+class MilestoneResponse(BaseModel):
+    """Shape of one project milestone — mirrors `ProjectMilestone.to_dict()`
+    (models/project_milestone.py). OpenAPI/codegen typing only (attached via
+    `responses=`); the handler returns the plain dict unchanged."""
+
+    id: int
+    project_id: int
+    title: str
+    description: str | None = None
+    due_date: str | None = None
+    completed_at: str | None = None
+    created_at: str | None = None
+    is_completed: bool
+
+
+@router.get("/{project_id}/milestones", responses={200: {"model": list[MilestoneResponse]}})
 def get_project_milestones(
     project_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
 ):
@@ -1221,7 +1353,26 @@ def delete_project_milestone(
 # --- Activity Feed ---
 
 
-@router.get("/{project_id}/activity")
+class ActivityResponse(BaseModel):
+    """Shape of one activity-feed entry — mirrors `ActivityLog.to_dict()`
+    (models/activity_log.py). OpenAPI/codegen typing only (attached via
+    `responses=`); the handler returns the plain dict unchanged. `details` is
+    an opaque JSON column, so it is typed loosely as a dict."""
+
+    id: int
+    project_id: int
+    user_id: int | None = None
+    action: str
+    entity_type: str
+    entity_id: int | None = None
+    title: str | None = None
+    details: dict | None = None
+    created_at: str | None = None
+    user_name: str
+    user_email: str | None = None
+
+
+@router.get("/{project_id}/activity", responses={200: {"model": list[ActivityResponse]}})
 def get_project_activity(
     project_id: int,
     limit: int = 50,

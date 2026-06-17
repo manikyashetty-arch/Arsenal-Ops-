@@ -148,4 +148,4 @@ export interface WorkforceSyncResult {
 // Re-export the types owned by their component modules so downstream consumers
 // have a single `./types` import surface for everything admin.
 export type { ProjectCategory, CategoryFormPayload } from './modals/CategoryManagerModal';
-export type { Employee, DeveloperCapacity } from './tabs/EmployeesTab';
+export type { DeveloperCapacity } from './tabs/EmployeesTab';

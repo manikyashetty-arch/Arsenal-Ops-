@@ -13,7 +13,8 @@ import {
   fieldSupportsType,
 } from '@/lib/hierarchy/validateReparent';
 import { parseLocalDate, formatLocalDate } from '@/components/ProjectsPage/utils';
-import type { WorkItem, ProjectDeveloper } from '../types';
+import type { WorkItem } from '../types';
+import type { ProjectDeveloperEntry } from '@/client';
 import { CALENDAR_CLASS_NAMES } from '../constants';
 
 export interface WorkItemFullEditFormProps {
@@ -21,7 +22,7 @@ export interface WorkItemFullEditFormProps {
   itemDetail: WorkItem;
   editForm: Partial<WorkItem>;
   setEditForm: React.Dispatch<React.SetStateAction<Partial<WorkItem>>>;
-  developers: ProjectDeveloper[] | undefined;
+  developers: ProjectDeveloperEntry[] | undefined;
   fullWorkItems: WorkItem[];
   epicExcludeIds: Set<number>;
   parentExcludeIds: Set<number>;

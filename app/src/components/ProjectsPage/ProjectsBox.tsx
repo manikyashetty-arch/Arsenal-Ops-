@@ -35,7 +35,7 @@ const ProjectsBox = ({
     .filter(
       (p) =>
         p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        p.description.toLowerCase().includes(searchQuery.toLowerCase()),
+        (p.description ?? '').toLowerCase().includes(searchQuery.toLowerCase()),
     )
     .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
 

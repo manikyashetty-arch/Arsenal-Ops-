@@ -1,17 +1,10 @@
 import { useCallback, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
-import type { WorkItem, Sprint } from '@/types/workItems';
-
-export interface Developer {
-  id: number;
-  name: string;
-  email: string;
-  github_username?: string;
-  role: string;
-  responsibilities?: string;
-  is_admin?: boolean;
-}
+import type { WorkItem } from '@/types/workItems';
+import { slimToWorkItem } from '@/types/workItemMappers';
+import type { SprintResponse, SlimWorkItem } from '@/client';
+import type { DeveloperResponse, ProjectDeveloperEntry } from '@/client';
 
 export interface Project {
   id: number;
@@ -27,7 +20,7 @@ export interface Project {
     completed: number;
     completion_pct: number;
   };
-  developers?: Developer[];
+  developers?: ProjectDeveloperEntry[];
 }
 
 /**
@@ -62,24 +55,31 @@ export function useBoardData(id: string | undefined) {
   // bandwidth drops without breaking the detail view. Query key has a 'board'
   // suffix so it doesn't collide with the Hub view's full-shape cache.
   const workItemFilters = useMemo(() => ({ project_id: id }), [id]);
+  // The cache holds the canonical WorkItem[] view-model so the optimistic
+  // mutation hooks (which read/write this exact key) stay consistent. The wire
+  // shape (SlimWorkItem) is normalized inside the queryFn, so a backend change
+  // to the board payload surfaces as a type error here rather than silently.
   const workItemsQuery = useQuery<WorkItem[]>({
     queryKey: ['workItems', workItemFilters, 'board'],
-    queryFn: () => apiFetch<WorkItem[]>(`/api/workitems/board?project_id=${id}`),
+    queryFn: async () => {
+      const slim = await apiFetch<SlimWorkItem[]>(`/api/workitems/board?project_id=${id}`);
+      return slim.map(slimToWorkItem);
+    },
     enabled: !!id,
   });
   // Stabilize ref so downstream useMemos (parentExcludeIds, existingTags) don't bust on every render.
   const workItems = useMemo(() => workItemsQuery.data ?? [], [workItemsQuery.data]);
 
-  const sprintsQuery = useQuery<Sprint[]>({
+  const sprintsQuery = useQuery<SprintResponse[]>({
     queryKey: ['sprints', id],
-    queryFn: () => apiFetch<Sprint[]>(`/api/workitems/projects/${id}/sprints`),
+    queryFn: () => apiFetch<SprintResponse[]>(`/api/workitems/projects/${id}/sprints`),
     enabled: !!id,
   });
   // Stable ref so the list-view memos below (orderedListSprints, listViewGroups)
   // actually hold instead of busting on a fresh [] every render.
   const sprints = useMemo(() => sprintsQuery.data ?? [], [sprintsQuery.data]);
 
-  const developersQuery = useQuery<Array<{ id: number; name: string; email: string }>>({
+  const developersQuery = useQuery<DeveloperResponse[]>({
     queryKey: ['developers'],
     queryFn: () => apiFetch('/api/developers/'),
   });

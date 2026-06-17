@@ -65,7 +65,7 @@ const PersonalTasksPage = () => {
   const filteredTasks = tasks.filter((t) => {
     const matchesSearch =
       t.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      t.description.toLowerCase().includes(searchQuery.toLowerCase());
+      (t.description ?? '').toLowerCase().includes(searchQuery.toLowerCase());
     const matchesStatus = filterStatus === 'all' || t.status === filterStatus;
     const notConverted = !t.is_converted;
     return matchesSearch && matchesStatus && notConverted;

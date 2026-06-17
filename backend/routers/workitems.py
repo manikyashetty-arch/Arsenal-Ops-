@@ -334,7 +334,48 @@ class SprintCreate(BaseModel):
     capacity_hours: int | None = None
 
 
-@router.get("/")
+class WorkItemListResponse(BaseModel):
+    """Response shape for ``GET /api/workitems/`` (one item per row).
+
+    Documents the wire format for OpenAPI/codegen only — the handler returns
+    plain dicts at runtime, so this is never used to re-serialize. Field
+    optionality mirrors the dict-building code in ``list_work_items``: the
+    numeric fields use an ``or 0`` default (never None), the string fields
+    ``assignee``/``sprint``/``epic``/``description`` use literal defaults
+    ("Unassigned"/"Backlog"/""), and the *_id / *_key / date fields are
+    nullable. ``id`` is stringified (matches ``SlimWorkItem.id``).
+    """
+
+    id: str
+    key: str
+    type: str
+    title: str
+    description: str = ""
+    status: str
+    priority: str
+    story_points: int = 0
+    assigned_hours: int = 0
+    estimated_hours: int = 0
+    remaining_hours: int = 0
+    logged_hours: int = 0
+    assignee: str = "Unassigned"
+    assignee_id: int | None = None
+    sprint: str = "Backlog"
+    sprint_id: int | None = None
+    epic: str = ""
+    tags: list[str] = []
+    acceptance_criteria: list = []
+    parent_id: int | None = None
+    epic_id: int | None = None
+    parent_key: str | None = None
+    epic_key: str | None = None
+    due_date: str | None = None
+    start_date: str | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
+
+
+@router.get("/", responses={200: {"model": list[WorkItemListResponse]}})
 def list_work_items(
     response: Response = None,
     project_id: int = None,
@@ -559,7 +600,49 @@ def list_board_items(
     ]
 
 
-@router.get("/my-tasks")
+class MyTaskResponse(BaseModel):
+    """Response shape for ``GET /api/workitems/my-tasks``.
+
+    OpenAPI/codegen documentation only — the handler returns plain dicts at
+    runtime. Overlaps heavily with ``WorkItemListResponse`` but is a distinct
+    shape: it adds ``is_overdue``/``project_id``/``project_name``/
+    ``reporter_name``/``completed_at``, drops ``start_date``/``created_at``/
+    ``updated_at``/``epic`` (string), and — unlike the list endpoint — passes
+    ``estimated_hours``/``logged_hours``/``remaining_hours`` straight from the
+    (nullable) columns without an ``or 0`` guard, so those are ``int | None``.
+    ``assigned_hours`` and ``story_points`` keep the ``or 0`` default.
+    """
+
+    id: str
+    key: str
+    title: str
+    type: str
+    status: str
+    priority: str
+    project_id: int | None = None
+    project_name: str = "Unknown"
+    due_date: str | None = None
+    estimated_hours: int | None = None
+    logged_hours: int | None = None
+    remaining_hours: int | None = None
+    is_overdue: bool
+    completed_at: str | None = None
+    story_points: int = 0
+    assigned_hours: int = 0
+    assignee: str
+    reporter_name: str | None = None
+    description: str = ""
+    tags: list[str] = []
+    acceptance_criteria: list = []
+    parent_id: int | None = None
+    parent_key: str | None = None
+    epic_id: int | None = None
+    epic_key: str | None = None
+    sprint_id: int | None = None
+    sprint: str = "Backlog"
+
+
+@router.get("/my-tasks", responses={200: {"model": list[MyTaskResponse]}})
 def get_my_tasks(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Get all tasks assigned to the current user across all projects"""
     from models.developer import Developer
@@ -638,7 +721,62 @@ def get_my_tasks(db: Session = Depends(get_db), current_user: User = Depends(get
     return result
 
 
-@router.get("/{item_id}")
+class WorkItemDetailResponse(BaseModel):
+    """Response shape for ``GET /api/workitems/{id}`` (the side-panel detail).
+
+    Documents the wire format for OpenAPI/codegen only — the handler returns a
+    plain column dict at runtime, so this is never used to re-serialize. Unlike
+    the list endpoints, this one returns the *raw* model columns with no
+    normalization: ``id`` stays an int (not stringified), dates are serialized
+    by FastAPI's jsonable_encoder, and there is no ``or 0`` / "Unassigned"
+    defaulting. Field nullability therefore mirrors the ORM columns directly —
+    only the ``nullable=False`` columns are non-optional. The two trailing
+    fields (``reporter_name``/``assignee_name``) are relation-derived and added
+    by the handler. Gated byte-for-byte by tests/contract (workitems_detail).
+    """
+
+    id: int
+    project_id: int
+    sprint_id: int | None = None
+    key: str
+    type: str
+    title: str
+    description: str | None = None
+    status: str
+    priority: str
+    # `default=0` at the ORM layer is a Python-side INSERT default, NOT a DB
+    # `nullable=False` / `server_default` — so the columns are genuinely
+    # DB-nullable and a non-ORM insert path could leave them NULL. The detail
+    # handler returns them raw (no `or 0` guard), so type them honestly as
+    # nullable; the FE mapper coerces to the non-null view-model.
+    story_points: int | None = 0
+    logged_hours: int | None = 0
+    # No column default — genuinely nullable.
+    estimated_hours: int | None = None
+    remaining_hours: int | None = None
+    assignee_id: int | None = None
+    reporter_id: int | None = None
+    goal_id: int | None = None
+    parent_id: int | None = None
+    epic_id: int | None = None
+    acceptance_criteria: list = []
+    # tags are string labels (matches WorkItemListResponse.tags); the other two
+    # JSON columns hold heterogeneous objects, so they stay untyped lists.
+    tags: list[str] = []
+    attachments: list = []
+    created_at: datetime
+    updated_at: datetime
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+    last_assigned_at: datetime | None = None
+    due_date: datetime | None = None
+    start_date: datetime | None = None
+    # Relation-derived, appended by the handler (not table columns).
+    reporter_name: str | None = None
+    assignee_name: str | None = None
+
+
+@router.get("/{item_id}", responses={200: {"model": WorkItemDetailResponse}})
 def get_work_item(
     item_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
 ):
@@ -2051,7 +2189,81 @@ def move_ticket_to_sprint(
     }
 
 
-@router.get("/projects/{project_id}/sprints")
+class SprintResponse(BaseModel):
+    """OpenAPI response shape for the project sprints list (counts/points enriched).
+
+    Attached via ``responses=`` only — the handler still returns plain dicts, so
+    there is NO runtime re-serialization. Nullability mirrors the Sprint ORM model
+    and the dict builder in ``list_project_sprints``.
+    """
+
+    id: int
+    name: str
+    goal: str | None = None
+    status: str
+    start_date: str | None = None
+    end_date: str | None = None
+    capacity_hours: int | None = None
+    velocity: int | None = None
+    total_items: int
+    todo_count: int
+    in_progress_count: int
+    done_count: int
+    total_points: int
+    completed_points: int
+    completion_pct: float
+
+
+class SprintVelocityPoint(BaseModel):
+    """One sprint's committed/completed points for the analytics velocity chart."""
+
+    sprint_name: str
+    committed: int
+    completed: int
+    start_date: str | None = None
+
+
+class BurndownPoint(BaseModel):
+    """One day of the analytics burndown series."""
+
+    date: str
+    remaining: int
+    completed: int
+
+
+class TeamPerformanceEntry(BaseModel):
+    """Per-assignee rollup for the analytics team-performance section."""
+
+    name: str
+    total_items: int
+    completed_items: int
+    total_points: int
+    completed_points: int
+
+
+class ProjectAnalyticsResponse(BaseModel):
+    """OpenAPI response shape for the project analytics endpoint.
+
+    Attached via ``responses=`` only — the handler still returns a plain dict, so
+    there is NO runtime re-serialization. Distribution fields are ``dict[str, int]``
+    because the builders always emit integer counts.
+    """
+
+    total_items: int
+    total_story_points: int
+    completed_points: int
+    status_distribution: dict[str, int]
+    type_distribution: dict[str, int]
+    priority_distribution: dict[str, int]
+    velocity_data: list[SprintVelocityPoint]
+    burndown_data: list[BurndownPoint]
+    team_performance: list[TeamPerformanceEntry]
+
+
+@router.get(
+    "/projects/{project_id}/sprints",
+    responses={200: {"model": list[SprintResponse]}},
+)
 def list_project_sprints(
     project_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
 ):
@@ -2156,7 +2368,10 @@ def list_project_sprints(
     return result
 
 
-@router.get("/projects/{project_id}/analytics")
+@router.get(
+    "/projects/{project_id}/analytics",
+    responses={200: {"model": ProjectAnalyticsResponse}},
+)
 def get_project_analytics(
     project_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
 ):

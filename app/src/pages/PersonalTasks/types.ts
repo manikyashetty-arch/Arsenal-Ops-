@@ -1,25 +1,13 @@
-export interface PersonalTask {
-  id: number;
-  title: string;
-  description: string;
-  status: string;
-  priority: string;
-  estimated_hours: number;
-  due_date?: string;
-  tags: string[];
-  is_converted: boolean;
-  created_at: string;
-}
+import type { DeveloperResponse, PersonalTaskResponse } from '@/client';
+
+export type PersonalTask = PersonalTaskResponse;
 
 export interface ProjectSummary {
   id: number;
   name: string;
 }
 
-export interface Developer {
-  id: number;
-  name: string;
-}
+export type Developer = DeveloperResponse;
 
 export interface ProjectDetailResponse {
   developers?: Developer[];
