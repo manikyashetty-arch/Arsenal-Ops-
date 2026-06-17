@@ -21,8 +21,8 @@ from sqlalchemy.orm import sessionmaker
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from database import Base  # noqa: E402
-from models import (  # noqa: E402, F401
+from database import Base
+from models import (  # noqa: F401
     activity_log,
     architecture,
     developer,
@@ -41,9 +41,9 @@ from models import (  # noqa: E402, F401
     user_story,
     work_item,
 )
-from models.project import Project  # noqa: E402
-from models.work_item import WorkItem  # noqa: E402
-from services.hierarchy import validate_hierarchy  # noqa: E402
+from models.project import Project
+from models.work_item import WorkItem
+from services.hierarchy import validate_hierarchy
 
 
 @pytest.fixture

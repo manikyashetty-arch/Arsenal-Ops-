@@ -378,11 +378,11 @@ class WorkItemListResponse(BaseModel):
 @router.get("/", responses={200: {"model": list[WorkItemListResponse]}})
 def list_work_items(
     response: Response = None,
-    project_id: int = None,
-    status: str = None,
-    type: str = None,
-    sprint_id: int = None,
-    assignee_id: int = None,
+    project_id: int | None = None,
+    status: str | None = None,
+    type: str | None = None,
+    sprint_id: int | None = None,
+    assignee_id: int | None = None,
     limit: int = Query(500, ge=1, le=1000),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
@@ -1034,11 +1034,11 @@ def update_work_item(
         )
 
     # Handle date fields - parse ISO strings to datetime
-    if "start_date" in update_data and update_data["start_date"]:
+    if update_data.get("start_date"):
         update_data["start_date"] = datetime.fromisoformat(
             update_data["start_date"].replace("Z", "+00:00")
         )
-    if "due_date" in update_data and update_data["due_date"]:
+    if update_data.get("due_date"):
         update_data["due_date"] = datetime.fromisoformat(
             update_data["due_date"].replace("Z", "+00:00")
         )
@@ -1936,8 +1936,8 @@ def create_sprint(
 
 @router.get("/sprints/list")
 def list_sprints(
-    project_id: int = None,
-    status: str = None,
+    project_id: int | None = None,
+    status: str | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -3279,7 +3279,7 @@ def debug_hours_calculation(
             "total_hours_from_entries": sum(te.hours for te in all_time_entries),
             "total_hours_from_work_items": sum(wi.logged_hours or 0 for wi in items),
             "developers_with_entries": list(
-                set(te.developer_id for te in all_time_entries if te.developer_id)
+                {te.developer_id for te in all_time_entries if te.developer_id}
             ),
         },
     }

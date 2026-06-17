@@ -1636,14 +1636,15 @@ async def upload_project_file(
     # Save file
     file_path = os.path.join(project_upload_dir, file.filename)
     try:
-        with open(file_path, "wb") as f:
+        # small project-file upload; blocking write is acceptable here and avoids a threadpool hop
+        with open(file_path, "wb") as f:  # noqa: ASYNC230
             content = await file.read()
             f.write(content)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to save file: {str(e)}") from e
+        raise HTTPException(status_code=500, detail=f"Failed to save file: {e!s}") from e
 
     # Get file size
-    file_size = os.path.getsize(file_path)
+    file_size = os.path.getsize(file_path)  # noqa: ASYNC240 — single stat() on a just-written local file; negligible blocking
 
     # Create database record
     db_file = ProjectFile(

@@ -16,6 +16,7 @@ Usage:
 
 import argparse
 import datetime
+import itertools
 import json
 
 import openpyxl
@@ -119,7 +120,7 @@ def calculate_sprints(week_dates: list, sprint_weeks: int, tickets: list) -> dic
     # sprint instead of letting a chunk span the gap.
     runs: list = []
     current_run: list = [week_dates[0]]
-    for prev, nxt in zip(week_dates, week_dates[1:], strict=False):
+    for prev, nxt in itertools.pairwise(week_dates):
         prev_date = datetime.date.fromisoformat(prev)
         next_date = datetime.date.fromisoformat(nxt)
         if (next_date - prev_date).days == 7:

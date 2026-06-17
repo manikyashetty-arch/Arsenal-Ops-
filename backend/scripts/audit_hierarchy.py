@@ -22,15 +22,15 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from fastapi import HTTPException  # noqa: E402
-from sqlalchemy import text  # noqa: E402
-from sqlalchemy.orm import Session  # noqa: E402
+from fastapi import HTTPException
+from sqlalchemy import text
+from sqlalchemy.orm import Session
 
-from database import SessionLocal  # noqa: E402
+from database import SessionLocal
 
 # Eagerly import every model module so the WorkItem mapper (which validate_
 # hierarchy queries) and its relationship() string references resolve.
-from models import (  # noqa: E402, F401
+from models import (  # noqa: F401
     activity_log,
     architecture,
     developer,
@@ -49,7 +49,7 @@ from models import (  # noqa: E402, F401
     user_story,
     work_item,
 )
-from services.hierarchy import validate_hierarchy  # noqa: E402
+from services.hierarchy import validate_hierarchy
 
 # Only these fields are ever populated by a violation — never clear anything else.
 FIXABLE_FIELDS = {"parent_id", "epic_id"}

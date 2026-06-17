@@ -499,11 +499,9 @@ def select_architecture(
     except HTTPException:
         raise
     except Exception as e:
-        print(f"[ERROR] select_architecture failed: {str(e)}")
+        print(f"[ERROR] select_architecture failed: {e!s}")
         db.rollback()
-        raise HTTPException(
-            status_code=500, detail=f"Failed to select architecture: {str(e)}"
-        ) from e
+        raise HTTPException(status_code=500, detail=f"Failed to select architecture: {e!s}") from e
 
 
 @router.post("/projects/{project_id}/commit-architecture")
@@ -996,7 +994,7 @@ async def generate_roadmap_template(
             raise HTTPException(status_code=502, detail=str(e)) from e
         except Exception as e:
             raise HTTPException(
-                status_code=500, detail=f"Failed to generate roadmap suggestions: {str(e)}"
+                status_code=500, detail=f"Failed to generate roadmap suggestions: {e!s}"
             ) from e
         persist = True
 

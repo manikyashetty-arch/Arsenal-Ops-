@@ -901,7 +901,7 @@ def list_roles(
         .group_by(ur_table.c.role_id)
         .all()
     )
-    counts = {rid: c for rid, c in rows}
+    counts = dict(rows)
     return [_role_to_dict(r, user_count=counts.get(r.id, 0)) for r in roles]
 
 

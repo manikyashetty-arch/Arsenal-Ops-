@@ -95,7 +95,7 @@ app.add_middleware(
 # leaves ETag innermore than GZip on the response path). Gated behind
 # ENABLE_ETAG_MIDDLEWARE so it ships disabled and we can flip it on per env.
 if os.getenv("ENABLE_ETAG_MIDDLEWARE", "false").lower() == "true":
-    from middleware.etag import ETagMiddleware  # noqa: E402
+    from middleware.etag import ETagMiddleware
 
     app.add_middleware(ETagMiddleware)
     logger.info("[middleware] ETagMiddleware enabled")
@@ -124,7 +124,7 @@ async def global_exception_handler(request: Request, exc: Exception):
         headers["Access-Control-Allow-Headers"] = "*"
     return JSONResponse(
         status_code=500,
-        content={"detail": f"Internal server error: {str(exc)}"},
+        content={"detail": f"Internal server error: {exc!s}"},
         headers=headers,
     )
 

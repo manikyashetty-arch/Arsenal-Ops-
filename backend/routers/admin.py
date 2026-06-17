@@ -97,7 +97,7 @@ def get_dashboard_stats(db: Session = Depends(get_db)):
 
     # Tickets by status (single GROUP BY replaces 5 separate COUNTs)
     status_rows = db.query(WorkItem.status, func.count(WorkItem.id)).group_by(WorkItem.status).all()
-    status_counts = {s: c for s, c in status_rows}
+    status_counts = dict(status_rows)
     tickets_by_status = {
         s: int(status_counts.get(s, 0))
         for s in ("backlog", "todo", "in_progress", "in_review", "done")
@@ -107,7 +107,7 @@ def get_dashboard_stats(db: Session = Depends(get_db)):
     priority_rows = (
         db.query(WorkItem.priority, func.count(WorkItem.id)).group_by(WorkItem.priority).all()
     )
-    priority_counts = {p: c for p, c in priority_rows}
+    priority_counts = dict(priority_rows)
     tickets_by_priority = {
         p: int(priority_counts.get(p, 0)) for p in ("low", "medium", "high", "critical")
     }
@@ -695,9 +695,9 @@ def projects_weekly_report(
 
     # All four snapshot buckets default to 0 for projects with no matching
     # items so every row in the response is well-formed.
-    todo_backlog_by_project: dict[int, int] = {pid: 0 for pid in project_ids}
-    in_progress_by_project: dict[int, int] = {pid: 0 for pid in project_ids}
-    in_review_by_project: dict[int, int] = {pid: 0 for pid in project_ids}
+    todo_backlog_by_project: dict[int, int] = dict.fromkeys(project_ids, 0)
+    in_progress_by_project: dict[int, int] = dict.fromkeys(project_ids, 0)
+    in_review_by_project: dict[int, int] = dict.fromkeys(project_ids, 0)
     for row in active_rows:
         if row.status in ("backlog", "todo"):
             todo_backlog_by_project[row.project_id] += row.n
@@ -722,7 +722,7 @@ def projects_weekly_report(
         .group_by(WorkItem.project_id)
         .all()
     )
-    done_by_project: dict[int, int] = {pid: 0 for pid in project_ids}
+    done_by_project: dict[int, int] = dict.fromkeys(project_ids, 0)
     for row in done_rows:
         done_by_project[row.project_id] = row.n
 
