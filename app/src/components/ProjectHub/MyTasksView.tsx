@@ -1,10 +1,7 @@
-import React, { useState, useMemo } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Briefcase, AlertTriangle, CheckCircle2, Calendar } from 'lucide-react';
-import { getStatusColor } from '@/lib/workItemConfig';
-import { parseLocalDate } from '@/lib/dateUtils';
+import React, { useState, useMemo } from 'react';
+import { Badge } from '@/components/ui/badge';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Empty,
   EmptyHeader,
@@ -12,6 +9,9 @@ import {
   EmptyTitle,
   EmptyDescription,
 } from '@/components/ui/empty';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { parseLocalDate } from '@/lib/dateUtils';
+import { getStatusColor } from '@/lib/workItemConfig';
 
 interface Task {
   id: string;
@@ -66,10 +66,7 @@ const MyTasksView: React.FC<MyTasksViewProps> = ({ tasks, onTaskClick }) => {
   const groupedTasks = useMemo(() => {
     return filteredTasks.reduce(
       (acc, task) => {
-        if (!acc[task.project_name]) {
-          acc[task.project_name] = [];
-        }
-        acc[task.project_name].push(task);
+        (acc[task.project_name] ??= []).push(task);
         return acc;
       },
       {} as Record<string, Task[]>,

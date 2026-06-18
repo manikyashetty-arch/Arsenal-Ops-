@@ -1,7 +1,7 @@
 import { Target } from 'lucide-react';
+import type { ProjectArchitectureResponse, PrdAnalysisResponse } from '@/client';
 import ArchitectureCard from '@/components/ArchitectureCard';
 import RoadmapSummaryPanel from '../components/RoadmapSummaryPanel';
-import type { ProjectArchitectureResponse, PrdAnalysisResponse } from '@/client';
 
 interface ArchitecturesStepProps {
   analysis: PrdAnalysisResponse | null;

@@ -105,12 +105,12 @@ describe('groupItems', () => {
 
   it('groups by status', () => {
     const g = groupItems(items, 'status');
-    expect(g.todo.map((i) => i.id)).toEqual(['1']);
-    expect(g.done.map((i) => i.id)).toEqual(['2']);
+    expect(g.todo!.map((i) => i.id)).toEqual(['1']);
+    expect(g.done!.map((i) => i.id)).toEqual(['2']);
   });
 
   it('falls back to Unassigned / No Sprint for missing values', () => {
-    expect(groupItems(items, 'assignee').Unassigned.map((i) => i.id)).toEqual(['2']);
-    expect(groupItems(items, 'sprint')['No Sprint'].map((i) => i.id)).toEqual(['2']);
+    expect(groupItems(items, 'assignee').Unassigned!.map((i) => i.id)).toEqual(['2']);
+    expect(groupItems(items, 'sprint')['No Sprint']!.map((i) => i.id)).toEqual(['2']);
   });
 });

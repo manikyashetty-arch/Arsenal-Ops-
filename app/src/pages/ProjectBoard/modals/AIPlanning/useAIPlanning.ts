@@ -1,9 +1,9 @@
-import { useState, useRef, Dispatch, SetStateAction } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useState, useRef, Dispatch, SetStateAction } from 'react';
 import { toast } from 'sonner';
+import type { ProjectArchitectureResponse, PrdAnalysisResponse } from '@/client';
 import { apiFetch } from '@/lib/api';
 import { invalidateProjectScope } from '@/lib/invalidations';
-import type { ProjectArchitectureResponse, PrdAnalysisResponse } from '@/client';
 
 export interface GeneratedTicket {
   title: string;

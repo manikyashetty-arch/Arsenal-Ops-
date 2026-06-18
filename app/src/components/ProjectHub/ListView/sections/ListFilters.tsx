@@ -1,3 +1,4 @@
+import { Search } from 'lucide-react';
 import React from 'react';
 import { CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -8,7 +9,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Search } from 'lucide-react';
 
 interface ListFiltersProps {
   itemCount: number;

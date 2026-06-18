@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
 import { ZoomIn, ZoomOut, Maximize2, RotateCcw } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
 import { Spinner } from '@/components/ui/spinner';
 
 // Lazy-loaded mermaid singleton — kept outside the component so the dynamic

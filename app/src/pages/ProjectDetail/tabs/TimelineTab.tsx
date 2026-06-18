@@ -1,5 +1,5 @@
-import { TimelineView, CalendarView } from '@/components/ProjectHub';
 import type { GoalResponse, MilestoneResponse } from '@/client';
+import { TimelineView, CalendarView } from '@/components/ProjectHub';
 
 interface HubWorkItem {
   id: string;

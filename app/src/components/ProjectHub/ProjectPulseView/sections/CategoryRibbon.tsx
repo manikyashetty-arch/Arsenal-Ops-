@@ -37,7 +37,8 @@ export const CategoryRibbon: React.FC<{ pulse: PulseData; width?: number }> = Re
             </div>
             {pulse.months.map((m, i) => {
               const v = (m as any)[c.key] || 0;
-              const intensity = maxBy[c.key] ? v / maxBy[c.key] : 0;
+              const max = maxBy[c.key];
+              const intensity = max ? v / max : 0;
               const active = v > 0;
               return (
                 <div

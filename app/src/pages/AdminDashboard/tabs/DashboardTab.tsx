@@ -1,3 +1,4 @@
+import { Users, FolderKanban, Ticket, Calendar, ChevronRight } from 'lucide-react';
 import {
   BarChart,
   Bar,
@@ -9,9 +10,8 @@ import {
   PieChart,
   Pie,
 } from 'recharts';
-import { Users, FolderKanban, Ticket, Calendar, ChevronRight } from 'lucide-react';
-import { Empty, EmptyDescription } from '@/components/ui/empty';
 import type { DashboardStats } from '@/client';
+import { Empty, EmptyDescription } from '@/components/ui/empty';
 
 type AdminTab = 'dashboard' | 'employees' | 'projects' | 'users' | 'roles';
 

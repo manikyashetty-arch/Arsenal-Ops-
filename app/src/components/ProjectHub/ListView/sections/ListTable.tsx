@@ -1,7 +1,7 @@
-import React from 'react';
-import { CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { ChevronUp, ChevronDown } from 'lucide-react';
+import React from 'react';
+import { Badge } from '@/components/ui/badge';
+import { CardContent } from '@/components/ui/card';
 import { Empty, EmptyHeader, EmptyTitle } from '@/components/ui/empty';
 import { getStatusIcon } from '../components/StatusIcon';
 import { getPriorityColor } from '../lib/listLogic';

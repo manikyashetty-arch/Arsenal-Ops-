@@ -1,10 +1,10 @@
 import React, { useState, useMemo } from 'react';
 import { Card } from '@/components/ui/card';
 import { filterAndSortItems, groupItems } from './lib/listLogic';
-import type { ListViewProps, SortDirection, SortField, WorkItem } from './types';
 import ListFilters from './sections/ListFilters';
 import ListTable from './sections/ListTable';
 import TicketDetailPanel from './sections/TicketDetailPanel';
+import type { ListViewProps, SortDirection, SortField, WorkItem } from './types';
 
 const ListView: React.FC<ListViewProps> = ({ workItems, onTaskClick }) => {
   const [searchTerm, setSearchTerm] = useState('');

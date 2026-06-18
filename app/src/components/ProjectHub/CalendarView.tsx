@@ -1,14 +1,14 @@
-import React, { useState, useMemo } from 'react';
-import { Calendar, Views, dateFnsLocalizer, Navigate } from 'react-big-calendar';
 import { format, parse, startOfWeek, getDay } from 'date-fns';
 import { enUS } from 'date-fns/locale';
-import 'react-big-calendar/lib/css/react-big-calendar.css';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
-import { parseLocalDate } from '@/lib/dateUtils';
-import { isPastDue } from '@/components/ProjectsPage/utils';
-import { getStatusColor } from '@/lib/workItemConfig';
+import React, { useState, useMemo } from 'react';
+import { Calendar, Views, dateFnsLocalizer, Navigate } from 'react-big-calendar';
+import 'react-big-calendar/lib/css/react-big-calendar.css';
 import type { GoalResponse, MilestoneResponse } from '@/client';
+import { isPastDue } from '@/components/ProjectsPage/utils';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { parseLocalDate } from '@/lib/dateUtils';
+import { getStatusColor } from '@/lib/workItemConfig';
 
 interface WorkItem {
   id: string;

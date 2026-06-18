@@ -1,6 +1,6 @@
+import { X, BookOpen, Target } from 'lucide-react';
 import React from 'react';
 import { Badge } from '@/components/ui/badge';
-import { X, BookOpen, Target } from 'lucide-react';
 import { TYPE_CONFIG } from '@/lib/workItemConfig';
 import { getStatusIcon } from '../components/StatusIcon';
 import { getPriorityColor } from '../lib/listLogic';

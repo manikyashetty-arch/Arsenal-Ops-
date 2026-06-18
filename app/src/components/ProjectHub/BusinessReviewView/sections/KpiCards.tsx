@@ -1,7 +1,7 @@
-import React from 'react';
 import { CheckCircle2, AlertTriangle, AlertCircle, HelpCircle } from 'lucide-react';
-import type { HealthMeta } from '../lib/health';
+import React from 'react';
 import type { ProjectAnalyticsResponse } from '@/client';
+import type { HealthMeta } from '../lib/health';
 
 interface KpiCardsProps {
   health: HealthMeta;

@@ -1,17 +1,6 @@
-import { useEffect, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { apiFetch, ApiError } from '@/lib/api';
-import {
-  invalidateProjectScope,
-  invalidateWorkItemScope,
-  invalidateAdminMembershipImpact,
-} from '@/lib/invalidations';
-import { toastErrorHandler } from '@/lib/mutationToast';
-import { useAllDevelopers } from '@/hooks/useAllDevelopers';
-import type { ConfirmFn } from '@/components/ui/confirm-dialog';
+import { useEffect, useMemo } from 'react';
 import { toast } from 'sonner';
-import { useAuth } from '@/contexts/AuthContext';
-import type { HubWorkItem, ProjectOverview } from '../types';
 import type {
   SprintResponse,
   ProjectDetailResponse,
@@ -24,6 +13,17 @@ import type {
   ProjectLinkResponse,
   WorkItemListResponse,
 } from '@/client';
+import type { ConfirmFn } from '@/components/ui/confirm-dialog';
+import { useAuth } from '@/contexts/AuthContext';
+import { useAllDevelopers } from '@/hooks/useAllDevelopers';
+import { apiFetch, ApiError } from '@/lib/api';
+import {
+  invalidateProjectScope,
+  invalidateWorkItemScope,
+  invalidateAdminMembershipImpact,
+} from '@/lib/invalidations';
+import { toastErrorHandler } from '@/lib/mutationToast';
+import type { HubWorkItem, ProjectOverview } from '../types';
 
 /**
  * All data concerns for ProjectDetail — the 11 queries, 9 mutations, their

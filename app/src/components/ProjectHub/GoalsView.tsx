@@ -1,10 +1,9 @@
-import React, { useState } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
-import { Progress } from '@/components/ui/progress';
 import { Target, Plus, CheckCircle2, Calendar, Trash2 } from 'lucide-react';
+import React, { useState } from 'react';
+import type { GoalResponse, MilestoneResponse } from '@/client';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Empty,
   EmptyHeader,
@@ -12,7 +11,8 @@ import {
   EmptyTitle,
   EmptyDescription,
 } from '@/components/ui/empty';
-import type { GoalResponse, MilestoneResponse } from '@/client';
+import { Input } from '@/components/ui/input';
+import { Progress } from '@/components/ui/progress';
 
 interface GoalsViewProps {
   goals: GoalResponse[];

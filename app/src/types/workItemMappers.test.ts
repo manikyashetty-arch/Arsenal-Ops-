@@ -163,7 +163,11 @@ describe('applyWorkItemDetail', () => {
   });
 
   it('re-narrows nullable wire fields to the non-null view-model', () => {
-    const merged = applyWorkItemDetail(base, { ...detail, description: null, remaining_hours: null });
+    const merged = applyWorkItemDetail(base, {
+      ...detail,
+      description: null,
+      remaining_hours: null,
+    });
     expect(merged.description).toBe('');
     expect(merged.remaining_hours).toBe(0);
   });

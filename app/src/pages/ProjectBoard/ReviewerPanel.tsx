@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Eye, X, Ban } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import type { CommentThreadDeveloper } from '@/components/CommentThread';
 import { ReviewerView, BlockedQueueView } from '@/components/ProjectHub';
 import { apiFetch } from '@/lib/api';
-import type { CommentThreadDeveloper } from '@/components/CommentThread';
 
 interface WorkItemIn {
   id: string;

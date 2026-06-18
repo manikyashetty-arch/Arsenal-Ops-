@@ -1,5 +1,5 @@
-import React from 'react';
 import { HelpCircle, X } from 'lucide-react';
+import React from 'react';
 import type { HealthMeta } from '../lib/health';
 
 interface Deduction {

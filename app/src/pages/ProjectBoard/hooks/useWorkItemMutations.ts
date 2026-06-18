@@ -1,13 +1,13 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
-import { apiFetch, ApiError, permissionAwareError } from '@/lib/api';
-import { toastErrorHandler } from '@/lib/mutationToast';
-import { invalidateProjectScope } from '@/lib/invalidations';
 import type { ConfirmFn } from '@/components/ui/confirm-dialog';
+import { apiFetch, ApiError, permissionAwareError } from '@/lib/api';
+import { invalidateProjectScope } from '@/lib/invalidations';
+import { toastErrorHandler } from '@/lib/mutationToast';
 import type { WorkItem } from '@/types/workItems';
-import type { CreateItemFormValues } from '../modals/CreateItemModal';
 import { applyStatusChange } from '../lib/optimisticStatus';
+import type { CreateItemFormValues } from '../modals/CreateItemModal';
 
 interface UseWorkItemMutationsArgs {
   // The SAME memoized `workItemFilters` reference returned by useBoardData. The

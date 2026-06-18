@@ -1,14 +1,14 @@
-import React, { useState } from 'react';
 import { Clock, AlertCircle, AlertTriangle } from 'lucide-react';
-import { getHealthMeta } from './lib/health';
+import React, { useState } from 'react';
 import { useBusinessReviewComments } from './hooks/useBusinessReviewComments';
-import type { BusinessReviewViewProps } from './types';
+import { getHealthMeta } from './lib/health';
+import HealthExplanationModal from './modals/HealthExplanationModal';
+import ItemListDialog from './modals/ItemListDialog';
+import BusinessReviewComments from './sections/BusinessReviewComments';
 import KpiCards from './sections/KpiCards';
 import MilestoneProgress from './sections/MilestoneProgress';
 import StakeholderSummary from './sections/StakeholderSummary';
-import BusinessReviewComments from './sections/BusinessReviewComments';
-import ItemListDialog from './modals/ItemListDialog';
-import HealthExplanationModal from './modals/HealthExplanationModal';
+import type { BusinessReviewViewProps } from './types';
 
 const BusinessReviewView: React.FC<BusinessReviewViewProps> = ({
   project,

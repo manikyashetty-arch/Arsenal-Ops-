@@ -1,5 +1,5 @@
-import React from 'react';
 import { ExternalLink, X } from 'lucide-react';
+import React from 'react';
 import type { WorkItem } from '../types';
 
 interface ItemListDialogProps {

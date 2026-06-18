@@ -1,7 +1,7 @@
+import { CheckCircle2, MessageSquare, ExternalLink, ChevronDown, Circle } from 'lucide-react';
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Badge } from '@/components/ui/badge';
-import { CheckCircle2, MessageSquare, ExternalLink, ChevronDown, Circle } from 'lucide-react';
 import type { BusinessReviewComment } from '../types';
 
 interface BusinessReviewCommentsProps {

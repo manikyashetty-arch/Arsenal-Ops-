@@ -1,7 +1,7 @@
 import { BarChart3 } from 'lucide-react';
+import { STATUS_BARS, STATUS_COLOR } from './constants';
 import type { MyTask } from './types';
 import { parseLocalDate } from './utils';
-import { STATUS_BARS, STATUS_COLOR } from './constants';
 
 interface OverviewStats {
   total: number;
