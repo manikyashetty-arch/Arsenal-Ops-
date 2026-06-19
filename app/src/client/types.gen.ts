@@ -250,6 +250,10 @@ export type CommentResponse = {
    */
   id: number;
   /**
+   * Is Resolved
+   */
+  is_resolved?: boolean;
+  /**
    * Mentions
    */
   mentions: Array<number>;
@@ -2009,6 +2013,10 @@ export type SlimWorkItem = {
    * Id
    */
   id: string;
+  /**
+   * Is Blocked
+   */
+  is_blocked?: boolean;
   /**
    * Key
    */
@@ -6010,23 +6018,23 @@ export type ListWorkItemsApiWorkitemsGetData = {
     /**
      * Project Id
      */
-    project_id?: number;
+    project_id?: number | null;
     /**
      * Status
      */
-    status?: string;
+    status?: string | null;
     /**
      * Type
      */
-    type?: string;
+    type?: string | null;
     /**
      * Sprint Id
      */
-    sprint_id?: number;
+    sprint_id?: number | null;
     /**
      * Assignee Id
      */
-    assignee_id?: number;
+    assignee_id?: number | null;
     /**
      * Limit
      */
@@ -6383,11 +6391,11 @@ export type ListSprintsApiWorkitemsSprintsListGetData = {
     /**
      * Project Id
      */
-    project_id?: number;
+    project_id?: number | null;
     /**
      * Status
      */
-    status?: string;
+    status?: string | null;
   };
   url: '/api/workitems/sprints/list';
 };
@@ -6818,6 +6826,35 @@ export type GetWorkItemTimeEntriesApiWorkitemsItemIdTimeEntriesGetError =
   GetWorkItemTimeEntriesApiWorkitemsItemIdTimeEntriesGetErrors[keyof GetWorkItemTimeEntriesApiWorkitemsItemIdTimeEntriesGetErrors];
 
 export type GetWorkItemTimeEntriesApiWorkitemsItemIdTimeEntriesGetResponses = {
+  /**
+   * Successful Response
+   */
+  200: unknown;
+};
+
+export type UnblockWorkItemApiWorkitemsItemIdUnblockPostData = {
+  body?: never;
+  path: {
+    /**
+     * Item Id
+     */
+    item_id: number;
+  };
+  query?: never;
+  url: '/api/workitems/{item_id}/unblock';
+};
+
+export type UnblockWorkItemApiWorkitemsItemIdUnblockPostErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError;
+};
+
+export type UnblockWorkItemApiWorkitemsItemIdUnblockPostError =
+  UnblockWorkItemApiWorkitemsItemIdUnblockPostErrors[keyof UnblockWorkItemApiWorkitemsItemIdUnblockPostErrors];
+
+export type UnblockWorkItemApiWorkitemsItemIdUnblockPostResponses = {
   /**
    * Successful Response
    */
