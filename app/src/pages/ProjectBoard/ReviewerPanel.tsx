@@ -1,10 +1,10 @@
 import { useQuery } from '@tanstack/react-query';
 import { Eye, X, Ban } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
+import type { WorkItemUpdate } from '@/client';
 import type { CommentThreadDeveloper } from '@/components/CommentThread';
 import { ReviewerView, BlockedQueueView } from '@/components/ProjectHub';
 import { apiFetch } from '@/lib/api';
-import type { WorkItemUpdate } from '@/types/workItems';
 
 interface WorkItemIn {
   id: string;

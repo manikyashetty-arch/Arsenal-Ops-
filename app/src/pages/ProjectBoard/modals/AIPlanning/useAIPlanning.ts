@@ -2,8 +2,9 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState, useRef, Dispatch, SetStateAction } from 'react';
 import { toast } from 'sonner';
 import type { ProjectArchitectureResponse, PrdAnalysisResponse } from '@/client';
-import { apiFetch, permissionAwareError } from '@/lib/api';
+import { apiFetch } from '@/lib/api';
 import { invalidateProjectScope } from '@/lib/invalidations';
+import { toastErrorHandler } from '@/lib/mutationToast';
 
 export interface GeneratedTicket {
   title: string;
@@ -260,7 +261,7 @@ export function useAIPlanning({
       invalidateProjectScope(queryClient, project.id);
       toast.success('PRD analyzed successfully!');
     } catch (err) {
-      toast.error(permissionAwareError(err, 'Failed to analyze PRD'));
+      toastErrorHandler('analyze PRD')(err);
       setAiStep('upload');
     } finally {
       setIsGenerating(false);
@@ -292,7 +293,7 @@ export function useAIPlanning({
       setAiStep('architectures'); // Reuse architectures step for summary display
       toast.success('Roadmap parsed successfully!');
     } catch (err) {
-      toast.error(permissionAwareError(err, 'Failed to parse roadmap'));
+      toastErrorHandler('parse roadmap')(err);
       setAiStep('upload');
     } finally {
       setIsGenerating(false);
@@ -395,7 +396,7 @@ export function useAIPlanning({
         onClose();
       }, 2000);
     } catch (err) {
-      toast.error(permissionAwareError(err, 'Failed to commit architecture'));
+      toastErrorHandler('commit architecture')(err);
       setAiStep('preview');
     } finally {
       setIsGenerating(false);
@@ -430,7 +431,7 @@ export function useAIPlanning({
         onClose();
       }, 2000);
     } catch (err) {
-      toast.error(permissionAwareError(err, 'Failed to commit roadmap'));
+      toastErrorHandler('commit roadmap')(err);
       setAiStep('preview');
     } finally {
       setIsGenerating(false);

@@ -592,7 +592,9 @@ const ProjectBoard = () => {
         onCloseReviewer={() => setShowReviewer(false)}
         onReviewerTaskUpdate={(itemId, updates) => {
           queryClient.setQueryData<WorkItem[]>(['workItems', workItemFilters, 'board'], (old) =>
-            (old ?? []).map((item) => (item.id === itemId ? { ...item, ...updates } : item)),
+            (old ?? []).map((item) =>
+              item.id === itemId ? ({ ...item, ...updates } as WorkItem) : item,
+            ),
           );
           invalidateWorkItems();
         }}

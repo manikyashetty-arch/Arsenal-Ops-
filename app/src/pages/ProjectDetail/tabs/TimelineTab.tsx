@@ -1,6 +1,5 @@
-import type { GoalResponse, MilestoneResponse } from '@/client';
+import type { GoalResponse, MilestoneResponse, WorkItemUpdate } from '@/client';
 import { TimelineView, CalendarView } from '@/components/ProjectHub';
-import type { WorkItemUpdate } from '@/types/workItems';
 
 interface HubWorkItem {
   id: string;

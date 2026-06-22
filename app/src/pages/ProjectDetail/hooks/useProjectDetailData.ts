@@ -12,6 +12,8 @@ import type {
   ActivityResponse,
   ProjectLinkResponse,
   WorkItemListResponse,
+  WorkItemUpdate,
+  WorkItemDetailResponse,
 } from '@/client';
 import type { ConfirmFn } from '@/components/ui/confirm-dialog';
 import { useAuth } from '@/contexts/AuthContext';
@@ -23,7 +25,6 @@ import {
   invalidateAdminMembershipImpact,
 } from '@/lib/invalidations';
 import { toastErrorHandler } from '@/lib/mutationToast';
-import type { WorkItem, WorkItemUpdate } from '@/types/workItems';
 import type { HubWorkItem, ProjectOverview } from '../types';
 
 /**
@@ -272,7 +273,7 @@ export const useProjectDetailData = (
   // ── mutations: hub work items ───────────────────────────────────────────
   const taskUpdateMutation = useMutation({
     mutationFn: ({ itemId, updates }: { itemId: string; updates: WorkItemUpdate }) =>
-      apiFetch<WorkItem>(`/api/workitems/${itemId}`, {
+      apiFetch<WorkItemDetailResponse>(`/api/workitems/${itemId}`, {
         method: 'PUT',
         body: JSON.stringify(updates),
       }),
