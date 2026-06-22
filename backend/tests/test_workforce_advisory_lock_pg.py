@@ -37,10 +37,10 @@ if os.getenv("WORKFORCE_PG_TESTS") != "1":
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from sqlalchemy import create_engine, text  # noqa: E402
-from sqlalchemy.orm import sessionmaker  # noqa: E402
+from sqlalchemy import create_engine, text
+from sqlalchemy.orm import sessionmaker
 
-from services.workforce_sync import (  # noqa: E402
+from services.workforce_sync import (
     ADVISORY_LOCK_KEY,
     _release_advisory_lock,
     _try_advisory_lock,

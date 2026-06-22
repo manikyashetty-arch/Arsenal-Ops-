@@ -232,5 +232,5 @@ def refresh_quietly(db: Session, integration: WorkforceIntegration) -> None:
         refresh_workforce_clients(db, integration)
     except (QBApiError, WorkforceOAuthError) as e:
         logger.warning("[workforce_clients] background refresh failed: %s", e)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         logger.exception("[workforce_clients] unexpected refresh error: %s", e)

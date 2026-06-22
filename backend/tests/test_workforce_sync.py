@@ -24,8 +24,8 @@ from sqlalchemy.orm import sessionmaker
 # Make the backend importable as if we were running from /app.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import models  # noqa: F401, E402 — registers tables with Base.metadata
-from database import Base  # noqa: E402
+import models  # noqa: F401 — registers tables with Base.metadata
+from database import Base
 
 TEST_DB_URL = "sqlite:///:memory:"
 engine = create_engine(TEST_DB_URL, connect_args={"check_same_thread": False})
@@ -222,7 +222,7 @@ def qb_doubles(monkeypatch):
 
 
 @pytest.mark.parametrize(
-    "today,expected_mon,expected_fri",
+    ("today", "expected_mon", "expected_fri"),
     [
         # Day-of-week sweep within one calendar week.
         (date(2024, 1, 8), date(2024, 1, 8), date(2024, 1, 12)),  # Mon

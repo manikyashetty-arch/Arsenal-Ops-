@@ -30,9 +30,9 @@ import sys
 # Allow running as `python -m scripts.run_workforce_sync` from /app
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from database import SessionLocal  # noqa: E402
-from services.workforce_sync import run_workforce_sync  # noqa: E402
-from services.workforce_sync_notify import send_sync_notification  # noqa: E402
+from database import SessionLocal
+from services.workforce_sync import run_workforce_sync
+from services.workforce_sync_notify import send_sync_notification
 
 logging.basicConfig(
     level=os.getenv("WORKFORCE_SYNC_LOG_LEVEL", "INFO"),
@@ -82,7 +82,7 @@ def main() -> int:
                 result,
                 triggered_by_label="Saturday cron (scheduled)",
             )
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             log.warning("Cron sync email notification failed: %s", e)
     else:
         log.info("WEEKLY_REPORT_RECIPIENTS is empty — skipping email notification.")

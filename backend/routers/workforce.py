@@ -281,7 +281,7 @@ def start_connect(
 def oauth_callback(
     code: str | None = Query(default=None),
     state: str | None = Query(default=None),
-    realmId: str | None = Query(default=None),  # noqa: N803 — Intuit param name
+    realmId: str | None = Query(default=None),
     error: str | None = Query(default=None),
     error_description: str | None = Query(default=None),
     db: Session = Depends(get_db),
@@ -401,7 +401,7 @@ def oauth_callback(
     if realm_changed:
         try:
             clear_workforce_clients(db)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             logger.warning("Workforce cross-realm cache clear failed: %s", e)
 
     # Eager-seed the cached client list. Runs BEFORE the service-item
@@ -422,7 +422,7 @@ def oauth_callback(
         if company_name:
             integration.company_name = company_name
             db.commit()
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         logger.warning("Workforce connected but company name lookup failed: %s", e)
 
     # Best-effort resolve of the "Hours" service item against the new
@@ -507,7 +507,7 @@ def disconnect(db: Session = Depends(get_db)):
 
     try:
         clear_workforce_clients(db)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         # The integration is gone — the picker is hidden until reconnect
         # and the OAuth callback clears the cache when the new realm
         # differs from the old one. So a failure to clear here is
@@ -728,7 +728,7 @@ def manual_sync(
                 triggered_by_label=current_user.name or current_user.email,
                 triggered_by_email=current_user.email,
             )
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             logger.warning("Manual sync email notification failed: %s", e)
 
     return result

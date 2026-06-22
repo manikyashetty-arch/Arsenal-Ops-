@@ -19,12 +19,12 @@ from sqlalchemy.orm import sessionmaker
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import models  # noqa: F401, E402 — registers tables with Base.metadata
-from database import Base  # noqa: E402
-from models.developer import Developer  # noqa: E402
-from models.project import Project  # noqa: E402
-from models.time_entry import TimeEntry  # noqa: E402
-from models.work_item import WorkItem  # noqa: E402
+import models  # noqa: F401 — registers tables with Base.metadata
+from database import Base
+from models.developer import Developer
+from models.project import Project
+from models.time_entry import TimeEntry
+from models.work_item import WorkItem
 
 TEST_DB_URL = "sqlite:///:memory:"
 engine = create_engine(TEST_DB_URL, connect_args={"check_same_thread": False})

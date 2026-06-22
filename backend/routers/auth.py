@@ -223,7 +223,7 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
         # Anything narrower-scope (e.g. OAuth state token, future
         # email-link tokens) must not be reusable as a session.
         raise credentials_exception
-    user_id: str = payload.get("sub")
+    user_id: str | None = payload.get("sub")
     if user_id is None:
         raise credentials_exception
 
@@ -959,7 +959,7 @@ def list_roles(
         .group_by(ur_table.c.role_id)
         .all()
     )
-    counts = {rid: c for rid, c in rows}
+    counts = dict(rows)
     return [_role_to_dict(r, user_count=counts.get(r.id, 0)) for r in roles]
 
 

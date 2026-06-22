@@ -285,7 +285,7 @@ def send_sync_notification(
     for to in cleaned:
         try:
             ok = email_service.send_email(to_email=to, subject=subject, html_body=html)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             logger.warning("[workforce_sync_notify] send to %s raised: %s", to, e)
             ok = False
         results[to] = ok

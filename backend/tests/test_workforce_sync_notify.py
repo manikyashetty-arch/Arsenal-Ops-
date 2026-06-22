@@ -19,7 +19,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
 @pytest.mark.parametrize(
-    "result,expected_subject_part",
+    ("result", "expected_subject_part"),
     [
         (
             {
