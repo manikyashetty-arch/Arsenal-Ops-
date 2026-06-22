@@ -170,38 +170,14 @@ def _post_oauth_redirect_url(qs: str) -> str:
     :8000 / api.<domain>) where the backend has no `/admin` route and
     answers 404.
 
-    Resolution order:
-      1. `WORKFORCE_POST_OAUTH_REDIRECT` if set (treat as authoritative).
-         May be absolute (`https://app.foo/admin?tab=integrations`) or
-         relative (`/admin?tab=integrations`); relative values get
-         joined with `FRONTEND_URL`.
-      2. `FRONTEND_URL` + `/admin?tab=integrations` — the standard
-         pattern other Arsenal flows already use.
-      3. `http://localhost:5173/admin?tab=integrations` — local dev
-         default so the smoke test works out of the box without extra
-         env wiring.
+    Resolution:
+      `FRONTEND_URL` (or `http://localhost:5173` for unset local dev) +
+      `/admin?tab=integrations`. Arsenal Ops always serves the admin
+      page at this path; no per-deploy override needed.
     """
-    # Treat empty string as unset — see _env_or_default in workforce_oauth.py
-    # for the docker-compose env-forwarding rationale.
-    raw_redirect = os.getenv("WORKFORCE_POST_OAUTH_REDIRECT")
     raw_frontend = os.getenv("FRONTEND_URL")
     frontend = (raw_frontend or "http://localhost:5173").rstrip("/")
-
-    base: str
-    if raw_redirect:
-        # Author specified the redirect explicitly. If they gave a
-        # relative path, anchor it against FRONTEND_URL; if absolute,
-        # use verbatim.
-        base = (
-            raw_redirect
-            if raw_redirect.startswith(("http://", "https://"))
-            else (
-                f"{frontend}{raw_redirect if raw_redirect.startswith('/') else '/' + raw_redirect}"
-            )
-        )
-    else:
-        base = f"{frontend}/admin?tab=integrations"
-
+    base = f"{frontend}/admin?tab=integrations"
     sep = "&" if "?" in base else "?"
     return f"{base}{sep}{qs}"
 

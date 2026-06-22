@@ -35,7 +35,7 @@ from services.workforce_sync import run_workforce_sync
 from services.workforce_sync_notify import send_sync_notification
 
 logging.basicConfig(
-    level=os.getenv("WORKFORCE_SYNC_LOG_LEVEL", "INFO"),
+    level="INFO",
     format="%(asctime)s %(levelname)s [workforce_sync] %(message)s",
 )
 log = logging.getLogger("workforce_sync")
@@ -57,9 +57,8 @@ def _recipients() -> list[str]:
 def main() -> int:
     db = SessionLocal()
     try:
-        # batch_cap is resolved inside run_workforce_sync from
-        # WORKFORCE_SYNC_BATCH_CAP — same path the manual HTTP trigger
-        # uses, so ops env overrides apply to both triggers.
+        # batch_cap defaults to DEFAULT_BATCH_CAP inside run_workforce_sync —
+        # same value the manual HTTP trigger uses.
         result = run_workforce_sync(db, triggered_by="cron")
     finally:
         db.close()

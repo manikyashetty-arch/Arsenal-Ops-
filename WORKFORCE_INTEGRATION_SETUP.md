@@ -813,10 +813,7 @@ For automatic local scheduling, add a `scheduler` container to `docker-compose.y
 | `INTUIT_REVOKE_URL` | `https://developer.api.intuit.com/v2/oauth2/tokens/revoke` | Override for tests; same for sandbox + production |
 | `INTUIT_API_BASE_URL` | `https://quickbooks.api.intuit.com` | **THIS is the sandbox/prod toggle.** Set to `https://sandbox-quickbooks.api.intuit.com` for sandbox. |
 | `WORKFORCE_TOKEN_ENCRYPTION_KEY` | — | Fernet key. Generate with `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`. **MUST match between web and cron services.** |
-| `WORKFORCE_POST_OAUTH_REDIRECT` | `<FRONTEND_URL>/admin?tab=integrations` (falls back to `http://localhost:5173/admin?tab=integrations`) | Where the OAuth callback redirects the admin's browser when done. Accepts absolute URLs (`https://app.foo/...`) or paths (`/...`); paths anchor against `FRONTEND_URL`. |
-| `FRONTEND_URL` | `http://localhost:5173` | Origin of the SPA. Used to build the post-OAuth redirect when `WORKFORCE_POST_OAUTH_REDIRECT` is unset or relative. Already used by other Arsenal flows. |
-| `WORKFORCE_SYNC_BATCH_CAP` | `500` | Per-run cap on entries pushed to QB |
-| `WORKFORCE_SYNC_LOG_LEVEL` | `INFO` | Log verbosity for the cron script |
+| `FRONTEND_URL` | `http://localhost:5173` | Origin of the SPA. The OAuth callback builds `${FRONTEND_URL}/admin?tab=integrations` to bounce the admin's browser back to the Integrations tab after Connect completes. Already used by other Arsenal flows. |
 | `DATABASE_URL` | — | Postgres connection string — must point at the same DB the API uses |
 | `WEEKLY_REPORT_RECIPIENTS` | *empty* | Comma-separated emails that receive both the weekly hours report AND the Saturday QuickBooks sync summary. Empty / unset → cron sync runs silently (no email). |
 | Gmail OAuth2 env (`MAIL_REFRESH_TOKEN`, `BOT_EMAIL`, `SMTP_FROM_NAME`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`) | — | Required to actually deliver the sync notification email. Same setup as the existing weekly report (see `EMAIL_SETUP.md`). If not configured, the sync still runs — the email send logs a warning and is skipped. |
@@ -898,7 +895,7 @@ Worst case from hitting a rate limit: a one-week delay in fully draining the que
 | `INTUIT_REDIRECT_URI is not set` on Connect | Env var missing on web service | Set it, redeploy. URI must match the one registered in the Intuit app. |
 | OAuth completes but lands on `workforce=error&reason=bad_state` | State token expired (10-min TTL) — admin took too long to click through Intuit | Click Connect again and complete within 10 minutes |
 | OAuth lands on `workforce=connected&warn=service_item_missing` | "Hours" item didn't exist at connect time | Create the item in QB, then click Sync Now — the worker resolves it lazily |
-| After Connect, browser shows `{"detail":"Not Found"}` at `:8000/admin?...` | `FRONTEND_URL` / `WORKFORCE_POST_OAUTH_REDIRECT` resolves to a relative path — browser anchors it against the backend host instead of the SPA | Set `FRONTEND_URL=http://localhost:5173` (or your SPA origin) in `.env`, recreate the backend container |
+| After Connect, browser shows `{"detail":"Not Found"}` at `:8000/admin?...` | `FRONTEND_URL` is unset, so the post-OAuth redirect falls back to a host the backend doesn't serve | Set `FRONTEND_URL=http://localhost:5173` (or your SPA origin) in `.env`, recreate the backend container |
 | Refresh-clients button returns 401 / "reconnection required" | Stored refresh token rejected by Intuit (revoked at QB side, or aged past TTL) | Disconnect + Connect again — the cached client list is rebuilt on reconnect |
 
 ---

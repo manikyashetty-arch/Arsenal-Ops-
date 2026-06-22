@@ -53,7 +53,6 @@ from __future__ import annotations
 
 import contextlib
 import logging
-import os
 from datetime import date, datetime, time, timedelta
 from typing import Any
 
@@ -86,33 +85,10 @@ ADVISORY_LOCK_KEY = 0x57464F52  # ASCII 'WFOR'
 
 # Hard cap on how many TimeEntries one run can push. Protects against a
 # pathologically large queue exhausting the run / hitting Intuit's per-
-# day limits. Configurable so ops can raise it for an unusual catch-up.
+# day limits. Hardcoded — Arsenal's weekly volume (~50–200 entries) is
+# well under this; if a catch-up genuinely needs more, bump the constant
+# in code rather than via an env knob (operational tuning, not config).
 DEFAULT_BATCH_CAP = 500
-
-
-def _resolve_batch_cap() -> int:
-    """Resolve the per-run cap from ``WORKFORCE_SYNC_BATCH_CAP`` or fall
-    back to ``DEFAULT_BATCH_CAP``.
-
-    Centralised so the cron script (``scripts/run_workforce_sync.py``)
-    AND the manual-trigger HTTP endpoint
-    (``routers/workforce.py::manual_sync``) honour the same env override.
-    Previously the cron consulted the env but manual sync was hardcoded
-    to ``DEFAULT_BATCH_CAP`` — ops raising the cap to drain a backlog
-    silently lost the intent on the manual path.
-    """
-    raw = os.getenv("WORKFORCE_SYNC_BATCH_CAP", "").strip()
-    if not raw:
-        return DEFAULT_BATCH_CAP
-    try:
-        return max(1, int(raw))
-    except ValueError:
-        logger.warning(
-            "WORKFORCE_SYNC_BATCH_CAP=%r is not an int; using default %d.",
-            raw,
-            DEFAULT_BATCH_CAP,
-        )
-        return DEFAULT_BATCH_CAP
 
 
 # ── Window resolution ────────────────────────────────────────────────────
@@ -296,11 +272,11 @@ def run_workforce_sync(
     been recorded on `integration.last_sync_*` so the API can return
     them as 5xx without losing the audit trail.
     """
-    # Resolve the cap once at entry. Centralised here so both the cron
-    # script and the manual-sync HTTP endpoint honour
-    # WORKFORCE_SYNC_BATCH_CAP — see _resolve_batch_cap docstring.
+    # Default the cap to DEFAULT_BATCH_CAP if the caller didn't pin one.
+    # No env override — operational tuning, not configuration; bump the
+    # constant in code if Arsenal's volume ever outgrows it.
     if batch_cap is None:
-        batch_cap = _resolve_batch_cap()
+        batch_cap = DEFAULT_BATCH_CAP
 
     window_start, window_end = current_work_week_window(today)
     base_result = {
