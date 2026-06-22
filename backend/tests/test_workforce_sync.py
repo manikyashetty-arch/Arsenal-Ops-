@@ -718,10 +718,16 @@ def test_triggered_by_is_logged(db, qb_doubles, caplog):
 
 def test_advisory_lock_is_noop_on_sqlite(db, qb_doubles):
     """SQLite has no advisory lock primitive — _try_advisory_lock must
-    return True so the sync still runs against the in-memory DB."""
-    from services.workforce_sync import _try_advisory_lock
+    return None (the "no lock, but proceed" sentinel) so the sync still
+    runs against the in-memory DB. The Postgres path returns a held
+    Connection on success or False on contention.
+    """
+    from services.workforce_sync import _release_advisory_lock, _try_advisory_lock
 
-    assert _try_advisory_lock(db) is True
+    result = _try_advisory_lock(db)
+    assert result is None
+    # Release should accept the sentinel as a no-op.
+    _release_advisory_lock(result)
 
 
 def test_finalize_persists_counts_on_no_eligible(db, qb_doubles):

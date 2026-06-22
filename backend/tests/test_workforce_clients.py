@@ -119,6 +119,50 @@ def test_subsequent_refresh_updates_renamed_customer(db, qb_customers):
     assert row.name == "Acme International"
 
 
+def test_list_active_clients_is_realm_scoped(db, qb_customers):
+    """H5 regression: a stale row from a prior realm (left behind by a
+    failed clear_workforce_clients) must not leak into list_active_clients.
+
+    The composite PK (qb_customer_id, realm_id) lets a same-id customer
+    from two realms coexist; the read must filter to the current realm.
+    """
+    from models.workforce_client import WorkforceClient
+    from services.workforce_clients import list_active_clients
+
+    # Pretend we connected to REALM-OLD first, refreshed clients, then
+    # reconnected to REALM-NEW. The cross-realm clear silently failed
+    # (try/except wraps it), leaving the REALM-OLD rows. The integration
+    # row is now REALM-NEW.
+    db.add(
+        WorkforceClient(
+            qb_customer_id="5",
+            realm_id="REALM-OLD",
+            name="Old Acme",
+            active=True,
+            last_synced_at=datetime.utcnow(),
+        )
+    )
+    db.add(
+        WorkforceClient(
+            qb_customer_id="5",
+            realm_id="REALM-NEW",
+            name="New Beta",
+            active=True,
+            last_synced_at=datetime.utcnow(),
+        )
+    )
+    _make_integration(db, realm_id="REALM-NEW")
+    db.commit()
+
+    # Reading via the singleton-resolved path: only REALM-NEW's row.
+    rows = list_active_clients(db)
+    assert rows == [{"id": "5", "name": "New Beta"}]
+
+    # Reading with explicit realm_id: still scoped.
+    rows = list_active_clients(db, realm_id="REALM-OLD")
+    assert rows == [{"id": "5", "name": "Old Acme"}]
+
+
 def test_unchanged_customer_does_not_count_as_updated(db, qb_customers):
     from services.workforce_clients import refresh_workforce_clients
 

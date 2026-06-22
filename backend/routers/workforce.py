@@ -23,9 +23,11 @@ worker live in later phases; this file does not implement them.
 
 import logging
 import os
+import secrets
 import sys
 from datetime import datetime, timedelta
 
+from cachetools import TTLCache
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import RedirectResponse
 from jose import JWTError, jwt
@@ -84,13 +86,35 @@ callback_router = APIRouter(prefix="/api/auth/workforce", tags=["workforce"])
 STATE_TOKEN_TTL_MINUTES = 10
 STATE_TOKEN_PURPOSE = "workforce_oauth_connect"
 
+# In-process cache of already-consumed state token JTIs. Single-use
+# enforcement: once a state token completes the callback, its jti is
+# inserted here and any second validation attempt is rejected (closes
+# the 10-min replay window the TTL alone leaves open).
+#
+# In-process is fine for a single-replica Render service. If the API
+# ever scales to >1 replica, this needs a shared store (Redis / DB
+# row) — surfaced in REVIEW_RULES.md.
+_CONSUMED_STATE_JTI: TTLCache = TTLCache(
+    maxsize=10_000,
+    ttl=STATE_TOKEN_TTL_MINUTES * 60,
+)
+
 
 def _issue_state_token(user_id: int) -> str:
-    """Mint a state token the admin's browser will round-trip via Intuit."""
+    """Mint a state token the admin's browser will round-trip via Intuit.
+
+    Carries:
+      - ``sub``: admin user id (string-cast for JWT spec compliance)
+      - ``purpose``: scopes the token to the OAuth callback only
+      - ``exp``: 10-min TTL
+      - ``jti``: random per-token id for single-use enforcement in
+        ``_verify_state_token``
+    """
     payload = {
         "sub": str(user_id),
         "purpose": STATE_TOKEN_PURPOSE,
         "exp": datetime.utcnow() + timedelta(minutes=STATE_TOKEN_TTL_MINUTES),
+        "jti": secrets.token_urlsafe(16),
     }
     return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
 
@@ -99,8 +123,14 @@ def _verify_state_token(state: str) -> int:
     """Validate the state token from the callback, returning the admin user id.
 
     Raises 400 on any failure — expired, wrong purpose claim, tampered
-    signature. The error message is intentionally generic so probes
-    don't learn why the token was rejected.
+    signature, replayed jti, missing required claim. The error message
+    is intentionally generic so probes don't learn why the token was
+    rejected.
+
+    Side effect on success: the token's ``jti`` is added to a TTL cache
+    so a second validation of the same token (replay within the 10-min
+    window) is rejected. State tokens travel in the URL bar and the
+    Referer header to Intuit, so single-use is the right discipline.
     """
     invalid = HTTPException(
         status_code=status.HTTP_400_BAD_REQUEST,
@@ -110,11 +140,19 @@ def _verify_state_token(state: str) -> int:
         payload = jwt.decode(state, SECRET_KEY, algorithms=[ALGORITHM])
     except JWTError:
         raise invalid from None
+    # Pin required claims — `exp` is verified by jose, the rest we check
+    # ourselves so a malformed token can't slip through.
     if payload.get("purpose") != STATE_TOKEN_PURPOSE:
         raise invalid
     sub = payload.get("sub")
     if not sub:
         raise invalid
+    jti = payload.get("jti")
+    if not jti:
+        raise invalid
+    if jti in _CONSUMED_STATE_JTI:
+        raise invalid
+    _CONSUMED_STATE_JTI[jti] = True
     try:
         return int(sub)
     except (TypeError, ValueError):
@@ -516,7 +554,10 @@ def list_clients(db: Session = Depends(get_db)) -> list[WorkforceClient]:
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="QuickBooks integration is not connected.",
         )
-    return [WorkforceClient(**c) for c in list_active_clients(db)]
+    # Pass realm_id explicitly so a cross-realm cache-clear failure
+    # (best-effort try/except in disconnect / reconnect paths) can never
+    # leak the previous realm's customers into the picker.
+    return [WorkforceClient(**c) for c in list_active_clients(db, realm_id=integration.realm_id)]
 
 
 class WorkforceClientsRefreshResult(BaseModel):
@@ -586,7 +627,7 @@ def refresh_clients_endpoint(db: Session = Depends(get_db)) -> WorkforceClientsR
     except QBApiError as e:
         logger.warning("Workforce company name refresh failed: %s", e)
 
-    last_at = last_refresh_time(db)
+    last_at = last_refresh_time(db, realm_id=integration.realm_id)
     return WorkforceClientsRefreshResult(
         **counts,
         last_refreshed_at=(last_at.isoformat() + "Z") if last_at else None,
@@ -655,8 +696,9 @@ def manual_sync(
     """Run the sync inline, return its result, and email the clicker.
 
     Same code path as the Saturday cron — the only difference is
-    `triggered_by="manual"` for log distinction. Honors the same
-    week-window (Mon-Fri of the previous week, no backfill); does NOT
+    `triggered_by="manual"` for log distinction. Honors the same window
+    (Mon–Fri of the calendar week containing the click; see
+    `services.workforce_sync.current_work_week_window`); does NOT
     expand the scope based on what's queued. If the admin needs to push
     older entries, that's a separate workflow that doesn't ship today.
 

@@ -4,9 +4,11 @@ Triggered by:
   • Render Cron Job (Saturday 08:00 UTC by default; see WORKFORCE_INTEGRATION_SETUP.md)
   • Manual:  `docker compose exec backend python -m scripts.run_workforce_sync`
 
-Pushes the previous Mon-Fri's TimeEntries — for projects linked to a QB
-Customer — to QuickBooks Online's TimeActivity endpoint. See
-`services/workforce_sync.py::run_workforce_sync` for details.
+Pushes the Mon–Fri of the calendar week containing the run — for
+projects linked to a QB Customer — to QuickBooks Online's TimeActivity
+endpoint. Saturday is part of the same Mon–Sun calendar week as the
+preceding Mon–Fri, so the Saturday cron sweeps the just-completed work
+week. See `services/workforce_sync.py::run_workforce_sync` for details.
 
 Exit codes (matches `scripts/send_weekly_report.py` conventions):
 
@@ -45,23 +47,6 @@ log = logging.getLogger("workforce_sync")
 _OK_STATUSES = {"ok", "no_eligible", "not_connected", "locked"}
 
 
-def _batch_cap() -> int:
-    """Optional override for the per-run cap. Empty / unset → use the
-    default in `workforce_sync.DEFAULT_BATCH_CAP`."""
-    raw = os.getenv("WORKFORCE_SYNC_BATCH_CAP", "").strip()
-    if not raw:
-        from services.workforce_sync import DEFAULT_BATCH_CAP  # local import
-
-        return DEFAULT_BATCH_CAP
-    try:
-        return max(1, int(raw))
-    except ValueError:
-        log.warning("WORKFORCE_SYNC_BATCH_CAP=%r is not an int; using default.", raw)
-        from services.workforce_sync import DEFAULT_BATCH_CAP
-
-        return DEFAULT_BATCH_CAP
-
-
 def _recipients() -> list[str]:
     """Same env var as `scripts/send_weekly_report.py` — keep ops/finance
     distribution lists in one place. Empty / unset → no email is sent."""
@@ -72,11 +57,10 @@ def _recipients() -> list[str]:
 def main() -> int:
     db = SessionLocal()
     try:
-        result = run_workforce_sync(
-            db,
-            triggered_by="cron",
-            batch_cap=_batch_cap(),
-        )
+        # batch_cap is resolved inside run_workforce_sync from
+        # WORKFORCE_SYNC_BATCH_CAP — same path the manual HTTP trigger
+        # uses, so ops env overrides apply to both triggers.
+        result = run_workforce_sync(db, triggered_by="cron")
     finally:
         db.close()
 

@@ -7,14 +7,24 @@ guarantees — only the trigger differs.
 
 Window
 ======
-Both triggers sync the **previous Mon-Fri only** (no backfill). The
-weekly cron is configured to run Saturday morning UTC; manual triggers
-pick the same prior-week window so an admin re-running the sync after a
-correction gets identical behavior.
+Both triggers sync the **Mon–Fri of the calendar week containing the
+trigger** — see `current_work_week_window`. The Saturday cron and any
+manual click on the same calendar week target the same range; a Mon–Fri
+click syncs the partial Mon–through–today set (later weekdays simply
+don't exist yet, so the eligibility query returns the partial result
+and the next click — or the Saturday cron — sweeps the remainder).
 
-If the cron is delayed and runs on Sunday or even Monday, the window
-still resolves to the Mon-Fri of the most recently completed work week
-(see `previous_work_week`).
+The window is derived from `date.today()`, which uses the host's local
+timezone. `TimeEntry.logged_at` is stored as naive UTC. Operators are
+expected to run the backend with `TZ=UTC` (Render's default) so the
+two coincide; a non-UTC host can shift week boundaries on the date
+boundary. See `WORKFORCE_INTEGRATION_SETUP.md` and `REVIEW_RULES.md`.
+
+Note: a Saturday cron that slips past midnight (runs on Sunday) advances
+the week pointer and would target the next calendar week — by policy
+that's an ops issue, not a worker concern. Idempotency
+(`workforce_entry_id IS NULL`) keeps any missed entries eligible for a
+manual re-run.
 
 Concurrency
 ===========
@@ -43,6 +53,7 @@ from __future__ import annotations
 
 import contextlib
 import logging
+import os
 from datetime import date, datetime, time, timedelta
 from typing import Any
 
@@ -79,6 +90,31 @@ ADVISORY_LOCK_KEY = 0x57464F52  # ASCII 'WFOR'
 DEFAULT_BATCH_CAP = 500
 
 
+def _resolve_batch_cap() -> int:
+    """Resolve the per-run cap from ``WORKFORCE_SYNC_BATCH_CAP`` or fall
+    back to ``DEFAULT_BATCH_CAP``.
+
+    Centralised so the cron script (``scripts/run_workforce_sync.py``)
+    AND the manual-trigger HTTP endpoint
+    (``routers/workforce.py::manual_sync``) honour the same env override.
+    Previously the cron consulted the env but manual sync was hardcoded
+    to ``DEFAULT_BATCH_CAP`` — ops raising the cap to drain a backlog
+    silently lost the intent on the manual path.
+    """
+    raw = os.getenv("WORKFORCE_SYNC_BATCH_CAP", "").strip()
+    if not raw:
+        return DEFAULT_BATCH_CAP
+    try:
+        return max(1, int(raw))
+    except ValueError:
+        logger.warning(
+            "WORKFORCE_SYNC_BATCH_CAP=%r is not an int; using default %d.",
+            raw,
+            DEFAULT_BATCH_CAP,
+        )
+        return DEFAULT_BATCH_CAP
+
+
 # ── Window resolution ────────────────────────────────────────────────────
 
 
@@ -110,55 +146,90 @@ def current_work_week_window(today: date | None = None) -> tuple[date, date]:
 # ── Lock helper ──────────────────────────────────────────────────────────
 
 
-def _try_advisory_lock(db: Session) -> bool:
+def _try_advisory_lock(db: Session):
     """Acquire the workforce-sync advisory lock if available.
 
-    Returns True on Postgres if we got it, False if someone else holds
-    it. On non-Postgres backends (sqlite in tests) returns True without
-    a lock — the idempotency guarantee from `workforce_entry_id IS NULL`
-    still holds.
+    Returns the held ``Connection`` on Postgres if we got the lock, or
+    ``False`` if someone else holds it. On non-Postgres (sqlite in tests)
+    returns ``None`` without acquiring a lock — the idempotency guarantee
+    from ``workforce_entry_id IS NULL`` still holds.
+
+    Why we open a dedicated Connection instead of using the ORM Session:
+    Postgres advisory locks are bound to the *physical* connection that
+    acquired them. The ORM Session committing inside the sync (per-entry
+    ``db.commit()``) can return its connection to the pool and check out
+    a different one on the next operation. A subsequent
+    ``pg_advisory_unlock`` from the Session would run on a connection
+    that doesn't hold the lock → unlock returns ``false``, the original
+    connection silently keeps the lock until it cycles out of the pool,
+    and the next sync sees a spurious "already running" until that
+    happens (minutes, not days, but still wrong).
+
+    We sidestep all of that by opening one Connection at lock acquire
+    time, pinning it for the whole run, and releasing the lock on that
+    same Connection before closing it.
     """
     bind = db.get_bind()
     if bind.dialect.name != "postgresql":
-        return True
-    got = db.execute(
-        text("SELECT pg_try_advisory_lock(:k)"),
-        {"k": ADVISORY_LOCK_KEY},
-    ).scalar()
-    return bool(got)
+        return None  # sqlite: no lock, but the caller can still proceed
 
-
-def _release_advisory_lock(db: Session) -> None:
-    """Release the advisory lock. No-op on non-Postgres.
-
-    Two important behaviors here:
-
-    1. We `.scalar()` the result. Without it, SQLAlchemy may defer
-       cursor execution / not flush the call before the session is
-       closed, leaving the lock held on the pooled connection. The
-       next request picks up that connection and `pg_try_advisory_lock`
-       returns false — surfacing to the user as a spurious "another
-       sync is already running."
-    2. We then explicitly commit. Advisory locks are session-level
-       (not transactional), but committing closes the implicit
-       transaction SQLAlchemy opens for the SELECT and lets the
-       connection return cleanly to the pool.
-    """
-    bind = db.get_bind()
-    if bind.dialect.name != "postgresql":
-        return
+    # Use the engine's pool — not the Session's connection — so the lock
+    # is owned by an explicit, separate Connection we control for the
+    # whole run.
+    engine = bind.engine if hasattr(bind, "engine") else bind
+    conn = engine.connect()
     try:
-        db.execute(
-            text("SELECT pg_advisory_unlock(:k)"),
+        got = conn.execute(
+            text("SELECT pg_try_advisory_lock(:k)"),
             {"k": ADVISORY_LOCK_KEY},
         ).scalar()
-        db.commit()
     except Exception:
-        # Lock auto-releases when the underlying TCP session ends, so
-        # at worst the lock lingers until the connection cycles out of
-        # the pool. Don't propagate cleanup failures.
+        conn.close()
+        raise
+    if not got:
+        conn.close()
+        return False
+    return conn
+
+
+def _release_advisory_lock(lock_conn) -> None:
+    """Release the advisory lock on the SAME Connection that acquired it.
+
+    ``lock_conn`` is the value returned by ``_try_advisory_lock``:
+      - ``None``         → non-Postgres, no-op
+      - ``False``        → never acquired, no-op (shouldn't reach here
+                            since the caller short-circuits on False)
+      - ``Connection``   → run unlock on it, close it
+
+    The unlock result is checked and logged loudly if false — that means
+    the connection somehow lost the lock between acquire and release,
+    which would indicate a logic error in this module worth surfacing
+    rather than swallowing.
+    """
+    if lock_conn is None or lock_conn is False:
+        return
+    try:
+        try:
+            released = lock_conn.execute(
+                text("SELECT pg_advisory_unlock(:k)"),
+                {"k": ADVISORY_LOCK_KEY},
+            ).scalar()
+            if not released:
+                logger.error(
+                    "[workforce_sync] pg_advisory_unlock returned false on the "
+                    "acquiring Connection — lock state may be inconsistent. "
+                    "Lock will auto-release when this connection closes (next line)."
+                )
+        except Exception:
+            with contextlib.suppress(Exception):
+                lock_conn.rollback()
+            raise
+    finally:
+        # Closing the Connection releases any advisory locks still held
+        # on it (Postgres semantics), so even on an exception path the
+        # lock doesn't outlive the run.
         with contextlib.suppress(Exception):
-            db.rollback()
+            lock_conn.close()
 
 
 # ── Description builder ──────────────────────────────────────────────────
@@ -195,10 +266,10 @@ def run_workforce_sync(
     db: Session,
     *,
     triggered_by: str = "cron",
-    batch_cap: int = DEFAULT_BATCH_CAP,
+    batch_cap: int | None = None,
     today: date | None = None,
 ) -> dict[str, Any]:
-    """Push eligible TimeEntries from the previous Mon-Fri to QuickBooks.
+    """Push eligible TimeEntries from this calendar week's Mon–Fri to QuickBooks.
 
     Returns a dict suitable for both API response and log lines:
 
@@ -222,6 +293,12 @@ def run_workforce_sync(
     been recorded on `integration.last_sync_*` so the API can return
     them as 5xx without losing the audit trail.
     """
+    # Resolve the cap once at entry. Centralised here so both the cron
+    # script and the manual-sync HTTP endpoint honour
+    # WORKFORCE_SYNC_BATCH_CAP — see _resolve_batch_cap docstring.
+    if batch_cap is None:
+        batch_cap = _resolve_batch_cap()
+
     window_start, window_end = current_work_week_window(today)
     base_result = {
         "synced": 0,
@@ -236,7 +313,8 @@ def run_workforce_sync(
         logger.info("[workforce_sync] %s: integration not connected", triggered_by)
         return {**base_result, "status": "not_connected", "reason": "integration_not_connected"}
 
-    if not _try_advisory_lock(db):
+    lock_conn = _try_advisory_lock(db)
+    if lock_conn is False:
         logger.info("[workforce_sync] %s: another sync is already running", triggered_by)
         return {**base_result, "status": "locked", "reason": "another_sync_running"}
 
@@ -251,7 +329,7 @@ def run_workforce_sync(
             base_result=base_result,
         )
     finally:
-        _release_advisory_lock(db)
+        _release_advisory_lock(lock_conn)
 
 
 def _run_inside_lock(

@@ -78,7 +78,19 @@ def refresh_workforce_clients(db: Session, integration: WorkforceIntegration) ->
             continue
         seen_ids.add(qb_id)
 
-        existing = db.query(WorkforceClient).filter(WorkforceClient.qb_customer_id == qb_id).first()
+        # Composite PK is (qb_customer_id, realm_id). Match on BOTH so a
+        # same-id customer in a different realm can't collide with this
+        # one. (Intuit hands out small ints starting from 1, so a
+        # realm-A "5" and realm-B "5" coexisting must be modelled as
+        # distinct rows.)
+        existing = (
+            db.query(WorkforceClient)
+            .filter(
+                WorkforceClient.qb_customer_id == qb_id,
+                WorkforceClient.realm_id == realm_id,
+            )
+            .first()
+        )
         if existing is None:
             db.add(
                 WorkforceClient(
@@ -99,12 +111,6 @@ def refresh_workforce_clients(db: Session, integration: WorkforceIntegration) ->
                 # Re-activation — customer was previously missing from
                 # a refresh but is back now.
                 existing.active = True
-                changed = True
-            if existing.realm_id != realm_id:
-                # Defensive — reconnect to a different realm. Treat as
-                # "this row's data is no longer authoritative here";
-                # easiest to just adopt the new realm.
-                existing.realm_id = realm_id
                 changed = True
             existing.last_synced_at = now
             if changed:
@@ -152,26 +158,60 @@ def refresh_workforce_clients(db: Session, integration: WorkforceIntegration) ->
     }
 
 
-def list_active_clients(db: Session) -> list[dict[str, str]]:
+def list_active_clients(db: Session, realm_id: str | None = None) -> list[dict[str, str]]:
     """Read the cached client list for the picker. Active rows only, sorted by name.
+
+    Realm scope: if `realm_id` is given (production path — router
+    resolves it from the singleton WorkforceIntegration row), only
+    customers from that realm are returned. If omitted, the function
+    resolves the realm from the integration row itself.
 
     Returns the same shape the router used to return from live fetch
     (`[{id, name}]`) so the picker is unchanged.
+
+    Why realm-scope matters: cross-realm hygiene (clearing the cache on
+    reconnect-to-different-realm, on disconnect) is best-effort —
+    callers wrap clear_workforce_clients in try/except. If a clear
+    silently fails, a non-scoped read would merge two realms' customers
+    into one picker; the realm filter on this read makes that
+    impossible regardless of cleanup ordering.
     """
+    if realm_id is None:
+        # Resolve from the singleton integration row; this is the
+        # production path the router actually hits.
+        integration = db.query(WorkforceIntegration).first()
+        if integration is None:
+            return []
+        realm_id = integration.realm_id
+
     rows = (
         db.query(WorkforceClient)
-        .filter(WorkforceClient.active.is_(True))
+        .filter(
+            WorkforceClient.realm_id == realm_id,
+            WorkforceClient.active.is_(True),
+        )
         .order_by(WorkforceClient.name.asc())
         .all()
     )
     return [{"id": r.qb_customer_id, "name": r.name} for r in rows]
 
 
-def last_refresh_time(db: Session) -> datetime | None:
-    """Return the most recent `last_synced_at` across all rows, or None
-    if the cache has never been populated. Used by the Integrations
-    card to show "last refreshed N hours ago"."""
-    row = db.query(WorkforceClient).order_by(WorkforceClient.last_synced_at.desc()).first()
+def last_refresh_time(db: Session, realm_id: str | None = None) -> datetime | None:
+    """Most recent `last_synced_at` for the given realm, or None if the
+    cache has never been populated. Realm-scoped for the same reason as
+    `list_active_clients` — see that docstring."""
+    if realm_id is None:
+        integration = db.query(WorkforceIntegration).first()
+        if integration is None:
+            return None
+        realm_id = integration.realm_id
+
+    row = (
+        db.query(WorkforceClient)
+        .filter(WorkforceClient.realm_id == realm_id)
+        .order_by(WorkforceClient.last_synced_at.desc())
+        .first()
+    )
     return row.last_synced_at if row else None
 
 
