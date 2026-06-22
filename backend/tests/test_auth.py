@@ -445,6 +445,7 @@ class TestPasswordUtilities:
 
         # Verify the hash was upgraded to bcrypt post-login
         db.refresh(user)
+        assert user.hashed_password is not None
         assert user.hashed_password.startswith("$2b$"), (
             f"Expected bcrypt hash after login, got {user.hashed_password}"
         )

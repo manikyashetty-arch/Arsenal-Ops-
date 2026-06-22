@@ -736,7 +736,9 @@ class TestAIRefineArchitecture:
         assert "changes_applied" in data
 
         db.refresh(arch)
+        assert arch.mermaid_code is not None
         assert "Cache" in arch.mermaid_code
+        assert arch.description is not None
         assert "caching" in arch.description
 
     def test_ai_refine_nonexistent_architecture_returns_404(self, db, test_client, admin_user):

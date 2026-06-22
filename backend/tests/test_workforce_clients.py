@@ -10,6 +10,7 @@ from __future__ import annotations
 import os
 import sys
 from datetime import datetime, timedelta
+from typing import Any
 
 import pytest
 from sqlalchemy import create_engine
@@ -61,7 +62,10 @@ def qb_customers(monkeypatch):
     """Mock `fetch_qb_customers` at the import site so we control what
     "QuickBooks" returns on each refresh. Tests mutate `state["customers"]`
     to simulate adds/removes/renames between refreshes."""
-    state = {"customers": [], "raises": None}
+    # `Any` because state mixes a list[dict] (customers) with a
+    # nullable Exception (raises); typing precisely needs a TypedDict
+    # for one fixture which isn't worth the noise.
+    state: dict[str, Any] = {"customers": [], "raises": None}
 
     def fake_fetch(db, integration):
         if state["raises"]:

@@ -175,8 +175,11 @@ def _try_advisory_lock(db: Session):
 
     # Use the engine's pool — not the Session's connection — so the lock
     # is owned by an explicit, separate Connection we control for the
-    # whole run.
-    engine = bind.engine if hasattr(bind, "engine") else bind
+    # whole run. ``Session.get_bind()`` returns either Engine or
+    # Connection; isinstance narrows the union for mypy.
+    from sqlalchemy.engine import Connection, Engine
+
+    engine: Engine = bind.engine if isinstance(bind, Connection) else bind
     conn = engine.connect()
     try:
         got = conn.execute(

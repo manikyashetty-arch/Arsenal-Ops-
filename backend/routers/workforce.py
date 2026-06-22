@@ -263,7 +263,7 @@ def start_connect(
     # Crypto preflight — call into the helper so its missing-key error
     # message reaches the admin verbatim.
     try:
-        from services.workforce_crypto import _load_cipher  # type: ignore[attr-defined]
+        from services.workforce_crypto import _load_cipher
 
         _load_cipher()
     except WorkforceCryptoNotConfigured as e:

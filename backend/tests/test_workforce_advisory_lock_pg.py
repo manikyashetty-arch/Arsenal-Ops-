@@ -46,12 +46,15 @@ from services.workforce_sync import (
     _try_advisory_lock,
 )
 
-DB_URL = os.environ.get("DATABASE_URL")
-if not DB_URL or not DB_URL.startswith(("postgresql://", "postgres://")):
+_DB_URL_OPT = os.environ.get("DATABASE_URL")
+if not _DB_URL_OPT or not _DB_URL_OPT.startswith(("postgresql://", "postgres://")):
     pytest.skip(
         "DATABASE_URL must point at a Postgres database for these tests.",
         allow_module_level=True,
     )
+# After the skip the env var is guaranteed populated; rebind to a
+# non-Optional alias so `create_engine(DB_URL)` type-checks below.
+DB_URL: str = _DB_URL_OPT
 
 
 @pytest.fixture

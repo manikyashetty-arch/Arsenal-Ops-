@@ -14,12 +14,16 @@ columns hold ciphertext; never read these directly. Use the helpers
 
 import sys
 from datetime import datetime
+from typing import TYPE_CHECKING
 
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text
-from sqlalchemy.orm import relationship
+from sqlalchemy import DateTime, ForeignKey, String, Text
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 sys.path.append("..")
 from database import Base
+
+if TYPE_CHECKING:
+    from models.user import User
 
 
 class WorkforceIntegration(Base):
@@ -27,11 +31,11 @@ class WorkforceIntegration(Base):
 
     # Single-row table; PK kept on `id` for ORM convenience but in practice
     # `id` is always 1. The query convention is `db.query(WorkforceIntegration).first()`.
-    id = Column(Integer, primary_key=True, index=True)
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
 
     # QB company id returned from the OAuth handshake. Required for every
     # subsequent API call (`/v3/company/{realm_id}/...`).
-    realm_id = Column(String(64), nullable=False)
+    realm_id: Mapped[str] = mapped_column(String(64))
 
     # Human-friendly QB Company name, fetched once at connect time via
     # the CompanyInfo endpoint and refreshed each time we refresh the
@@ -39,40 +43,45 @@ class WorkforceIntegration(Base):
     # actual company they're talking to instead of the opaque realm id.
     # Nullable because the fetch is best-effort (an Intuit hiccup mid-
     # connect shouldn't fail the connect itself).
-    company_name = Column(String(255), nullable=True)
+    company_name: Mapped[str | None] = mapped_column(String(255))
 
     # Tokens are stored as ENCRYPTED ciphertext, not raw. The encryption
     # key lives in `WORKFORCE_TOKEN_ENCRYPTION_KEY` env var. See
     # `services/workforce_crypto.py` for the helpers that handle the
     # encrypt/decrypt boundary.
-    refresh_token_ciphertext = Column(Text, nullable=False)
-    access_token_ciphertext = Column(Text, nullable=True)
+    refresh_token_ciphertext: Mapped[str] = mapped_column(Text)
+    access_token_ciphertext: Mapped[str | None] = mapped_column(Text)
 
     # When the cached access token expires. The OAuth client re-mints it
     # from the refresh token on demand whenever this is past.
-    access_token_expires_at = Column(DateTime, nullable=True)
+    access_token_expires_at: Mapped[datetime | None] = mapped_column(DateTime)
 
     # QB id of the "Hours" Service Item, resolved once at connect time
     # (HR-mandated: all Arsenal hours go in under Service Item "Hours").
     # If the user renames it in QB, we'd need a re-resolution flow.
-    service_item_id = Column(String(64), nullable=True)
-    service_item_name = Column(String(255), nullable=True)
+    service_item_id: Mapped[str | None] = mapped_column(String(64))
+    service_item_name: Mapped[str | None] = mapped_column(String(255))
 
     # Audit — who connected, when.
-    connected_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    connected_by_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"))
-    connected_by = relationship("User", foreign_keys=[connected_by_user_id])
+    connected_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    connected_by_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    connected_by: Mapped["User | None"] = relationship("User", foreign_keys=[connected_by_user_id])
 
     # Observability — surfaced in the admin Integrations tab so admins can
     # see at a glance whether the last run was healthy.
-    last_sync_at = Column(DateTime, nullable=True)
-    last_sync_status = Column(String(20), nullable=True)  # ok | partial | error | not_connected
-    last_sync_error = Column(Text, nullable=True)
-    last_synced_count = Column(Integer, default=0, nullable=False)
-    last_failed_count = Column(Integer, default=0, nullable=False)
+    last_sync_at: Mapped[datetime | None] = mapped_column(DateTime)
+    # status set: ok | partial | error | not_connected | locked | no_eligible
+    last_sync_status: Mapped[str | None] = mapped_column(String(20))
+    last_sync_error: Mapped[str | None] = mapped_column(Text)
+    last_synced_count: Mapped[int] = mapped_column(default=0)
+    last_failed_count: Mapped[int] = mapped_column(default=0)
 
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
 
     def to_safe_dict(self) -> dict:
         """Serialize for API responses — REDACTS the token ciphertext.

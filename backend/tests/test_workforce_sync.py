@@ -16,6 +16,7 @@ import logging
 import os
 import sys
 from datetime import date, datetime, timedelta
+from typing import Any
 
 import pytest
 from sqlalchemy import create_engine
@@ -160,7 +161,10 @@ def _make_integration(db, *, service_item_id="QB-ITEM-7", service_item_name="Hou
 # inspect what was pushed without re-implementing the doubles.
 @pytest.fixture
 def qb_doubles(monkeypatch):
-    state = {
+    # `Any` because the dict is a grab-bag of dummies, lists, and
+    # exception instances — typing it precisely would need ~6 TypedDicts
+    # for one fixture. The fields are documented inline.
+    state: dict[str, Any] = {
         "employees": {"alice@arsenal.test": "EMP-1", "bob@arsenal.test": "EMP-2"},
         "service_item": {"id": "QB-ITEM-7", "name": "Hours"},
         "post_calls": [],
