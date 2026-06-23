@@ -4,7 +4,7 @@ import sys
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, ForeignKey, Index, Text
+from sqlalchemy import DateTime, ForeignKey, Index, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 sys.path.append("..")
@@ -33,6 +33,12 @@ class TimeEntry(Base):
     # Timestamp
     logged_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
 
+    # ── QuickBooks sync state ────────────────────────────────────────────
+    # Once successfully pushed to QB, holds the returned TimeActivity Id.
+    # Indexed because the sync worker filters on `IS NULL`; presence of
+    # this column on a row also blocks re-syncing (idempotency).
+    workforce_entry_id: Mapped[str | None] = mapped_column(String(64), index=True)
+
     # Relationships
     work_item: Mapped["WorkItem"] = relationship("WorkItem", back_populates="time_entries")
     developer: Mapped["Developer | None"] = relationship("Developer")
@@ -51,4 +57,5 @@ class TimeEntry(Base):
             "hours": self.hours,
             "description": self.description,
             "logged_at": self.logged_at.isoformat() if self.logged_at else None,
+            "workforce_entry_id": self.workforce_entry_id,
         }

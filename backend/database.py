@@ -688,6 +688,97 @@ def run_migrations():
         except Exception as e:
             print(f"[MIGRATION ERROR] developers.is_external: {e}")
 
+        # ── Workforce / QuickBooks Time integration columns ───────────────
+        # Adds the additive sync-state columns: two on projects (which QB
+        # Customer to bill to + cached display name) and one on time_entries
+        # (the QB TimeActivity id, used for idempotency on resync). The
+        # workforce_integration table itself is created by
+        # `Base.metadata.create_all` once the new model is imported (see
+        # models/workforce_integration.py) — no DDL needed for it here.
+        for table, column, ddl in [
+            ("projects", "workforce_client_id", "VARCHAR(64)"),
+            ("projects", "workforce_client_name", "VARCHAR(255)"),
+            ("time_entries", "workforce_entry_id", "VARCHAR(64)"),
+            ("workforce_integration", "company_name", "VARCHAR(255)"),
+        ]:
+            try:
+                exists = conn.execute(
+                    text(
+                        "SELECT column_name FROM information_schema.columns "
+                        "WHERE table_name = :t AND column_name = :c"
+                    ),
+                    {"t": table, "c": column},
+                ).fetchone()
+                if not exists:
+                    print(f"[MIGRATION] Adding {table}.{column}...")
+                    conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}"))
+                    conn.commit()
+            except Exception as e:
+                print(f"[MIGRATION ERROR] {table}.{column}: {e}")
+
+        # Indexes for the sync worker's queue queries — match the SQLAlchemy
+        # `index=True` on these columns. Skipped silently on SQLite (the
+        # CREATE INDEX IF NOT EXISTS is Postgres syntax) since dev tooling
+        # falls back to SQLite where these indexes are negligible.
+        for idx_name, table, column in [
+            ("idx_projects_workforce_client_id", "projects", "workforce_client_id"),
+            ("idx_time_entries_workforce_entry_id", "time_entries", "workforce_entry_id"),
+        ]:
+            try:
+                conn.execute(text(f"CREATE INDEX IF NOT EXISTS {idx_name} ON {table} ({column})"))
+                conn.commit()
+            except Exception as e:
+                print(f"[MIGRATION ERROR] {idx_name}: {e}")
+
+        # workforce_clients composite PK upgrade. The model now declares
+        # PK = (qb_customer_id, realm_id) so a same-id customer in two
+        # realms can coexist. Fresh installs get this from create_all;
+        # an early-iteration deploy that landed the single-column PK
+        # needs to migrate. Postgres only — sqlite is dropped/recreated
+        # in tests so it never sees the old shape.
+        try:
+            table_exists = conn.execute(
+                text(
+                    "SELECT 1 FROM information_schema.tables WHERE table_name = 'workforce_clients'"
+                )
+            ).fetchone()
+            if table_exists:
+                # Count columns in the primary key. 1 = old single-col
+                # PK on qb_customer_id, 2 = already composite.
+                pk_cols = conn.execute(
+                    text(
+                        "SELECT a.attname "
+                        "FROM pg_index i "
+                        "JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey) "
+                        "WHERE i.indrelid = 'workforce_clients'::regclass AND i.indisprimary"
+                    )
+                ).fetchall()
+                pk_names = {r[0] for r in pk_cols}
+                if pk_names == {"qb_customer_id"}:
+                    print(
+                        "[MIGRATION] Upgrading workforce_clients PK to "
+                        "(qb_customer_id, realm_id)..."
+                    )
+                    # Drop the old PK and add the composite. Safe because
+                    # the single-column PK already implied unique
+                    # qb_customer_id values, so no duplicates exist that
+                    # the composite would block.
+                    conn.execute(
+                        text("ALTER TABLE workforce_clients DROP CONSTRAINT workforce_clients_pkey")
+                    )
+                    conn.execute(
+                        text(
+                            "ALTER TABLE workforce_clients ADD PRIMARY KEY (qb_customer_id, realm_id)"
+                        )
+                    )
+                    conn.commit()
+        except Exception as e:
+            # Non-fatal: sqlite raises here (no information_schema), as
+            # do brand-new Postgres installs before workforce_clients
+            # has been created by create_all. Either way the model's
+            # composite PK applies to fresh creates.
+            print(f"[MIGRATION INFO] workforce_clients PK check skipped: {e}")
+
 
 SYSTEM_ROLES: list[tuple[str, str, list[str]]] = [
     ("admin", "Full system access", ["*"]),

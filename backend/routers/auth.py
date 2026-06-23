@@ -41,10 +41,53 @@ def _is_internal_email(email: str | None) -> bool:
 
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
 
-# Security configuration
-SECRET_KEY = "your-secret-key-change-in-production"  # Change this in production!
+
+# ── Security configuration ───────────────────────────────────────────────
+
+# The committed placeholder. Rejected explicitly so a misconfigured prod
+# deploy can't fall back to a value that's already in the public repo.
+_PLACEHOLDER_SECRET_KEY = "your-secret-key-change-in-production"
+
+
+def _load_secret_key() -> str:
+    """Load SECRET_KEY from the environment. Hard fail on absent or placeholder.
+
+    This secret signs both session JWTs (gating the entire admin API
+    surface) AND the OAuth state token on the public
+    /api/auth/workforce/callback. A leaked or guessable value breaks both
+    authentication (session forgery) AND the workforce-OAuth CSRF defense.
+
+    No escape hatch — the env var is REQUIRED everywhere: production
+    deploys, local dev, and CI. Tests set it in ``tests/conftest.py``
+    before any backend module imports. Generate a real value with::
+
+        python -c "import secrets; print(secrets.token_urlsafe(48))"
+    """
+    raw = os.getenv("SECRET_KEY", "").strip()
+    if not raw:
+        raise RuntimeError(
+            "SECRET_KEY env var is not set. Generate one with "
+            '`python -c "import secrets; print(secrets.token_urlsafe(48))"` '
+            "and set it on the backend process before booting."
+        )
+    if raw == _PLACEHOLDER_SECRET_KEY:
+        raise RuntimeError(
+            "SECRET_KEY is set to the committed placeholder value, which is "
+            "in the public repo. Rotate to a real value (see _load_secret_key "
+            "docstring) before continuing."
+        )
+    return raw
+
+
+SECRET_KEY = _load_secret_key()
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24  # 24 hours
+
+# JWT purpose claims. Every minted token carries `purpose`; consumers
+# reject any token whose purpose doesn't match what they expect. Stops a
+# state token (10-min TTL, leaks via URL bar + Referer) from being reused
+# as a session bearer credential.
+SESSION_TOKEN_PURPOSE = "auth"
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 
@@ -145,12 +188,20 @@ def get_password_hash(password):
 
 
 def create_access_token(data: dict, expires_delta: timedelta | None = None):
+    """Mint a session JWT.
+
+    Every token carries ``purpose: "auth"`` so ``get_current_user`` can
+    reject narrow-scope tokens (e.g. the OAuth state token) being reused
+    as a session bearer credential. Callers must not override the purpose
+    via ``data``.
+    """
     to_encode = data.copy()
     if expires_delta:
         expire = datetime.utcnow() + expires_delta
     else:
         expire = datetime.utcnow() + timedelta(minutes=15)
-    to_encode.update({"exp": expire})
+    to_encode["exp"] = expire
+    to_encode["purpose"] = SESSION_TOKEN_PURPOSE
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 
@@ -163,11 +214,18 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     )
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        user_id: str | None = payload.get("sub")
-        if user_id is None:
-            raise credentials_exception
     except JWTError:
         raise credentials_exception from None
+    # Pin required claims explicitly — `exp` is verified by jose; `sub`
+    # and `purpose` we check ourselves so a malformed token can't slip
+    # through with missing fields.
+    if payload.get("purpose") != SESSION_TOKEN_PURPOSE:
+        # Anything narrower-scope (e.g. OAuth state token, future
+        # email-link tokens) must not be reusable as a session.
+        raise credentials_exception
+    user_id: str | None = payload.get("sub")
+    if user_id is None:
+        raise credentials_exception
 
     user = (
         db.query(User)
