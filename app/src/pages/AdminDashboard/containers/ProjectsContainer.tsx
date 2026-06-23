@@ -14,7 +14,6 @@ import CategoryManagerModal from '../modals/CategoryManagerModal';
 import GitHubModal from '../modals/GitHubModal';
 import ProjectMembersModal from '../modals/ProjectMembersModal';
 import ProjectsTab from '../tabs/ProjectsTab';
-import ProjectsTab from '../tabs/ProjectsTab';
 import type { WorkforceStatus } from '../types';
 
 export default function ProjectsContainer() {

@@ -7,7 +7,6 @@ import ProjectsViewToggle from './ProjectsViewToggle';
 import { formatWeekRange } from './types';
 import type { ProjectsView } from './types';
 import type { ProjectCategory } from '../../modals/CategoryManagerModal';
-import type { ProjectCategory } from '../../modals/CategoryManagerModal';
 import type { WorkforceClient } from '../../types';
 
 interface ProjectsTabProps {
