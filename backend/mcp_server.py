@@ -53,7 +53,11 @@ from services.capacity_service import compute_capacity_breakdown, week_boundarie
 # time this runs we have a real signing secret to verify against.
 _jwt_verifier = JWTVerifier(public_key=SECRET_KEY, algorithm=ALGORITHM)
 
-mcp: FastMCP = FastMCP("Arsenal Ops", auth=_jwt_verifier)
+# mask_error_details=True: only *intentional* ToolError messages reach the agent;
+# any other (unexpected) exception is replaced with a generic message instead of
+# leaking internal details — stack frames, SQL, file paths — to the MCP client.
+# Our deliberate 403/404 ToolErrors (raised in _caller_session) are unaffected.
+mcp: FastMCP = FastMCP("Arsenal Ops", auth=_jwt_verifier, mask_error_details=True)
 
 
 @contextmanager
