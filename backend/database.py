@@ -98,7 +98,7 @@ def run_migrations():
                 conn.execute(
                     text("""
                     ALTER TABLE work_items
-                    ADD COLUMN logged_hours INTEGER DEFAULT 0
+                    ADD COLUMN logged_hours NUMERIC(7,2) DEFAULT 0
                 """)
                 )
                 conn.commit()
@@ -315,8 +315,10 @@ def run_migrations():
                         id SERIAL PRIMARY KEY,
                         work_item_id INTEGER REFERENCES work_items(id) ON DELETE CASCADE NOT NULL,
                         developer_id INTEGER REFERENCES developers(id) ON DELETE SET NULL,
-                        hours INTEGER NOT NULL,
+                        hours NUMERIC(6,2) NOT NULL,
                         description TEXT,
+                        start_time TIMESTAMP,
+                        end_time TIMESTAMP,
                         logged_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                     )
                 """)
@@ -326,6 +328,9 @@ def run_migrations():
                 )
                 conn.execute(
                     text("CREATE INDEX idx_time_entry_developer ON time_entries(developer_id)")
+                )
+                conn.execute(
+                    text("CREATE INDEX idx_time_entry_start_time ON time_entries(start_time)")
                 )
                 conn.commit()
                 print("[MIGRATION] time_entries table created!")

@@ -32,6 +32,7 @@ from routers.project_categories import router as project_categories_router  # no
 from routers.projects import router as projects_router  # noqa: E402
 from routers.pulse import router as pulse_router  # noqa: E402
 from routers.roadmap import router as roadmap_router  # noqa: E402
+from routers.time_blocks import router as time_blocks_router  # noqa: E402
 from routers.workitems import router as workitems_router  # noqa: E402
 
 # Create FastAPI app
@@ -133,6 +134,7 @@ async def global_exception_handler(request: Request, exc: Exception):
 app.include_router(auth_router)
 app.include_router(projects_router)
 app.include_router(workitems_router)
+app.include_router(time_blocks_router)
 app.include_router(developers_router)
 app.include_router(prd_router)
 app.include_router(comments_router)

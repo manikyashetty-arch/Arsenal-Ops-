@@ -1,0 +1,163 @@
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMemo, useRef } from 'react';
+import { toast } from 'sonner';
+import type {
+  CreateTimeBlockRequest,
+  TimeBlockResponse,
+  UpdateTimeBlockRequest,
+  WeekBlocksResponse,
+} from '@/client';
+import { apiFetch, ApiError } from '@/lib/api';
+
+const hoursBetween = (startISO: string, endISO: string): number =>
+  Number(((new Date(endISO).getTime() - new Date(startISO).getTime()) / 3_600_000).toFixed(2));
+
+export interface CreateBlockArgs {
+  workItemId: number;
+  startISO: string;
+  endISO: string;
+  /** Ticket display fields, used only to render the optimistic row. */
+  display: { key: string; title: string; type: string; status: string };
+}
+
+export interface UpdateBlockArgs {
+  id: number;
+  startISO?: string;
+  endISO?: string;
+  workItemId?: number;
+}
+
+/**
+ * Server state for the week calendar: the current developer's positioned blocks
+ * for one week, plus optimistic create/move/resize/delete mutations. Reads/writes
+ * the ['timeBlocks', weekStartISO] cache and follows the repo's cross-cutting
+ * rule — block mutations invalidate ['workItems'] and ['myTasks'] too, since
+ * they change a ticket's logged/remaining hours.
+ */
+export function useWeekBlocks(weekStart: Date) {
+  const queryClient = useQueryClient();
+  const weekStartISO = weekStart.toISOString();
+  const key = useMemo(() => ['timeBlocks', weekStartISO] as const, [weekStartISO]);
+
+  // Negative ids for optimistic rows; replaced when the server response lands.
+  const tempId = useRef(-1);
+
+  const query = useQuery<WeekBlocksResponse>({
+    queryKey: key,
+    queryFn: () =>
+      apiFetch<WeekBlocksResponse>(
+        `/api/time-blocks?week_start=${encodeURIComponent(weekStartISO)}`,
+      ),
+  });
+
+  const blocks = useMemo(() => query.data?.blocks ?? [], [query.data]);
+
+  const patchCache = (updater: (old: TimeBlockResponse[]) => TimeBlockResponse[]) =>
+    queryClient.setQueryData<WeekBlocksResponse>(key, (old) =>
+      old ? { ...old, blocks: updater(old.blocks) } : old,
+    );
+
+  const invalidateAll = () => {
+    queryClient.invalidateQueries({ queryKey: ['timeBlocks'] });
+    queryClient.invalidateQueries({ queryKey: ['workItems'] });
+    queryClient.invalidateQueries({ queryKey: ['myTasks'] });
+  };
+
+  const createMutation = useMutation({
+    mutationFn: ({ workItemId, startISO, endISO }: CreateBlockArgs) => {
+      const body: CreateTimeBlockRequest = {
+        work_item_id: workItemId,
+        start_time: startISO,
+        end_time: endISO,
+      };
+      return apiFetch<TimeBlockResponse>('/api/time-blocks', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      });
+    },
+    onMutate: async (vars) => {
+      await queryClient.cancelQueries({ queryKey: ['timeBlocks'] });
+      const snapshot = queryClient.getQueryData<WeekBlocksResponse>(key);
+      const optimistic: TimeBlockResponse = {
+        id: tempId.current--,
+        work_item_id: vars.workItemId,
+        work_item_key: vars.display.key,
+        work_item_title: vars.display.title,
+        work_item_type: vars.display.type,
+        work_item_status: vars.display.status,
+        hours: hoursBetween(vars.startISO, vars.endISO),
+        start_time: vars.startISO,
+        end_time: vars.endISO,
+      };
+      patchCache((old) => [...old, optimistic]);
+      return { snapshot };
+    },
+    onError: (err, _vars, ctx) => {
+      if (ctx?.snapshot) queryClient.setQueryData(key, ctx.snapshot);
+      toast.error(err instanceof ApiError ? err.message : 'Failed to log time block');
+    },
+    onSettled: invalidateAll,
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: ({ id, startISO, endISO, workItemId }: UpdateBlockArgs) => {
+      const body: UpdateTimeBlockRequest = {
+        ...(startISO ? { start_time: startISO } : {}),
+        ...(endISO ? { end_time: endISO } : {}),
+        ...(workItemId ? { work_item_id: workItemId } : {}),
+      };
+      return apiFetch<TimeBlockResponse>(`/api/time-blocks/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(body),
+      });
+    },
+    onMutate: async (vars) => {
+      await queryClient.cancelQueries({ queryKey: ['timeBlocks'] });
+      const snapshot = queryClient.getQueryData<WeekBlocksResponse>(key);
+      patchCache((old) =>
+        old.map((b) => {
+          if (b.id !== vars.id) return b;
+          const start_time = vars.startISO ?? b.start_time;
+          const end_time = vars.endISO ?? b.end_time;
+          return {
+            ...b,
+            start_time,
+            end_time,
+            work_item_id: vars.workItemId ?? b.work_item_id,
+            hours: start_time && end_time ? hoursBetween(start_time, end_time) : b.hours,
+          };
+        }),
+      );
+      return { snapshot };
+    },
+    onError: (err, _vars, ctx) => {
+      if (ctx?.snapshot) queryClient.setQueryData(key, ctx.snapshot);
+      toast.error(err instanceof ApiError ? err.message : 'Failed to update time block');
+    },
+    onSettled: invalidateAll,
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: number) => apiFetch(`/api/time-blocks/${id}`, { method: 'DELETE' }),
+    onMutate: async (id) => {
+      await queryClient.cancelQueries({ queryKey: ['timeBlocks'] });
+      const snapshot = queryClient.getQueryData<WeekBlocksResponse>(key);
+      patchCache((old) => old.filter((b) => b.id !== id));
+      return { snapshot };
+    },
+    onError: (err, _id, ctx) => {
+      if (ctx?.snapshot) queryClient.setQueryData(key, ctx.snapshot);
+      toast.error(err instanceof ApiError ? err.message : 'Failed to delete time block');
+    },
+    onSettled: invalidateAll,
+  });
+
+  return {
+    blocks,
+    isLoading: query.isLoading,
+    isError: query.isError,
+    createBlock: createMutation.mutate,
+    updateBlock: updateMutation.mutate,
+    deleteBlock: deleteMutation.mutate,
+  };
+}

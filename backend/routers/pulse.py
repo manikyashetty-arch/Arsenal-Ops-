@@ -572,8 +572,8 @@ def _derive_forecast_vs_actuals(project: Project, db: Session) -> dict:
             ep_id = item_to_epic.get(it.id)
             if ep_id is None:
                 continue
-            proj_fc[ep_id] = proj_fc.get(ep_id, 0) + int(it.estimated_hours or 0)
-            proj_act[ep_id] = proj_act.get(ep_id, 0) + int(it.logged_hours or 0)
+            proj_fc[ep_id] = proj_fc.get(ep_id, 0) + float(it.estimated_hours or 0)
+            proj_act[ep_id] = proj_act.get(ep_id, 0) + float(it.logged_hours or 0)
 
     # Month-scoped actuals from time_entries. Use exclusive upper bounds
     # (start-of-next-month) instead of 23:59:59 to avoid microsecond slop.
@@ -601,7 +601,7 @@ def _derive_forecast_vs_actuals(project: Project, db: Session) -> dict:
             ep_id = item_to_epic.get(r.work_item_id)
             if ep_id is None:
                 continue
-            out[ep_id] = out.get(ep_id, 0) + int(r.hours or 0)
+            out[ep_id] = out.get(ep_id, 0) + float(r.hours or 0)
         return out
 
     cur_act = _scoped_hours(cur_start, next_start)

@@ -1,0 +1,293 @@
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { DAY_COUNT, type GridConfig, snapHour, stepHours, yToHour } from '../lib/calendar';
+import type { CalendarBlock, PaletteTicket } from '../types';
+
+/** Sentinel id for the uncommitted block being drawn (real ids are positive,
+ *  optimistic ids negative). */
+export const DRAFT_ID = 0;
+
+interface Grab {
+  mode: 'draw' | 'move' | 'resizeTop' | 'resizeBottom' | 'palette';
+  pointerId: number;
+  downX: number;
+  downY: number;
+  started: boolean;
+  // move/resize
+  blockId?: number;
+  anchor?: number; // draw anchor time
+  offset?: number; // move grab offset within block
+  dur?: number;
+  origin?: CalendarBlock;
+  ticket?: PaletteTicket; // palette/draw ticket
+}
+
+interface Ghost {
+  x: number;
+  y: number;
+  ticket: PaletteTicket;
+}
+
+export interface CalendarDragCallbacks {
+  onCreate: (dayIdx: number, start: number, end: number, ticket: PaletteTicket) => void;
+  onUpdate: (id: number, dayIdx: number, start: number, end: number) => void;
+}
+
+export interface UseCalendarDragArgs {
+  cfg: GridConfig;
+  activeTicket: PaletteTicket | null;
+  callbacks: CalendarDragCallbacks;
+}
+
+/**
+ * Pointer-driven interaction model for the grid. Owns the column-area ref and a
+ * transient "draft" block so a drag tracks instantly without touching the
+ * server; commits via callbacks on pointer-up. Native Pointer Events (with
+ * setPointerCapture) cover mouse/touch/pen in one path and survive fast drags.
+ */
+export function useCalendarDrag({ cfg, activeTicket, callbacks }: UseCalendarDragArgs) {
+  const colsRef = useRef<HTMLDivElement | null>(null);
+  const grab = useRef<Grab | null>(null);
+  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [draft, setDraft] = useState<CalendarBlock | null>(null);
+  const [ghost, setGhost] = useState<Ghost | null>(null);
+  const [preview, setPreview] = useState<CalendarBlock | null>(null);
+
+  const getPos = useCallback(
+    (cx: number, cy: number) => {
+      const el = colsRef.current;
+      if (!el) return { inside: false, dayIdx: 0, time: cfg.startHour };
+      const rect = el.getBoundingClientRect();
+      const colW = rect.width / DAY_COUNT;
+      const x = cx - rect.left;
+      const y = cy - rect.top;
+      const inside = x >= 0 && x <= rect.width && y >= 0 && y <= rect.height;
+      const dayIdx = Math.max(0, Math.min(DAY_COUNT - 1, Math.floor(x / colW)));
+      return { inside, dayIdx, time: yToHour(y, cfg) };
+    },
+    [cfg],
+  );
+
+  const applyMove = useCallback(
+    (cx: number, cy: number) => {
+      const g = grab.current;
+      if (!g) return;
+      const step = stepHours(cfg);
+
+      if (g.mode === 'palette' && g.ticket) {
+        if (!g.started && Math.hypot(cx - g.downX, cy - g.downY) <= 4) return;
+        g.started = true;
+        setGhost({ x: cx, y: cy, ticket: g.ticket });
+        const p = getPos(cx, cy);
+        if (p.inside) {
+          const start = snapHour(p.time, cfg);
+          const end = Math.min(cfg.endHour, start + 1);
+          setPreview({
+            id: DRAFT_ID,
+            workItemId: g.ticket.workItemId,
+            ticketKey: g.ticket.key,
+            title: g.ticket.title,
+            type: g.ticket.type,
+            status: g.ticket.status,
+            dayIdx: p.dayIdx,
+            start,
+            end,
+          });
+        } else {
+          setPreview(null);
+        }
+        return;
+      }
+
+      const p = getPos(cx, cy);
+      if (g.mode === 'draw' && g.ticket && g.anchor !== undefined) {
+        if (!g.started && Math.hypot(cx - g.downX, cy - g.downY) <= 3) return;
+        g.started = true;
+        const t = snapHour(p.inside ? p.time : g.anchor, cfg);
+        let start = Math.min(g.anchor, t);
+        let end = Math.max(g.anchor, t);
+        if (end - start < step) end = Math.min(cfg.endHour, start + step);
+        if (end - start < step) start = Math.max(cfg.startHour, end - step);
+        setDraft({
+          id: DRAFT_ID,
+          workItemId: g.ticket.workItemId,
+          ticketKey: g.ticket.key,
+          title: g.ticket.title,
+          type: g.ticket.type,
+          status: g.ticket.status,
+          dayIdx: g.anchor !== undefined ? (grab.current?.origin?.dayIdx ?? p.dayIdx) : p.dayIdx,
+          start,
+          end,
+        });
+        return;
+      }
+
+      if (!g.origin) return;
+      if (g.mode === 'move' && g.dur !== undefined && g.offset !== undefined) {
+        if (!g.started && Math.hypot(cx - g.downX, cy - g.downY) <= 3) return;
+        g.started = true;
+        let start = snapHour(p.time - g.offset, cfg);
+        start = Math.max(cfg.startHour, Math.min(start, cfg.endHour - g.dur));
+        setDraft({
+          ...g.origin,
+          dayIdx: p.inside ? p.dayIdx : g.origin.dayIdx,
+          start,
+          end: start + g.dur,
+        });
+      } else if (g.mode === 'resizeTop') {
+        g.started = true;
+        let start = snapHour(p.time, cfg);
+        start = Math.max(cfg.startHour, Math.min(start, g.origin.end - step));
+        setDraft({ ...g.origin, start });
+      } else if (g.mode === 'resizeBottom') {
+        g.started = true;
+        let end = snapHour(p.time, cfg);
+        end = Math.min(cfg.endHour, Math.max(end, g.origin.start + step));
+        setDraft({ ...g.origin, end });
+      }
+    },
+    [cfg, getPos],
+  );
+
+  const finish = useCallback(() => {
+    const g = grab.current;
+    grab.current = null;
+    setGhost(null);
+    if (!g) return;
+
+    if (g.mode === 'palette' && g.ticket) {
+      setPreview((p) => {
+        if (p) callbacks.onCreate(p.dayIdx, p.start, p.end, g.ticket!);
+        return null;
+      });
+      return;
+    }
+    if (g.mode === 'draw') {
+      setDraft((d) => {
+        if (d && g.started && g.ticket) callbacks.onCreate(d.dayIdx, d.start, d.end, g.ticket);
+        return null;
+      });
+      return;
+    }
+    // move / resize
+    setDraft((d) => {
+      if (d && g.started && g.origin) callbacks.onUpdate(d.id, d.dayIdx, d.start, d.end);
+      return null;
+    });
+  }, [callbacks]);
+
+  // Global pointer listeners — bound once.
+  useEffect(() => {
+    const move = (e: PointerEvent) => {
+      if (grab.current) applyMove(e.clientX, e.clientY);
+    };
+    const up = () => {
+      if (grab.current) finish();
+    };
+    document.addEventListener('pointermove', move);
+    document.addEventListener('pointerup', up);
+    return () => {
+      document.removeEventListener('pointermove', move);
+      document.removeEventListener('pointerup', up);
+    };
+  }, [applyMove, finish]);
+
+  // --- interaction starters (called from view components) ---
+  const onColumnPointerDown = useCallback(
+    (dayIdx: number, e: React.PointerEvent) => {
+      if (!activeTicket) return; // need a ticket to draw against
+      e.preventDefault();
+      const p = getPos(e.clientX, e.clientY);
+      grab.current = {
+        mode: 'draw',
+        pointerId: e.pointerId,
+        downX: e.clientX,
+        downY: e.clientY,
+        started: false,
+        anchor: snapHour(p.time, cfg),
+        ticket: activeTicket,
+        origin: { dayIdx } as CalendarBlock,
+      };
+      setSelectedId(null);
+    },
+    [activeTicket, cfg, getPos],
+  );
+
+  const onColumnDoubleClick = useCallback(
+    (dayIdx: number, e: React.PointerEvent | React.MouseEvent) => {
+      if (!activeTicket) return;
+      e.preventDefault();
+      grab.current = null;
+      const p = getPos(e.clientX, e.clientY);
+      let start = snapHour(p.time, cfg);
+      start = Math.max(cfg.startHour, Math.min(start, cfg.endHour - 1));
+      callbacks.onCreate(dayIdx, start, Math.min(cfg.endHour, start + 1), activeTicket);
+    },
+    [activeTicket, callbacks, cfg, getPos],
+  );
+
+  const onBlockPointerDown = useCallback(
+    (block: CalendarBlock, e: React.PointerEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const p = getPos(e.clientX, e.clientY);
+      grab.current = {
+        mode: 'move',
+        pointerId: e.pointerId,
+        downX: e.clientX,
+        downY: e.clientY,
+        started: false,
+        blockId: block.id,
+        offset: p.time - block.start,
+        dur: block.end - block.start,
+        origin: block,
+      };
+      setSelectedId(block.id);
+    },
+    [getPos],
+  );
+
+  const onResizePointerDown = useCallback(
+    (block: CalendarBlock, edge: 'top' | 'bottom', e: React.PointerEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      grab.current = {
+        mode: edge === 'top' ? 'resizeTop' : 'resizeBottom',
+        pointerId: e.pointerId,
+        downX: e.clientX,
+        downY: e.clientY,
+        started: true,
+        blockId: block.id,
+        origin: block,
+      };
+      setSelectedId(block.id);
+    },
+    [],
+  );
+
+  const onChipPointerDown = useCallback((ticket: PaletteTicket, e: React.PointerEvent) => {
+    e.preventDefault();
+    grab.current = {
+      mode: 'palette',
+      pointerId: e.pointerId,
+      downX: e.clientX,
+      downY: e.clientY,
+      started: false,
+      ticket,
+    };
+  }, []);
+
+  return {
+    colsRef,
+    selectedId,
+    select: setSelectedId,
+    clearSelection: () => setSelectedId(null),
+    draft,
+    ghost,
+    preview,
+    onColumnPointerDown,
+    onColumnDoubleClick,
+    onBlockPointerDown,
+    onResizePointerDown,
+    onChipPointerDown,
+  };
+}

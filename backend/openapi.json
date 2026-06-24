@@ -654,6 +654,42 @@
         "title": "CreatePersonalTaskRequest",
         "type": "object"
       },
+      "CreateTimeBlockRequest": {
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "end_time": {
+            "format": "date-time",
+            "title": "End Time",
+            "type": "string"
+          },
+          "start_time": {
+            "format": "date-time",
+            "title": "Start Time",
+            "type": "string"
+          },
+          "work_item_id": {
+            "title": "Work Item Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "work_item_id",
+          "start_time",
+          "end_time"
+        ],
+        "title": "CreateTimeBlockRequest",
+        "type": "object"
+      },
       "DashboardStats": {
         "properties": {
           "active_sprints": {
@@ -1550,7 +1586,7 @@
           },
           "hours": {
             "title": "Hours",
-            "type": "integer"
+            "type": "number"
           }
         },
         "required": [
@@ -1755,7 +1791,7 @@
           "estimated_hours": {
             "anyOf": [
               {
-                "type": "integer"
+                "type": "number"
               },
               {
                 "type": "null"
@@ -1778,7 +1814,7 @@
           "logged_hours": {
             "anyOf": [
               {
-                "type": "integer"
+                "type": "number"
               },
               {
                 "type": "null"
@@ -1831,7 +1867,7 @@
           "remaining_hours": {
             "anyOf": [
               {
-                "type": "integer"
+                "type": "number"
               },
               {
                 "type": "null"
@@ -3485,7 +3521,7 @@
           "assigned_hours": {
             "default": 0,
             "title": "Assigned Hours",
-            "type": "integer"
+            "type": "number"
           },
           "assignee": {
             "anyOf": [
@@ -3569,7 +3605,7 @@
           "logged_hours": {
             "default": 0,
             "title": "Logged Hours",
-            "type": "integer"
+            "type": "number"
           },
           "parent_id": {
             "anyOf": [
@@ -3600,7 +3636,7 @@
           "remaining_hours": {
             "default": 0,
             "title": "Remaining Hours",
-            "type": "integer"
+            "type": "number"
           },
           "sprint_id": {
             "anyOf": [
@@ -4002,6 +4038,94 @@
         "title": "TextAnalysisRequest",
         "type": "object"
       },
+      "TimeBlockResponse": {
+        "description": "One positioned calendar block, denormalized with its ticket's display\nfields so the calendar can render without a second round-trip.",
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "developer_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Developer Id"
+          },
+          "end_time": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Time"
+          },
+          "hours": {
+            "title": "Hours",
+            "type": "number"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "start_time": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Time"
+          },
+          "work_item_id": {
+            "title": "Work Item Id",
+            "type": "integer"
+          },
+          "work_item_key": {
+            "title": "Work Item Key",
+            "type": "string"
+          },
+          "work_item_status": {
+            "title": "Work Item Status",
+            "type": "string"
+          },
+          "work_item_title": {
+            "title": "Work Item Title",
+            "type": "string"
+          },
+          "work_item_type": {
+            "title": "Work Item Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "work_item_id",
+          "work_item_key",
+          "work_item_title",
+          "work_item_type",
+          "work_item_status",
+          "hours"
+        ],
+        "title": "TimeBlockResponse",
+        "type": "object"
+      },
       "TimeEntriesResponse": {
         "description": "Wraps the rows with a totals strip and a truncation flag so the\nfrontend can warn when its filters return more than the cap.",
         "properties": {
@@ -4299,6 +4423,48 @@
         "title": "UpdatePersonalTaskRequest",
         "type": "object"
       },
+      "UpdateTimeBlockRequest": {
+        "description": "Move / resize / reassign. All fields optional \u2014 send only what changed.\n\n``start_time``/``end_time`` move or resize the block (hours re-derived);\n``work_item_id`` reassigns the block to a different ticket (rolls up hours\non both the old and new ticket).",
+        "properties": {
+          "end_time": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Time"
+          },
+          "start_time": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Time"
+          },
+          "work_item_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Work Item Id"
+          }
+        },
+        "title": "UpdateTimeBlockRequest",
+        "type": "object"
+      },
       "UserCreate": {
         "properties": {
           "email": {
@@ -4500,6 +4666,32 @@
         "title": "ValidationError",
         "type": "object"
       },
+      "WeekBlocksResponse": {
+        "properties": {
+          "blocks": {
+            "items": {
+              "$ref": "#/components/schemas/TimeBlockResponse"
+            },
+            "title": "Blocks",
+            "type": "array"
+          },
+          "week_end": {
+            "title": "Week End",
+            "type": "string"
+          },
+          "week_start": {
+            "title": "Week Start",
+            "type": "string"
+          }
+        },
+        "required": [
+          "week_start",
+          "week_end",
+          "blocks"
+        ],
+        "title": "WeekBlocksResponse",
+        "type": "object"
+      },
       "WeeklyTicket": {
         "description": "Compact ticket shape for the Projects \u2192 Reports drill-down.\n\nDesigned to keep the response small: only the fields the table needs to\nrender. Full ticket detail (description, comments, etc.) lives behind the\nproject board.",
         "properties": {
@@ -4640,7 +4832,7 @@
           "estimated_hours": {
             "default": 0,
             "title": "Estimated Hours",
-            "type": "integer"
+            "type": "number"
           },
           "parent_id": {
             "anyOf": [
@@ -4665,7 +4857,7 @@
           "remaining_hours": {
             "default": 0,
             "title": "Remaining Hours",
-            "type": "integer"
+            "type": "number"
           },
           "sprint_id": {
             "anyOf": [
@@ -4815,7 +5007,7 @@
           "estimated_hours": {
             "anyOf": [
               {
-                "type": "integer"
+                "type": "number"
               },
               {
                 "type": "null"
@@ -4857,7 +5049,7 @@
           "logged_hours": {
             "anyOf": [
               {
-                "type": "integer"
+                "type": "number"
               },
               {
                 "type": "null"
@@ -4888,7 +5080,7 @@
           "remaining_hours": {
             "anyOf": [
               {
-                "type": "integer"
+                "type": "number"
               },
               {
                 "type": "null"
@@ -5017,7 +5209,7 @@
           "assigned_hours": {
             "default": 0,
             "title": "Assigned Hours",
-            "type": "integer"
+            "type": "number"
           },
           "assignee": {
             "default": "Unassigned",
@@ -5092,7 +5284,7 @@
           "estimated_hours": {
             "default": 0,
             "title": "Estimated Hours",
-            "type": "integer"
+            "type": "number"
           },
           "id": {
             "title": "Id",
@@ -5105,7 +5297,7 @@
           "logged_hours": {
             "default": 0,
             "title": "Logged Hours",
-            "type": "integer"
+            "type": "number"
           },
           "parent_id": {
             "anyOf": [
@@ -5136,7 +5328,7 @@
           "remaining_hours": {
             "default": 0,
             "title": "Remaining Hours",
-            "type": "integer"
+            "type": "number"
           },
           "sprint": {
             "default": "Backlog",
@@ -5232,7 +5424,7 @@
           "assigned_hours": {
             "anyOf": [
               {
-                "type": "integer"
+                "type": "number"
               },
               {
                 "type": "null"
@@ -5287,7 +5479,7 @@
           "estimated_hours": {
             "anyOf": [
               {
-                "type": "integer"
+                "type": "number"
               },
               {
                 "type": "null"
@@ -5298,7 +5490,7 @@
           "logged_hours": {
             "anyOf": [
               {
-                "type": "integer"
+                "type": "number"
               },
               {
                 "type": "null"
@@ -5331,7 +5523,7 @@
           "remaining_hours": {
             "anyOf": [
               {
-                "type": "integer"
+                "type": "number"
               },
               {
                 "type": "null"
@@ -10689,6 +10881,199 @@
         "summary": "Parse Roadmap File",
         "tags": [
           "Roadmap"
+        ]
+      }
+    },
+    "/api/time-blocks": {
+      "get": {
+        "description": "All of the current developer's positioned blocks that START within the\n7-day window beginning at ``week_start`` (UTC). Legacy entries without a\n``start_time`` are excluded \u2014 the UI surfaces those in its unscheduled tray\nvia the per-ticket time-entries endpoint.",
+        "operationId": "list_week_blocks_api_time_blocks_get",
+        "parameters": [
+          {
+            "description": "UTC start of the week (inclusive)",
+            "in": "query",
+            "name": "week_start",
+            "required": true,
+            "schema": {
+              "description": "UTC start of the week (inclusive)",
+              "format": "date-time",
+              "title": "Week Start",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WeekBlocksResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "List Week Blocks",
+        "tags": [
+          "Time Blocks"
+        ]
+      },
+      "post": {
+        "description": "Create a positioned block on a ticket the caller is assigned to.",
+        "operationId": "create_time_block_api_time_blocks_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateTimeBlockRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TimeBlockResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Create Time Block",
+        "tags": [
+          "Time Blocks"
+        ]
+      }
+    },
+    "/api/time-blocks/{entry_id}": {
+      "delete": {
+        "description": "Delete a block and re-roll the ticket's hours.",
+        "operationId": "delete_time_block_api_time_blocks__entry_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "entry_id",
+            "required": true,
+            "schema": {
+              "title": "Entry Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Delete Time Block",
+        "tags": [
+          "Time Blocks"
+        ]
+      },
+      "patch": {
+        "description": "Move, resize, or reassign a block. Reassignment rolls up hours on both\nthe previous and the new ticket.",
+        "operationId": "update_time_block_api_time_blocks__entry_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "entry_id",
+            "required": true,
+            "schema": {
+              "title": "Entry Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateTimeBlockRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TimeBlockResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Update Time Block",
+        "tags": [
+          "Time Blocks"
         ]
       }
     },
