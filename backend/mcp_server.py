@@ -31,7 +31,7 @@ Design (see .plans/enable-mcp-server-20260622-0945.md):
 from collections.abc import Iterator
 from contextlib import contextmanager
 
-from fastapi import HTTPException
+from fastapi import BackgroundTasks, HTTPException
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 from fastmcp.server.auth.providers.jwt import JWTVerifier
@@ -39,13 +39,24 @@ from fastmcp.server.dependencies import get_access_token
 from sqlalchemy.orm import Session
 
 from database import SessionLocal
+from models.activity_log import ActivityLog
 from models.developer import Developer
 from models.user import User
+from models.work_item import WorkItem
 from routers.auth import ALGORITHM, SECRET_KEY, assert_capability, load_user_from_claims
 from routers.developers import get_my_capacity, list_developers
 from routers.projects import get_project, list_projects, require_project_access
 from routers.pulse import get_pulse_derived
-from routers.workitems import get_work_item, list_work_items
+from routers.workitems import (
+    LogHoursRequest,
+    WorkItemCreate,
+    WorkItemUpdate,
+    create_work_item,
+    get_work_item,
+    list_work_items,
+    log_hours,
+    update_work_item,
+)
 from services.capacity_service import compute_capacity_breakdown, week_boundaries
 
 # Validate the same HS256 JWT the REST API issues. `SECRET_KEY` is required from
@@ -238,6 +249,197 @@ def developer_capacity(developer_id: int) -> dict:
             "week_end": week_end.isoformat(),
             **breakdown,
         }
+
+
+# --------------------------------------------------------------------------- #
+# Work item writes
+#
+# Every write is gated by `project.tracker_write` + per-project access, and
+# leaves an activity_log audit row. We reuse the existing write endpoints (which
+# carry the real business rules — key allocation, done-ticket freezing,
+# parent/child completion checks, assignee-only log-hours), calling them with an
+# explicit BackgroundTasks() since we're outside a request cycle. The human-in-
+# the-loop control is the MCP client's per-tool permission prompt.
+# --------------------------------------------------------------------------- #
+
+
+def _audit_count(db: Session, entity_id: int) -> int:
+    """Number of activity_log rows for a work item (used to detect whether a
+    reused endpoint already wrote its own audit row)."""
+    return (
+        db.query(ActivityLog)
+        .filter(ActivityLog.entity_type == "work_item", ActivityLog.entity_id == entity_id)
+        .count()
+    )
+
+
+def _ensure_audit(
+    db: Session,
+    *,
+    project_id: int,
+    user_id: int,
+    action: str,
+    entity_id: int,
+    title: str,
+    details: dict | None = None,
+) -> None:
+    """Backstop audit row so *every* MCP write is traceable.
+
+    create + status/assignee updates already write their own activity_log row;
+    field-only edits and log-hours do not — this fills that gap (callers invoke
+    it only when the reused endpoint added nothing)."""
+    db.add(
+        ActivityLog(
+            project_id=project_id,
+            user_id=user_id,
+            action=action,
+            entity_type="work_item",
+            entity_id=entity_id,
+            title=title,
+            details=details or {},
+        )
+    )
+    db.commit()
+
+
+@mcp.tool
+def workitem_create(
+    project_id: int,
+    title: str,
+    item_type: str = "task",
+    description: str = "",
+    status: str = "todo",
+    priority: str = "medium",
+    assignee_id: int | None = None,
+    sprint_id: int | None = None,
+    story_points: int = 0,
+    estimated_hours: int = 0,
+) -> dict:
+    """Create a work item in a project. Requires `project.tracker_write` and
+    access to the project. The create is recorded in activity_log.
+    """
+    with _caller_session() as (db, user):
+        require_project_access(project_id, user, db)
+        assert_capability(user, "project.tracker_write")
+        item = WorkItemCreate(
+            project_id=project_id,
+            title=title,
+            type=item_type,
+            description=description,
+            status=status,
+            priority=priority,
+            assignee_id=assignee_id,
+            sprint_id=sprint_id,
+            story_points=story_points,
+            estimated_hours=estimated_hours,
+        )
+        # create_work_item writes its own "created" activity_log row.
+        return create_work_item(item, BackgroundTasks(), db=db, current_user=user)
+
+
+@mcp.tool
+def workitem_update(
+    item_id: int,
+    status: str | None = None,
+    title: str | None = None,
+    description: str | None = None,
+    priority: str | None = None,
+    assignee_id: int | None = None,
+    sprint_id: int | None = None,
+    story_points: int | None = None,
+    estimated_hours: int | None = None,
+    item_type: str | None = None,
+    tags: list[str] | None = None,
+    due_date: str | None = None,
+    start_date: str | None = None,
+) -> dict:
+    """Update a work item — status transitions and/or field edits. Only the
+    fields you pass are changed. Requires `project.tracker_write` + project
+    access. Always audited in activity_log.
+    """
+    with _caller_session() as (db, user):
+        item = db.query(WorkItem).filter(WorkItem.id == item_id).first()
+        if item is None:
+            raise ToolError("Work item not found")
+        require_project_access(item.project_id, user, db)
+        assert_capability(user, "project.tracker_write")
+        fields = {
+            "status": status,
+            "title": title,
+            "description": description,
+            "priority": priority,
+            "assignee_id": assignee_id,
+            "sprint_id": sprint_id,
+            "story_points": story_points,
+            "estimated_hours": estimated_hours,
+            "type": item_type,
+            "tags": tags,
+            "due_date": due_date,
+            "start_date": start_date,
+        }
+        provided = {k: v for k, v in fields.items() if v is not None}
+        if not provided:
+            raise ToolError("No fields provided to update")
+        project_id, key = item.project_id, item.key
+        before = _audit_count(db, item_id)
+        result = update_work_item(
+            item_id,
+            WorkItemUpdate.model_validate(provided),
+            BackgroundTasks(),
+            db=db,
+            current_user=user,
+        )
+        # Status/assignee changes self-audit; a field-only edit does not — backfill.
+        if _audit_count(db, item_id) == before:
+            _ensure_audit(
+                db,
+                project_id=project_id,
+                user_id=user.id,
+                action="updated",
+                entity_id=item_id,
+                title=f"Updated {key} via MCP",
+                details={"source": "mcp", "fields": sorted(provided)},
+            )
+        return result
+
+
+@mcp.tool
+def workitem_log_hours(
+    item_id: int,
+    hours: int,
+    description: str | None = None,
+    developer_id: int | None = None,
+) -> dict:
+    """Log hours (1-24) against a work item. Requires `project.tracker_write`,
+    project access, and — per the app's rule — that the caller is the ticket's
+    assignee. Audited in activity_log.
+    """
+    with _caller_session() as (db, user):
+        item = db.query(WorkItem).filter(WorkItem.id == item_id).first()
+        if item is None:
+            raise ToolError("Work item not found")
+        require_project_access(item.project_id, user, db)
+        assert_capability(user, "project.tracker_write")
+        project_id, key = item.project_id, item.key
+        before = _audit_count(db, item_id)
+        result = log_hours(
+            item_id,
+            LogHoursRequest(hours=hours, description=description, developer_id=developer_id),
+            db=db,
+            current_user=user,
+        )
+        # log_hours writes a TimeEntry + comment but no activity_log — record one.
+        if _audit_count(db, item_id) == before:
+            _ensure_audit(
+                db,
+                project_id=project_id,
+                user_id=user.id,
+                action="logged_hours",
+                entity_id=item_id,
+                title=f"Logged {hours}h on {key} via MCP",
+                details={"source": "mcp", "hours": hours},
+            )
+        return result
 
 
 # Stateless streamable-HTTP ASGI app, mounted at /mcp by main.py. `path="/"`
