@@ -1072,7 +1072,7 @@ def list_time_entries(
     entries = fetched[:TIME_ENTRIES_MAX_ROWS]
 
     rows: list[TimeEntryRow] = []
-    total_hours = 0
+    total_hours = 0.0
     for te in entries:
         wi = te.work_item
         proj = wi.project if wi else None

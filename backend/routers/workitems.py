@@ -2877,7 +2877,7 @@ def get_hours_analytics(
 
         # Allocated hours = proportional share of sprint estimated hours overlapping this week
         # This ensures weeks show allocated work even when items have no explicit due_date
-        week_allocated = 0
+        week_allocated = 0.0
         for sprint in sprints:
             if sprint.start_date and sprint.end_date:
                 sprint_start = sprint.start_date

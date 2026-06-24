@@ -291,13 +291,14 @@ def update_time_block(
         raise HTTPException(status_code=404, detail="Work item not found")
 
     # Reassign to a different ticket (must also be assigned to the caller).
-    target_item = original_item
+    target_item: WorkItem = original_item
     if request.work_item_id is not None and request.work_item_id != entry.work_item_id:
-        target_item = db.query(WorkItem).filter(WorkItem.id == request.work_item_id).first()
-        if not target_item:
+        found = db.query(WorkItem).filter(WorkItem.id == request.work_item_id).first()
+        if not found:
             raise HTTPException(status_code=404, detail="Target work item not found")
-        _authorize_block_on_item(target_item, caller_dev)
-        entry.work_item_id = target_item.id
+        _authorize_block_on_item(found, caller_dev)
+        entry.work_item_id = found.id
+        target_item = found
     else:
         _authorize_block_on_item(original_item, caller_dev)
 

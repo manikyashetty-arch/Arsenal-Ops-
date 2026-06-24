@@ -79,10 +79,10 @@ def _ticket_belongs_this_week(item, week_start: datetime, week_end: datetime) ->
 
 def _ticket_to_dict_for_dev(
     item,
-    counted: int,
+    counted: float,
     basis: str,
-    logged_this_week: int,
-    total_logged: int,
+    logged_this_week: float,
+    total_logged: float,
 ) -> dict:
     estimated = item.estimated_hours or 0
     return {
