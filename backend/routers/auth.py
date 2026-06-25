@@ -493,9 +493,9 @@ def update_user_role(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
     # Prevent removing the last admin. Read the many-to-many `user.roles`
-    # relationship rather than the legacy comma-string column so this stays
-    # correct even when the column drifts. The legacy string sync still runs
-    # via _sync_legacy_role_string() but is no longer authoritative.
+    # relationship rather than the legacy comma-string column, since RBAC is
+    # the source of truth for "is this user an admin". Evaluated against the
+    # CURRENT (pre-change) roles, before the resync below.
     is_demoting_admin = _has_admin_role(user) and "admin" not in role_data.role
     if is_demoting_admin:
         all_users = db.query(User).options(selectinload(User.roles)).all()
@@ -506,6 +506,20 @@ def update_user_role(
             )
 
     user.role = role_data.role
+    # Resync the RBAC m2m to match the new role string. `has_capability` reads
+    # `user.roles`, not the legacy column, so updating only the string would
+    # leave capabilities stale (a promotion that grants nothing, a demotion
+    # that revokes nothing) — and the startup reconcile skips users whose m2m
+    # is already non-empty, so the drift would never self-heal. Only the
+    # *system* roles named in the string are derived here; any custom
+    # (non-system) roles assigned via the RBAC UI are preserved.
+    desired_names = {n.strip() for n in (role_data.role or "").split(",") if n.strip()}
+    desired_system_roles = (
+        db.query(Role).filter(Role.is_system.is_(True), Role.name.in_(desired_names)).all()
+        if desired_names
+        else []
+    )
+    user.roles = [r for r in user.roles if not r.is_system] + desired_system_roles
     db.commit()
     _invalidate_caps_cache()
 

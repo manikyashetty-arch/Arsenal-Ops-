@@ -28,9 +28,15 @@ router = APIRouter(prefix="/api/projects", tags=["Projects"])
 
 
 def has_project_access(project: Project, user: User) -> bool:
-    """Check if user has access to a project (admin or assigned developer)"""
-    # Admin has access to all projects (roles are comma-separated)
-    if user.role and "admin" in user.role:
+    """Check if user has access to a project (system admin or assigned developer).
+
+    System-admin access is determined by the RBAC `admin.projects` capability
+    (held by system admins via the `*` wildcard), NOT the legacy comma-separated
+    `users.role` column. This matches `is_project_admin` so both the read gate
+    and the write gate use a single source of truth — see that function for the
+    history of the retired `"admin" in user.role` substring check.
+    """
+    if user.has_capability("admin.projects"):
         return True
 
     # Check if user is assigned as a developer to this project
