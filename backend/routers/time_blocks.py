@@ -13,14 +13,21 @@ converter). Hours rollups reuse the workitems helpers so the self-healing
 ``logged_hours = SUM(TimeEntry.hours)`` invariant stays in one place.
 
 Intentional v1 scope decisions:
-  - Overlapping blocks are allowed (a calendar lays concurrent blocks side by
-    side); there is no per-day total cap — only the per-block 24h sanity cap.
+  - Blocks for a single developer may NOT overlap (hard rule, 409 on attempt).
+    Overlaps make total-time ambiguous and break billable-class attribution, so
+    create/move/resize are all rejected when they'd collide with another of the
+    caller's blocks. Different developers may have concurrent blocks.
+  - Single source of truth: a calendar block IS a ``TimeEntry``. Hours logged on
+    a ticket via POST /log-hours create an *unplaced* TimeEntry (no start/end);
+    the calendar surfaces those in an "unplaced" tray and placing one PATCHes its
+    start/end onto the SAME row (no new row, no double count).
   - Block create/move/delete do NOT emit a "Logged Nh" ticket comment the way
     POST /log-hours does. Positioned blocks are a planning surface, not discrete
     log events, so they'd flood the comment feed; the hours still roll up.
 """
 
 from datetime import UTC, datetime, timedelta
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -62,6 +69,10 @@ class WeekBlocksResponse(BaseModel):
     week_start: str
     week_end: str
     blocks: list[TimeBlockResponse]
+    # Hours logged on a ticket (via /log-hours) that haven't been positioned on
+    # the calendar yet — start_time/end_time are null. The UI shows these in a
+    # "to place" tray; dropping one onto the grid PATCHes its start/end.
+    unplaced: list[TimeBlockResponse] = []
 
 
 class CreateTimeBlockRequest(BaseModel):
@@ -151,6 +162,46 @@ def _validate_interval(start: datetime, end: datetime) -> float:
     return hours
 
 
+def _assert_no_overlap(
+    db: Session,
+    developer_id: int | None,
+    start: datetime,
+    end: datetime,
+    exclude_entry_id: int | None = None,
+) -> None:
+    """Reject a [start, end) interval that overlaps another POSITIONED block for
+    the same developer. Half-open intervals: touching edges (a block ending at
+    10:00 and another starting at 10:00) do NOT overlap. 409 names the conflict.
+
+    No-overlap is a hard invariant — overlapping blocks make total-time
+    attribution ambiguous (e.g. a SendBuild block over a Symphony block)."""
+    if developer_id is None:
+        return
+    q = db.query(TimeEntry).filter(
+        TimeEntry.developer_id == developer_id,
+        TimeEntry.start_time.isnot(None),
+        TimeEntry.end_time.isnot(None),
+        TimeEntry.start_time < end,
+        TimeEntry.end_time > start,
+    )
+    if exclude_entry_id is not None:
+        q = q.filter(TimeEntry.id != exclude_entry_id)
+    conflict = q.first()
+    if conflict is not None and conflict.start_time and conflict.end_time:
+        key = (
+            db.query(WorkItem.key).filter(WorkItem.id == conflict.work_item_id).scalar()
+            or "a block"
+        )
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"This overlaps {key} "
+                f"({conflict.start_time:%a %H:%M}–{conflict.end_time:%H:%M}). "
+                "Time blocks can't overlap — pick a free slot."
+            ),
+        )
+
+
 def _recompute_item_hours(item_id: int, db: Session) -> WorkItem | None:
     """Self-heal logged/remaining hours from the live TimeEntry sum, then roll
     up to parent/epic. Mirrors the log-hours rollup so the column stays exactly
@@ -192,17 +243,43 @@ def _to_response(entry: TimeEntry, item: WorkItem) -> TimeBlockResponse:
 # ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
+def _resolve_target_developer(
+    employee_id: int | None, caller_dev: Developer, current_user: User, db: Session
+) -> Developer:
+    """Whose calendar to read. Non-admins are forced to their own; viewing
+    another employee's calendar requires the ``admin.time_entries`` capability
+    (the same one that gates the admin time-entries grid)."""
+    if employee_id is None or employee_id == caller_dev.id:
+        return caller_dev
+    if not current_user.has_capability("admin.time_entries"):
+        raise HTTPException(
+            status_code=403,
+            detail="Only admins can view another employee's calendar.",
+        )
+    target = db.query(Developer).filter(Developer.id == employee_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="Employee not found")
+    return target
+
+
 @router.get("", response_model=WeekBlocksResponse)
 def list_week_blocks(
     week_start: datetime = Query(..., description="UTC start of the week (inclusive)"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    employee_id: Annotated[
+        int | None, Query(description="Admin-only: view another developer's calendar.")
+    ] = None,
 ):
-    """All of the current developer's positioned blocks that START within the
-    5-day (Mon–Fri) window beginning at ``week_start`` — matching the columns the
-    UI renders. Legacy entries without a ``start_time`` are excluded; the UI
-    surfaces those via the per-ticket time-entries endpoint."""
+    """Positioned blocks that START within the 5-day (Mon–Fri) window beginning
+    at ``week_start``, plus an ``unplaced`` tray of hours logged on tickets that
+    haven't been placed on the calendar yet (start_time null).
+
+    Defaults to the caller's own calendar; admins may pass ``employee_id`` to
+    view anyone's. External clients have no developer profile, so the
+    ``_require_caller_developer`` gate already excludes them."""
     caller_dev = _require_caller_developer(current_user, db)
+    target_dev = _resolve_target_developer(employee_id, caller_dev, current_user, db)
     # The UI renders Mon–Fri only; return exactly that window (5 days) so no
     # block is fetched into a column the client can't show. week_start is the
     # client's local Monday-midnight as UTC ISO.
@@ -212,14 +289,27 @@ def list_week_blocks(
     entries = (
         db.query(TimeEntry)
         .filter(
-            TimeEntry.developer_id == caller_dev.id,
+            TimeEntry.developer_id == target_dev.id,
             TimeEntry.start_time.isnot(None),
             TimeEntry.start_time >= week_start,
             TimeEntry.start_time < week_end,
         )
         .all()
     )
-    item_ids = {e.work_item_id for e in entries}
+    # Unplaced: ticket-logged hours awaiting placement on the grid. These have no
+    # date, so they aren't week-scoped — surface all of the developer's pending
+    # ones so the calendar always reflects ticket logs (single source of truth).
+    unplaced_entries = (
+        db.query(TimeEntry)
+        .filter(
+            TimeEntry.developer_id == target_dev.id,
+            TimeEntry.start_time.is_(None),
+        )
+        .order_by(TimeEntry.logged_at.desc())
+        .all()
+    )
+
+    item_ids = {e.work_item_id for e in entries} | {e.work_item_id for e in unplaced_entries}
     items_by_id = (
         {i.id: i for i in db.query(WorkItem).filter(WorkItem.id.in_(item_ids)).all()}
         if item_ids
@@ -230,10 +320,16 @@ def list_week_blocks(
         for e in entries
         if e.work_item_id in items_by_id
     ]
+    unplaced = [
+        _to_response(e, items_by_id[e.work_item_id])
+        for e in unplaced_entries
+        if e.work_item_id in items_by_id
+    ]
     return WeekBlocksResponse(
         week_start=week_start.isoformat(),
         week_end=week_end.isoformat(),
         blocks=blocks,
+        unplaced=unplaced,
     )
 
 
@@ -252,6 +348,7 @@ def create_time_block(
     start = _naive_utc(request.start_time)
     end = _naive_utc(request.end_time)
     hours = _validate_interval(start, end)
+    _assert_no_overlap(db, caller_dev.id, start, end)
 
     entry = TimeEntry(
         work_item_id=item.id,
@@ -314,6 +411,7 @@ def update_time_block(
             detail="This block has no position; provide both start_time and end_time.",
         )
     entry.hours = _validate_interval(new_start, new_end)
+    _assert_no_overlap(db, entry.developer_id, new_start, new_end, exclude_entry_id=entry.id)
     entry.start_time = new_start
     entry.end_time = new_end
     db.flush()

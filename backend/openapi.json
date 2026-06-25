@@ -4675,6 +4675,14 @@
             "title": "Blocks",
             "type": "array"
           },
+          "unplaced": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/TimeBlockResponse"
+            },
+            "title": "Unplaced",
+            "type": "array"
+          },
           "week_end": {
             "title": "Week End",
             "type": "string"
@@ -10886,7 +10894,7 @@
     },
     "/api/time-blocks": {
       "get": {
-        "description": "All of the current developer's positioned blocks that START within the\n5-day (Mon\u2013Fri) window beginning at ``week_start`` \u2014 matching the columns the\nUI renders. Legacy entries without a ``start_time`` are excluded; the UI\nsurfaces those via the per-ticket time-entries endpoint.",
+        "description": "Positioned blocks that START within the 5-day (Mon\u2013Fri) window beginning\nat ``week_start``, plus an ``unplaced`` tray of hours logged on tickets that\nhaven't been placed on the calendar yet (start_time null).\n\nDefaults to the caller's own calendar; admins may pass ``employee_id`` to\nview anyone's. External clients have no developer profile, so the\n``_require_caller_developer`` gate already excludes them.",
         "operationId": "list_week_blocks_api_time_blocks_get",
         "parameters": [
           {
@@ -10899,6 +10907,24 @@
               "format": "date-time",
               "title": "Week Start",
               "type": "string"
+            }
+          },
+          {
+            "description": "Admin-only: view another developer's calendar.",
+            "in": "query",
+            "name": "employee_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Admin-only: view another developer's calendar.",
+              "title": "Employee Id"
             }
           }
         ],

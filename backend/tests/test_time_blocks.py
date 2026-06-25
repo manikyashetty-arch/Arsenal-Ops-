@@ -441,3 +441,147 @@ def test_week_boundary_inclusive_start_exclusive_end(db, seed):
         current_user=seed["user"],
     )
     assert len(resp.blocks) == 1
+
+
+# --- No-overlap invariant (hard rule) ---------------------------------------
+def test_overlap_rejected_on_create(db, seed):
+    """A second block that overlaps the caller's existing block is rejected 409."""
+    item = seed["item"]
+    create_time_block(
+        request=CreateTimeBlockRequest(work_item_id=item.id, start_time=_at(0), end_time=_at(2)),
+        db=db,
+        current_user=seed["user"],
+    )
+    with pytest.raises(HTTPException) as exc:
+        create_time_block(
+            request=CreateTimeBlockRequest(
+                work_item_id=seed["item2"].id, start_time=_at(1), end_time=_at(3)
+            ),
+            db=db,
+            current_user=seed["user"],
+        )
+    assert exc.value.status_code == 409
+
+
+def test_touching_blocks_allowed(db, seed):
+    """Half-open intervals: a block ending at 10:00 and another starting at
+    10:00 do NOT overlap."""
+    item = seed["item"]
+    create_time_block(
+        request=CreateTimeBlockRequest(work_item_id=item.id, start_time=_at(0), end_time=_at(1)),
+        db=db,
+        current_user=seed["user"],
+    )
+    # Should not raise.
+    create_time_block(
+        request=CreateTimeBlockRequest(work_item_id=item.id, start_time=_at(1), end_time=_at(2)),
+        db=db,
+        current_user=seed["user"],
+    )
+
+
+def test_overlap_rejected_on_move(db, seed):
+    """Moving a block on top of another of the caller's blocks is rejected."""
+    item = seed["item"]
+    create_time_block(
+        request=CreateTimeBlockRequest(work_item_id=item.id, start_time=_at(0), end_time=_at(1)),
+        db=db,
+        current_user=seed["user"],
+    )
+    b2 = create_time_block(
+        request=CreateTimeBlockRequest(work_item_id=item.id, start_time=_at(5), end_time=_at(6)),
+        db=db,
+        current_user=seed["user"],
+    )
+    with pytest.raises(HTTPException) as exc:
+        update_time_block(
+            entry_id=b2.id,
+            request=UpdateTimeBlockRequest(start_time=_at(0), end_time=_at(1)),
+            db=db,
+            current_user=seed["user"],
+        )
+    assert exc.value.status_code == 409
+
+
+def test_overlap_check_is_per_developer(db, seed):
+    """Two different developers may hold concurrent blocks at the same time."""
+    item = seed["item"]
+    item2 = seed["item2"]
+    item2.assignee_id = seed["other_dev"].id
+    db.commit()
+    create_time_block(
+        request=CreateTimeBlockRequest(work_item_id=item.id, start_time=_at(0), end_time=_at(2)),
+        db=db,
+        current_user=seed["user"],
+    )
+    # other_dev's concurrent block on their own ticket — allowed.
+    create_time_block(
+        request=CreateTimeBlockRequest(work_item_id=item2.id, start_time=_at(0), end_time=_at(2)),
+        db=db,
+        current_user=seed["other_user"],
+    )
+
+
+# --- Unplaced tray (single source of truth) ---------------------------------
+def test_unplaced_entries_surface_in_tray(db, seed):
+    """A ticket-logged entry (no start/end) appears in `unplaced`, not `blocks`."""
+    item = seed["item"]
+    db.add(TimeEntry(work_item_id=item.id, developer_id=seed["dev"].id, hours=3, description="log"))
+    db.commit()
+    resp = list_week_blocks(
+        week_start=datetime(2026, 6, 22, 0, 0, 0),
+        db=db,
+        current_user=seed["user"],
+    )
+    assert len(resp.blocks) == 0
+    assert len(resp.unplaced) == 1
+    assert resp.unplaced[0].hours == 3
+    assert resp.unplaced[0].start_time is None
+
+
+def test_placing_unplaced_sets_position_on_same_row(db, seed):
+    """Placing a tray entry PATCHes start/end onto the SAME row — no new row,
+    so logged_hours is unchanged (no double count)."""
+    item = seed["item"]
+    entry = TimeEntry(work_item_id=item.id, developer_id=seed["dev"].id, hours=3)
+    db.add(entry)
+    db.commit()
+    before = db.query(func.count(TimeEntry.id)).scalar()
+    update_time_block(
+        entry_id=entry.id,
+        request=UpdateTimeBlockRequest(start_time=_at(0), end_time=_at(3)),
+        db=db,
+        current_user=seed["user"],
+    )
+    after = db.query(func.count(TimeEntry.id)).scalar()
+    assert after == before  # placed in place, not duplicated
+    db.refresh(entry)
+    assert entry.start_time is not None
+
+
+# --- Role-based visibility ---------------------------------------------------
+def test_non_admin_cannot_view_other_employee_calendar(db, seed):
+    with pytest.raises(HTTPException) as exc:
+        list_week_blocks(
+            week_start=datetime(2026, 6, 22, 0, 0, 0),
+            db=db,
+            current_user=seed["user"],
+            employee_id=seed["other_dev"].id,
+        )
+    assert exc.value.status_code == 403
+
+
+def test_employee_id_self_is_allowed(db, seed):
+    item = seed["item"]
+    create_time_block(
+        request=CreateTimeBlockRequest(work_item_id=item.id, start_time=_at(0), end_time=_at(1)),
+        db=db,
+        current_user=seed["user"],
+    )
+    resp = list_week_blocks(
+        week_start=datetime(2026, 6, 22, 0, 0, 0),
+        db=db,
+        current_user=seed["user"],
+        employee_id=seed["dev"].id,
+    )
+    assert len(resp.blocks) == 1

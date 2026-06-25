@@ -2657,6 +2657,10 @@ export type WeekBlocksResponse = {
    */
   blocks: Array<TimeBlockResponse>;
   /**
+   * Unplaced
+   */
+  unplaced?: Array<TimeBlockResponse>;
+  /**
    * Week End
    */
   week_end: string;
@@ -6276,6 +6280,12 @@ export type ListWeekBlocksApiTimeBlocksGetData = {
      * UTC start of the week (inclusive)
      */
     week_start: string;
+    /**
+     * Employee Id
+     *
+     * Admin-only: view another developer's calendar.
+     */
+    employee_id?: number | null;
   };
   url: '/api/time-blocks';
 };
