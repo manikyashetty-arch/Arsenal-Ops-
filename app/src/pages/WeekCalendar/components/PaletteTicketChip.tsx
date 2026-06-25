@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { STATUS_CONFIG, TYPE_CONFIG } from '@/lib/workItemConfig';
 import { formatHours } from '../lib/calendar';
 import { CALENDAR } from '../lib/calendarTheme';
@@ -8,22 +9,31 @@ interface PaletteTicketChipProps {
   active: boolean;
   /** Hours already scheduled this week against this ticket. */
   scheduledHours: number;
+  readOnly?: boolean;
   onPointerDown: (e: React.PointerEvent) => void;
   onSelect: () => void;
+  onChangeStatus: (status: string) => void;
 }
 
 const statusOf = (s: string) => STATUS_CONFIG[s as keyof typeof STATUS_CONFIG];
 const typeOf = (t: string) => TYPE_CONFIG[t as keyof typeof TYPE_CONFIG];
+const STATUS_KEYS = ['todo', 'in_progress', 'in_review', 'done'] as const;
+// Keep pointerdown/click on the status control from starting a chip drag/select.
+const stop = (e: React.PointerEvent | React.MouseEvent) => e.stopPropagation();
 
 /** A draggable ticket chip. Drag it onto the grid to create a block; clicking
- *  selects it as the default for blocks drawn directly on the grid. */
+ *  selects it as the default for blocks drawn directly on the grid. The status
+ *  pill flips the ticket's status from within the calendar view. */
 export function PaletteTicketChip({
   ticket,
   active,
   scheduledHours,
+  readOnly = false,
   onPointerDown,
   onSelect,
+  onChangeStatus,
 }: PaletteTicketChipProps) {
+  const [menuOpen, setMenuOpen] = useState(false);
   const type = typeOf(ticket.type);
   const status = statusOf(ticket.status);
   const accent = status?.color ?? '#737373';
@@ -60,7 +70,7 @@ export function PaletteTicketChip({
         background: active ? `${accent}1a` : 'rgba(255,255,255,0.025)',
         borderColor: active ? accent : 'rgba(255,255,255,0.06)',
       }}
-      className="border rounded-[10px] px-[11px] py-2.5 cursor-grab transition-colors"
+      className="relative border rounded-[10px] px-[11px] py-2.5 cursor-grab transition-colors"
     >
       <div className="flex items-center gap-1.5 mb-1.5">
         <span
@@ -75,6 +85,59 @@ export function PaletteTicketChip({
           {type?.label ?? ticket.type}
         </span>
         <span className="font-mono text-[10px] font-semibold text-[#E0B954]">{ticket.key}</span>
+        {!readOnly && (
+          <div className="ml-auto relative">
+            <button
+              type="button"
+              aria-label="Change status"
+              onPointerDown={stop}
+              onClick={(e) => {
+                stop(e);
+                setMenuOpen((o) => !o);
+              }}
+              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-semibold"
+              style={{ background: `${accent}26`, color: accent }}
+            >
+              <span
+                className="w-1.5 h-1.5 rounded-full"
+                style={{ background: accent }}
+                aria-hidden
+              />
+              {status?.label ?? ticket.status}
+              <span className="opacity-60">▾</span>
+            </button>
+            {menuOpen && (
+              <div
+                onPointerDown={stop}
+                className="absolute right-0 top-[120%] z-30 flex flex-col bg-[#161616] border border-white/10 rounded-md p-1 shadow-xl min-w-[120px]"
+              >
+                {STATUS_KEYS.map((sk) => {
+                  const sc = statusOf(sk);
+                  return (
+                    <button
+                      key={sk}
+                      type="button"
+                      onClick={(e) => {
+                        stop(e);
+                        setMenuOpen(false);
+                        if (sk !== ticket.status) onChangeStatus(sk);
+                      }}
+                      className="flex items-center gap-1.5 px-2 py-1 rounded text-[10px] text-left hover:bg-white/5"
+                      style={{ color: sk === ticket.status ? sc?.color : '#cbcbcb' }}
+                    >
+                      <span
+                        className="w-1.5 h-1.5 rounded-full"
+                        style={{ background: sc?.color }}
+                        aria-hidden
+                      />
+                      {sc?.label ?? sk}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
       </div>
       <div className="text-[12px] text-[#f5f5f5] leading-tight">{ticket.title}</div>
       <div className="mt-2 flex items-center gap-1.5">

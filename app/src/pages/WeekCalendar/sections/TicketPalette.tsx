@@ -1,3 +1,4 @@
+import { Plus } from 'lucide-react';
 import { PaletteTicketChip } from '../components/PaletteTicketChip';
 import type { PaletteTicket } from '../types';
 
@@ -6,8 +7,12 @@ interface TicketPaletteProps {
   activeTicketId: number | null;
   /** workItemId -> hours scheduled this week (for the capacity bar). */
   scheduledByTicket: Record<number, number>;
+  /** Hidden in read-only (admin viewing another calendar). */
+  readOnly?: boolean;
   onChipPointerDown: (ticket: PaletteTicket, e: React.PointerEvent) => void;
   onSelectTicket: (ticket: PaletteTicket) => void;
+  onChangeStatus: (ticket: PaletteTicket, status: string) => void;
+  onNewTicket: () => void;
 }
 
 /** Left rail listing the user's assigned tickets — the drag source for blocks. */
@@ -15,16 +20,29 @@ export function TicketPalette({
   tickets,
   activeTicketId,
   scheduledByTicket,
+  readOnly = false,
   onChipPointerDown,
   onSelectTicket,
+  onChangeStatus,
+  onNewTicket,
 }: TicketPaletteProps) {
   return (
     <div className="w-[272px] flex-none border-r border-white/[0.08] flex flex-col min-h-0">
       <div className="px-3.5 pt-3.5 pb-2.5 flex-none flex items-center justify-between">
         <div className="text-[12px] font-semibold text-[#f5f5f5]">My Tickets</div>
-        <div className="text-[10px] text-[#737373] bg-white/5 px-2 py-px rounded-full">
-          {tickets.length} assigned
-        </div>
+        {readOnly ? (
+          <div className="text-[10px] text-[#737373] bg-white/5 px-2 py-px rounded-full">
+            {tickets.length} assigned
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={onNewTicket}
+            className="flex items-center gap-1 text-[10px] text-[#a3a3a3] hover:text-white border border-white/[0.08] rounded-md px-2 py-1"
+          >
+            <Plus className="w-3 h-3" /> New
+          </button>
+        )}
       </div>
       <div className="flex-1 overflow-y-auto px-[11px] pb-3.5 flex flex-col gap-2">
         {tickets.length === 0 ? (
@@ -38,8 +56,10 @@ export function TicketPalette({
               ticket={t}
               active={activeTicketId === t.workItemId}
               scheduledHours={scheduledByTicket[t.workItemId] ?? 0}
+              readOnly={readOnly}
               onPointerDown={(e) => onChipPointerDown(t, e)}
               onSelect={() => onSelectTicket(t)}
+              onChangeStatus={(status) => onChangeStatus(t, status)}
             />
           ))
         )}

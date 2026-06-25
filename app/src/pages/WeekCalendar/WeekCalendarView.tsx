@@ -1,5 +1,14 @@
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { toast } from 'sonner';
+import { CreateWorkItemModal, type CreatedWorkItem } from '@/components/CreateWorkItemModal';
+import { TicketDetailPanel } from '@/components/ProjectsPage';
+import type { MyTask } from '@/components/ProjectsPage';
+import { useAuth } from '@/contexts/AuthContext';
+import { useAllDevelopers } from '@/hooks/useAllDevelopers';
+import { apiFetch, ApiError } from '@/lib/api';
 import { useMyTasks } from '@/pages/ProjectsPage/hooks/useMyTasks';
 import { useCalendarDrag } from './hooks/useCalendarDrag';
 import { useWeekBlocks } from './hooks/useWeekBlocks';
@@ -46,11 +55,28 @@ const WeekCalendarView = ({
   employeeId,
   toolbarSlot,
 }: WeekCalendarViewProps) => {
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const { user, token, can } = useAuth();
+  const isAdmin = can('admin.time_entries');
+
   const [weekStart, setWeekStart] = useState(() => startOfWeekMonday(new Date()));
   const [now, setNow] = useState(() => new Date());
   const [activeTicket, setActiveTicket] = useState<PaletteTicket | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
-  const readOnly = employeeId != null; // viewing someone else's calendar (admin)
+  // Admin employee picker: undefined = own calendar (editable); a dev id = view
+  // that employee's calendar read-only. Seeded from the optional prop.
+  const [viewingEmployeeId, setViewingEmployeeId] = useState<number | undefined>(employeeId);
+  const [detailTask, setDetailTask] = useState<MyTask | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [createSlot, setCreateSlot] = useState<{ dayIdx: number; start: number } | null>(null);
+  const readOnly = viewingEmployeeId != null; // viewing someone else's calendar
+
+  const { data: developers = [] } = useAllDevelopers<{ id: number; name: string; email: string }>();
+  const selfDevId = useMemo(
+    () => developers.find((d) => d.email && d.email === user?.email)?.id ?? null,
+    [developers, user?.email],
+  );
 
   // Advance the "now" line / today highlight so a long-lived tab doesn't freeze
   // at mount time (and rolls over local midnight). new Date() lives in the
@@ -70,7 +96,7 @@ const WeekCalendarView = ({
     updateBlock,
     placeBlock,
     deleteBlock,
-  } = useWeekBlocks(weekStart, employeeId);
+  } = useWeekBlocks(weekStart, viewingEmployeeId);
 
   // Palette: the user's assigned work items (personal tasks excluded — you can't
   // log developer hours against them).
@@ -167,12 +193,69 @@ const WeekCalendarView = ({
     [updateBlock, weekStart],
   );
 
+  // Empty-grid double-click (no active ticket) → create a ticket at that slot.
+  const handleEmptyDoubleClick = useCallback((dayIdx: number, start: number) => {
+    setCreateSlot({ dayIdx, start });
+    setCreateOpen(true);
+  }, []);
+
   // Stable so useCalendarDrag's document listeners bind once, not per render.
   const dragCallbacks = useMemo(
-    () => ({ onCreate: commitCreate, onUpdate: commitUpdate }),
-    [commitCreate, commitUpdate],
+    () => ({
+      onCreate: commitCreate,
+      onUpdate: commitUpdate,
+      onEmptyDoubleClick: handleEmptyDoubleClick,
+    }),
+    [commitCreate, commitUpdate, handleEmptyDoubleClick],
   );
   const drag = useCalendarDrag({ cfg, activeTicket, callbacks: dragCallbacks });
+
+  // Flip a ticket's status from within the calendar (palette chip). Mirrors the
+  // board/my-tasks mutation; invalidates the calendar too since block chips show
+  // status color.
+  const statusMutation = useMutation({
+    mutationFn: ({ id, status }: { id: number; status: string }) =>
+      apiFetch(`/api/workitems/${id}`, { method: 'PUT', body: JSON.stringify({ status }) }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['myTasks'] });
+      queryClient.invalidateQueries({ queryKey: ['workItems'] });
+      queryClient.invalidateQueries({ queryKey: ['timeBlocks'] });
+    },
+    onError: (err) =>
+      toast.error(err instanceof ApiError ? err.message : 'Failed to change status'),
+  });
+
+  // Double-click a block → open the existing full ticket panel (reused, not
+  // duplicated). Only opens when the ticket is in the caller's my-tasks feed.
+  const handleOpenDetail = useCallback(
+    (block: CalendarBlock) => {
+      const task = myTasks.find((t) => Number(t.id) === block.workItemId);
+      if (task) setDetailTask(task);
+    },
+    [myTasks],
+  );
+
+  // After creating a ticket from the calendar: if it landed on a drawn slot and
+  // is assigned to the caller, drop a 1h block there so the gesture logs time
+  // end-to-end. Otherwise it just appears in the palette (after invalidate).
+  const handleCreated = useCallback(
+    (item: CreatedWorkItem) => {
+      const slot = createSlot;
+      setCreateSlot(null);
+      if (slot && item.assignee_id != null && item.assignee_id === selfDevId) {
+        const end = Math.min(cfg.endHour, slot.start + 1);
+        commitCreate(slot.dayIdx, slot.start, end, {
+          workItemId: item.id,
+          key: item.key,
+          title: item.title,
+          type: item.type,
+          status: item.status,
+          remainingHours: item.remaining_hours,
+        });
+      }
+    },
+    [createSlot, selfDevId, commitCreate],
+  );
 
   // Keyboard: nudge/resize/move-day the selected block, Esc to deselect, Del to
   // confirm deletion. Disabled in read-only (admin viewing another calendar).
@@ -248,6 +331,28 @@ const WeekCalendarView = ({
     };
   }, [now, weekStart]);
 
+  // Admin-only employee picker (role-based visibility). Non-admins never see it
+  // and are pinned to their own calendar by the backend regardless.
+  const adminPicker = isAdmin ? (
+    <select
+      aria-label="View employee calendar"
+      value={viewingEmployeeId ?? ''}
+      onChange={(e) => {
+        setViewingEmployeeId(e.target.value ? Number(e.target.value) : undefined);
+        setDetailTask(null);
+      }}
+      className="h-[30px] bg-[#222] text-[#f5f5f5] border border-white/[0.12] rounded-md text-[11px] px-2"
+    >
+      <option value="">My calendar</option>
+      {developers.map((d) => (
+        <option key={d.id} value={d.id}>
+          {d.name}
+          {d.id === selfDevId ? ' (me)' : ''}
+        </option>
+      ))}
+    </select>
+  ) : null;
+
   const rootClass =
     layout === 'page'
       ? 'h-screen flex flex-col bg-[#0b0b0b] text-[#f5f5f5] overflow-hidden select-none'
@@ -274,7 +379,7 @@ const WeekCalendarView = ({
         onPrev={() => setWeekStart((w) => addDays(w, -7))}
         onToday={() => setWeekStart(startOfWeekMonday(new Date()))}
         onNext={() => setWeekStart((w) => addDays(w, 7))}
-        slot={toolbarSlot}
+        slot={adminPicker ?? toolbarSlot}
       />
 
       <div className="flex flex-1 min-h-0">
@@ -282,8 +387,14 @@ const WeekCalendarView = ({
           tickets={tickets}
           activeTicketId={activeTicket?.workItemId ?? null}
           scheduledByTicket={scheduledByTicket}
+          readOnly={readOnly}
           onChipPointerDown={handleChipPointerDown}
           onSelectTicket={setActiveTicket}
+          onChangeStatus={(t, status) => statusMutation.mutate({ id: t.workItemId, status })}
+          onNewTicket={() => {
+            setCreateSlot(null);
+            setCreateOpen(true);
+          }}
         />
 
         <div className="flex-1 min-w-0 flex flex-col">
@@ -323,6 +434,7 @@ const WeekCalendarView = ({
               setConfirmDeleteId(null);
               drag.onBlockPointerDown(b, e);
             }}
+            onBlockDoubleClick={handleOpenDetail}
             onSelectBlock={drag.select}
             onResizePointerDown={drag.onResizePointerDown}
             onReassign={(b, workItemId) => updateBlock({ id: b.id, workItemId })}
@@ -396,6 +508,36 @@ const WeekCalendarView = ({
       {myTasksLoading && tickets.length === 0 && (
         <div className="absolute bottom-3 left-3 text-[11px] text-[#555]">Loading tickets…</div>
       )}
+
+      {/* Double-click a block → the existing full ticket panel (reused). */}
+      {detailTask && (
+        <TicketDetailPanel
+          task={detailTask}
+          token={token}
+          currentUserId={user?.id ?? null}
+          onClose={() => setDetailTask(null)}
+          onTaskChanged={(updated) => {
+            setDetailTask(updated);
+            queryClient.invalidateQueries({ queryKey: ['myTasks'] });
+            queryClient.invalidateQueries({ queryKey: ['workItems'] });
+            queryClient.invalidateQueries({ queryKey: ['timeBlocks'] });
+          }}
+          onOpenInProjectBoard={(projectId, taskId) => {
+            navigate(`/project/${projectId}/board/${taskId}`);
+            setDetailTask(null);
+          }}
+        />
+      )}
+
+      {/* Drag empty grid / palette "+ New" → minimal shared create-ticket modal. */}
+      <CreateWorkItemModal
+        open={createOpen}
+        onOpenChange={(o) => {
+          setCreateOpen(o);
+          if (!o) setCreateSlot(null);
+        }}
+        onCreated={handleCreated}
+      />
     </div>
   );
 };

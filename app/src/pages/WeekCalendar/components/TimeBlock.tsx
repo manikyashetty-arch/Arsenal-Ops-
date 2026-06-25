@@ -21,6 +21,8 @@ interface TimeBlockProps {
   onPointerDown: (e: React.PointerEvent) => void;
   /** Keyboard select (Enter/Space) so the grid's arrow/Delete model is reachable. */
   onSelect: () => void;
+  /** Double-click (or Enter on a selected block) opens the full ticket panel. */
+  onOpenDetail: () => void;
   onResizePointerDown: (edge: 'top' | 'bottom', e: React.PointerEvent) => void;
   onReassign: (workItemId: number) => void;
   onDuplicate: () => void;
@@ -43,6 +45,7 @@ export function TimeBlock({
   ticketOptions,
   onPointerDown,
   onSelect,
+  onOpenDetail,
   onResizePointerDown,
   onReassign,
   onDuplicate,
@@ -64,8 +67,15 @@ export function TimeBlock({
       tabIndex={0}
       aria-label={`${block.ticketKey} ${formatClock(block.start)} to ${formatClock(block.end)}`}
       onPointerDown={onPointerDown}
+      onDoubleClick={(e) => {
+        e.stopPropagation(); // don't trigger the column's create-on-double-click
+        onOpenDetail();
+      }}
       onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          onOpenDetail();
+        } else if (e.key === ' ') {
           e.preventDefault();
           onSelect();
         }

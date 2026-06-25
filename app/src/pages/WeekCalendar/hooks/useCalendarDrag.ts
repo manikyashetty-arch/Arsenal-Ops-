@@ -30,6 +30,9 @@ interface Ghost {
 export interface CalendarDragCallbacks {
   onCreate: (dayIdx: number, start: number, end: number, ticket: PaletteTicket) => void;
   onUpdate: (id: number, dayIdx: number, start: number, end: number) => void;
+  /** Double-click on empty grid with NO ticket selected — opens the "create a
+   *  new ticket here" flow at the given slot. */
+  onEmptyDoubleClick?: (dayIdx: number, start: number) => void;
 }
 
 export interface UseCalendarDragArgs {
@@ -219,12 +222,16 @@ export function useCalendarDrag({ cfg, activeTicket, callbacks }: UseCalendarDra
 
   const onColumnDoubleClick = useCallback(
     (dayIdx: number, e: React.PointerEvent | React.MouseEvent) => {
-      if (!activeTicket) return;
       e.preventDefault();
       grab.current = null;
       const p = getPos(e.clientX, e.clientY);
       let start = snapHour(p.time, cfg);
       start = Math.max(cfg.startHour, Math.min(start, cfg.endHour - 1));
+      if (!activeTicket) {
+        // No ticket selected → offer to create one at this slot.
+        callbacks.onEmptyDoubleClick?.(dayIdx, start);
+        return;
+      }
       callbacks.onCreate(dayIdx, start, Math.min(cfg.endHour, start + 1), activeTicket);
     },
     [activeTicket, callbacks, cfg, getPos],

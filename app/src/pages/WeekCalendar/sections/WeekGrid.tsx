@@ -30,6 +30,7 @@ interface WeekGridProps {
   onColumnPointerDown: (dayIdx: number, e: React.PointerEvent) => void;
   onColumnDoubleClick: (dayIdx: number, e: React.MouseEvent) => void;
   onBlockPointerDown: (block: CalendarBlock, e: React.PointerEvent) => void;
+  onBlockDoubleClick: (block: CalendarBlock) => void;
   onSelectBlock: (id: number) => void;
   onResizePointerDown: (
     block: CalendarBlock,
@@ -58,6 +59,7 @@ export function WeekGrid({
   onColumnPointerDown,
   onColumnDoubleClick,
   onBlockPointerDown,
+  onBlockDoubleClick,
   onSelectBlock,
   onResizePointerDown,
   onReassign,
@@ -164,6 +166,7 @@ export function WeekGrid({
                       confirmingDelete={confirmDeleteId === item.id}
                       ticketOptions={ticketOptions}
                       onPointerDown={(e) => onBlockPointerDown(item, e)}
+                      onOpenDetail={() => onBlockDoubleClick(item)}
                       onSelect={() => onSelectBlock(item.id)}
                       onResizePointerDown={(edge, e) => onResizePointerDown(item, edge, e)}
                       onReassign={(workItemId) => onReassign(item, workItemId)}
