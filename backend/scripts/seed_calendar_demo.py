@@ -1,0 +1,248 @@
+"""Seed demo data for manually testing the week-calendar hour-logging UI.
+
+Creates two demo projects (SendBuild, Symphony — mirroring the billable-class
+examples) with a spread of work items: varying estimated hours, multiple
+assignees, mixed statuses, a ticket set up for the reassignment scenario, and a
+few already-placed calendar blocks for the dev-login user so the grid isn't
+empty on first load.
+
+Run from the backend/ directory:
+
+    python scripts/seed_calendar_demo.py            # create (skip if present)
+    python scripts/seed_calendar_demo.py --reset    # wipe demo projects + recreate
+
+Idempotent: keyed on the demo project prefixes (SB, SYM). A second plain run is
+a no-op; --reset deletes the demo projects (cascading to their work items and
+time entries) and rebuilds from scratch. Only ever touches the demo projects and
+the seeded demo developers — never your real data.
+
+The logged-in dev-login user (dev@local) is the primary assignee so its tickets
+populate the calendar palette. Re-run after `DEV_AUTH_BYPASS=1` has created the
+dev@local user (log in once), or let this script create it.
+"""
+
+from __future__ import annotations
+
+import argparse
+import sys
+from datetime import datetime, timedelta
+from pathlib import Path
+
+BACKEND_DIR = Path(__file__).resolve().parent.parent
+if str(BACKEND_DIR) not in sys.path:
+    sys.path.insert(0, str(BACKEND_DIR))
+
+from database import SessionLocal  # noqa: E402
+from models.developer import Developer  # noqa: E402
+from models.project import Project  # noqa: E402
+from models.time_entry import TimeEntry  # noqa: E402
+from models.user import User  # noqa: E402
+from models.work_item import WorkItem  # noqa: E402
+from routers.auth import get_password_hash  # noqa: E402
+from services.assignment_history_service import record_assignment_change  # noqa: E402
+
+DEMO_PREFIXES = ["SB", "SYM"]
+
+# (name, email) for the demo developers. dev@local is the dev-login user so its
+# assigned tickets show up in the calendar palette when you log in via Dev login.
+DEMO_PEOPLE = [
+    ("Dev Local", "dev@local"),
+    ("Dana Lopez", "dana@arsenalai.com"),
+    ("Sam Rivera", "sam@arsenalai.com"),
+]
+
+
+def _monday_this_week() -> datetime:
+    """Naive-UTC Monday 00:00 of the current week (matches the calendar grid)."""
+    today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    return today - timedelta(days=today.weekday())
+
+
+def _ensure_people(db) -> dict[str, Developer]:
+    """Create a User + Developer for each demo person if absent. Returns
+    {email: Developer}."""
+    devs: dict[str, Developer] = {}
+    for name, email in DEMO_PEOPLE:
+        user = db.query(User).filter(User.email == email).first()
+        if not user:
+            db.add(
+                User(
+                    email=email,
+                    name=name,
+                    hashed_password=get_password_hash("demo-password"),
+                    role="admin" if email == "dev@local" else "developer",
+                )
+            )
+        dev = db.query(Developer).filter(Developer.email == email).first()
+        if not dev:
+            dev = Developer(name=name, email=email)
+            db.add(dev)
+        devs[email] = dev
+    db.flush()
+    return devs
+
+
+def _delete_demo_projects(db) -> int:
+    """Delete demo projects; cascades remove their work items + time entries."""
+    projects = db.query(Project).filter(Project.key_prefix.in_(DEMO_PREFIXES)).all()
+    for p in projects:
+        db.delete(p)
+    db.flush()
+    return len(projects)
+
+
+def seed(reset: bool = False) -> None:
+    db = SessionLocal()
+    try:
+        if reset:
+            n = _delete_demo_projects(db)
+            print(f"[seed] --reset: removed {n} existing demo project(s).")
+        elif db.query(Project).filter(Project.key_prefix.in_(DEMO_PREFIXES)).first():
+            print("[seed] Demo projects already present. Use --reset to rebuild.")
+            return
+
+        devs = _ensure_people(db)
+        dev_local = devs["dev@local"]
+        dana = devs["dana@arsenalai.com"]
+        sam = devs["sam@arsenalai.com"]
+
+        monday = _monday_this_week()
+
+        # (prefix, name): the two demo projects.
+        projects = {}
+        for prefix, name in [("SB", "SendBuild"), ("SYM", "Symphony")]:
+            p = Project(name=name, key_prefix=prefix, description=f"{name} demo project")
+            db.add(p)
+            db.flush()
+            projects[prefix] = p
+
+        # Spread of work items: (prefix, type, title, status, est, assignee).
+        rows = [
+            ("SB", "task", "Streaming token middleware perf", "in_progress", 16, dev_local),
+            ("SB", "bug", "Fix UTC date parse on due dates", "in_progress", 5, dev_local),
+            ("SB", "user_story", "Calendar drag-drop snapping", "todo", 14, dev_local),
+            ("SB", "task", "Generated API types drift CI job", "in_review", 10, dana),
+            ("SB", "user_story", "Weekly report category filter", "done", 8, sam),
+            ("SB", "task", "Backfill developer rows", "backlog", 4, None),
+            ("SYM", "user_story", "Kanban keyboard a11y pass", "todo", 12, dev_local),
+            ("SYM", "bug", "Optimistic mutation rollback bug", "in_review", 6, dev_local),
+            ("SYM", "task", "Sprint burndown caching", "in_progress", 9, sam),
+            ("SYM", "task", "Role matrix export", "todo", 7, dana),
+        ]
+        created: list[WorkItem] = []
+        counters = {"SB": 0, "SYM": 0}
+        for prefix, wtype, title, status, est, assignee in rows:
+            counters[prefix] += 1
+            wi = WorkItem(
+                project_id=projects[prefix].id,
+                type=wtype,
+                key=f"{prefix}-{counters[prefix]}",
+                title=title,
+                status=status,
+                priority="medium",
+                estimated_hours=est,
+                remaining_hours=est,
+                logged_hours=0,
+                assignee_id=assignee.id if assignee else None,
+                last_assigned_at=datetime.utcnow() if assignee else None,
+            )
+            db.add(wi)
+            created.append(wi)
+        db.flush()
+
+        # Reassignment fixture: 15h ticket originally Dana's, who logged 5h, then
+        # transferred to dev@local. Dana keeps her 5h; dev@local sees 10h
+        # remaining. Exercises the transfer-aware capacity path in the UI.
+        counters["SYM"] += 1
+        xfer = WorkItem(
+            project_id=projects["SYM"].id,
+            type="task",
+            key=f"SYM-{counters['SYM']}",
+            title="Migrate auth to RBAC (reassigned mid-flight)",
+            status="in_progress",
+            priority="high",
+            estimated_hours=15,
+            remaining_hours=10,
+            logged_hours=5,
+            assignee_id=dev_local.id,
+            last_assigned_at=datetime.utcnow(),
+        )
+        db.add(xfer)
+        db.flush()
+        # Dana's 5h logged before the transfer (this week so it shows in capacity).
+        db.add(
+            TimeEntry(
+                work_item_id=xfer.id,
+                developer_id=dana.id,
+                hours=5,
+                description="Initial RBAC spike",
+                logged_at=monday + timedelta(days=1, hours=10),
+            )
+        )
+        # Assignment history: Dana held it, then dev@local.
+        record_assignment_change(db, xfer.id, dana.id, at=monday - timedelta(days=2))
+        record_assignment_change(db, xfer.id, dev_local.id, at=monday + timedelta(days=1, hours=14))
+
+        # A few already-placed calendar blocks for dev@local this week so the grid
+        # isn't empty. Non-overlapping (the no-overlap invariant is enforced).
+        sb1 = created[0]  # SB-1, dev_local
+        sym_story = created[6]  # SYM-1, dev_local
+        placed = [
+            (sb1, monday + timedelta(hours=9), monday + timedelta(hours=11)),  # Mon 9-11
+            (sym_story, monday + timedelta(days=1, hours=13), monday + timedelta(days=1, hours=15)),
+            (sb1, monday + timedelta(days=2, hours=10), monday + timedelta(days=2, hours=12)),
+        ]
+        for wi, start, end in placed:
+            hours = round((end - start).total_seconds() / 3600.0, 2)
+            db.add(
+                TimeEntry(
+                    work_item_id=wi.id,
+                    developer_id=dev_local.id,
+                    hours=hours,
+                    description="Demo block",
+                    start_time=start,
+                    end_time=end,
+                    logged_at=start,
+                )
+            )
+
+        # An unplaced entry (ticket-logged, not yet on the grid) so the "to place"
+        # tray is populated for the two-way-sync demo.
+        db.add(
+            TimeEntry(
+                work_item_id=created[1].id,  # SB-2, dev_local
+                developer_id=dev_local.id,
+                hours=2,
+                description="Logged from ticket, awaiting placement",
+                logged_at=datetime.utcnow(),
+            )
+        )
+        db.flush()
+
+        # Recompute logged/remaining for every touched ticket from the live sum.
+        from sqlalchemy import func
+
+        for wi in [*created, xfer]:
+            total = (
+                db.query(func.coalesce(func.sum(TimeEntry.hours), 0))
+                .filter(TimeEntry.work_item_id == wi.id)
+                .scalar()
+            ) or 0
+            wi.logged_hours = total
+            wi.remaining_hours = max(0, (wi.estimated_hours or 0) - total)
+
+        db.commit()
+        print(
+            f"[seed] Created 2 projects, {len(created) + 1} work items, "
+            f"placed 3 calendar blocks + 1 unplaced entry, and 1 reassignment fixture."
+        )
+        print("[seed] Log in via Dev login (dev@local) to see them in the calendar palette.")
+    finally:
+        db.close()
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Seed week-calendar demo data.")
+    parser.add_argument("--reset", action="store_true", help="Wipe demo projects and recreate.")
+    args = parser.parse_args()
+    seed(reset=args.reset)
