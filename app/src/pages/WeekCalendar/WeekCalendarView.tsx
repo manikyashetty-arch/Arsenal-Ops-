@@ -392,19 +392,24 @@ const WeekCalendarView = ({
       />
 
       <div className="flex flex-1 min-h-0">
-        <TicketPalette
-          tickets={tickets}
-          activeTicketId={activeTicket?.workItemId ?? null}
-          scheduledByTicket={scheduledByTicket}
-          readOnly={readOnly}
-          onChipPointerDown={handleChipPointerDown}
-          onSelectTicket={setActiveTicket}
-          onChangeStatus={(t, status) => statusMutation.mutate({ id: t.workItemId, status })}
-          onNewTicket={() => {
-            setCreateSlot(null);
-            setCreateOpen(true);
-          }}
-        />
+        {/* Palette is the caller's own drag source; hide it when an admin is
+            viewing someone else's calendar (read-only) — showing the viewer's
+            own tickets there is confusing and they can't be dragged anyway. */}
+        {!readOnly && (
+          <TicketPalette
+            tickets={tickets}
+            activeTicketId={activeTicket?.workItemId ?? null}
+            scheduledByTicket={scheduledByTicket}
+            readOnly={readOnly}
+            onChipPointerDown={handleChipPointerDown}
+            onSelectTicket={setActiveTicket}
+            onChangeStatus={(t, status) => statusMutation.mutate({ id: t.workItemId, status })}
+            onNewTicket={() => {
+              setCreateSlot(null);
+              setCreateOpen(true);
+            }}
+          />
+        )}
 
         <div className="flex-1 min-w-0 flex flex-col">
           {blocksError && (
