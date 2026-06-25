@@ -178,7 +178,9 @@ const ProjectsPage = () => {
           </button>
           {weekSectionOpen && (
             <Suspense
-              fallback={<div className="text-[12px] text-[#737373] px-1 py-4">Loading calendar…</div>}
+              fallback={
+                <div className="text-[12px] text-[#737373] px-1 py-4">Loading calendar…</div>
+              }
             >
               <WeekCalendarView layout="inline" />
             </Suspense>
