@@ -235,8 +235,13 @@ def _to_response(entry: TimeEntry, item: WorkItem) -> TimeBlockResponse:
         developer_id=entry.developer_id,
         hours=entry.hours,
         description=entry.description,
-        start_time=entry.start_time.isoformat() if entry.start_time else None,
-        end_time=entry.end_time.isoformat() if entry.end_time else None,
+        # Columns store naive-UTC; stamp the UTC marker so the client parses the
+        # instant as UTC (not local) and renders it at the same wall-clock time
+        # the user drew. Without the marker, `new Date("...T16:00:00")` is parsed
+        # as LOCAL, shifting blocks by the viewer's offset and making overlap
+        # checks (done in UTC) reject "open"-looking local slots.
+        start_time=entry.start_time.replace(tzinfo=UTC).isoformat() if entry.start_time else None,
+        end_time=entry.end_time.replace(tzinfo=UTC).isoformat() if entry.end_time else None,
     )
 
 

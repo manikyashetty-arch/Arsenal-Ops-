@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import argparse
 import sys
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 BACKEND_DIR = Path(__file__).resolve().parent.parent
@@ -184,13 +184,27 @@ def seed(reset: bool = False) -> None:
         record_assignment_change(db, xfer.id, dev_local.id, at=monday + timedelta(days=1, hours=14))
 
         # A few already-placed calendar blocks for dev@local this week so the grid
-        # isn't empty. Non-overlapping (the no-overlap invariant is enforced).
+        # isn't empty. Anchored in LOCAL time (the server runs in the dev's tz) and
+        # converted to the naive-UTC the columns store, so they render at sensible
+        # local hours in the browser. Non-overlapping (no-overlap is enforced).
+        local_monday = (
+            datetime.now().astimezone().replace(hour=0, minute=0, second=0, microsecond=0)
+        )
+        local_monday -= timedelta(days=local_monday.weekday())
+
+        def _utc(hours_from_monday: float) -> datetime:
+            return (
+                (local_monday + timedelta(hours=hours_from_monday))
+                .astimezone(UTC)
+                .replace(tzinfo=None)
+            )
+
         sb1 = created[0]  # SB-1, dev_local
         sym_story = created[6]  # SYM-1, dev_local
         placed = [
-            (sb1, monday + timedelta(hours=9), monday + timedelta(hours=11)),  # Mon 9-11
-            (sym_story, monday + timedelta(days=1, hours=13), monday + timedelta(days=1, hours=15)),
-            (sb1, monday + timedelta(days=2, hours=10), monday + timedelta(days=2, hours=12)),
+            (sb1, _utc(9), _utc(11)),  # Mon 9-11 local
+            (sym_story, _utc(24 + 13), _utc(24 + 15)),  # Tue 13-15 local
+            (sb1, _utc(48 + 10), _utc(48 + 12)),  # Wed 10-12 local
         ]
         for wi, start, end in placed:
             hours = round((end - start).total_seconds() / 3600.0, 2)

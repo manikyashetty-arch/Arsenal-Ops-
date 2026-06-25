@@ -585,3 +585,19 @@ def test_employee_id_self_is_allowed(db, seed):
         employee_id=seed["dev"].id,
     )
     assert len(resp.blocks) == 1
+
+
+def test_response_times_are_utc_marked(db, seed):
+    """The wire format must carry a UTC offset so the client parses the instant
+    as UTC (not local) — otherwise blocks render shifted and overlap checks
+    reject 'open'-looking local slots."""
+    b = create_time_block(
+        request=CreateTimeBlockRequest(
+            work_item_id=seed["item"].id, start_time=_at(0), end_time=_at(1)
+        ),
+        db=db,
+        current_user=seed["user"],
+    )
+    assert b.start_time is not None and b.end_time is not None
+    assert b.start_time.endswith("+00:00"), b.start_time
+    assert b.end_time.endswith("+00:00"), b.end_time
