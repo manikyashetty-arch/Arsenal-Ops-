@@ -8,6 +8,9 @@ interface CalendarToolbarProps {
   onPrev: () => void;
   onToday: () => void;
   onNext: () => void;
+  /** Optional control (e.g. an admin employee picker) rendered before the
+   *  working-hours pill. */
+  slot?: React.ReactNode;
 }
 
 /** Top bar: week navigation, working-hours window, and the week total. */
@@ -18,6 +21,7 @@ export function CalendarToolbar({
   onPrev,
   onToday,
   onNext,
+  slot,
 }: CalendarToolbarProps) {
   const navBtn =
     'w-[30px] h-[30px] flex items-center justify-center border border-white/[0.08] rounded-md text-[#a3a3a3] hover:text-white hover:bg-white/5';
@@ -46,6 +50,7 @@ export function CalendarToolbar({
         </div>
       </div>
       <div className="flex items-center gap-2.5">
+        {slot}
         <div className="hidden lg:block text-[11px] text-[#737373] mr-1">
           Drag a ticket in · drag empty grid to draw · double-click for 1h · drag edges to resize
         </div>

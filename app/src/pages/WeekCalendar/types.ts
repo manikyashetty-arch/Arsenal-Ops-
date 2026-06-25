@@ -24,6 +24,10 @@ export interface PaletteTicket {
   type: string;
   status: string;
   remainingHours: number;
+  /** Set when this "ticket" is actually an unplaced tray entry being dragged
+   *  onto the grid: drop PATCHes this existing TimeEntry's position instead of
+   *  creating a new block (keeps single-source-of-truth — no new row). */
+  placingEntryId?: number;
 }
 
 /** Wire block whose start_time fell outside the rendered Mon–Fri window, or a

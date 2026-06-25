@@ -34,23 +34,30 @@ export interface UpdateBlockArgs {
  * rule — block mutations invalidate ['workItems'] and ['myTasks'] too, since
  * they change a ticket's logged/remaining hours.
  */
-export function useWeekBlocks(weekStart: Date) {
+export function useWeekBlocks(weekStart: Date, employeeId?: number) {
   const queryClient = useQueryClient();
   const weekStartISO = weekStart.toISOString();
-  const key = useMemo(() => ['timeBlocks', weekStartISO] as const, [weekStartISO]);
+  // employeeId is part of the key so an admin switching employees refetches.
+  const key = useMemo(
+    () => ['timeBlocks', weekStartISO, employeeId ?? 'self'] as const,
+    [weekStartISO, employeeId],
+  );
 
   // Negative ids for optimistic rows; replaced when the server response lands.
   const tempId = useRef(-1);
 
   const query = useQuery<WeekBlocksResponse>({
     queryKey: key,
-    queryFn: () =>
-      apiFetch<WeekBlocksResponse>(
-        `/api/time-blocks?week_start=${encodeURIComponent(weekStartISO)}`,
-      ),
+    queryFn: () => {
+      const params = new URLSearchParams({ week_start: weekStartISO });
+      if (employeeId != null) params.set('employee_id', String(employeeId));
+      return apiFetch<WeekBlocksResponse>(`/api/time-blocks?${params.toString()}`);
+    },
   });
 
   const blocks = useMemo(() => query.data?.blocks ?? [], [query.data]);
+  // Ticket-logged hours awaiting placement on the grid (start_time null).
+  const unplaced = useMemo(() => query.data?.unplaced ?? [], [query.data]);
 
   const patchCache = (updater: (old: TimeBlockResponse[]) => TimeBlockResponse[]) =>
     queryClient.setQueryData<WeekBlocksResponse>(key, (old) =>
@@ -154,10 +161,14 @@ export function useWeekBlocks(weekStart: Date) {
 
   return {
     blocks,
+    unplaced,
     isLoading: query.isLoading,
     isError: query.isError,
     createBlock: createMutation.mutate,
     updateBlock: updateMutation.mutate,
+    // Placing a tray entry is just a position PATCH on its existing row — same
+    // mutation as move/resize, so it never creates a new row (no double count).
+    placeBlock: updateMutation.mutate,
     deleteBlock: deleteMutation.mutate,
   };
 }
