@@ -6,10 +6,14 @@ import {
   formatDuration,
   formatHours,
   intervalToBlock,
+  placementInterval,
   snapHour,
   startOfWeekMonday,
   weekDays,
 } from './calendar';
+
+const hoursApart = (a: string, b: string) =>
+  (new Date(b).getTime() - new Date(a).getTime()) / 3_600_000;
 
 describe('snapHour', () => {
   it('snaps to the nearest 15-minute increment', () => {
@@ -81,5 +85,26 @@ describe('block <-> interval conversion round-trips', () => {
     const weekStart = startOfWeekMonday(new Date(2026, 5, 24));
     const { startISO } = blockToInterval(weekStart, 0, 9, 10);
     expect(startISO).toMatch(/Z$/);
+  });
+});
+
+describe('placementInterval (tray entry keeps its logged duration)', () => {
+  const weekStart = startOfWeekMonday(new Date('2026-06-24T12:00:00'));
+
+  it('preserves the entry duration rather than collapsing to the drop default', () => {
+    // Regression: placing a 2h logged entry must stay 2h, not become 1h.
+    const { startISO, endISO } = placementInterval(weekStart, 0, 10, 2, DEFAULT_GRID);
+    expect(hoursApart(startISO, endISO)).toBe(2);
+  });
+
+  it('keeps fractional durations exact', () => {
+    const { startISO, endISO } = placementInterval(weekStart, 1, 9, 1.5, DEFAULT_GRID);
+    expect(hoursApart(startISO, endISO)).toBe(1.5);
+  });
+
+  it('clamps the end to the working-hours window', () => {
+    // start 18:00, 4h duration, window ends 19:00 -> clamped to 1h.
+    const { startISO, endISO } = placementInterval(weekStart, 2, 18, 4, DEFAULT_GRID);
+    expect(hoursApart(startISO, endISO)).toBe(1);
   });
 });

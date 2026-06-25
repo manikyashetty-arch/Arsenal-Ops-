@@ -85,4 +85,51 @@ describe('useWeekBlocks', () => {
     act(() => result.current.deleteBlock(5));
     await waitFor(() => expect(result.current.blocks.length).toBe(0));
   });
+
+  it('rolls the optimistic create back on an overlap 409 (no phantom block)', async () => {
+    server.use(
+      http.post(`${API_BASE}/time-blocks`, () =>
+        HttpResponse.json({ detail: 'This overlaps an existing ARS-1 block.' }, { status: 409 }),
+      ),
+    );
+    const { result } = renderHook(() => useWeekBlocks(weekStart), { wrapper });
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    act(() =>
+      result.current.createBlock({
+        workItemId: 1,
+        startISO: '2026-06-22T09:00:00.000Z',
+        endISO: '2026-06-22T10:00:00.000Z',
+        display,
+      }),
+    );
+    await waitFor(() => expect(result.current.blocks.length).toBe(0));
+  });
+
+  it('surfaces ticket-logged entries (no start_time) in the unplaced tray, not blocks', async () => {
+    seedTimeBlocks([seedBlock({ id: 9, hours: 2, start_time: null, end_time: null })]);
+    const { result } = renderHook(() => useWeekBlocks(weekStart), { wrapper });
+    await waitFor(() => expect(result.current.unplaced.length).toBe(1));
+    expect(result.current.blocks.length).toBe(0);
+    expect(result.current.unplaced[0]?.hours).toBe(2);
+  });
+
+  it('places a tray entry by PATCHing its position onto the SAME row (no new row)', async () => {
+    seedTimeBlocks([seedBlock({ id: 9, hours: 2, start_time: null, end_time: null })]);
+    const { result } = renderHook(() => useWeekBlocks(weekStart), { wrapper });
+    await waitFor(() => expect(result.current.unplaced.length).toBe(1));
+
+    act(() =>
+      result.current.placeBlock({
+        id: 9,
+        startISO: '2026-06-23T10:00:00.000Z',
+        endISO: '2026-06-23T12:00:00.000Z',
+      }),
+    );
+    // Same id moves from unplaced -> positioned; duration (2h) preserved.
+    await waitFor(() => expect(result.current.blocks.length).toBe(1));
+    expect(result.current.blocks[0]?.id).toBe(9);
+    expect(result.current.blocks[0]?.hours).toBe(2);
+    expect(result.current.unplaced.length).toBe(0);
+  });
 });

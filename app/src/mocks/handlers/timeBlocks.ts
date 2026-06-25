@@ -32,10 +32,14 @@ export const timeBlockHandlers = [
       const t = new Date(b.start_time);
       return t >= weekStart && t < weekEnd;
     });
+    // Ticket-logged entries awaiting placement (no start_time) — the "to place"
+    // tray; not week-scoped, matching the real endpoint.
+    const unplaced = blocks.filter((b) => !b.start_time);
     return HttpResponse.json({
       week_start: weekStart.toISOString(),
       week_end: weekEnd.toISOString(),
       blocks: inWeek,
+      unplaced,
     });
   }),
 

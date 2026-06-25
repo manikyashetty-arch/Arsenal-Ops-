@@ -46,7 +46,8 @@ export function PaletteTicketChip({
   // Bar shows this week's scheduled hours as a fraction of the work still in
   // play (this week's scheduled + what's left to do).
   const base = scheduledHours + Math.max(0, remaining);
-  const pct = base > 0 ? Math.min(100, (scheduledHours / base) * 100) : scheduledHours > 0 ? 100 : 0;
+  const pct =
+    base > 0 ? Math.min(100, (scheduledHours / base) * 100) : scheduledHours > 0 ? 100 : 0;
   const remLabel = over
     ? `${formatHours(-remaining)} over`
     : remaining <= 1e-9

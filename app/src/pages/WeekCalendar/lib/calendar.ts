@@ -132,6 +132,20 @@ export function blockToInterval(
   return { startISO: mk(start), endISO: mk(end) };
 }
 
+/** Interval for PLACING an unplaced (already-logged) tray entry onto the grid.
+ *  Placing only sets WHEN — the entry keeps its logged `durationHours` rather
+ *  than collapsing to the drop default — clamped to the working-hours window. */
+export function placementInterval(
+  weekStart: Date,
+  dayIdx: number,
+  start: number,
+  durationHours: number,
+  cfg: GridConfig,
+): { startISO: string; endISO: string } {
+  const end = Math.min(cfg.endHour, start + durationHours);
+  return blockToInterval(weekStart, dayIdx, start, end);
+}
+
 /** Absolute UTC ISO timestamps → UI block coords relative to `weekStart`.
  *  `dayIdx` may fall outside 0..4 when the block isn't in the rendered week. */
 export function intervalToBlock(

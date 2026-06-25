@@ -19,6 +19,7 @@ import {
   blockToInterval,
   formatDuration,
   intervalToBlock,
+  placementInterval,
   snapHour,
   startOfWeekMonday,
   stepHours,
@@ -169,13 +170,8 @@ const WeekCalendarView = ({
         // Preserve the already-logged duration — placing only sets WHEN, not how
         // long. Override the 1h drop default with the entry's real hours.
         const dur = ticket.placingDurationHours ?? end - start;
-        const placedEnd = blockToInterval(
-          weekStart,
-          dayIdx,
-          start,
-          Math.min(cfg.endHour, start + dur),
-        );
-        placeBlock({ id: ticket.placingEntryId, startISO, endISO: placedEnd.endISO });
+        const placed = placementInterval(weekStart, dayIdx, start, dur, cfg);
+        placeBlock({ id: ticket.placingEntryId, startISO: placed.startISO, endISO: placed.endISO });
       } else {
         createBlock({
           workItemId: ticket.workItemId,
