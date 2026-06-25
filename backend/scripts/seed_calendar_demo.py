@@ -24,6 +24,7 @@ dev@local user (log in once), or let this script create it.
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -32,7 +33,7 @@ BACKEND_DIR = Path(__file__).resolve().parent.parent
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
-from database import SessionLocal  # noqa: E402
+from database import DATABASE_URL, SessionLocal  # noqa: E402
 from models.developer import Developer  # noqa: E402
 from models.project import Project  # noqa: E402
 from models.time_entry import TimeEntry  # noqa: E402
@@ -50,12 +51,6 @@ DEMO_PEOPLE = [
     ("Dana Lopez", "dana@arsenalai.com"),
     ("Sam Rivera", "sam@arsenalai.com"),
 ]
-
-
-def _monday_this_week() -> datetime:
-    """Naive-UTC Monday 00:00 of the current week (matches the calendar grid)."""
-    today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
-    return today - timedelta(days=today.weekday())
 
 
 def _ensure_people(db) -> dict[str, Developer]:
@@ -118,6 +113,15 @@ def _delete_demo_projects(db) -> int:
 
 
 def seed(reset: bool = False) -> None:
+    # Safety guard: this writes demo projects AND grants dev@local a full-admin
+    # account (well-known password). Refuse to run against a non-SQLite DB unless
+    # explicitly opted in, so it can never pollute a shared/staging/prod database.
+    if not (DATABASE_URL or "").startswith("sqlite") and os.getenv("SEED_DEMO") != "1":
+        raise SystemExit(
+            "[seed] Refusing to run against a non-SQLite database. This script seeds "
+            "demo data and a full-admin dev@local user. Set SEED_DEMO=1 to override."
+        )
+
     db = SessionLocal()
     try:
         if reset:
@@ -137,7 +141,21 @@ def seed(reset: bool = False) -> None:
         dana = devs["dana@arsenalai.com"]
         sam = devs["sam@arsenalai.com"]
 
-        monday = _monday_this_week()
+        # Single week anchor for the whole fixture: local Monday (the server runs
+        # in the dev's tz, the grid is local), converted to the naive-UTC the
+        # columns store. Used for both the placed blocks and the reassignment
+        # entry so the demo story can't split across two weeks near a boundary.
+        local_monday = (
+            datetime.now().astimezone().replace(hour=0, minute=0, second=0, microsecond=0)
+        )
+        local_monday -= timedelta(days=local_monday.weekday())
+
+        def _utc(hours_from_monday: float) -> datetime:
+            return (
+                (local_monday + timedelta(hours=hours_from_monday))
+                .astimezone(UTC)
+                .replace(tzinfo=None)
+            )
 
         # (prefix, name): the two demo projects.
         projects = {}
@@ -207,29 +225,15 @@ def seed(reset: bool = False) -> None:
                 developer_id=dana.id,
                 hours=5,
                 description="Initial RBAC spike",
-                logged_at=monday + timedelta(days=1, hours=10),
+                logged_at=_utc(24 + 10),  # Tue 10:00 local, this week
             )
         )
-        # Assignment history: Dana held it, then dev@local.
-        record_assignment_change(db, xfer.id, dana.id, at=monday - timedelta(days=2))
-        record_assignment_change(db, xfer.id, dev_local.id, at=monday + timedelta(days=1, hours=14))
+        # Assignment history: Dana held it (from before this week), then dev@local.
+        record_assignment_change(db, xfer.id, dana.id, at=_utc(-48))
+        record_assignment_change(db, xfer.id, dev_local.id, at=_utc(24 + 14))
 
         # A few already-placed calendar blocks for dev@local this week so the grid
-        # isn't empty. Anchored in LOCAL time (the server runs in the dev's tz) and
-        # converted to the naive-UTC the columns store, so they render at sensible
-        # local hours in the browser. Non-overlapping (no-overlap is enforced).
-        local_monday = (
-            datetime.now().astimezone().replace(hour=0, minute=0, second=0, microsecond=0)
-        )
-        local_monday -= timedelta(days=local_monday.weekday())
-
-        def _utc(hours_from_monday: float) -> datetime:
-            return (
-                (local_monday + timedelta(hours=hours_from_monday))
-                .astimezone(UTC)
-                .replace(tzinfo=None)
-            )
-
+        # isn't empty (same local week anchor as above). Non-overlapping.
         sb1 = created[0]  # SB-1, dev_local
         sym_story = created[6]  # SYM-1, dev_local
         placed = [

@@ -31,7 +31,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import func
+from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 
 from database import get_db
@@ -160,6 +160,27 @@ def _validate_interval(start: datetime, end: datetime) -> float:
             detail=f"Block of {hours}h exceeds the {MAX_BLOCK_HOURS}h cap. Split it up.",
         )
     return hours
+
+
+# Arbitrary namespace so this advisory lock can't collide with another feature's.
+_OVERLAP_LOCK_NS = 0x7B70C
+
+
+def _lock_developer_for_overlap(db: Session, developer_id: int | None) -> None:
+    """Serialize the overlap check+insert for ONE developer.
+
+    No-overlap is a read-then-insert with no DB constraint, so two concurrent
+    requests (double-click, two tabs, retry) could each pass `_assert_no_overlap`
+    and both insert overlapping blocks. A per-developer transaction-scoped
+    advisory lock makes the check+insert atomic across connections; it's released
+    on commit/rollback. No-op on SQLite (tests are single-threaded, and SQLite
+    has no advisory locks)."""
+    if developer_id is None or db.get_bind().dialect.name != "postgresql":
+        return
+    db.execute(
+        text("SELECT pg_advisory_xact_lock(:ns, :dev)"),
+        {"ns": _OVERLAP_LOCK_NS, "dev": developer_id},
+    )
 
 
 def _assert_no_overlap(
@@ -354,6 +375,7 @@ def create_time_block(
     start = _naive_utc(request.start_time)
     end = _naive_utc(request.end_time)
     hours = _validate_interval(start, end)
+    _lock_developer_for_overlap(db, caller_dev.id)
     _assert_no_overlap(db, caller_dev.id, start, end)
 
     entry = TimeEntry(
@@ -417,6 +439,7 @@ def update_time_block(
             detail="This block has no position; provide both start_time and end_time.",
         )
     entry.hours = _validate_interval(new_start, new_end)
+    _lock_developer_for_overlap(db, entry.developer_id)
     _assert_no_overlap(db, entry.developer_id, new_start, new_end, exclude_entry_id=entry.id)
     entry.start_time = new_start
     entry.end_time = new_end

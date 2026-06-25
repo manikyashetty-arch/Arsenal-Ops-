@@ -598,6 +598,7 @@ def test_response_times_are_utc_marked(db, seed):
         db=db,
         current_user=seed["user"],
     )
-    assert b.start_time is not None and b.end_time is not None
+    assert b.start_time is not None
+    assert b.end_time is not None
     assert b.start_time.endswith("+00:00"), b.start_time
     assert b.end_time.endswith("+00:00"), b.end_time

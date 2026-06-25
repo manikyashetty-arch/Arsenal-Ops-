@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { DAY_COUNT, type GridConfig, snapHour, stepHours, yToHour } from '../lib/calendar';
 import type { CalendarBlock, PaletteTicket } from '../types';
 
@@ -78,6 +78,9 @@ export function useCalendarDrag({ cfg, activeTicket, callbacks }: UseCalendarDra
       const el = colsRef.current;
       if (!el) return { inside: false, dayIdx: 0, time: cfg.startHour };
       const rect = el.getBoundingClientRect();
+      // Guard a zero-width rect (display:none ancestor / mid-layout): colW=0 →
+      // Math.floor(x/0) is Infinity/NaN, which would poison dayIdx.
+      if (rect.width === 0) return { inside: false, dayIdx: 0, time: cfg.startHour };
       const colW = rect.width / DAY_COUNT;
       const x = cx - rect.left;
       const y = cy - rect.top;
@@ -198,25 +201,40 @@ export function useCalendarDrag({ cfg, activeTicket, callbacks }: UseCalendarDra
     if (d && g.started && g.origin) callbacks.onUpdate(d.id, d.dayIdx, d.start, d.end);
   }, [callbacks, applyPreview, applyDraft]);
 
-  // Global pointer listeners — bound once.
+  // Global pointer listeners — bound once. Events are gated to the pointer that
+  // started the active grab so a second finger/pen can't hijack an in-flight
+  // gesture, and `pointercancel` (touch interruption, OS gesture-takeover) aborts
+  // the drag cleanly instead of leaving a frozen overlay + stuck grab.
   useEffect(() => {
+    const forGrab = (e: PointerEvent) =>
+      grab.current != null && e.pointerId === grab.current.pointerId;
     const move = (e: PointerEvent) => {
-      if (grab.current) applyMove(e.clientX, e.clientY);
+      if (forGrab(e)) applyMove(e.clientX, e.clientY);
     };
-    const up = () => {
-      if (grab.current) finish();
+    const up = (e: PointerEvent) => {
+      if (forGrab(e)) finish();
+    };
+    const cancel = (e: PointerEvent) => {
+      if (!forGrab(e)) return;
+      grab.current = null;
+      applyPreview(null);
+      applyDraft(null);
+      setGhost(null);
     };
     document.addEventListener('pointermove', move);
     document.addEventListener('pointerup', up);
+    document.addEventListener('pointercancel', cancel);
     return () => {
       document.removeEventListener('pointermove', move);
       document.removeEventListener('pointerup', up);
+      document.removeEventListener('pointercancel', cancel);
     };
-  }, [applyMove, finish]);
+  }, [applyMove, finish, applyPreview, applyDraft]);
 
   // --- interaction starters (called from view components) ---
   const onColumnPointerDown = useCallback(
     (dayIdx: number, e: React.PointerEvent) => {
+      if (grab.current) return; // a gesture is already in flight — ignore extra pointers
       if (!activeTicket) return; // need a ticket to draw against
       e.preventDefault();
       const p = getPos(e.clientX, e.clientY);
@@ -254,6 +272,7 @@ export function useCalendarDrag({ cfg, activeTicket, callbacks }: UseCalendarDra
 
   const onBlockPointerDown = useCallback(
     (block: CalendarBlock, e: React.PointerEvent) => {
+      if (grab.current) return; // a gesture is already in flight — ignore extra pointers
       // Optimistic (negative id) and draft (DRAFT_ID) blocks have no server row
       // yet — dragging one would PATCH a non-existent id. Ignore until persisted.
       if (block.id <= 0) return;
@@ -278,6 +297,7 @@ export function useCalendarDrag({ cfg, activeTicket, callbacks }: UseCalendarDra
 
   const onResizePointerDown = useCallback(
     (block: CalendarBlock, edge: 'top' | 'bottom', e: React.PointerEvent) => {
+      if (grab.current) return; // a gesture is already in flight — ignore extra pointers
       if (block.id <= 0) return; // not yet persisted — see onBlockPointerDown
       e.preventDefault();
       e.stopPropagation();
@@ -296,6 +316,7 @@ export function useCalendarDrag({ cfg, activeTicket, callbacks }: UseCalendarDra
   );
 
   const onChipPointerDown = useCallback((ticket: PaletteTicket, e: React.PointerEvent) => {
+    if (grab.current) return; // a gesture is already in flight — ignore extra pointers
     e.preventDefault();
     grab.current = {
       mode: 'palette',
@@ -307,18 +328,37 @@ export function useCalendarDrag({ cfg, activeTicket, callbacks }: UseCalendarDra
     };
   }, []);
 
-  return {
-    colsRef,
-    selectedId,
-    select: setSelectedId,
-    clearSelection: () => setSelectedId(null),
-    draft,
-    ghost,
-    preview,
-    onColumnPointerDown,
-    onColumnDoubleClick,
-    onBlockPointerDown,
-    onResizePointerDown,
-    onChipPointerDown,
-  };
+  const clearSelection = useCallback(() => setSelectedId(null), []);
+
+  // Memoized so the returned object's identity is stable across renders that
+  // don't change drag state — consumers (e.g. the keydown effect) then don't
+  // re-bind their listeners on every unrelated render.
+  return useMemo(
+    () => ({
+      colsRef,
+      selectedId,
+      select: setSelectedId,
+      clearSelection,
+      draft,
+      ghost,
+      preview,
+      onColumnPointerDown,
+      onColumnDoubleClick,
+      onBlockPointerDown,
+      onResizePointerDown,
+      onChipPointerDown,
+    }),
+    [
+      selectedId,
+      clearSelection,
+      draft,
+      ghost,
+      preview,
+      onColumnPointerDown,
+      onColumnDoubleClick,
+      onBlockPointerDown,
+      onResizePointerDown,
+      onChipPointerDown,
+    ],
+  );
 }

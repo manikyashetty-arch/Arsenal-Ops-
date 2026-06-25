@@ -65,12 +65,15 @@ export function TimeBlock({
     <div
       role="button"
       tabIndex={0}
-      aria-label={`${block.ticketKey} ${formatClock(block.start)} to ${formatClock(block.end)}`}
+      aria-label={`${block.ticketKey} ${formatClock(block.start)} to ${formatClock(block.end)}. Enter opens the ticket; Space selects for keyboard move/resize.`}
       onPointerDown={onPointerDown}
       onDoubleClick={(e) => {
         e.stopPropagation(); // don't trigger the column's create-on-double-click
         onOpenDetail();
       }}
+      // Deliberate dual-action: Enter opens the full ticket (matches double-click),
+      // Space selects the block so the grid's arrow-key move/resize model applies.
+      // The aria-label above announces both so it isn't surprising.
       onKeyDown={(e) => {
         if (e.key === 'Enter') {
           e.preventDefault();
@@ -162,16 +165,15 @@ export function TimeBlock({
           >
             <select
               aria-label="Reassign block to ticket"
-              value={block.ticketKey}
+              // Keyed on the stable workItemId, not the display key, so reassign
+              // is unambiguous even if two tickets ever share a key string.
+              value={String(block.workItemId)}
               onPointerDown={(e) => e.stopPropagation()}
-              onChange={(e) => {
-                const next = ticketOptions.find((t) => t.key === e.target.value);
-                if (next) onReassign(next.workItemId);
-              }}
+              onChange={(e) => onReassign(Number(e.target.value))}
               className="h-6 max-w-[140px] bg-[#222] text-[#f5f5f5] border border-white/12 rounded-md text-[11px] px-1.5 cursor-pointer"
             >
               {ticketOptions.map((t) => (
-                <option key={t.key} value={t.key}>
+                <option key={t.workItemId} value={String(t.workItemId)}>
                   {t.key} · {t.title}
                 </option>
               ))}

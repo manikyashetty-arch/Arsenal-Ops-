@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { STATUS_CONFIG, TYPE_CONFIG } from '@/lib/workItemConfig';
 import { formatHours } from '../lib/calendar';
 import { CALENDAR } from '../lib/calendarTheme';
@@ -34,6 +34,25 @@ export function PaletteTicketChip({
   onChangeStatus,
 }: PaletteTicketChipProps) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+
+  // Dismiss the status menu on outside-click or Escape (WAI-ARIA menu-button).
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onDown = (e: PointerEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setMenuOpen(false);
+    };
+    document.addEventListener('pointerdown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('pointerdown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [menuOpen]);
+
   const type = typeOf(ticket.type);
   const status = statusOf(ticket.status);
   const accent = status?.color ?? '#737373';
@@ -90,10 +109,12 @@ export function PaletteTicketChip({
         </span>
         <span className="font-mono text-[10px] font-semibold text-[#E0B954]">{ticket.key}</span>
         {!readOnly && (
-          <div className="ml-auto relative">
+          <div className="ml-auto relative" ref={menuRef}>
             <button
               type="button"
               aria-label="Change status"
+              aria-haspopup="menu"
+              aria-expanded={menuOpen}
               onPointerDown={stop}
               onClick={(e) => {
                 stop(e);

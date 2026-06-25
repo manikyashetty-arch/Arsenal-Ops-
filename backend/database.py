@@ -347,6 +347,8 @@ def run_migrations():
         # SQLite is typeless and already stores floats. Idempotent. NOTE: on
         # Postgres, ALTER COLUMN ... TYPE NUMERIC rewrites the table under an
         # ACCESS EXCLUSIVE lock — fine at current scale.
+        # Part A: add the nullable columns + index (engine-agnostic). Committed
+        # on its own so a later widen failure can't roll these back.
         try:
             from sqlalchemy import inspect as _sa_inspect
 
@@ -365,16 +367,27 @@ def run_migrations():
                             "ON time_entries(start_time)"
                         )
                     )
+            conn.commit()
+        except Exception as e:
+            conn.rollback()
+            print(f"[MIGRATION ERROR] adding positioned-block columns: {e}")
 
-            # Widen hours columns to NUMERIC (Postgres only; SQLite is typeless).
-            if conn.dialect.name != "sqlite":
-                numeric_cols = [
-                    ("time_entries", "hours", "NUMERIC(6,2)"),
-                    ("work_items", "logged_hours", "NUMERIC(7,2)"),
-                    ("work_items", "estimated_hours", "NUMERIC(7,2)"),
-                    ("work_items", "remaining_hours", "NUMERIC(7,2)"),
-                ]
-                for table, column, target in numeric_cols:
+        # Part B: widen hours columns INTEGER -> NUMERIC so fractional (15/30-min)
+        # blocks aren't truncated. Postgres only (SQLite is typeless). Each column
+        # is converted + committed independently with a bounded lock wait, so a
+        # contended ALTER fails fast (instead of wedging startup) and a single
+        # failure is logged LOUDLY per-column rather than silently leaving an
+        # INTEGER column that would truncate fractional hours.
+        if conn.dialect.name == "postgresql":
+            numeric_cols = [
+                ("time_entries", "hours", "NUMERIC(6,2)"),
+                ("work_items", "logged_hours", "NUMERIC(7,2)"),
+                ("work_items", "estimated_hours", "NUMERIC(7,2)"),
+                ("work_items", "remaining_hours", "NUMERIC(7,2)"),
+            ]
+            for table, column, target in numeric_cols:
+                try:
+                    conn.execute(text("SET lock_timeout = '5s'"))
                     row = conn.execute(
                         text(
                             "SELECT data_type FROM information_schema.columns "
@@ -390,9 +403,14 @@ def run_migrations():
                                 f"TYPE {target} USING {column}::numeric"
                             )
                         )
-            conn.commit()
-        except Exception as e:
-            print(f"[MIGRATION ERROR] {e}")
+                    conn.commit()
+                except Exception as e:
+                    conn.rollback()
+                    print(
+                        f"[MIGRATION ERROR] FAILED to widen {table}.{column} to {target}: {e}. "
+                        "Fractional hours on this column will be TRUNCATED until this is "
+                        "applied — re-run the migration / check for a lock."
+                    )
 
         # Migration: Add key_prefix column to projects
         try:

@@ -121,20 +121,36 @@ export function useWeekBlocks(weekStart: Date, employeeId?: number) {
     onMutate: async (vars) => {
       await queryClient.cancelQueries({ queryKey: ['timeBlocks'] });
       const snapshot = queryClient.getQueryData<WeekBlocksResponse>(key);
-      patchCache((old) =>
-        old.map((b) => {
-          if (b.id !== vars.id) return b;
-          const start_time = vars.startISO ?? b.start_time;
-          const end_time = vars.endISO ?? b.end_time;
-          return {
-            ...b,
-            start_time,
-            end_time,
-            work_item_id: vars.workItemId ?? b.work_item_id,
-            hours: start_time && end_time ? hoursBetween(start_time, end_time) : b.hours,
-          };
-        }),
-      );
+      // The target may be a positioned block OR an unplaced tray entry being
+      // placed. Patch it and, if it now has a position, move it out of the tray
+      // into blocks so the placement is reflected optimistically (not just on
+      // refetch).
+      queryClient.setQueryData<WeekBlocksResponse>(key, (old) => {
+        if (!old) return old;
+        const unplacedRows = old.unplaced ?? [];
+        const inBlocks = old.blocks.find((b) => b.id === vars.id);
+        const target = inBlocks ?? unplacedRows.find((b) => b.id === vars.id);
+        if (!target) return old;
+        const start_time = vars.startISO ?? target.start_time;
+        const end_time = vars.endISO ?? target.end_time;
+        const patched: TimeBlockResponse = {
+          ...target,
+          start_time,
+          end_time,
+          work_item_id: vars.workItemId ?? target.work_item_id,
+          hours: start_time && end_time ? hoursBetween(start_time, end_time) : target.hours,
+        };
+        const positioned = Boolean(start_time && end_time);
+        return {
+          ...old,
+          blocks: inBlocks
+            ? old.blocks.map((b) => (b.id === vars.id ? patched : b))
+            : positioned
+              ? [...old.blocks, patched]
+              : old.blocks,
+          unplaced: unplacedRows.filter((b) => !(b.id === vars.id && positioned)),
+        };
+      });
       return { snapshot };
     },
     onError: (err, _vars, ctx) => {
