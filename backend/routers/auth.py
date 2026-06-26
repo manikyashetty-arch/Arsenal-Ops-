@@ -42,7 +42,23 @@ def _is_internal_email(email: str | None) -> bool:
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
 
 # Security configuration
-SECRET_KEY = "your-secret-key-change-in-production"  # Change this in production!
+#
+# SECRET_KEY is the symmetric HS256 key the app both signs and verifies JWTs
+# with. It MUST come from the environment: because HS256 is symmetric, anyone
+# who knows the key can forge a token for any user id (full auth bypass). The
+# historical hardcoded default is public in source/history, so we refuse to
+# start on an unset key or that legacy literal — fail closed.
+_LEGACY_DEFAULT_SECRET_KEY = "your-secret-key-change-in-production"
+_secret_key = os.getenv("SECRET_KEY")
+if not _secret_key or _secret_key == _LEGACY_DEFAULT_SECRET_KEY:
+    raise RuntimeError(
+        "SECRET_KEY must be set in the environment to a non-default value. "
+        "The app refuses to start on the legacy hardcoded default to avoid "
+        "trivial JWT forgery. Set SECRET_KEY in .env (local) or the Render "
+        "dashboard (prod). Note: changing it invalidates all live sessions."
+    )
+# Narrowed to `str` by the guard above so jwt.encode/decode get a concrete key.
+SECRET_KEY: str = _secret_key
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24  # 24 hours
 
@@ -492,11 +508,33 @@ def update_user_role(
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
+    # Resolve the requested string to known SYSTEM roles up front. This endpoint
+    # sets a user's system role(s); custom roles are managed via the
+    # assign/remove-role endpoints. Reject unknown names (e.g. a typo like
+    # "superuser") and the empty string with 400 rather than silently writing
+    # them to the legacy column while granting zero capabilities — RBAC reads
+    # `user.roles`, not the string, so a silent no-op would look like success.
+    requested_names = [n.strip() for n in (role_data.role or "").split(",") if n.strip()]
+    resolved = {
+        r.name: r
+        for r in db.query(Role)
+        .filter(Role.is_system.is_(True), Role.name.in_(requested_names))
+        .all()
+    }
+    unknown = [n for n in requested_names if n not in resolved]
+    if not requested_names or unknown:
+        detail = (
+            f"Unknown role(s): {', '.join(sorted(set(unknown)))}"
+            if unknown
+            else "A role is required"
+        )
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=detail)
+
     # Prevent removing the last admin. Read the many-to-many `user.roles`
-    # relationship rather than the legacy comma-string column so this stays
-    # correct even when the column drifts. The legacy string sync still runs
-    # via _sync_legacy_role_string() but is no longer authoritative.
-    is_demoting_admin = _has_admin_role(user) and "admin" not in role_data.role
+    # relationship rather than the legacy comma-string column, since RBAC is
+    # the source of truth for "is this user an admin". Evaluated against the
+    # CURRENT (pre-change) roles, before the resync below.
+    is_demoting_admin = _has_admin_role(user) and "admin" not in resolved
     if is_demoting_admin:
         all_users = db.query(User).options(selectinload(User.roles)).all()
         admin_count = sum(1 for u in all_users if _has_admin_role(u))
@@ -505,7 +543,13 @@ def update_user_role(
                 status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot remove the last admin"
             )
 
-    user.role = role_data.role
+    # Resync the RBAC m2m to the resolved system roles (preserving any custom,
+    # non-system roles assigned via the RBAC UI), then derive the legacy column
+    # FROM the resolved roles via `_sync_legacy_role_column` so the string can't
+    # drift from the m2m. RBAC is authoritative; the legacy column is a mirror.
+    desired_system_roles = [resolved[n] for n in dict.fromkeys(requested_names)]
+    user.roles = [r for r in user.roles if not r.is_system] + desired_system_roles
+    _sync_legacy_role_column(user)
     db.commit()
     _invalidate_caps_cache()
 
