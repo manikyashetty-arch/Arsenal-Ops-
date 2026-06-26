@@ -15,6 +15,7 @@ import { useWeekBlocks } from './hooks/useWeekBlocks';
 import {
   DAY_COUNT,
   DEFAULT_GRID,
+  FULL_WEEK_DAY_COUNT,
   addDays,
   blockToInterval,
   formatDuration,
@@ -76,6 +77,9 @@ const WeekCalendarView = ({
   const [createSlot, setCreateSlot] = useState<{ dayIdx: number; start: number } | null>(null);
   // Per-project filter (own calendar only). null = all projects.
   const [projectFilter, setProjectFilter] = useState<number | null>(null);
+  // Show Sat/Sun columns (off by default — most logging is weekdays).
+  const [showWeekend, setShowWeekend] = useState(false);
+  const dayCount = showWeekend ? FULL_WEEK_DAY_COUNT : DAY_COUNT;
   const readOnly = viewingEmployeeId != null; // viewing someone else's calendar
 
   const { data: developers = [] } = useAllDevelopers<{ id: number; name: string; email: string }>();
@@ -173,6 +177,28 @@ const WeekCalendarView = ({
     [readOnly, activeProjectFilter, projectIdForKey],
   );
 
+  const projectNameById = useMemo(
+    () => new Map(projectOptions.map((p) => [p.id, p.name])),
+    [projectOptions],
+  );
+
+  // This week's logged hours grouped by project (for the palette summary). Sums
+  // the same positioned blocks as the week total, so the two always agree.
+  const weekByProject = useMemo(() => {
+    const acc = new Map<string, number>();
+    for (const b of blocks) {
+      const pid = projectIdForKey(b.work_item_key);
+      const label =
+        (pid != null ? projectNameById.get(pid) : undefined) ??
+        b.work_item_key.split('-')[0] ??
+        'Other';
+      acc.set(label, (acc.get(label) ?? 0) + b.hours);
+    }
+    return [...acc.entries()]
+      .map(([label, hours]) => ({ label, hours }))
+      .sort((a, b) => b.hours - a.hours);
+  }, [blocks, projectIdForKey, projectNameById]);
+
   // Wire blocks → grid coords. Blocks outside the rendered Mon–Fri window drop
   // into the "unscheduled" tray rather than a fabricated slot.
   const { rendered, offWindow } = useMemo(() => {
@@ -184,7 +210,7 @@ const WeekCalendarView = ({
         continue;
       }
       const { dayIdx, start, end } = intervalToBlock(weekStart, b.start_time, b.end_time);
-      if (dayIdx < 0 || dayIdx >= DAY_COUNT) {
+      if (dayIdx < 0 || dayIdx >= dayCount) {
         trayBlocks.push(b);
         continue;
       }
@@ -201,7 +227,7 @@ const WeekCalendarView = ({
       });
     }
     return { rendered: renderedBlocks, offWindow: trayBlocks };
-  }, [blocks, weekStart]);
+  }, [blocks, weekStart, dayCount]);
 
   // The tray = backend `unplaced` (ticket-logged, awaiting placement) plus any
   // positioned block that fell outside this week's columns.
@@ -268,7 +294,7 @@ const WeekCalendarView = ({
     }),
     [commitCreate, commitUpdate, handleEmptyDoubleClick],
   );
-  const drag = useCalendarDrag({ cfg, activeTicket, callbacks: dragCallbacks });
+  const drag = useCalendarDrag({ cfg, dayCount, activeTicket, callbacks: dragCallbacks });
 
   // Flip a ticket's status from within the calendar (palette chip). Mirrors the
   // board/my-tasks mutation; invalidates the calendar too since block chips show
@@ -346,7 +372,7 @@ const WeekCalendarView = ({
         e.preventDefault();
         const nd = Math.max(
           0,
-          Math.min(DAY_COUNT - 1, block.dayIdx + (e.key === 'ArrowRight' ? 1 : -1)),
+          Math.min(dayCount - 1, block.dayIdx + (e.key === 'ArrowRight' ? 1 : -1)),
         );
         commitUpdate(block.id, nd, block.start, block.end);
       } else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
@@ -368,7 +394,7 @@ const WeekCalendarView = ({
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [drag, rendered, commitUpdate, readOnly]);
+  }, [drag, rendered, commitUpdate, readOnly, dayCount]);
 
   // Clicking off the calendar deselects the armed ticket and any selected block,
   // matching Escape. Pointerdown (not click) so it fires before a chip/block can
@@ -403,20 +429,20 @@ const WeekCalendarView = ({
   };
 
   const weekRangeLabel = useMemo(() => {
-    const end = addDays(weekStart, DAY_COUNT - 1);
+    const end = addDays(weekStart, dayCount - 1);
     const fmt = (d: Date) => d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
     return `${fmt(weekStart)} – ${fmt(end)}, ${end.getFullYear()}`;
-  }, [weekStart]);
+  }, [weekStart, dayCount]);
 
   const { nowDayIdx, nowDecimal } = useMemo(() => {
     const midnight = new Date(now);
     midnight.setHours(0, 0, 0, 0);
     const idx = Math.round((midnight.getTime() - weekStart.getTime()) / 86_400_000);
     return {
-      nowDayIdx: idx >= 0 && idx < DAY_COUNT ? idx : null,
+      nowDayIdx: idx >= 0 && idx < dayCount ? idx : null,
       nowDecimal: now.getHours() + now.getMinutes() / 60,
     };
-  }, [now, weekStart]);
+  }, [now, weekStart, dayCount]);
 
   // Per-project filter (own calendar only). Hidden when there's nothing to
   // choose between (≤1 project) or when viewing another person's calendar.
@@ -436,6 +462,22 @@ const WeekCalendarView = ({
         ))}
       </select>
     ) : null;
+
+  const weekendToggle = (
+    <button
+      type="button"
+      onClick={() => setShowWeekend((s) => !s)}
+      aria-pressed={showWeekend}
+      title={showWeekend ? 'Hide weekend' : 'Show weekend'}
+      className={`h-[30px] px-2.5 rounded-md text-[11px] font-medium border ${
+        showWeekend
+          ? 'bg-[#E0B954]/[0.12] border-[#E0B954]/30 text-[#E0B954]'
+          : 'border-white/[0.12] text-[#a3a3a3] hover:text-white hover:bg-white/5'
+      }`}
+    >
+      Weekend
+    </button>
+  );
 
   // Admin-only employee picker (role-based visibility). Non-admins never see it
   // and are pinned to their own calendar by the backend regardless.
@@ -489,6 +531,7 @@ const WeekCalendarView = ({
           <>
             {projectPicker}
             {adminPicker ?? toolbarSlot}
+            {weekendToggle}
           </>
         }
       />
@@ -502,6 +545,8 @@ const WeekCalendarView = ({
             tickets={visibleTickets}
             activeTicketId={activeTicket?.workItemId ?? null}
             scheduledByTicket={scheduledByTicket}
+            weekByProject={weekByProject}
+            weekTotalHours={weekTotalHours}
             readOnly={readOnly}
             onChipPointerDown={handleChipPointerDown}
             onSelectTicket={(t) =>
@@ -516,7 +561,7 @@ const WeekCalendarView = ({
           />
         )}
 
-        <div className="flex-1 min-w-0 flex flex-col">
+        <div className="flex-1 min-w-0 min-h-0 flex flex-col">
           {blocksError && (
             <div
               role="alert"
@@ -532,7 +577,7 @@ const WeekCalendarView = ({
           )}
           <WeekGrid
             cfg={cfg}
-            days={weekDays(weekStart)}
+            days={weekDays(weekStart, dayCount)}
             blocks={rendered}
             isDimmed={(b) => isKeyDimmed(b.ticketKey)}
             draft={drag.draft}

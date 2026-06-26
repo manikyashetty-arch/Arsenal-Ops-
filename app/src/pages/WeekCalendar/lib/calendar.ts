@@ -5,10 +5,16 @@
 // are the single conversion boundary between the two.
 
 export interface GridConfig {
-  /** First hour row shown (e.g. 7 = 7am). */
+  /** First hour row shown (0 = midnight). The grid spans the whole day and
+   *  scrolls; the working-hours band below is only a visual emphasis. */
   startHour: number;
-  /** Last hour row shown (exclusive end of the grid, e.g. 19 = 7pm). */
+  /** Exclusive end of the grid (24 = next midnight). */
   endHour: number;
+  /** Start of the emphasized "working hours" band — un-shaded, scrolled-to on
+   *  load. Outside it the grid is dimmed but fully usable. */
+  workStartHour: number;
+  /** End of the working-hours band. */
+  workEndHour: number;
   /** Pixel height of one hour row. */
   hourPx: number;
   /** Snap granularity in minutes (15 or 30). */
@@ -16,14 +22,18 @@ export interface GridConfig {
 }
 
 export const DEFAULT_GRID: GridConfig = {
-  startHour: 7,
-  endHour: 19,
+  startHour: 0,
+  endHour: 24,
+  workStartHour: 7,
+  workEndHour: 19,
   hourPx: 52,
   stepMinutes: 15,
 };
 
-/** Number of weekday columns rendered (Mon–Fri). */
+/** Default number of weekday columns (Mon–Fri); 7 when weekends are shown. */
 export const DAY_COUNT = 5;
+/** Column count with weekends visible. */
+export const FULL_WEEK_DAY_COUNT = 7;
 
 export const stepHours = (cfg: GridConfig): number => cfg.stepMinutes / 60;
 
@@ -98,10 +108,10 @@ export interface WeekDay {
   full: Date;
 }
 
-const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
+const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
-export function weekDays(weekStart: Date): WeekDay[] {
-  return Array.from({ length: DAY_COUNT }, (_unused, dayIdx) => {
+export function weekDays(weekStart: Date, dayCount: number = DAY_COUNT): WeekDay[] {
+  return Array.from({ length: dayCount }, (_unused, dayIdx) => {
     const full = addDays(weekStart, dayIdx);
     return {
       dayIdx,
@@ -134,7 +144,7 @@ export function blockToInterval(
 
 /** Interval for PLACING an unplaced (already-logged) tray entry onto the grid.
  *  Placing only sets WHEN — the entry keeps its logged `durationHours` rather
- *  than collapsing to the drop default — clamped to the working-hours window. */
+ *  than collapsing to the drop default — clamped to the end of the day. */
 export function placementInterval(
   weekStart: Date,
   dayIdx: number,

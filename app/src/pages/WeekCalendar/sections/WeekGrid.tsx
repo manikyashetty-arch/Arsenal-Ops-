@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import { TimeBlock } from '../components/TimeBlock';
 import { DRAFT_ID } from '../hooks/useCalendarDrag';
 import {
@@ -72,6 +73,21 @@ export function WeekGrid({
   onConfirmDelete,
 }: WeekGridProps) {
   const bodyH = gridHeight(cfg);
+  const dayCount = days.length;
+  const colPct = 100 / dayCount;
+
+  // Auto-scroll once on mount to the current time (if this week contains today),
+  // else to the start of the working-hours band — so the full-day grid doesn't
+  // open parked at midnight.
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const didScroll = useRef(false);
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (didScroll.current || !el) return;
+    const target = nowDayIdx !== null && nowDecimal !== null ? nowDecimal : cfg.workStartHour;
+    el.scrollTop = Math.max(0, hourToY(target, cfg) - cfg.hourPx * 1.5);
+    didScroll.current = true;
+  }, [cfg, nowDayIdx, nowDecimal]);
 
   // Apply the in-progress draft over the committed block it represents, and
   // surface a freshly-drawn block (DRAFT_ID) as an extra item.
@@ -84,7 +100,7 @@ export function WeekGrid({
   const subGrid = `repeating-linear-gradient(to bottom, rgba(255,255,255,0.025) 0 1px, transparent 1px ${cfg.hourPx / 4}px), repeating-linear-gradient(to bottom, rgba(255,255,255,0.075) 0 1px, transparent 1px ${cfg.hourPx}px)`;
 
   return (
-    <div className="flex-1 min-w-0 flex flex-col">
+    <div className="flex-1 min-w-0 min-h-0 flex flex-col">
       {/* day header */}
       <div className="flex border-b border-white/[0.08] flex-none pr-2.5">
         <div className="w-14 flex-none" />
@@ -127,7 +143,7 @@ export function WeekGrid({
       </div>
 
       {/* scroll body */}
-      <div className="flex-1 overflow-y-auto min-h-0">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto min-h-0">
         <div className="flex">
           {/* hour gutter */}
           <div className="w-14 flex-none relative" style={{ height: bodyH }}>
@@ -144,6 +160,18 @@ export function WeekGrid({
 
           {/* day columns */}
           <div ref={colsRef} className="flex flex-1 min-w-0 relative" style={{ height: bodyH }}>
+            {/* Off-hours shading: dim the time before/after working hours so the
+                working band reads as primary while the rest stays usable. */}
+            <div
+              className="absolute left-0 right-0 top-0 z-0 pointer-events-none bg-black/25"
+              style={{ height: hourToY(cfg.workStartHour, cfg) }}
+              aria-hidden
+            />
+            <div
+              className="absolute left-0 right-0 z-0 pointer-events-none bg-black/25"
+              style={{ top: hourToY(cfg.workEndHour, cfg), bottom: 0 }}
+              aria-hidden
+            />
             {days.map((day) => {
               const dayItems = effective.filter((b) => b.dayIdx === day.dayIdx);
               if (drawingNew && drawingNew.dayIdx === day.dayIdx) dayItems.push(drawingNew);
@@ -205,8 +233,8 @@ export function WeekGrid({
                 style={{
                   top: hourToY(preview.start, cfg),
                   height: hourToY(preview.end, cfg) - hourToY(preview.start, cfg),
-                  left: `calc(${preview.dayIdx * 20}% + 2px)`,
-                  width: 'calc(20% - 4px)',
+                  left: `calc(${(preview.dayIdx * colPct).toFixed(3)}% + 2px)`,
+                  width: `calc(${colPct.toFixed(3)}% - 4px)`,
                   background: 'rgba(224,185,84,0.15)',
                   borderColor: '#E0B954',
                 }}

@@ -1,5 +1,6 @@
 import { Plus } from 'lucide-react';
 import { PaletteTicketChip } from '../components/PaletteTicketChip';
+import { formatDuration } from '../lib/calendar';
 import type { PaletteTicket } from '../types';
 
 interface TicketPaletteProps {
@@ -7,6 +8,10 @@ interface TicketPaletteProps {
   activeTicketId: number | null;
   /** workItemId -> hours scheduled this week (for the capacity bar). */
   scheduledByTicket: Record<number, number>;
+  /** This week's logged hours per project, for the footer summary. */
+  weekByProject: { label: string; hours: number }[];
+  /** This week's total logged hours. */
+  weekTotalHours: number;
   /** Hidden in read-only (admin viewing another calendar). */
   readOnly?: boolean;
   onChipPointerDown: (ticket: PaletteTicket, e: React.PointerEvent) => void;
@@ -22,6 +27,8 @@ export function TicketPalette({
   tickets,
   activeTicketId,
   scheduledByTicket,
+  weekByProject,
+  weekTotalHours,
   readOnly = false,
   onChipPointerDown,
   onSelectTicket,
@@ -68,9 +75,35 @@ export function TicketPalette({
           ))
         )}
       </div>
-      <div className="flex-none px-3.5 py-2.5 border-t border-white/[0.06] text-[10px] text-[#555] leading-snug">
-        Drag a ticket onto the grid, or select one and draw on the calendar. The bar shows hours
-        scheduled this week vs remaining.
+      <div className="flex-none px-3.5 py-2.5 border-t border-white/[0.06]">
+        {weekTotalHours > 0 ? (
+          <>
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-[11px] font-semibold text-[#a3a3a3]">This week</span>
+              <span className="text-[11px] font-semibold text-[#E0B954]">
+                {formatDuration(weekTotalHours)}
+              </span>
+            </div>
+            <div className="flex flex-col gap-1">
+              {weekByProject.map((p) => (
+                <div
+                  key={p.label}
+                  className="flex items-center justify-between text-[10px] gap-2"
+                >
+                  <span className="text-[#a3a3a3] truncate">{p.label}</span>
+                  <span className="text-[#737373] tabular-nums whitespace-nowrap">
+                    {formatDuration(p.hours)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </>
+        ) : (
+          <div className="text-[10px] text-[#555] leading-snug">
+            Drag a ticket onto the grid, or select one and draw on the calendar. The bar shows hours
+            scheduled this week vs remaining.
+          </div>
+        )}
       </div>
     </div>
   );

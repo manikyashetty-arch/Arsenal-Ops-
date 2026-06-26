@@ -22,9 +22,12 @@ describe('snapHour', () => {
     expect(snapHour(9.13, DEFAULT_GRID)).toBe(9.25);
   });
 
-  it('clamps to the visible window', () => {
-    expect(snapHour(2, DEFAULT_GRID)).toBe(DEFAULT_GRID.startHour);
-    expect(snapHour(23, DEFAULT_GRID)).toBe(DEFAULT_GRID.endHour);
+  it('clamps to the full-day grid bounds', () => {
+    expect(snapHour(-2, DEFAULT_GRID)).toBe(DEFAULT_GRID.startHour); // 0
+    expect(snapHour(26, DEFAULT_GRID)).toBe(DEFAULT_GRID.endHour); // 24
+    // Times throughout the day are no longer clamped to a working window.
+    expect(snapHour(2, DEFAULT_GRID)).toBe(2);
+    expect(snapHour(23, DEFAULT_GRID)).toBe(23);
   });
 
   it('honors a 30-minute step', () => {
@@ -64,10 +67,16 @@ describe('week dates', () => {
     expect(monday.getHours()).toBe(0);
   });
 
-  it('renders five weekday columns', () => {
+  it('renders five weekday columns by default', () => {
     const days = weekDays(startOfWeekMonday(new Date(2026, 5, 24)));
     expect(days.map((d) => d.name)).toEqual(['Mon', 'Tue', 'Wed', 'Thu', 'Fri']);
     expect(days.map((d) => d.date)).toEqual(['22', '23', '24', '25', '26']);
+  });
+
+  it('renders seven columns including the weekend when asked', () => {
+    const days = weekDays(startOfWeekMonday(new Date(2026, 5, 24)), 7);
+    expect(days.map((d) => d.name)).toEqual(['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']);
+    expect(days.map((d) => d.date)).toEqual(['22', '23', '24', '25', '26', '27', '28']);
   });
 });
 
@@ -102,9 +111,9 @@ describe('placementInterval (tray entry keeps its logged duration)', () => {
     expect(hoursApart(startISO, endISO)).toBe(1.5);
   });
 
-  it('clamps the end to the working-hours window', () => {
-    // start 18:00, 4h duration, window ends 19:00 -> clamped to 1h.
-    const { startISO, endISO } = placementInterval(weekStart, 2, 18, 4, DEFAULT_GRID);
-    expect(hoursApart(startISO, endISO)).toBe(1);
+  it('clamps the end to the end of the day', () => {
+    // start 22:00, 4h duration, grid ends at 24:00 -> clamped to 2h.
+    const { startISO, endISO } = placementInterval(weekStart, 2, 22, 4, DEFAULT_GRID);
+    expect(hoursApart(startISO, endISO)).toBe(2);
   });
 });

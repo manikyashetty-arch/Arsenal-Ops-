@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { DAY_COUNT, type GridConfig, snapHour, stepHours, yToHour } from '../lib/calendar';
+import { type GridConfig, snapHour, stepHours, yToHour } from '../lib/calendar';
 import type { CalendarBlock, PaletteTicket } from '../types';
 
 /** Sentinel id for the uncommitted block being drawn (real ids are positive,
@@ -37,6 +37,8 @@ export interface CalendarDragCallbacks {
 
 export interface UseCalendarDragArgs {
   cfg: GridConfig;
+  /** Column count (5 weekdays, or 7 with weekends) — drives x→day mapping. */
+  dayCount: number;
   activeTicket: PaletteTicket | null;
   callbacks: CalendarDragCallbacks;
 }
@@ -50,7 +52,7 @@ export interface UseCalendarDragArgs {
  * element or moves fast. `callbacks` must be referentially stable (the caller
  * memoizes it) so these listeners bind once rather than re-binding each render.
  */
-export function useCalendarDrag({ cfg, activeTicket, callbacks }: UseCalendarDragArgs) {
+export function useCalendarDrag({ cfg, dayCount, activeTicket, callbacks }: UseCalendarDragArgs) {
   const colsRef = useRef<HTMLDivElement | null>(null);
   const grab = useRef<Grab | null>(null);
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -81,14 +83,14 @@ export function useCalendarDrag({ cfg, activeTicket, callbacks }: UseCalendarDra
       // Guard a zero-width rect (display:none ancestor / mid-layout): colW=0 →
       // Math.floor(x/0) is Infinity/NaN, which would poison dayIdx.
       if (rect.width === 0) return { inside: false, dayIdx: 0, time: cfg.startHour };
-      const colW = rect.width / DAY_COUNT;
+      const colW = rect.width / dayCount;
       const x = cx - rect.left;
       const y = cy - rect.top;
       const inside = x >= 0 && x <= rect.width && y >= 0 && y <= rect.height;
-      const dayIdx = Math.max(0, Math.min(DAY_COUNT - 1, Math.floor(x / colW)));
+      const dayIdx = Math.max(0, Math.min(dayCount - 1, Math.floor(x / colW)));
       return { inside, dayIdx, time: yToHour(y, cfg) };
     },
-    [cfg],
+    [cfg, dayCount],
   );
 
   const applyMove = useCallback(
