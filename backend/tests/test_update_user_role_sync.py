@@ -73,6 +73,46 @@ def test_demote_from_admin_revokes_admin_capability(db):
     assert target.has_capability("project.tracker_write")  # developer caps present
 
 
+def test_unknown_role_name_rejected(db):
+    """A name that resolves to no known system role is rejected (no silent
+    legacy-column write with zero capability change)."""
+    _seed_system_roles(db)
+    user = _make_user(db, "u@x.com", "developer")
+
+    with pytest.raises(HTTPException) as exc:
+        update_user_role(user_id=user.id, role_data=RoleUpdate(role="superuser"), admin=user, db=db)
+    assert exc.value.status_code == 400
+    assert user.role == "developer"  # unchanged
+    assert not user.has_capability("admin.projects")
+
+
+def test_empty_role_string_rejected(db):
+    """An empty role string would strip every system role and leave the user
+    with no capabilities — reject it rather than silently apply it."""
+    _seed_system_roles(db)
+    user = _make_user(db, "u2@x.com", "developer")
+
+    with pytest.raises(HTTPException) as exc:
+        update_user_role(user_id=user.id, role_data=RoleUpdate(role=""), admin=user, db=db)
+    assert exc.value.status_code == 400
+    assert user.role == "developer"  # unchanged
+
+
+def test_legacy_column_canonicalized_from_resolved_roles(db):
+    """The stored legacy string is derived from the resolved roles, not the raw
+    request input (so the column and the m2m can't disagree)."""
+    _seed_system_roles(db)
+    user = _make_user(db, "u3@x.com", "developer")
+
+    update_user_role(
+        user_id=user.id, role_data=RoleUpdate(role="admin,developer"), admin=user, db=db
+    )
+
+    assert user.role == "admin,developer"  # sorted, canonical
+    assert user.has_capability("admin.projects")
+    assert user.has_capability("project.tracker_write")
+
+
 def test_last_admin_demotion_still_blocked(db):
     """Regression guard: the existing last-admin protection must survive."""
     _seed_system_roles(db)

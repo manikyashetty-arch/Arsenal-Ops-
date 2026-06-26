@@ -55,6 +55,15 @@ def test_system_admin_wildcard_grants_access(db):
     assert has_project_access(project, user) is True
 
 
+def test_overview_write_capability_grants_read_access(db):
+    """`project.overview_write` grants the WRITE gate (is_project_admin); the
+    READ gate must grant it too so there is no write-without-read."""
+    project = seed_project(db, "Overview Write", num_developers=1)
+    user = _user_with_caps(db, "overview-writer@x.com", ["project.overview_write"])
+
+    assert has_project_access(project, user) is True
+
+
 def test_assigned_developer_has_access(db):
     """A developer assigned to the project keeps read access (unchanged)."""
     project = seed_project(db, "Assigned Dev", num_developers=1)
