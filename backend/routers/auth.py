@@ -42,7 +42,23 @@ def _is_internal_email(email: str | None) -> bool:
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
 
 # Security configuration
-SECRET_KEY = "your-secret-key-change-in-production"  # Change this in production!
+#
+# SECRET_KEY is the symmetric HS256 key the app both signs and verifies JWTs
+# with. It MUST come from the environment: because HS256 is symmetric, anyone
+# who knows the key can forge a token for any user id (full auth bypass). The
+# historical hardcoded default is public in source/history, so we refuse to
+# start on an unset key or that legacy literal — fail closed.
+_LEGACY_DEFAULT_SECRET_KEY = "your-secret-key-change-in-production"
+_secret_key = os.getenv("SECRET_KEY")
+if not _secret_key or _secret_key == _LEGACY_DEFAULT_SECRET_KEY:
+    raise RuntimeError(
+        "SECRET_KEY must be set in the environment to a non-default value. "
+        "The app refuses to start on the legacy hardcoded default to avoid "
+        "trivial JWT forgery. Set SECRET_KEY in .env (local) or the Render "
+        "dashboard (prod). Note: changing it invalidates all live sessions."
+    )
+# Narrowed to `str` by the guard above so jwt.encode/decode get a concrete key.
+SECRET_KEY: str = _secret_key
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24  # 24 hours
 
