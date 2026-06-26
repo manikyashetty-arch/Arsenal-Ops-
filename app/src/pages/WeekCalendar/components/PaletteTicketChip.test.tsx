@@ -23,6 +23,7 @@ function renderChip(t: PaletteTicket, scheduledHours: number) {
       scheduledHours={scheduledHours}
       onPointerDown={noop}
       onSelect={noop}
+      onOpenDetail={noop}
       onChangeStatus={vi.fn()}
     />,
   );

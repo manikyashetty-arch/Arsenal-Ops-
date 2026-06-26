@@ -11,6 +11,8 @@ interface TicketPaletteProps {
   readOnly?: boolean;
   onChipPointerDown: (ticket: PaletteTicket, e: React.PointerEvent) => void;
   onSelectTicket: (ticket: PaletteTicket) => void;
+  /** Double-click / Enter on a chip — open the ticket's full detail panel. */
+  onOpenTicket: (ticket: PaletteTicket) => void;
   onChangeStatus: (ticket: PaletteTicket, status: string) => void;
   onNewTicket: () => void;
 }
@@ -23,6 +25,7 @@ export function TicketPalette({
   readOnly = false,
   onChipPointerDown,
   onSelectTicket,
+  onOpenTicket,
   onChangeStatus,
   onNewTicket,
 }: TicketPaletteProps) {
@@ -59,6 +62,7 @@ export function TicketPalette({
               readOnly={readOnly}
               onPointerDown={(e) => onChipPointerDown(t, e)}
               onSelect={() => onSelectTicket(t)}
+              onOpenDetail={() => onOpenTicket(t)}
               onChangeStatus={(status) => onChangeStatus(t, status)}
             />
           ))

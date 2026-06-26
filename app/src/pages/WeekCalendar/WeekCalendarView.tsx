@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { CreateWorkItemModal, type CreatedWorkItem } from '@/components/CreateWorkItemModal';
@@ -60,6 +60,9 @@ const WeekCalendarView = ({
   const queryClient = useQueryClient();
   const { user, token, can } = useAuth();
   const isAdmin = can('admin.time_entries');
+  // Whole-widget bounds, used to clear the active ticket / selection when the
+  // user clicks outside the calendar.
+  const rootRef = useRef<HTMLDivElement | null>(null);
 
   const [weekStart, setWeekStart] = useState(() => startOfWeekMonday(new Date()));
   const [now, setNow] = useState(() => new Date());
@@ -230,14 +233,21 @@ const WeekCalendarView = ({
       toast.error(err instanceof ApiError ? err.message : 'Failed to change status'),
   });
 
-  // Double-click a block → open the existing full ticket panel (reused, not
-  // duplicated). Only opens when the ticket is in the caller's my-tasks feed.
-  const handleOpenDetail = useCallback(
-    (block: CalendarBlock) => {
-      const task = myTasks.find((t) => Number(t.id) === block.workItemId);
+  // Open the existing full ticket panel (reused, not duplicated) for a work item.
+  // Only opens when the ticket is in the caller's my-tasks feed. Shared by the
+  // calendar block double-click and the palette chip double-click.
+  const openTicketDetail = useCallback(
+    (workItemId: number) => {
+      const task = myTasks.find((t) => Number(t.id) === workItemId);
       if (task) setDetailTask(task);
     },
     [myTasks],
+  );
+
+  // Double-click a block → open that ticket's panel (matches the Jira board).
+  const handleOpenDetail = useCallback(
+    (block: CalendarBlock) => openTicketDetail(block.workItemId),
+    [openTicketDetail],
   );
 
   // After creating a ticket from the calendar: if it landed on a drawn slot and
@@ -272,6 +282,7 @@ const WeekCalendarView = ({
       if (e.key === 'Escape') {
         drag.clearSelection();
         setConfirmDeleteId(null);
+        setActiveTicket(null);
         return;
       }
       const id = drag.selectedId;
@@ -307,10 +318,29 @@ const WeekCalendarView = ({
     return () => document.removeEventListener('keydown', onKey);
   }, [drag, rendered, commitUpdate, readOnly]);
 
+  // Clicking off the calendar deselects the armed ticket and any selected block,
+  // matching Escape. Pointerdown (not click) so it fires before a chip/block can
+  // re-select; clicks inside the widget are ignored so drawing still works.
+  const clearSelection = drag.clearSelection;
+  useEffect(() => {
+    if (readOnly) return;
+    const onDown = (e: PointerEvent) => {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) {
+        setActiveTicket(null);
+        clearSelection();
+        setConfirmDeleteId(null);
+      }
+    };
+    document.addEventListener('pointerdown', onDown);
+    return () => document.removeEventListener('pointerdown', onDown);
+  }, [readOnly, clearSelection]);
+
   const handleChipPointerDown = (ticket: PaletteTicket, e: React.PointerEvent) => {
     if (readOnly) return;
-    setActiveTicket(ticket);
     setConfirmDeleteId(null);
+    // Don't arm the ticket here — a plain click toggles selection via onSelect
+    // (so clicking an already-selected ticket deselects it). A drag captures the
+    // ticket directly in the drag hook, so it doesn't need the active state.
     drag.onChipPointerDown(ticket, e);
   };
 
@@ -364,7 +394,7 @@ const WeekCalendarView = ({
       : 'h-[640px] flex flex-col bg-[#0b0b0b] text-[#f5f5f5] overflow-hidden select-none rounded-xl border border-white/[0.08]';
 
   return (
-    <div className={rootClass}>
+    <div ref={rootRef} className={rootClass}>
       {onNavigateBack && (
         <div className="flex items-center gap-2 px-[18px] pt-3">
           <button
@@ -398,7 +428,10 @@ const WeekCalendarView = ({
             scheduledByTicket={scheduledByTicket}
             readOnly={readOnly}
             onChipPointerDown={handleChipPointerDown}
-            onSelectTicket={setActiveTicket}
+            onSelectTicket={(t) =>
+              setActiveTicket((cur) => (cur?.workItemId === t.workItemId ? null : t))
+            }
+            onOpenTicket={(t) => openTicketDetail(t.workItemId)}
             onChangeStatus={(t, status) => statusMutation.mutate({ id: t.workItemId, status })}
             onNewTicket={() => {
               setCreateSlot(null);

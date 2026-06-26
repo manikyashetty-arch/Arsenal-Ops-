@@ -110,7 +110,11 @@ const ProjectsPage = () => {
 
       <AppHeader user={user} onAdminClick={() => navigate('/admin')} onLogout={logout} />
 
-      <div className="flex-1 min-h-0 flex flex-col max-w-[1400px] mx-auto px-8 py-8 w-full">
+      <div
+        className={`flex-1 min-h-0 flex flex-col max-w-[1400px] mx-auto px-8 py-8 w-full${
+          weekSectionOpen ? ' overflow-y-auto' : ''
+        }`}
+      >
         <div className="flex-shrink-0">
           <DashboardStats
             userName={user?.name}
@@ -121,7 +125,11 @@ const ProjectsPage = () => {
           />
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-5 flex-1 min-h-0">
+        <div
+          className={`grid grid-cols-1 md:grid-cols-5 gap-5 ${
+            weekSectionOpen ? 'flex-shrink-0 h-[60vh]' : 'flex-1 min-h-0'
+          }`}
+        >
           <div className="md:col-span-2 min-h-0 h-full">
             <ProjectsBox
               projects={projects}

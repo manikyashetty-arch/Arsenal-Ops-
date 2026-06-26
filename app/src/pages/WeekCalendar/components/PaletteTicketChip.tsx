@@ -12,6 +12,8 @@ interface PaletteTicketChipProps {
   readOnly?: boolean;
   onPointerDown: (e: React.PointerEvent) => void;
   onSelect: () => void;
+  /** Double-click (or Enter) opens the ticket's full detail panel. */
+  onOpenDetail: () => void;
   onChangeStatus: (status: string) => void;
 }
 
@@ -31,6 +33,7 @@ export function PaletteTicketChip({
   readOnly = false,
   onPointerDown,
   onSelect,
+  onOpenDetail,
   onChangeStatus,
 }: PaletteTicketChipProps) {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -80,11 +83,20 @@ export function PaletteTicketChip({
     <div
       role="button"
       tabIndex={0}
-      aria-label={`${ticket.key}: ${ticket.title}. Drag onto the calendar to log time.`}
+      aria-label={`${ticket.key}: ${ticket.title}. Drag onto the calendar to log time. Enter opens the ticket; Space selects it for drawing.`}
       onPointerDown={onPointerDown}
       onClick={onSelect}
+      onDoubleClick={(e) => {
+        e.stopPropagation();
+        onOpenDetail();
+      }}
+      // Mirror the calendar block's dual-action keyboard model: Enter opens the
+      // full ticket (matches double-click), Space arms it for drawing on the grid.
       onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          onOpenDetail();
+        } else if (e.key === ' ') {
           e.preventDefault();
           onSelect();
         }
