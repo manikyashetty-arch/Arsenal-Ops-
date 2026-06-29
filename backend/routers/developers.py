@@ -110,6 +110,151 @@ def get_my_capacity(
     }
 
 
+class TimesheetEntryResponse(BaseModel):
+    id: int
+    logged_at: str | None
+    hours: int
+    description: str | None
+    work_item_title: str | None
+    submitted_at: str | None
+    synced: bool
+
+
+class TimesheetProjectResponse(BaseModel):
+    project_id: int
+    project_name: str
+    subtotal_hours: int
+    entries: list[TimesheetEntryResponse]
+
+
+class TimesheetClientResponse(BaseModel):
+    qb_customer_id: str
+    client_name: str
+    subtotal_hours: int
+    projects: list[TimesheetProjectResponse]
+
+
+class MyTimesheetResponse(BaseModel):
+    week_start: str
+    week_end: str
+    total_hours: int
+    syncable_unsubmitted_count: int
+    clients: list[TimesheetClientResponse]
+    unlinked_projects: list[TimesheetProjectResponse]
+
+
+class SubmitTimesheetFailure(BaseModel):
+    entry_id: int
+    error: str
+
+
+class SubmitTimesheetResponse(BaseModel):
+    """Outcome of POST /me/timesheet/submit.
+
+    `status` mirrors the admin sync vocabulary so logs are coherent:
+      - "ok"      → every picked entry landed in QB
+      - "partial" → some entries failed (see `failed[]`); successes
+                    are already committed
+    """
+
+    status: str
+    submitted_count: int
+    synced_count: int
+    failed: list[SubmitTimesheetFailure]
+    week_start: str
+    week_end: str
+    reason: str | None = None
+
+
+@router.get("/me/timesheet", response_model=MyTimesheetResponse)
+def get_my_timesheet(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Current Mon–Fri timesheet for the logged-in developer.
+
+    Read-only data shape for the Review-and-Submit modal: hours grouped
+    by QB Customer → Project, plus a separate `unlinked_projects`
+    bucket for hours on projects without a QuickBooks customer link.
+    Returns 404 if the user has no Developer record (admin-only user).
+    """
+    from services.timesheet_service import get_my_timesheet as _get_my_timesheet
+
+    dev = db.query(Developer).filter(Developer.email == current_user.email).first()
+    if not dev:
+        raise HTTPException(status_code=404, detail="No developer profile for this user")
+
+    # Coerce explicitly so callers (including tests that invoke the
+    # function directly without going through FastAPI's response-model
+    # serializer) get a typed object back, not a raw dict.
+    return MyTimesheetResponse(**_get_my_timesheet(db, dev))
+
+
+@router.post("/me/timesheet/submit", response_model=SubmitTimesheetResponse)
+def submit_my_timesheet(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Submit this week's hours and sync them to QuickBooks inline.
+
+    No request body — the server picks the eligible entries
+    (developer, Mon–Fri current week, QB-linked project, not yet synced)
+    and POSTs each one to QuickBooks. Per-entry failures are returned
+    in the `failed` list rather than as a 5xx; the dev clicks Submit
+    again to retry just the failures.
+
+    HTTP status codes:
+      200 → "ok" or "partial" result (see `failed[]`)
+      404 → no Developer profile for this user
+      409 → another sync is in flight (admin force-sync or a different
+            dev's concurrent submit). Retry shortly.
+      503 → QuickBooks isn't connected yet
+      500 → integration-level error (OAuth expired, service item
+            missing). Reason includes humanized next step.
+    """
+    from services.timesheet_service import (
+        SUBMIT_LOCKED,
+        SUBMIT_NOT_CONNECTED,
+    )
+    from services.timesheet_service import (
+        submit_my_timesheet as _submit_my_timesheet,
+    )
+
+    dev = db.query(Developer).filter(Developer.email == current_user.email).first()
+    if not dev:
+        raise HTTPException(status_code=404, detail="No developer profile for this user")
+
+    result = _submit_my_timesheet(db, dev)
+    status = result.get("status")
+
+    # Operational outcomes get distinct HTTP codes so the frontend can
+    # render the right banner color without parsing the status string.
+    if status == SUBMIT_NOT_CONNECTED:
+        raise HTTPException(
+            status_code=503, detail=result.get("reason") or "QuickBooks not connected"
+        )
+    if status == SUBMIT_LOCKED:
+        raise HTTPException(
+            status_code=409, detail=result.get("reason") or "Another sync is running"
+        )
+    if status == "error":
+        raise HTTPException(
+            status_code=500, detail=result.get("reason") or "QuickBooks submit failed"
+        )
+
+    # ok / partial: shape the response. Strip the `reason` field on
+    # "ok" so the UI doesn't accidentally render an empty banner.
+    return SubmitTimesheetResponse(
+        status=status or "ok",
+        submitted_count=int(result.get("submitted_count") or 0),
+        synced_count=int(result.get("synced_count") or 0),
+        failed=[SubmitTimesheetFailure(**f) for f in (result.get("failed") or [])],
+        week_start=str(result.get("week_start") or ""),
+        week_end=str(result.get("week_end") or ""),
+        reason=result.get("reason") if status == "partial" else None,
+    )
+
+
 @router.get("/{developer_id}", response_model=DeveloperResponse)
 def get_developer(
     developer_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)

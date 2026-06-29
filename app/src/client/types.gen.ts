@@ -1122,6 +1122,36 @@ export type MyTaskResponse = {
 };
 
 /**
+ * MyTimesheetResponse
+ */
+export type MyTimesheetResponse = {
+  /**
+   * Clients
+   */
+  clients: Array<TimesheetClientResponse>;
+  /**
+   * Syncable Unsubmitted Count
+   */
+  syncable_unsubmitted_count: number;
+  /**
+   * Total Hours
+   */
+  total_hours: number;
+  /**
+   * Unlinked Projects
+   */
+  unlinked_projects: Array<TimesheetProjectResponse>;
+  /**
+   * Week End
+   */
+  week_end: string;
+  /**
+   * Week Start
+   */
+  week_start: string;
+};
+
+/**
  * PRDAnalysisResponse
  *
  * Shape of `PRDAnalysis.to_dict()` (models/architecture.py). Field
@@ -2304,6 +2334,61 @@ export type StatusResponse = {
 };
 
 /**
+ * SubmitTimesheetFailure
+ */
+export type SubmitTimesheetFailure = {
+  /**
+   * Entry Id
+   */
+  entry_id: number;
+  /**
+   * Error
+   */
+  error: string;
+};
+
+/**
+ * SubmitTimesheetResponse
+ *
+ * Outcome of POST /me/timesheet/submit.
+ *
+ * `status` mirrors the admin sync vocabulary so logs are coherent:
+ * - "ok"      → every picked entry landed in QB
+ * - "partial" → some entries failed (see `failed[]`); successes
+ * are already committed
+ */
+export type SubmitTimesheetResponse = {
+  /**
+   * Failed
+   */
+  failed: Array<SubmitTimesheetFailure>;
+  /**
+   * Reason
+   */
+  reason?: string | null;
+  /**
+   * Status
+   */
+  status: string;
+  /**
+   * Submitted Count
+   */
+  submitted_count: number;
+  /**
+   * Synced Count
+   */
+  synced_count: number;
+  /**
+   * Week End
+   */
+  week_end: string;
+  /**
+   * Week Start
+   */
+  week_start: string;
+};
+
+/**
  * TeamPerformanceEntry
  *
  * Per-assignee rollup for the analytics team-performance section.
@@ -2445,6 +2530,84 @@ export type TimeEntryRow = {
    * Work Item Type
    */
   work_item_type: string | null;
+};
+
+/**
+ * TimesheetClientResponse
+ */
+export type TimesheetClientResponse = {
+  /**
+   * Client Name
+   */
+  client_name: string;
+  /**
+   * Projects
+   */
+  projects: Array<TimesheetProjectResponse>;
+  /**
+   * Qb Customer Id
+   */
+  qb_customer_id: string;
+  /**
+   * Subtotal Hours
+   */
+  subtotal_hours: number;
+};
+
+/**
+ * TimesheetEntryResponse
+ */
+export type TimesheetEntryResponse = {
+  /**
+   * Description
+   */
+  description: string | null;
+  /**
+   * Hours
+   */
+  hours: number;
+  /**
+   * Id
+   */
+  id: number;
+  /**
+   * Logged At
+   */
+  logged_at: string | null;
+  /**
+   * Submitted At
+   */
+  submitted_at: string | null;
+  /**
+   * Synced
+   */
+  synced: boolean;
+  /**
+   * Work Item Title
+   */
+  work_item_title: string | null;
+};
+
+/**
+ * TimesheetProjectResponse
+ */
+export type TimesheetProjectResponse = {
+  /**
+   * Entries
+   */
+  entries: Array<TimesheetEntryResponse>;
+  /**
+   * Project Id
+   */
+  project_id: number;
+  /**
+   * Project Name
+   */
+  project_name: string;
+  /**
+   * Subtotal Hours
+   */
+  subtotal_hours: number;
 };
 
 /**
@@ -4702,6 +4865,40 @@ export type GetMyCapacityApiDevelopersMeCapacityGetResponses = {
    */
   200: unknown;
 };
+
+export type GetMyTimesheetApiDevelopersMeTimesheetGetData = {
+  body?: never;
+  path?: never;
+  query?: never;
+  url: '/api/developers/me/timesheet';
+};
+
+export type GetMyTimesheetApiDevelopersMeTimesheetGetResponses = {
+  /**
+   * Successful Response
+   */
+  200: MyTimesheetResponse;
+};
+
+export type GetMyTimesheetApiDevelopersMeTimesheetGetResponse =
+  GetMyTimesheetApiDevelopersMeTimesheetGetResponses[keyof GetMyTimesheetApiDevelopersMeTimesheetGetResponses];
+
+export type SubmitMyTimesheetApiDevelopersMeTimesheetSubmitPostData = {
+  body?: never;
+  path?: never;
+  query?: never;
+  url: '/api/developers/me/timesheet/submit';
+};
+
+export type SubmitMyTimesheetApiDevelopersMeTimesheetSubmitPostResponses = {
+  /**
+   * Successful Response
+   */
+  200: SubmitTimesheetResponse;
+};
+
+export type SubmitMyTimesheetApiDevelopersMeTimesheetSubmitPostResponse =
+  SubmitMyTimesheetApiDevelopersMeTimesheetSubmitPostResponses[keyof SubmitMyTimesheetApiDevelopersMeTimesheetSubmitPostResponses];
 
 export type DeleteDeveloperApiDevelopersDeveloperIdDeleteData = {
   body?: never;

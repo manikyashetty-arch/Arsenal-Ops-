@@ -39,6 +39,18 @@ class TimeEntry(Base):
     # this column on a row also blocks re-syncing (idempotency).
     workforce_entry_id: Mapped[str | None] = mapped_column(String(64), index=True)
 
+    # When the dev clicked "Submit & Sync" in the Review modal (or the
+    # admin force-sync ran). NULL = draft (not yet reviewed by the dev).
+    # Combined with `workforce_entry_id`:
+    #   (NULL, NULL)         draft — editable, picked up by Submit
+    #   (SET,  NULL)         submitted, sync failed — retried on next Submit
+    #   (SET,  SET)          synced — locked terminal state
+    # The (NULL, SET) combo is impossible post-migration: the backfill
+    # backfills `submitted_at = NOW()` for any pre-existing synced row,
+    # and every write path (dev submit, admin force-sync) sets both
+    # together going forward.
+    submitted_at: Mapped[datetime | None] = mapped_column(DateTime, index=True)
+
     # Relationships
     work_item: Mapped["WorkItem"] = relationship("WorkItem", back_populates="time_entries")
     developer: Mapped["Developer | None"] = relationship("Developer")
@@ -58,4 +70,5 @@ class TimeEntry(Base):
             "description": self.description,
             "logged_at": self.logged_at.isoformat() if self.logged_at else None,
             "workforce_entry_id": self.workforce_entry_id,
+            "submitted_at": self.submitted_at.isoformat() if self.submitted_at else None,
         }

@@ -1948,6 +1948,50 @@
         "title": "MyTaskResponse",
         "type": "object"
       },
+      "MyTimesheetResponse": {
+        "properties": {
+          "clients": {
+            "items": {
+              "$ref": "#/components/schemas/TimesheetClientResponse"
+            },
+            "title": "Clients",
+            "type": "array"
+          },
+          "syncable_unsubmitted_count": {
+            "title": "Syncable Unsubmitted Count",
+            "type": "integer"
+          },
+          "total_hours": {
+            "title": "Total Hours",
+            "type": "integer"
+          },
+          "unlinked_projects": {
+            "items": {
+              "$ref": "#/components/schemas/TimesheetProjectResponse"
+            },
+            "title": "Unlinked Projects",
+            "type": "array"
+          },
+          "week_end": {
+            "title": "Week End",
+            "type": "string"
+          },
+          "week_start": {
+            "title": "Week Start",
+            "type": "string"
+          }
+        },
+        "required": [
+          "week_start",
+          "week_end",
+          "total_hours",
+          "syncable_unsubmitted_count",
+          "clients",
+          "unlinked_projects"
+        ],
+        "title": "MyTimesheetResponse",
+        "type": "object"
+      },
       "PRDAnalysisResponse": {
         "description": "Shape of `PRDAnalysis.to_dict()` (models/architecture.py). Field\noptionality is inferred from `to_dict()` and the underlying nullable\ncolumns: `summary` is a nullable Text column; the JSON list columns are\ncoalesced to `[]`/`{}`. The AI-produced blobs (cost_analysis / risks /\ntimeline / recommended_tools) are best-effort shapes \u2014 typed for the\ngenerated client only (these routes use `responses=`, never\n`response_model=`, so nothing is validated/filtered at runtime).",
         "properties": {
@@ -4034,6 +4078,77 @@
         "title": "StatusResponse",
         "type": "object"
       },
+      "SubmitTimesheetFailure": {
+        "properties": {
+          "entry_id": {
+            "title": "Entry Id",
+            "type": "integer"
+          },
+          "error": {
+            "title": "Error",
+            "type": "string"
+          }
+        },
+        "required": [
+          "entry_id",
+          "error"
+        ],
+        "title": "SubmitTimesheetFailure",
+        "type": "object"
+      },
+      "SubmitTimesheetResponse": {
+        "description": "Outcome of POST /me/timesheet/submit.\n\n`status` mirrors the admin sync vocabulary so logs are coherent:\n  - \"ok\"      \u2192 every picked entry landed in QB\n  - \"partial\" \u2192 some entries failed (see `failed[]`); successes\n                are already committed",
+        "properties": {
+          "failed": {
+            "items": {
+              "$ref": "#/components/schemas/SubmitTimesheetFailure"
+            },
+            "title": "Failed",
+            "type": "array"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "submitted_count": {
+            "title": "Submitted Count",
+            "type": "integer"
+          },
+          "synced_count": {
+            "title": "Synced Count",
+            "type": "integer"
+          },
+          "week_end": {
+            "title": "Week End",
+            "type": "string"
+          },
+          "week_start": {
+            "title": "Week Start",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "submitted_count",
+          "synced_count",
+          "failed",
+          "week_start",
+          "week_end"
+        ],
+        "title": "SubmitTimesheetResponse",
+        "type": "object"
+      },
       "TeamPerformanceEntry": {
         "description": "Per-assignee rollup for the analytics team-performance section.",
         "properties": {
@@ -4307,6 +4422,139 @@
           "avatar_url"
         ],
         "title": "TimeEntryRow",
+        "type": "object"
+      },
+      "TimesheetClientResponse": {
+        "properties": {
+          "client_name": {
+            "title": "Client Name",
+            "type": "string"
+          },
+          "projects": {
+            "items": {
+              "$ref": "#/components/schemas/TimesheetProjectResponse"
+            },
+            "title": "Projects",
+            "type": "array"
+          },
+          "qb_customer_id": {
+            "title": "Qb Customer Id",
+            "type": "string"
+          },
+          "subtotal_hours": {
+            "title": "Subtotal Hours",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "qb_customer_id",
+          "client_name",
+          "subtotal_hours",
+          "projects"
+        ],
+        "title": "TimesheetClientResponse",
+        "type": "object"
+      },
+      "TimesheetEntryResponse": {
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "hours": {
+            "title": "Hours",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "logged_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Logged At"
+          },
+          "submitted_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Submitted At"
+          },
+          "synced": {
+            "title": "Synced",
+            "type": "boolean"
+          },
+          "work_item_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Work Item Title"
+          }
+        },
+        "required": [
+          "id",
+          "logged_at",
+          "hours",
+          "description",
+          "work_item_title",
+          "submitted_at",
+          "synced"
+        ],
+        "title": "TimesheetEntryResponse",
+        "type": "object"
+      },
+      "TimesheetProjectResponse": {
+        "properties": {
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/TimesheetEntryResponse"
+            },
+            "title": "Entries",
+            "type": "array"
+          },
+          "project_id": {
+            "title": "Project Id",
+            "type": "integer"
+          },
+          "project_name": {
+            "title": "Project Name",
+            "type": "string"
+          },
+          "subtotal_hours": {
+            "title": "Subtotal Hours",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "project_id",
+          "project_name",
+          "subtotal_hours",
+          "entries"
+        ],
+        "title": "TimesheetProjectResponse",
         "type": "object"
       },
       "Token": {
@@ -8244,6 +8492,60 @@
           }
         ],
         "summary": "Get My Capacity",
+        "tags": [
+          "Developers"
+        ]
+      }
+    },
+    "/api/developers/me/timesheet": {
+      "get": {
+        "description": "Current Mon\u2013Fri timesheet for the logged-in developer.\n\nRead-only data shape for the Review-and-Submit modal: hours grouped\nby QB Customer \u2192 Project, plus a separate `unlinked_projects`\nbucket for hours on projects without a QuickBooks customer link.\nReturns 404 if the user has no Developer record (admin-only user).",
+        "operationId": "get_my_timesheet_api_developers_me_timesheet_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MyTimesheetResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Get My Timesheet",
+        "tags": [
+          "Developers"
+        ]
+      }
+    },
+    "/api/developers/me/timesheet/submit": {
+      "post": {
+        "description": "Submit this week's hours and sync them to QuickBooks inline.\n\nNo request body \u2014 the server picks the eligible entries\n(developer, Mon\u2013Fri current week, QB-linked project, not yet synced)\nand POSTs each one to QuickBooks. Per-entry failures are returned\nin the `failed` list rather than as a 5xx; the dev clicks Submit\nagain to retry just the failures.\n\nHTTP status codes:\n  200 \u2192 \"ok\" or \"partial\" result (see `failed[]`)\n  404 \u2192 no Developer profile for this user\n  409 \u2192 another sync is in flight (admin force-sync or a different\n        dev's concurrent submit). Retry shortly.\n  503 \u2192 QuickBooks isn't connected yet\n  500 \u2192 integration-level error (OAuth expired, service item\n        missing). Reason includes humanized next step.",
+        "operationId": "submit_my_timesheet_api_developers_me_timesheet_submit_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubmitTimesheetResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Submit My Timesheet",
         "tags": [
           "Developers"
         ]

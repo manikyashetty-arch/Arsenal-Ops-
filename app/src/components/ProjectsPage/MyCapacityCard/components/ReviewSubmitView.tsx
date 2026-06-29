@@ -1,0 +1,627 @@
+import { AlertCircle, ArrowLeft, CheckCircle2, Clock, FileWarning, Loader2 } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import type {
+  MyTimesheetResponse,
+  SubmitTimesheetResponse,
+  TimesheetEntryResponse,
+} from '@/client';
+import { Button } from '@/components/ui/button';
+import { useMyTimesheetQuery, useSubmitTimesheetMutation } from '@/hooks/useMyTimesheet';
+import { ApiError, permissionAwareError } from '@/lib/api';
+
+interface ReviewSubmitViewProps {
+  onBack: () => void;
+}
+
+// Date-only ISO ("YYYY-MM-DD") parses as UTC; rendering through toLocale*
+// could shift back one local day. Force date-only by appending T00:00 in
+// the user's local zone, matching what the backend's logged_at represents.
+const parseDateOnly = (iso: string): Date => new Date(`${iso}T00:00:00`);
+
+const weekdayName = (iso: string): string =>
+  parseDateOnly(iso).toLocaleDateString(undefined, { weekday: 'long' });
+
+const dayDateLabel = (iso: string): string =>
+  parseDateOnly(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+
+// ── Day grouping ─────────────────────────────────────────────────────────
+
+interface DayClientGroup {
+  qb_customer_id: string;
+  client_name: string;
+  subtotal_hours: number;
+  projects: Array<{
+    project_id: number;
+    project_name: string;
+    entries: TimesheetEntryResponse[];
+  }>;
+}
+
+interface DayGroup {
+  iso: string; // YYYY-MM-DD
+  subtotal_hours: number;
+  clients: DayClientGroup[];
+}
+
+/** Weekly per-client roll-up for the summary card above the day list. */
+interface WeeklyClientTotal {
+  qb_customer_id: string;
+  client_name: string;
+  hours: number;
+}
+
+/**
+ * Transform the (client → project → entry) backend shape into a list of
+ * Mon-Fri day groups, each carrying its own (client → project → entry)
+ * tree filtered to that day. The original shape is preserved server-side
+ * so unlinked entries and the submit endpoint don't need to change.
+ *
+ * All five weekdays appear even when empty, so a dev who forgot to log on
+ * Wednesday sees an explicit gap rather than a missing card.
+ */
+const groupByDay = (data: MyTimesheetResponse): DayGroup[] => {
+  // Pre-seed all five Mon-Fri ISO dates from week_start so empty days
+  // still render. The backend's week_start is the Monday.
+  const weekStart = parseDateOnly(data.week_start);
+  const days: Map<string, DayGroup> = new Map();
+  for (let i = 0; i < 5; i++) {
+    const d = new Date(weekStart);
+    d.setDate(weekStart.getDate() + i);
+    const iso = d.toISOString().slice(0, 10);
+    days.set(iso, { iso, subtotal_hours: 0, clients: [] });
+  }
+
+  for (const client of data.clients) {
+    for (const project of client.projects) {
+      for (const entry of project.entries) {
+        if (!entry.logged_at) continue;
+        const day = days.get(entry.logged_at);
+        if (!day) continue; // Out-of-week — server already filters, defensive only.
+
+        day.subtotal_hours += entry.hours;
+        let clientBucket = day.clients.find((c) => c.qb_customer_id === client.qb_customer_id);
+        if (!clientBucket) {
+          clientBucket = {
+            qb_customer_id: client.qb_customer_id,
+            client_name: client.client_name,
+            subtotal_hours: 0,
+            projects: [],
+          };
+          day.clients.push(clientBucket);
+        }
+        clientBucket.subtotal_hours += entry.hours;
+        let projectBucket = clientBucket.projects.find((p) => p.project_id === project.project_id);
+        if (!projectBucket) {
+          projectBucket = {
+            project_id: project.project_id,
+            project_name: project.project_name,
+            entries: [],
+          };
+          clientBucket.projects.push(projectBucket);
+        }
+        projectBucket.entries.push(entry);
+      }
+    }
+  }
+
+  return Array.from(days.values());
+};
+
+const ReviewSubmitView = ({ onBack }: ReviewSubmitViewProps) => {
+  const timesheetQuery = useMyTimesheetQuery();
+  const submitMutation = useSubmitTimesheetMutation();
+  // Last submit response — drives banner state and per-row error annotations.
+  // Cleared whenever the user clicks Submit again so a fresh result replaces
+  // the stale banner instead of stacking.
+  const [lastResult, setLastResult] = useState<SubmitTimesheetResponse | null>(null);
+  const [lastError, setLastError] = useState<string | null>(null);
+
+  // Map of entry_id → error message from the most recent submit. Used to
+  // annotate failing rows inline so the dev sees which entry needs attention
+  // without scanning the banner copy.
+  const failedById = useMemo(() => {
+    const map = new Map<number, string>();
+    for (const f of lastResult?.failed ?? []) {
+      map.set(f.entry_id, f.error);
+    }
+    return map;
+  }, [lastResult]);
+
+  // Day grouping — derived from the response. Lives up here next to the
+  // other hooks (not next to the day render) because hook order must be
+  // stable across renders; the early returns below would otherwise skip it.
+  const days = useMemo(
+    () => (timesheetQuery.data ? groupByDay(timesheetQuery.data) : []),
+    [timesheetQuery.data],
+  );
+
+  // Per-client roll-up across the whole week — drives the summary card
+  // above the day list. Sorted descending so the biggest client always
+  // anchors the start of the row.
+  const weeklyByClient: WeeklyClientTotal[] = useMemo(() => {
+    if (!timesheetQuery.data) return [];
+    return timesheetQuery.data.clients
+      .map((c) => ({
+        qb_customer_id: c.qb_customer_id,
+        client_name: c.client_name,
+        hours: c.subtotal_hours,
+      }))
+      .sort((a, b) => b.hours - a.hours);
+  }, [timesheetQuery.data]);
+
+  const handleSubmit = () => {
+    setLastError(null);
+    setLastResult(null);
+    submitMutation.mutate(undefined, {
+      onSuccess: (res) => setLastResult(res),
+      onError: (err) => {
+        // Operational failures (409, 503, 500) land here as ApiError —
+        // the backend's `detail` is on `err.message` (set by apiFetch).
+        // Use permissionAwareError for the 403-specific "Do not have
+        // permission" message; fall back to the message otherwise.
+        if (err instanceof ApiError && err.status === 403) {
+          setLastError(permissionAwareError(err, 'Submit failed. Please try again.'));
+        } else if (err instanceof ApiError && err.message) {
+          setLastError(err.message);
+        } else if (err instanceof Error && err.message) {
+          setLastError(err.message);
+        } else {
+          setLastError('Submit failed. Please try again.');
+        }
+      },
+    });
+  };
+
+  if (timesheetQuery.isLoading) {
+    return (
+      <div className="flex items-center justify-center py-20 text-[#a3a3a3] text-sm gap-2">
+        <Loader2 className="w-4 h-4 animate-spin" />
+        Loading your hours…
+      </div>
+    );
+  }
+
+  if (timesheetQuery.error) {
+    const msg =
+      timesheetQuery.error instanceof ApiError && timesheetQuery.error.status === 404
+        ? "Couldn't load your timesheet — no developer profile on this account."
+        : permissionAwareError(timesheetQuery.error, "Couldn't load your timesheet.");
+    return (
+      <div className="space-y-4">
+        <BackHeader onBack={onBack} />
+        <div className="bg-[rgba(239,68,68,0.05)] border border-[rgba(239,68,68,0.2)] rounded-2xl p-5 flex items-start gap-3">
+          <AlertCircle className="w-5 h-5 text-[#EF4444] shrink-0 mt-0.5" />
+          <p className="text-sm text-[#a3a3a3]">{msg}</p>
+        </div>
+      </div>
+    );
+  }
+
+  const data = timesheetQuery.data;
+  if (!data) {
+    return <BackHeader onBack={onBack} />;
+  }
+
+  const hasAnyEntries = data.clients.length > 0 || data.unlinked_projects.length > 0;
+  const submitDisabled = data.syncable_unsubmitted_count === 0 || submitMutation.isPending;
+  // Unlinked-project hours can never sync — surface them in the pinned
+  // header chip AND at the top of the scroll area so the dev can't miss
+  // them. Without this they'd live at the bottom and a busy week would
+  // hide them entirely below the fold.
+  const unlinkedHours = data.unlinked_projects.reduce((s, p) => s + (p.subtotal_hours || 0), 0);
+  const hasUnlinked = data.unlinked_projects.length > 0;
+
+  return (
+    <div className="flex flex-col flex-1 min-h-0 gap-4">
+      {/* Pinned header bar — Back arrow, submit totals/button, and the
+          result banner all stay visible while the day list scrolls. */}
+      <div className="flex flex-col gap-4 shrink-0">
+        <BackHeader onBack={onBack} />
+
+        {/* Submit bar — totals row + Submit button + the weekly-by-client
+            stacked bar all live in one card so the "where am I, what's
+            ready, what's the split" read is one glance, not three. */}
+        <div className="bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.06)] rounded-2xl p-4 space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-baseline gap-3 flex-wrap">
+              <span className="text-2xl font-bold text-white tabular-nums">
+                {data.total_hours}h
+              </span>
+              <span className="text-xs text-[#737373]">total this week</span>
+              {data.syncable_unsubmitted_count > 0 && (
+                <span className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-[rgba(224,185,84,0.12)] text-[#E0B954] font-semibold">
+                  {data.syncable_unsubmitted_count} ready to submit
+                </span>
+              )}
+              {hasUnlinked && (
+                <span
+                  className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-[rgba(245,158,11,0.12)] text-[#F59E0B] font-semibold flex items-center gap-1"
+                  title="Hours on projects with no QuickBooks customer can't sync. Scroll down for details."
+                >
+                  <FileWarning className="w-3 h-3" />
+                  {unlinkedHours}h won't sync
+                </span>
+              )}
+            </div>
+            <Button
+              type="button"
+              onClick={handleSubmit}
+              disabled={submitDisabled}
+              className="bg-[#E0B954] text-[#0d0d0d] hover:bg-[#d4ab47] disabled:opacity-50 disabled:cursor-not-allowed font-semibold"
+            >
+              {submitMutation.isPending ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin mr-2" />
+                  Syncing…
+                </>
+              ) : (
+                'Submit & Sync to QuickBooks'
+              )}
+            </Button>
+          </div>
+
+          {weeklyByClient.length > 0 && (
+            <div className="pt-3 border-t border-[rgba(255,255,255,0.05)]">
+              <WeeklyClientSummary clients={weeklyByClient} totalHours={data.total_hours} />
+            </div>
+          )}
+        </div>
+
+        <ResultBanner result={lastResult} error={lastError} />
+      </div>
+
+      {/* Scrollable region — unlinked-projects warning (TOP, so a dev
+          with a busy week can't miss it), then day cards, then empty
+          state. Only this scrolls so the submit button never disappears. */}
+      <div className="flex-1 min-h-0 overflow-y-auto pr-1 space-y-4">
+        {hasUnlinked && (
+          <div className="bg-[rgba(245,158,11,0.05)] border border-[rgba(245,158,11,0.25)] rounded-2xl p-4">
+            <div className="flex items-start gap-2 mb-3 pb-3 border-b border-[rgba(245,158,11,0.15)]">
+              <FileWarning className="w-4 h-4 text-[#F59E0B] shrink-0 mt-0.5" />
+              <div>
+                <p className="text-sm font-semibold text-[#F59E0B]">
+                  {unlinkedHours}h won't sync — {data.unlinked_projects.length} unlinked project
+                  {data.unlinked_projects.length === 1 ? '' : 's'}
+                </p>
+                <p className="text-[11px] text-[#a3a3a3] mt-0.5">
+                  These projects aren't linked to a QuickBooks customer, so their hours can't be
+                  submitted. Ask an admin to link them.
+                </p>
+              </div>
+            </div>
+            <div className="space-y-4">
+              {data.unlinked_projects.map((project) => (
+                <ProjectBlock
+                  key={project.project_id}
+                  name={project.project_name}
+                  subtotal={project.subtotal_hours}
+                  entries={project.entries}
+                  failedById={failedById}
+                  muted
+                />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {data.clients.length > 0 &&
+          days.map((day) => <DayBlock key={day.iso} day={day} failedById={failedById} />)}
+
+        {!hasAnyEntries && (
+          <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-2xl p-10 text-center">
+            <Clock className="w-8 h-8 text-[#525252] mx-auto mb-2.5" />
+            <p className="text-sm text-[#a3a3a3] font-medium">Nothing logged this week yet</p>
+            <p className="text-xs text-[#525252] mt-1">
+              Log hours from a work item's detail panel — they'll show up here for review.
+            </p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// ── Subcomponents ──────────────────────────────────────────────────────
+
+// Stable per-client tint for the weekly bar — same palette as the
+// capacity-card pie. Hash by qb_customer_id so the same client always
+// gets the same color across renders.
+const CLIENT_PALETTE = [
+  '#E0B954',
+  '#A78BFA',
+  '#34D399',
+  '#60A5FA',
+  '#F97316',
+  '#EC4899',
+  '#10B981',
+  '#F59E0B',
+  '#94A3B8',
+  '#EF4444',
+];
+
+const clientColor = (qbCustomerId: string): string => {
+  let h = 0;
+  for (let i = 0; i < qbCustomerId.length; i++) h = (h * 31 + qbCustomerId.charCodeAt(i)) | 0;
+  return CLIENT_PALETTE[Math.abs(h) % CLIENT_PALETTE.length] ?? CLIENT_PALETTE[0]!;
+};
+
+interface WeeklyClientSummaryProps {
+  clients: WeeklyClientTotal[];
+  totalHours: number;
+}
+
+const WeeklyClientSummary = ({ clients, totalHours }: WeeklyClientSummaryProps) => {
+  const denom = Math.max(totalHours, 1);
+  // No outer card chrome — rendered inside the submit bar's card, so it
+  // sits flush with the totals row above the dividing border.
+  return (
+    <div className="space-y-2">
+      {/* Stacked bar — each segment width proportional to that client's
+          share of the week. At-a-glance "where did my hours go" read. */}
+      <div className="h-2 bg-[rgba(255,255,255,0.05)] rounded-full overflow-hidden flex">
+        {clients.map((c) => (
+          <div
+            key={c.qb_customer_id}
+            className="h-full"
+            style={{
+              width: `${(c.hours / denom) * 100}%`,
+              backgroundColor: clientColor(c.qb_customer_id),
+            }}
+            title={`${c.client_name}: ${c.hours}h`}
+          />
+        ))}
+      </div>
+
+      {/* Inline legend — color chip + client name + hours, single tight
+          row that wraps only on narrow widths. */}
+      <div className="flex items-center gap-x-3 gap-y-1 flex-wrap text-[11px]">
+        {clients.map((c) => (
+          <span key={c.qb_customer_id} className="flex items-center gap-1.5">
+            <span
+              className="w-2 h-2 rounded-sm shrink-0"
+              style={{ backgroundColor: clientColor(c.qb_customer_id) }}
+            />
+            <span className="text-[#d4d4d4]">{c.client_name}</span>
+            <span className="text-[#737373] tabular-nums font-mono">{c.hours}h</span>
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+interface DayBlockProps {
+  day: DayGroup;
+  failedById: Map<number, string>;
+}
+
+const DayBlock = ({ day, failedById }: DayBlockProps) => {
+  const hasEntries = day.clients.length > 0;
+  return (
+    <div
+      className={`rounded-2xl p-4 ${
+        hasEntries
+          ? 'bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.06)]'
+          : 'bg-[rgba(255,255,255,0.015)] border border-dashed border-[rgba(255,255,255,0.06)]'
+      }`}
+    >
+      {/* All day content sits inside one column so the day header
+          (Monday • 8h) aligns with the client/project rows below. The
+          dialog itself is narrow enough now that no extra max-width
+          cap is needed. */}
+      <div>
+        <div className="flex items-center justify-between mb-3 pb-3 border-b border-[rgba(255,255,255,0.05)]">
+          <div className="flex items-baseline gap-2 min-w-0">
+            <span className="text-sm font-semibold text-white">{weekdayName(day.iso)}</span>
+            <span className="text-[11px] font-mono text-[#737373]">{dayDateLabel(day.iso)}</span>
+          </div>
+          <span
+            className={`text-base font-mono font-semibold tabular-nums shrink-0 ${
+              hasEntries ? 'text-[#E0B954]' : 'text-[#525252]'
+            }`}
+          >
+            {day.subtotal_hours}h
+          </span>
+        </div>
+
+        {!hasEntries && <p className="text-xs text-[#525252] italic">Nothing logged.</p>}
+
+        {hasEntries && (
+          <div className="space-y-4">
+            {day.clients.map((client) => (
+              <div key={client.qb_customer_id} className="space-y-2">
+                {/* Client (level 1) — no indent. Carries the client's
+                    total for the day on the right. */}
+                <div className="flex items-baseline gap-2 flex-wrap">
+                  <span
+                    className="w-2.5 h-2.5 rounded-sm shrink-0"
+                    style={{ backgroundColor: clientColor(client.qb_customer_id) }}
+                  />
+                  <span className="text-sm font-semibold text-white">{client.client_name}</span>
+                  <span className="text-[10px] text-[#737373] font-normal">
+                    (Client in QuickBooks)
+                  </span>
+                  <span className="ml-auto text-sm font-mono font-semibold tabular-nums text-[#E0B954]">
+                    {client.subtotal_hours}h
+                  </span>
+                </div>
+                {/* Project (level 2) — indented under client. Left border
+                    acts as a visual guide line so the eye follows the
+                    client → project → entry hierarchy without counting
+                    spaces. Entry rows are indented again inside ProjectBlock. */}
+                <div className="pl-4 border-l border-[rgba(255,255,255,0.08)] ml-1 space-y-2">
+                  {client.projects.map((project) => {
+                    const subtotal = project.entries.reduce((s, e) => s + (e.hours || 0), 0);
+                    return (
+                      <ProjectBlock
+                        key={project.project_id}
+                        name={project.project_name}
+                        subtotal={subtotal}
+                        entries={project.entries}
+                        failedById={failedById}
+                      />
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+const BackHeader = ({ onBack }: { onBack: () => void }) => (
+  <div className="flex items-center gap-3">
+    <button
+      type="button"
+      onClick={onBack}
+      className="flex items-center gap-1.5 text-[12px] text-[#a3a3a3] hover:text-white transition-colors"
+      aria-label="Back to capacity summary"
+    >
+      <ArrowLeft className="w-4 h-4" />
+      Back
+    </button>
+  </div>
+);
+
+interface ProjectBlockProps {
+  name: string;
+  subtotal: number;
+  entries: TimesheetEntryResponse[];
+  failedById: Map<number, string>;
+  muted?: boolean;
+}
+
+const ProjectBlock = ({ name, subtotal, entries, failedById, muted }: ProjectBlockProps) => (
+  <div>
+    {/* Project header (level 2). The entries (level 3) below are
+        indented one step further with a thinner guide line so the
+        hierarchy reads top-to-bottom: client → project → entries. */}
+    <div className="flex items-center justify-between mb-2">
+      <p className={`text-sm font-semibold ${muted ? 'text-[#a3a3a3]' : 'text-white'}`}>{name}</p>
+      <span className="text-sm font-mono tabular-nums text-[#E0B954]">{subtotal}h</span>
+    </div>
+    <ul className="space-y-1.5 pl-4 border-l border-[rgba(255,255,255,0.06)] ml-1">
+      {entries.map((entry) => (
+        <EntryRow key={entry.id} entry={entry} failureMsg={failedById.get(entry.id)} />
+      ))}
+    </ul>
+  </div>
+);
+
+interface EntryRowProps {
+  entry: TimesheetEntryResponse;
+  failureMsg?: string;
+}
+
+const EntryRow = ({ entry, failureMsg }: EntryRowProps) => {
+  const isSynced = entry.synced;
+  const isSubmittedUnsynced = !!entry.submitted_at && !isSynced;
+  const hasFailure = !!failureMsg;
+
+  return (
+    <li
+      className={`flex items-center gap-3 text-xs leading-tight rounded-md px-2 py-2 ${
+        hasFailure
+          ? 'bg-[rgba(239,68,68,0.06)] border border-[rgba(239,68,68,0.15)]'
+          : 'border border-transparent'
+      }`}
+    >
+      <span className="font-mono tabular-nums text-white shrink-0 w-14 font-semibold">
+        {entry.hours}h
+      </span>
+      {/* Description column. Falls back to the ticket title when the dev
+          didn't type a free-text note. Em-dash only if neither exists
+          (shouldn't happen — work items always have a title). */}
+      <span
+        className="text-[#d4d4d4] truncate flex-1"
+        title={entry.description || entry.work_item_title || ''}
+      >
+        {entry.description || entry.work_item_title || <span className="text-[#525252]">—</span>}
+      </span>
+      {isSynced && (
+        <span className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-[rgba(52,211,153,0.12)] text-[#34D399] font-semibold shrink-0 flex items-center gap-1">
+          <CheckCircle2 className="w-3 h-3" />
+          Synced
+        </span>
+      )}
+      {isSubmittedUnsynced && !isSynced && (
+        <span className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-[rgba(245,158,11,0.12)] text-[#F59E0B] font-semibold shrink-0">
+          Submitted
+        </span>
+      )}
+      {hasFailure && (
+        <span
+          className="text-[11px] text-[#EF4444] shrink-0 max-w-[260px] truncate"
+          title={failureMsg}
+        >
+          {failureMsg}
+        </span>
+      )}
+    </li>
+  );
+};
+
+interface ResultBannerProps {
+  result: SubmitTimesheetResponse | null;
+  error: string | null;
+}
+
+const ResultBanner = ({ result, error }: ResultBannerProps) => {
+  if (error) {
+    return (
+      <div className="bg-[rgba(239,68,68,0.06)] border border-[rgba(239,68,68,0.2)] rounded-xl p-3 flex items-start gap-2.5">
+        <AlertCircle className="w-4 h-4 text-[#EF4444] shrink-0 mt-0.5" />
+        <p className="text-xs text-[#fca5a5]">{error}</p>
+      </div>
+    );
+  }
+  if (!result) return null;
+
+  const successCount = result.synced_count;
+  const failedCount = result.failed.length;
+
+  if (failedCount === 0 && successCount > 0) {
+    return (
+      <div className="bg-[rgba(52,211,153,0.06)] border border-[rgba(52,211,153,0.2)] rounded-xl p-3 flex items-start gap-2.5">
+        <CheckCircle2 className="w-4 h-4 text-[#34D399] shrink-0 mt-0.5" />
+        <p className="text-xs text-[#86efac]">
+          All {successCount} {successCount === 1 ? 'entry' : 'entries'} synced to QuickBooks.
+        </p>
+      </div>
+    );
+  }
+  if (failedCount > 0 && successCount > 0) {
+    return (
+      <div className="bg-[rgba(245,158,11,0.06)] border border-[rgba(245,158,11,0.2)] rounded-xl p-3 flex items-start gap-2.5">
+        <AlertCircle className="w-4 h-4 text-[#F59E0B] shrink-0 mt-0.5" />
+        <p className="text-xs text-[#fcd34d]">
+          {successCount} of {successCount + failedCount} entries synced. {failedCount} failed —
+          click Submit again to retry the highlighted rows.
+        </p>
+      </div>
+    );
+  }
+  if (failedCount > 0 && successCount === 0) {
+    return (
+      <div className="bg-[rgba(239,68,68,0.06)] border border-[rgba(239,68,68,0.2)] rounded-xl p-3 flex items-start gap-2.5">
+        <AlertCircle className="w-4 h-4 text-[#EF4444] shrink-0 mt-0.5" />
+        <p className="text-xs text-[#fca5a5]">
+          {failedCount} {failedCount === 1 ? 'entry' : 'entries'} failed. Review the highlighted
+          rows and try again.
+        </p>
+      </div>
+    );
+  }
+  // submitted_count = 0 — no eligible entries this time, but the call succeeded.
+  return (
+    <div className="bg-[rgba(255,255,255,0.04)] border border-[rgba(255,255,255,0.08)] rounded-xl p-3 flex items-start gap-2.5">
+      <CheckCircle2 className="w-4 h-4 text-[#a3a3a3] shrink-0 mt-0.5" />
+      <p className="text-xs text-[#a3a3a3]">No new hours to submit this week.</p>
+    </div>
+  );
+};
+
+export default ReviewSubmitView;

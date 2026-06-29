@@ -496,6 +496,13 @@ def _run_inside_lock(
                 description=build_description(entry),
             )
             entry.workforce_entry_id = qb_id
+            # Keep the (submitted_at, workforce_entry_id) state machine
+            # consistent: if admin force-sync picks up an entry the dev
+            # never submitted through the Review modal, stamp it as
+            # submitted at the time of the force-sync. Entries the dev
+            # already submitted earlier keep their original timestamp.
+            if entry.submitted_at is None:
+                entry.submitted_at = datetime.utcnow()
             synced += 1
             # Commit every entry so a mid-run rate-limit doesn't lose
             # work already pushed to QB. The flip side is more commits;

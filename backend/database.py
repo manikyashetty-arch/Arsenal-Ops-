@@ -716,6 +716,41 @@ def run_migrations():
             except Exception as e:
                 print(f"[MIGRATION ERROR] {table}.{column}: {e}")
 
+        # `time_entries.submitted_at` for the dev Review-and-Submit flow.
+        # Tracks when a developer clicked "Submit & Sync" in the modal (or
+        # when admin force-sync ran). The eligibility query for the dev
+        # endpoint joins this with `workforce_entry_id` — see
+        # `services/timesheet_service.py` and the column's docstring in
+        # `models/time_entry.py` for the state machine.
+        try:
+            exists = conn.execute(
+                text(
+                    "SELECT column_name FROM information_schema.columns "
+                    "WHERE table_name = :t AND column_name = :c"
+                ),
+                {"t": "time_entries", "c": "submitted_at"},
+            ).fetchone()
+            if not exists:
+                print("[MIGRATION] Adding time_entries.submitted_at...")
+                conn.execute(
+                    text("ALTER TABLE time_entries ADD COLUMN submitted_at TIMESTAMP NULL")
+                )
+                conn.commit()
+                # Backfill: already-synced rows are de-facto submitted —
+                # backfill them so they don't show up as "unsubmitted" in
+                # the new Review modal. Pre-existing un-synced rows stay
+                # NULL so devs submit them through the new flow.
+                conn.execute(
+                    text(
+                        "UPDATE time_entries SET submitted_at = CURRENT_TIMESTAMP "
+                        "WHERE workforce_entry_id IS NOT NULL AND submitted_at IS NULL"
+                    )
+                )
+                conn.commit()
+                print("[MIGRATION] Backfilled submitted_at for already-synced time_entries")
+        except Exception as e:
+            print(f"[MIGRATION ERROR] time_entries.submitted_at: {e}")
+
         # Indexes for the sync worker's queue queries — match the SQLAlchemy
         # `index=True` on these columns. Skipped silently on SQLite (the
         # CREATE INDEX IF NOT EXISTS is Postgres syntax) since dev tooling
@@ -723,6 +758,7 @@ def run_migrations():
         for idx_name, table, column in [
             ("idx_projects_workforce_client_id", "projects", "workforce_client_id"),
             ("idx_time_entries_workforce_entry_id", "time_entries", "workforce_entry_id"),
+            ("idx_time_entries_submitted_at", "time_entries", "submitted_at"),
         ]:
             try:
                 conn.execute(text(f"CREATE INDEX IF NOT EXISTS {idx_name} ON {table} ({column})"))

@@ -70,6 +70,20 @@ export default function IntegrationsContainer() {
     disconnectMutation.mutate();
   };
 
+  // Force-sync gates behind a confirm: with dev Submit & Sync as the
+  // primary path, this button is a safety net for stragglers and a
+  // careless click would push hours devs haven't reviewed yet.
+  const handleForceSync = async () => {
+    const ok = await confirm({
+      title: 'Force-sync unsubmitted hours?',
+      description:
+        "This pushes Mon–Fri hours that developers haven't submitted yet through the Review & Submit modal. Use only as a fallback (e.g., a dev is on vacation and you need to close out the week). Devs no longer need to submit anything for the entries this push covers.",
+      confirmText: 'Force-sync',
+    });
+    if (!ok) return;
+    syncMutation.mutate();
+  };
+
   const status = statusQuery.data;
   const integration = status?.integration ?? null;
 
@@ -85,7 +99,7 @@ export default function IntegrationsContainer() {
         isRefreshingClients={refreshClientsMutation.isPending}
         onConnect={() => connectMutation.mutate()}
         onDisconnect={handleDisconnect}
-        onSync={() => syncMutation.mutate()}
+        onSync={handleForceSync}
         onRefreshClients={() => refreshClientsMutation.mutate()}
       />
       {confirmDialog}

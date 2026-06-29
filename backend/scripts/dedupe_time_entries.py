@@ -163,6 +163,13 @@ def dedupe(
                         # Reachable only if there's a bug above; guard
                         # anyway since the consequence is QB-orphaning.
                         continue
+                    # Same safety for entries the dev has clicked Submit
+                    # on but that didn't sync to QB yet (failed-sync
+                    # retry state). Dropping these would erase the dev's
+                    # submission audit trail — the next Submit click is
+                    # the recovery path, not silent deletion.
+                    if te.submitted_at:
+                        continue
                     deleted_ids.append(te.id)
                     affected_work_items.add(te.work_item_id)
                 clusters_collapsed += 1

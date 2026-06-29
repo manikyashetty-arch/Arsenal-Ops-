@@ -1,14 +1,31 @@
-"""CLI entry point for the QuickBooks (Workforce) hours sync.
+"""CLI entry point for the QuickBooks (Workforce) hours sync — FALLBACK PATH.
+
+As of the dev Review-and-Submit launch (spec: 2026-06-29), the primary
+QB sync path is *per-developer*, inline, from the My Capacity modal:
+each dev clicks Submit and their own hours sync immediately. This
+script (and its admin "Force-Sync Unsubmitted Hours" twin in the
+workforce router) is a **safety-net fallback**, not a scheduled job
+the team should rely on for routine pushes.
+
+Deployment note: the Render Cron Job that historically ran this every
+Saturday at 08:00 UTC should be **disabled** when this feature ships.
+Keep the script available for manual catch-up runs — e.g., when a dev
+forgets to Submit before going on vacation and the admin needs to
+push their week — but no longer schedule it. See
+`docs/superpowers/specs/2026-06-29-dev-timesheet-review-submit-design.md`
+for the full rationale.
 
 Triggered by:
-  • Render Cron Job (Saturday 08:00 UTC by default; see WORKFORCE_INTEGRATION_SETUP.md)
-  • Manual:  `docker compose exec backend python -m scripts.run_workforce_sync`
+  • Manual (recommended):  `docker compose exec backend python -m scripts.run_workforce_sync`
+  • Render Cron Job (legacy): disable in the Render dashboard when
+    the per-developer Submit flow is live.
 
 Pushes the Mon–Fri of the calendar week containing the run — for
 projects linked to a QB Customer — to QuickBooks Online's TimeActivity
-endpoint. Saturday is part of the same Mon–Sun calendar week as the
-preceding Mon–Fri, so the Saturday cron sweeps the just-completed work
-week. See `services/workforce_sync.py::run_workforce_sync` for details.
+endpoint. See `services/workforce_sync.py::run_workforce_sync` for
+details. Admin force-sync now also stamps `submitted_at` on the
+entries it pushes so the (submitted_at, workforce_entry_id) state
+machine is consistent with dev-initiated submits.
 
 Exit codes (matches `scripts/send_weekly_report.py` conventions):
 

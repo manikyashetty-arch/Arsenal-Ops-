@@ -154,9 +154,10 @@ const IntegrationsTab: React.FC<IntegrationsTabProps> = ({
                   onClick={onSync}
                   disabled={isSyncing}
                   className="bg-[#E0B954] hover:bg-[#E0B954]/90 text-black"
+                  title="Push Mon–Fri hours that devs haven't submitted yet via Review & Submit. Use only as a fallback."
                 >
                   <RefreshCw className={`w-4 h-4 mr-2 ${isSyncing ? 'animate-spin' : ''}`} />
-                  {isSyncing ? 'Syncing…' : 'Sync Now'}
+                  {isSyncing ? 'Syncing…' : 'Force-Sync Unsubmitted Hours'}
                 </Button>
                 <Button
                   variant="ghost"
