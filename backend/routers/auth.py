@@ -125,6 +125,28 @@ class UserResponse(BaseModel):
     name: str
     role: str
     is_first_login: bool
+    # Mirrors `Developer.is_external` for the linked Developer row, or
+    # `True` if no Developer profile exists. Lets the frontend gate
+    # internal-employee-only UI (e.g. the home capacity card) at render
+    # time, without a round-trip that 404s. Source of truth is still
+    # `ALLOWED_EMAIL_DOMAINS` + `reconcile_internal_developers()`.
+    is_external: bool
+
+
+def _resolve_is_external(user: User, db: Session) -> bool:
+    """Look up the linked Developer row and return its `is_external`
+    flag. Defaults to `True` when no Developer exists — admin-only users
+    and unknown emails are treated as external for visibility purposes
+    (they shouldn't see internal-employee-only UI).
+
+    Used everywhere `UserResponse` is built (login, change-password,
+    /me, the Google + dev login flows) so the field is populated
+    consistently across all auth endpoints.
+    """
+    from models.developer import Developer
+
+    dev = db.query(Developer).filter(Developer.email == user.email).first()
+    return True if dev is None else bool(dev.is_external)
 
 
 class UserListItemResponse(BaseModel):
@@ -317,6 +339,7 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
             "name": user.name,
             "role": user.role,
             "is_first_login": user.is_first_login,
+            "is_external": _resolve_is_external(user, db),
         },
     }
 
@@ -611,14 +634,25 @@ def delete_user(
 
 
 @router.get("/me", response_model=UserResponse)
-def get_current_user_info(current_user: User = Depends(get_current_user)):
-    """Get current user info"""
+def get_current_user_info(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Get current user info, including the `is_external` flag from the
+    linked Developer row. External (or no-Developer) users get `True`
+    here so the frontend can hide internal-only UI (e.g. the home
+    capacity card) at render time without an extra round-trip."""
+    from models.developer import Developer
+
+    dev = db.query(Developer).filter(Developer.email == current_user.email).first()
+    is_external = True if dev is None else bool(dev.is_external)
     return {
         "id": current_user.id,
         "email": current_user.email,
         "name": current_user.name,
         "role": current_user.role,
         "is_first_login": current_user.is_first_login,
+        "is_external": is_external,
     }
 
 
@@ -736,6 +770,7 @@ def google_login(request: GoogleLoginRequest, db: Session = Depends(get_db)):
             "name": user.name,
             "role": user.role,
             "is_first_login": user.is_first_login,
+            "is_external": _resolve_is_external(user, db),
         },
     }
 
@@ -807,6 +842,7 @@ def dev_login(db: Session = Depends(get_db)):
             "name": user.name,
             "role": user.role,
             "is_first_login": user.is_first_login,
+            "is_external": _resolve_is_external(user, db),
         },
     }
 

@@ -2779,6 +2779,10 @@ export type UserResponse = {
    */
   id: number;
   /**
+   * Is External
+   */
+  is_external: boolean;
+  /**
    * Is First Login
    */
   is_first_login: boolean;

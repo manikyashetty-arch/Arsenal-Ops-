@@ -4843,6 +4843,10 @@
             "title": "Id",
             "type": "integer"
           },
+          "is_external": {
+            "title": "Is External",
+            "type": "boolean"
+          },
           "is_first_login": {
             "title": "Is First Login",
             "type": "boolean"
@@ -4861,7 +4865,8 @@
           "email",
           "name",
           "role",
-          "is_first_login"
+          "is_first_login",
+          "is_external"
         ],
         "title": "UserResponse",
         "type": "object"
@@ -7965,7 +7970,7 @@
     },
     "/api/auth/me": {
       "get": {
-        "description": "Get current user info",
+        "description": "Get current user info, including the `is_external` flag from the\nlinked Developer row. External (or no-Developer) users get `True`\nhere so the frontend can hide internal-only UI (e.g. the home\ncapacity card) at render time without an extra round-trip.",
         "operationId": "get_current_user_info_api_auth_me_get",
         "responses": {
           "200": {
@@ -8514,7 +8519,7 @@
     },
     "/api/developers/me/capacity": {
       "get": {
-        "description": "Weekly capacity for the currently-logged-in developer (cross-project,\nSaturday \u2192 Friday UTC). Same shape as a single row from\n/api/admin/developers/capacity. Returns 404 if the user has no Developer\nrecord yet (e.g., admin-only user).",
+        "description": "Weekly capacity for the currently-logged-in developer (cross-project,\nSaturday \u2192 Friday UTC). Same shape as a single row from\n/api/admin/developers/capacity. Returns 404 if the caller isn't an\ninternal employee (no Developer row, or `is_external == True` \u2014 see\n`_get_internal_developer_or_404`). The home card silently hides on\n404 so external contractors never see it.",
         "operationId": "get_my_capacity_api_developers_me_capacity_get",
         "responses": {
           "200": {

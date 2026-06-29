@@ -1675,8 +1675,7 @@ def log_hours(
             raise HTTPException(
                 status_code=400,
                 detail=(
-                    f"Invalid logged_at {request.logged_at!r}. Expected an ISO date "
-                    "(YYYY-MM-DD)."
+                    f"Invalid logged_at {request.logged_at!r}. Expected an ISO date (YYYY-MM-DD)."
                 ),
             ) from None
         today = _date.today()

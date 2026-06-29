@@ -18,6 +18,27 @@ from routers.auth import get_current_user
 router = APIRouter(prefix="/api/developers", tags=["Developers"])
 
 
+def _get_internal_developer_or_404(current_user: User, db: Session) -> Developer:
+    """Resolve the current user's Developer row, gated to internal employees.
+
+    The `Developer.is_external` flag is the canonical signal for "company
+    employee" — kept in sync by `reconcile_internal_developers()` on
+    startup (see `database.py`) which reads `ALLOWED_EMAIL_DOMAINS` and
+    flips developers whose email matches the configured domains to
+    `is_external = False`.
+
+    Returns 404 — not 403 — for both "no developer profile" and
+    "external developer". A 404 is what MyCapacityCard's silent-hide
+    UX already keys off (`MyCapacityCard/index.tsx:27`), so external
+    contractors see the same "no card" state as users with no Developer
+    row at all. No frontend changes needed.
+    """
+    dev = db.query(Developer).filter(Developer.email == current_user.email).first()
+    if not dev or dev.is_external:
+        raise HTTPException(status_code=404, detail="No internal developer profile for this user")
+    return dev
+
+
 class DeveloperCreate(BaseModel):
     name: str
     email: str
@@ -82,13 +103,13 @@ def get_my_capacity(
 ):
     """Weekly capacity for the currently-logged-in developer (cross-project,
     Saturday → Friday UTC). Same shape as a single row from
-    /api/admin/developers/capacity. Returns 404 if the user has no Developer
-    record yet (e.g., admin-only user)."""
+    /api/admin/developers/capacity. Returns 404 if the caller isn't an
+    internal employee (no Developer row, or `is_external == True` — see
+    `_get_internal_developer_or_404`). The home card silently hides on
+    404 so external contractors never see it."""
     from services.capacity_service import compute_capacity_breakdown, week_boundaries
 
-    dev = db.query(Developer).filter(Developer.email == current_user.email).first()
-    if not dev:
-        raise HTTPException(status_code=404, detail="No developer profile for this user")
+    dev = _get_internal_developer_or_404(current_user, db)
 
     week_start, week_end = week_boundaries()
     breakdown = compute_capacity_breakdown(
@@ -180,9 +201,7 @@ def get_my_timesheet(
     """
     from services.timesheet_service import get_my_timesheet as _get_my_timesheet
 
-    dev = db.query(Developer).filter(Developer.email == current_user.email).first()
-    if not dev:
-        raise HTTPException(status_code=404, detail="No developer profile for this user")
+    dev = _get_internal_developer_or_404(current_user, db)
 
     # Coerce explicitly so callers (including tests that invoke the
     # function directly without going through FastAPI's response-model
@@ -220,9 +239,7 @@ def submit_my_timesheet(
         submit_my_timesheet as _submit_my_timesheet,
     )
 
-    dev = db.query(Developer).filter(Developer.email == current_user.email).first()
-    if not dev:
-        raise HTTPException(status_code=404, detail="No developer profile for this user")
+    dev = _get_internal_developer_or_404(current_user, db)
 
     result = _submit_my_timesheet(db, dev)
     status = result.get("status")
@@ -328,9 +345,10 @@ def _resolve_editable_entry(entry_id: int, current_user: User, db: Session):
     if not entry:
         raise HTTPException(status_code=404, detail="Time entry not found")
 
-    dev = db.query(Developer).filter(Developer.email == current_user.email).first()
-    if not dev:
-        raise HTTPException(status_code=404, detail="No developer profile for this user")
+    # External devs (`is_external == True`) and users with no Developer
+    # profile both get 404 here, matching the Review modal's gating
+    # elsewhere — these endpoints don't exist for them.
+    dev = _get_internal_developer_or_404(current_user, db)
     if entry.developer_id != dev.id:
         raise HTTPException(status_code=403, detail="You can only edit your own time entries.")
 

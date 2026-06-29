@@ -51,6 +51,25 @@ const CapacityModal = ({
     onOpenChange(next);
   };
 
+  // Mon-Fri of the current calendar week, derived locally so the
+  // Review view's header matches what the dev sees in the day cards
+  // below. The Summary view continues to display the backend's
+  // Sat→Fri capacity window (`data.week_start`/`week_end`) because
+  // capacity rolls up across the full Sat-Fri pulse week.
+  const reviewWeek = (() => {
+    const today = new Date();
+    const dow = today.getDay(); // 0=Sun, 1=Mon, ..., 6=Sat
+    const daysBackToMonday = (dow + 6) % 7;
+    const monday = new Date(today);
+    monday.setDate(today.getDate() - daysBackToMonday);
+    const friday = new Date(monday);
+    friday.setDate(monday.getDate() + 4);
+    return { monday, friday };
+  })();
+  const fmtMd = (d: Date) => d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  const fmtMdy = (d: Date) =>
+    d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent
@@ -71,24 +90,36 @@ const CapacityModal = ({
             <Activity className="w-5 h-5 text-[#E0B954]" />
             {view === 'review' ? 'Review & Submit Hours' : 'My Capacity This Week'}
           </DialogTitle>
-          {data && (
+          {view === 'review' ? (
             <p className="text-xs text-[#737373] font-normal mt-1.5 flex items-center gap-2 flex-wrap">
               <span className="font-mono text-[#a3a3a3]">
-                {new Date(data.week_start).toLocaleDateString(undefined, {
-                  month: 'short',
-                  day: 'numeric',
-                  year: 'numeric',
-                })}
+                {fmtMd(reviewWeek.monday)}
                 {' → '}
-                {new Date(data.week_end).toLocaleDateString(undefined, {
-                  month: 'short',
-                  day: 'numeric',
-                  year: 'numeric',
-                })}
+                {fmtMdy(reviewWeek.friday)}
               </span>
               <span className="text-[rgba(255,255,255,0.15)]">·</span>
-              <span>Sat → Fri, UTC</span>
+              <span>Mon → Fri</span>
             </p>
+          ) : (
+            data && (
+              <p className="text-xs text-[#737373] font-normal mt-1.5 flex items-center gap-2 flex-wrap">
+                <span className="font-mono text-[#a3a3a3]">
+                  {new Date(data.week_start).toLocaleDateString(undefined, {
+                    month: 'short',
+                    day: 'numeric',
+                    year: 'numeric',
+                  })}
+                  {' → '}
+                  {new Date(data.week_end).toLocaleDateString(undefined, {
+                    month: 'short',
+                    day: 'numeric',
+                    year: 'numeric',
+                  })}
+                </span>
+                <span className="text-[rgba(255,255,255,0.15)]">·</span>
+                <span>Sat → Fri, UTC</span>
+              </p>
+            )
           )}
         </DialogHeader>
 

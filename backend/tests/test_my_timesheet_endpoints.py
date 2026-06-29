@@ -73,10 +73,10 @@ def _make_user(email="dev@arsenal.test", name="Dev"):
     return SimpleNamespace(email=email, name=name)
 
 
-def _make_dev(db, name="Alice", email="dev@arsenal.test"):
+def _make_dev(db, name="Alice", email="dev@arsenal.test", *, is_external: bool = False):
     from models.developer import Developer
 
-    d = Developer(name=name, email=email)
+    d = Developer(name=name, email=email, is_external=is_external)
     db.add(d)
     db.commit()
     db.refresh(d)
@@ -231,7 +231,9 @@ def test_get_timesheet_404_when_no_developer_for_user(db):
     with pytest.raises(HTTPException) as exc:
         get_my_timesheet(db=db, current_user=_make_user(email="unknown@arsenal.test"))
     assert exc.value.status_code == 404
-    assert "No developer profile" in exc.value.detail
+    # External devs + missing-Developer users share the same 404 message
+    # so the home card's silent-hide UX treats both the same way.
+    assert "No internal developer profile" in exc.value.detail
 
 
 # ============================================================
@@ -340,3 +342,97 @@ def test_submit_with_no_eligible_entries_returns_ok(db, qb_doubles):
     assert response.status == "ok"
     assert response.submitted_count == 0
     assert response.synced_count == 0
+
+
+# ============================================================
+# External developer gate — `Developer.is_external == True` users
+# get 404 from every /me/* endpoint, just like users with no
+# Developer row. Driven by ALLOWED_EMAIL_DOMAINS at startup via
+# `reconcile_internal_developers()` in database.py.
+# ============================================================
+
+
+def test_get_timesheet_404_when_developer_is_external(db):
+    from routers.developers import get_my_timesheet
+
+    _make_dev(db, is_external=True)
+
+    with pytest.raises(HTTPException) as exc:
+        get_my_timesheet(db=db, current_user=_make_user())
+    assert exc.value.status_code == 404
+    assert "No internal developer profile" in exc.value.detail
+
+
+def test_submit_404_when_developer_is_external(db, qb_doubles):
+    from routers.developers import submit_my_timesheet
+
+    _make_integration(db)
+    _make_dev(db, is_external=True)
+
+    with pytest.raises(HTTPException) as exc:
+        submit_my_timesheet(db=db, current_user=_make_user())
+    assert exc.value.status_code == 404
+    assert "No internal developer profile" in exc.value.detail
+
+
+def test_edit_404_when_developer_is_external(db):
+    """External devs can't edit time entries — same 404 they get on
+    every other /me/* endpoint."""
+    from routers.developers import TimesheetEntryEditRequest, edit_my_timesheet_entry
+
+    dev = _make_dev(db, is_external=True)
+    proj = _make_project(db)
+    wi = _make_wi(db, proj.id, dev.id)
+    entry = _make_te(db, wi, dev.id, hours=4)
+
+    with pytest.raises(HTTPException) as exc:
+        edit_my_timesheet_entry(
+            entry_id=entry.id,
+            body=TimesheetEntryEditRequest(hours=6),
+            db=db,
+            current_user=_make_user(),
+        )
+    assert exc.value.status_code == 404
+    assert "No internal developer profile" in exc.value.detail
+
+
+def test_delete_404_when_developer_is_external(db):
+    from routers.developers import delete_my_timesheet_entry
+
+    dev = _make_dev(db, is_external=True)
+    proj = _make_project(db)
+    wi = _make_wi(db, proj.id, dev.id)
+    entry = _make_te(db, wi, dev.id, hours=4)
+
+    with pytest.raises(HTTPException) as exc:
+        delete_my_timesheet_entry(entry_id=entry.id, db=db, current_user=_make_user())
+    assert exc.value.status_code == 404
+    assert "No internal developer profile" in exc.value.detail
+
+
+def test_get_my_capacity_404_when_developer_is_external(db):
+    """The home `MyCapacityCard` reads from `/me/capacity` and silently
+    hides on 404 — external contractors see no card."""
+    from routers.developers import get_my_capacity
+
+    _make_dev(db, is_external=True)
+
+    with pytest.raises(HTTPException) as exc:
+        get_my_capacity(db=db, current_user=_make_user())
+    assert exc.value.status_code == 404
+    assert "No internal developer profile" in exc.value.detail
+
+
+def test_internal_developer_still_passes_gate(db):
+    """Sanity check: a default (internal, is_external=False) developer
+    isn't blocked. Without this, a regression on the helper would silently
+    flip the gate's polarity."""
+    from routers.developers import get_my_timesheet
+
+    dev = _make_dev(db, is_external=False)  # explicit for clarity
+    proj = _make_project(db)
+    wi = _make_wi(db, proj.id, dev.id)
+    _make_te(db, wi, dev.id, hours=4)
+
+    response = get_my_timesheet(db=db, current_user=_make_user())
+    assert response.total_hours == 4
