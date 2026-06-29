@@ -1,4 +1,5 @@
-import ReactMarkdown from 'react-markdown';
+import ReactMarkdown, { type Components } from 'react-markdown';
+import remarkBreaks from 'remark-breaks';
 import remarkGfm from 'remark-gfm';
 
 export interface MarkdownProps {
@@ -8,6 +9,17 @@ export interface MarkdownProps {
   className?: string;
 }
 
+const COMPONENTS: Components = {
+  // Open links in a new tab and harden `rel`, matching the app's other inline
+  // renderer (`CommentThread.tsx`) so a link in a description doesn't navigate
+  // the user out of the SPA.
+  a: ({ node: _node, children, ...props }) => (
+    <a {...props} target="_blank" rel="noopener noreferrer">
+      {children}
+    </a>
+  ),
+};
+
 /**
  * Renders Markdown (GitHub-flavored) styled for the app's dark theme.
  *
@@ -16,6 +28,10 @@ export interface MarkdownProps {
  * surface and no sanitizer is needed. Styling comes from
  * `@tailwindcss/typography` (`prose prose-invert`) with palette overrides so it
  * matches the surrounding UI (#a3a3a3 body, #f5f5f5 emphasis, #E0B954 accents).
+ *
+ * `remark-breaks` makes a single newline render as a line break (GitHub-comment
+ * behavior), preserving structure in plain-text descriptions that predate
+ * Markdown rendering — CommonMark would otherwise collapse a lone `\n` to a space.
  */
 export function Markdown({ children, className = '' }: MarkdownProps) {
   return (
@@ -32,7 +48,9 @@ export function Markdown({ children, className = '' }: MarkdownProps) {
         prose-th:text-[#f5f5f5] prose-td:text-[#a3a3a3]
         prose-img:rounded-lg ${className}`}
     >
-      <ReactMarkdown remarkPlugins={[remarkGfm]}>{children}</ReactMarkdown>
+      <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]} components={COMPONENTS}>
+        {children}
+      </ReactMarkdown>
     </div>
   );
 }
