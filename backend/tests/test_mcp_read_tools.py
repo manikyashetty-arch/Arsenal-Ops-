@@ -121,7 +121,8 @@ def world(mcp_db):
         admin_role = Role(name="admin", description="admin", is_system=True)
         dev_role = Role(name="developer", description="dev", is_system=True)
         limited_role = Role(name="limited", description="board only", is_system=False)
-        db.add_all([admin_role, dev_role, limited_role])
+        nocaps_role = Role(name="nocaps", description="no capabilities", is_system=False)
+        db.add_all([admin_role, dev_role, limited_role, nocaps_role])
         db.flush()
         db.add(RoleCapability(role_id=admin_role.id, capability_key="*"))
         for cap in ("project.board", "project.pulse"):
@@ -152,6 +153,7 @@ def world(mcp_db):
         alice_u = _user("alice@test.local", "developer", dev_role)
         carol_u = _user("carol@test.local", "limited", limited_role)
         bob_u = _user("bob@test.local", "developer", dev_role)
+        nocaps_u = _user("nocaps@test.local", "nocaps", nocaps_role)
         db.flush()
 
         # Projects
@@ -194,6 +196,7 @@ def world(mcp_db):
             "alice": _token(alice_u.id),
             "carol": _token(carol_u.id),
             "bob": _token(bob_u.id),
+            "nocaps": _token(nocaps_u.id),
             "p1": p1.id,
             "p2": p2.id,
             "wi1": wi1.id,
@@ -281,6 +284,17 @@ def test_workitem_get_and_access(world):
         call(world["bob"], "workitem_get", {"item_id": world["wi1"]})
 
 
+def test_workitem_get_no_access_indistinguishable_from_missing(world):
+    """Enumeration oracle closed: an item in a project the caller can't access
+    and a non-existent id both return the same "not found" — bob can't tell which
+    ids exist in P1 (he has project.board but no access to P1).
+    """
+    with pytest.raises(ToolError, match="not found"):
+        call(world["bob"], "workitem_get", {"item_id": world["wi1"]})  # exists, no access
+    with pytest.raises(ToolError, match="not found"):
+        call(world["bob"], "workitem_get", {"item_id": 999999})  # genuinely missing
+
+
 # --------------------------------------------------------------------------- #
 # pulse_get — capability gate
 # --------------------------------------------------------------------------- #
@@ -312,6 +326,13 @@ def test_developers_list(world):
     emails = {d["email"] for d in devs}
     assert {"alice@test.local", "bob@test.local", "carol@test.local"} <= emails
     assert {"id", "name", "email", "github_username"} <= set(devs[0])
+
+
+def test_developers_list_requires_capability(world):
+    # nocaps has a valid token but no project.board → the roster (incl. emails)
+    # is not exposed (e.g. a freshly auto-provisioned OAuth identity with no caps).
+    with pytest.raises(ToolError):
+        call(world["nocaps"], "developers_list")
 
 
 def test_my_capacity_for_developer(world):

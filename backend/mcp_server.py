@@ -41,6 +41,7 @@ from fastmcp.server.auth import AuthProvider, MultiAuth
 from fastmcp.server.auth.providers.google import GoogleProvider
 from fastmcp.server.auth.providers.jwt import JWTVerifier
 from fastmcp.server.dependencies import get_access_token
+from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
 from database import SessionLocal
@@ -118,6 +119,17 @@ _allowed_client_redirect_uris = (
 
 _auth: AuthProvider
 if _oauth_enabled and _google_client_id and _google_client_secret:
+    # Fail fast rather than serve broken discovery/redirects: in production the
+    # base URL must be the real public https://<host>/mcp, not the localhost
+    # fallback. (Harmless but non-functional in dev, so only enforced in prod.)
+    if os.getenv("ENVIRONMENT", "development").lower() == "production" and (
+        "localhost" in _mcp_base_url or "127.0.0.1" in _mcp_base_url
+    ):
+        raise RuntimeError(
+            "MCP_OAUTH_ENABLED is set in production but MCP_BASE_URL is unset or "
+            f"points at localhost ({_mcp_base_url!r}). Set MCP_BASE_URL to the "
+            "public https://<host>/mcp URL."
+        )
     _google_provider = GoogleProvider(
         client_id=_google_client_id,
         client_secret=_google_client_secret,
@@ -167,6 +179,12 @@ def _caller_session() -> Iterator[tuple[Session, User]]:
             if not user.is_active:
                 raise ToolError("User account is inactive")
             yield db, user
+    except ValidationError as exc:
+        # Pydantic validation (e.g. WorkItemCreate / LogHoursRequest) isn't an
+        # HTTPException, so without this it would be masked into a generic error.
+        # Surface a concise, actionable message to the agent instead.
+        problems = "; ".join(f"{'.'.join(map(str, e['loc']))}: {e['msg']}" for e in exc.errors())
+        raise ToolError(f"Invalid input: {problems}") from exc
     except HTTPException as exc:
         raise ToolError(f"{exc.status_code}: {exc.detail}") from exc
 
@@ -190,12 +208,21 @@ def whoami() -> dict:
 # --------------------------------------------------------------------------- #
 
 
+def _clamp_page(limit: int, offset: int, *, max_limit: int = 200) -> tuple[int, int]:
+    """Clamp agent-supplied pagination to safe bounds. Tools call the REST
+    handlers directly, bypassing FastAPI's ``Query(..., ge=1, le=...)`` guards,
+    so a huge or negative ``limit``/``offset`` would otherwise reach SQL/slicing
+    unchecked."""
+    return max(1, min(limit, max_limit)), max(0, offset)
+
+
 @mcp.tool
 def projects_list(limit: int = 50, offset: int = 0, category_id: int | None = None) -> list[dict]:
     """List projects the caller can access (admins see all; others see only the
     projects they're assigned to). Optionally filter by category_id.
     """
     with _caller_session() as (db, user):
+        limit, offset = _clamp_page(limit, offset)
         projects = list_projects(
             category_id=category_id, uncategorized=False, db=db, current_user=user
         )
@@ -232,6 +259,7 @@ def workitems_search(
     with _caller_session() as (db, user):
         require_project_access(project_id, user, db)
         assert_capability(user, "project.board")
+        limit, offset = _clamp_page(limit, offset)
         return list_work_items(
             project_id=project_id,
             status=status,
@@ -247,14 +275,25 @@ def workitems_search(
 
 @mcp.tool
 def workitem_get(item_id: int) -> dict:
-    """Get one work item by id. 403 unless the caller can access its project."""
+    """Get one work item by id. Requires `project.board` and access to the item's
+    project.
+
+    A missing id and an item in a project the caller can't access both return
+    the same "not found" error — so item ids elsewhere can't be enumerated via a
+    403-vs-404 distinction. The capability check runs first (it's user-global and
+    reveals nothing about which ids exist).
+    """
     with _caller_session() as (db, user):
-        payload = get_work_item(item_id, db=db, current_user=user)  # 404s if missing
-        # The REST detail endpoint has no per-project gate; enforce it here
-        # before returning anything.
-        require_project_access(payload["project_id"], user, db)
         assert_capability(user, "project.board")
-        return payload
+        item = db.query(WorkItem).filter(WorkItem.id == item_id).first()
+        if item is not None:
+            try:
+                require_project_access(item.project_id, user, db)
+            except HTTPException:
+                item = None  # collapse "no access" into "not found"
+        if item is None:
+            raise ToolError("Work item not found")
+        return get_work_item(item_id, db=db, current_user=user)
 
 
 # --------------------------------------------------------------------------- #
@@ -279,8 +318,14 @@ def pulse_get(project_id: int) -> dict:
 
 @mcp.tool
 def developers_list(limit: int = 100, offset: int = 0) -> list[dict]:
-    """List developers in the roster (id, name, email, github, avatar)."""
+    """List developers in the roster (id, name, email, github, avatar). Requires
+    `project.board` — the roster (incl. emails) is not exposed to a bare token
+    with no capabilities (e.g. a freshly auto-provisioned OAuth identity); a real
+    working user needs it to assign work items.
+    """
     with _caller_session() as (db, user):
+        assert_capability(user, "project.board")
+        limit, offset = _clamp_page(limit, offset)
         developers = list_developers(db=db, current_user=user)
         return [
             {
@@ -433,6 +478,9 @@ def workitem_update(
     """Update a work item — status transitions and/or field edits. Only the
     fields you pass are changed. Requires `project.tracker_write` + project
     access. Always audited in activity_log.
+
+    Note: an omitted/`None` field means "leave unchanged" — clearing a field
+    (e.g. unassigning, removing a due date) is not expressible via this tool.
     """
     with _caller_session() as (db, user):
         item = db.query(WorkItem).filter(WorkItem.id == item_id).first()
