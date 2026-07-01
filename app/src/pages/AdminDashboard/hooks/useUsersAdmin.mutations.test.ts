@@ -154,6 +154,47 @@ describe('useUsersAdmin — user write payloads', () => {
     await waitFor(() => expect(body).toBeDefined());
     expect(hitId).toBe('12');
     expect(body).toEqual({ name: 'Renamed', email: 'r@x.com', github_username: 'ghuser' });
+
+    // Success side effects (useUsersAdmin.ts onSuccess): a success toast fires
+    // and the edit modal's `editingUser` resets to null so the form closes.
+    await waitFor(() => expect(toastSuccessMock).toHaveBeenCalled());
+    await waitFor(() => expect(result.current.editingUser).toBeNull());
+    expect(toastErrorMock).not.toHaveBeenCalled();
+  });
+
+  it('UPDATE error surfaces a toast and leaves editingUser set', async () => {
+    server.use(
+      http.put(`${API_BASE}/auth/admin/users/:id`, () =>
+        HttpResponse.json({ detail: 'Email already in use' }, { status: 400 }),
+      ),
+    );
+
+    const { wrapper } = makeHarness();
+    const { result } = renderHook(() => useUsersAdmin(alwaysConfirm), { wrapper });
+
+    act(() =>
+      result.current.handleOpenEditUser({
+        id: 12,
+        name: 'Old',
+        email: 'old@x.com',
+      } as UserListItemResponse),
+    );
+    act(() =>
+      result.current.setEditUserForm({
+        name: 'Renamed',
+        email: 'dupe@x.com',
+        github_username: '',
+      }),
+    );
+    await act(async () => {
+      result.current.handleSaveEditUser();
+    });
+
+    // onError (toastErrorHandler('update user')) fires; onSuccess did NOT, so
+    // the edit stays open (editingUser still set) for the admin to correct.
+    await waitFor(() => expect(toastErrorMock).toHaveBeenCalled());
+    expect(toastSuccessMock).not.toHaveBeenCalled();
+    expect(result.current.editingUser).not.toBeNull();
   });
 
   it('DELETE user DELETEs /auth/admin/users/{id} after confirmation', async () => {

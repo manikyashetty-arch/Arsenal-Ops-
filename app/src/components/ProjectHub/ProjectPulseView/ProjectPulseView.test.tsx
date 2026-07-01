@@ -15,6 +15,12 @@ describe('ProjectPulseView (render smoke)', () => {
     // Contract-window subtitle is composed of interpolated text nodes; the
     // static suffix is stable regardless of the fixture's month strings.
     expect(getByText(/Read-only · Synced from time tracking & billing/)).toBeInTheDocument();
+    // Fixture-derived data assertion: the ProjectHeroCard renders the contract
+    // total via fmt$(computeDerived(pulse).contractTotal). From the seeded
+    // ledger (210000 + 72000 + 34000 + 48000 - 82500, Product Mgmt/GTM excluded)
+    // that is 281500 → "$281,500". Distinct value, appears once in the tree, so
+    // it fails if the hero card renders no data.
+    expect(getByText('$281,500')).toBeInTheDocument();
   });
 });
 // Note: the all-zeroed empty-pulse path is covered purely (no render) in

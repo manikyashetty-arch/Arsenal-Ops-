@@ -102,6 +102,52 @@ describe('computeDerived', () => {
     expect(clientTotal).toBe(48000);
   });
 
+  it('exclusion guards are load-bearing: excluded rows never contribute their amount', () => {
+    // The shared fixture zeroes the amounts on the excluded rows, so the
+    // `!included`/`!tbd` guards would be invisible against it. Give those rows
+    // a NON-ZERO amount and prove the guards actually drop them.
+    //
+    // Fixture rows (from pulseData.fixtures.ts):
+    //   Product Mgmt Cost  — owner AAI,    included:true, amount 0
+    //   GTM Leadership     — owner Client, tbd:true,      amount 0
+    // Baseline totals (computed by hand from the fixture, not the function):
+    //   contractTotal = 210000 + 72000 + 34000 + 48000 + (-82500) = 281500
+    //   aaiTotal      = 210000 + 72000 + 34000 + (-82500)         = 233500
+    //   clientTotal   = 48000                                     = 48000
+    const data = fixture();
+    const productMgmt = data.ledger.find((l) => l.category === 'Product Mgmt Cost')!;
+    const gtmLeadership = data.ledger.find((l) => l.category === 'GTM Leadership')!;
+    // Sanity: the rows we rely on are exactly the excluded ones.
+    expect(productMgmt.included).toBe(true);
+    expect(productMgmt.owner).toBe('AAI');
+    expect(gtmLeadership.tbd).toBe(true);
+    expect(gtmLeadership.owner).toBe('Client');
+
+    productMgmt.amount = 5000; // AAI + included → excluded from contract & aai
+    gtmLeadership.amount = 9000; // Client + tbd → excluded from contract & client
+
+    const excluded = computeDerived(data);
+    // Totals are UNCHANGED from baseline despite the non-zero amounts.
+    expect(excluded.contractTotal).toBe(281500);
+    expect(excluded.aaiTotal).toBe(233500);
+    expect(excluded.clientTotal).toBe(48000);
+
+    // Paired check: flipping each flag off makes exactly that amount reappear.
+    // Product Mgmt (AAI, no longer included) → +5000 to contract AND aai.
+    productMgmt.included = false;
+    const inclOff = computeDerived(data);
+    expect(inclOff.contractTotal).toBe(281500 + 5000); // 286500
+    expect(inclOff.aaiTotal).toBe(233500 + 5000); // 238500
+    expect(inclOff.clientTotal).toBe(48000); // untouched (row is AAI)
+
+    // GTM Leadership (Client, no longer tbd) → +9000 to contract AND client.
+    gtmLeadership.tbd = false;
+    const bothOff = computeDerived(data);
+    expect(bothOff.contractTotal).toBe(281500 + 5000 + 9000); // 295500
+    expect(bothOff.aaiTotal).toBe(233500 + 5000); // 238500 (row is Client)
+    expect(bothOff.clientTotal).toBe(48000 + 9000); // 57000
+  });
+
   it('computes per-month totals and a running cumulative', () => {
     const { monthsWithCum } = computeDerived(fixture());
     const feb = monthsWithCum[0]!;
@@ -112,17 +158,24 @@ describe('computeDerived', () => {
     // Mar total: 32325 + 7800 = 40125; cum = 36150 + 40125 = 76275
     expect(mar.total).toBe(40125);
     expect(mar.cum).toBe(76275);
-    // cum is monotonically non-decreasing and ends at forecastEnd
-    expect(monthsWithCum[monthsWithCum.length - 1]!.cum).toBe(
-      computeDerived(fixture()).forecastEnd,
-    );
+    // Anchor the cumulative chain to an absolute literal: the final cum is the
+    // sum of every month's total, computed by hand from the fixture (not from
+    // the function's own output). Month totals in order are 36150, 40125,
+    // 25200, 42550, 41425, 43400, 37600, 31300, 22550, 19300, 17800, 11400 →
+    // running sum ends at 368800. forecastEnd is that same final cum.
+    expect(monthsWithCum[monthsWithCum.length - 1]!.cum).toBe(368800);
+    expect(computeDerived(fixture()).forecastEnd).toBe(368800);
   });
 
   it('burnedToDate sums only through lastActualIdx (inclusive)', () => {
     const data = fixture(); // lastActualIdx === 2 → Feb, Mar, Apr
-    const { burnedToDate, monthsWithCum } = computeDerived(data);
-    const expected = monthsWithCum[0]!.total + monthsWithCum[1]!.total + monthsWithCum[2]!.total;
-    expect(burnedToDate).toBe(expected);
+    const { burnedToDate } = computeDerived(data);
+    // Independently computed from the fixture's month rows (dev+ad+gtm+ba+mgmt):
+    //   Feb 30150 + 0 + 0 + 0    + 6000 = 36150
+    //   Mar 32325 + 0 + 0 + 0    + 7800 = 40125
+    //   Apr 17100 + 0 + 0 + 1800 + 6300 = 25200
+    //   burnedToDate = 36150 + 40125 + 25200 = 101475
+    expect(burnedToDate).toBe(101475);
   });
 
   it('burnedToDate is 0 when lastActualIdx is -1 (no actuals)', () => {

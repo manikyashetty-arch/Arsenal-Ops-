@@ -111,6 +111,12 @@ describe('MyTasksBox + useMyTasks', () => {
     await screen.findByText('Wire up the launch sequence');
 
     const initialFetches = myTasksFetchCount;
+    // Observe the cross-cutting invalidation: useMyTasks' status onSettled must
+    // invalidate BOTH ['myTasks'] and ['workItems'] (app/CLAUDE.md shared-cache
+    // rule). Nothing is cached under ['workItems'] in this harness, so spy on
+    // the invalidation call itself — otherwise a regression dropping it is
+    // silent. Spy AFTER the initial render so mount-time queries don't pollute.
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
 
     // Open the StatusDotMenu for the row and pick "In Progress". The popover
     // renders into a portal on document.body, so query the option globally.
@@ -130,10 +136,11 @@ describe('MyTasksBox + useMyTasks', () => {
     });
 
     // onSettled invalidates ['myTasks'] (triggering a refetch) AND ['workItems'].
-    // The refetch is the observable proof the ['myTasks'] view stays in sync;
-    // ['workItems'] is invalidated by the same onSettled (nothing is cached
-    // under it in this harness, so its invalidation is a no-op refetch here).
+    // The refetch is the observable proof the ['myTasks'] view stays in sync.
     await waitFor(() => expect(myTasksFetchCount).toBeGreaterThan(initialFetches));
+    // ['workItems'] has nothing cached under it here, so assert the invalidation
+    // was actually issued — this is the half a regression would silently drop.
+    await waitFor(() => expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['workItems'] }));
     // 'todo' and 'in_progress' both live under the "upcoming" tab, so the item
     // stays visible through the change + refetch.
     expect(screen.getByText('Wire up the launch sequence')).toBeInTheDocument();

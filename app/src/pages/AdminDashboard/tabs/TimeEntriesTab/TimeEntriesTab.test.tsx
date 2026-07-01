@@ -12,7 +12,7 @@
 // assertion). Rows are stamped with "now" so they fall inside the default
 // this-week preset regardless of when the suite runs — aggregation itself is
 // range-independent (the client aggregates whatever the server returns).
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
@@ -30,7 +30,11 @@ const projects: ProjectOption[] = [
 ];
 const employees: EmployeeOption[] = [{ id: 5, name: 'Ada Lovelace', email: 'ada@x.com' }];
 
-const NOW = new Date().toISOString();
+// Pin the wall clock so the this-week preset (computed from `new Date()` inside
+// the component) is deterministic and rows stamped NOW always fall inside it,
+// regardless of when the suite runs. A fixed mid-week instant.
+const FIXED_NOW = new Date('2026-06-30T12:00:00.000Z');
+const NOW = FIXED_NOW.toISOString();
 
 const row = (over: Partial<TimeEntryRow>): TimeEntryRow => ({
   avatar_url: null,
@@ -55,6 +59,16 @@ function respondWith(payload: TimeEntriesResponse) {
 }
 
 describe('TimeEntriesTab', () => {
+  // shouldAdvanceTime keeps userEvent (used in the project-filter test) from
+  // hanging under fake timers, while setSystemTime pins the this-week range.
+  beforeEach(() => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.setSystemTime(FIXED_NOW);
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it('requests time entries and renders the server total-hours strip', async () => {
     respondWith({ rows: [row({})], total_hours: 2, total_rows: 1, truncated: false });
 
@@ -69,12 +83,20 @@ describe('TimeEntriesTab', () => {
     expect(screen.getByRole('table')).toBeTruthy();
   });
 
-  it('aggregates same-employee/same-project/same-day rows, summing hours into one', async () => {
-    // Three raw entries by the same dev on the same project + day → one row of 6h.
+  it('aggregates on the (employee × project × day) key, not just employee/day', async () => {
+    // Same dev, same day, but TWO projects: three Apollo entries collapse to
+    // one 6h row; one Borealis entry stays its own 5h row. A bug that merged on
+    // employee/day alone (ignoring project) would produce a single 11h row and
+    // fail this — that's the point of splitting the buckets.
     respondWith({
-      rows: [row({ id: 1, hours: 2 }), row({ id: 2, hours: 3 }), row({ id: 3, hours: 1 })],
-      total_hours: 6,
-      total_rows: 3,
+      rows: [
+        row({ id: 1, hours: 2 }),
+        row({ id: 2, hours: 3 }),
+        row({ id: 3, hours: 1 }),
+        row({ id: 4, project_id: 20, project_name: 'Borealis', hours: 5 }),
+      ],
+      total_hours: 11,
+      total_rows: 4,
       truncated: false,
     });
 
@@ -82,15 +104,21 @@ describe('TimeEntriesTab', () => {
 
     // Wait for the query to resolve; the total strip preserves the server sum.
     const totalCard = () => screen.getByText('Total hours').closest('div') as HTMLElement;
-    await waitFor(() => expect(totalCard().textContent?.replace(/\s/g, '')).toContain('6h'));
+    await waitFor(() => expect(totalCard().textContent?.replace(/\s/g, '')).toContain('11h'));
 
-    // The three raw entries collapse into ONE aggregated data row summing to 6h.
-    // Scope to the table body so the filter <option>s don't count.
+    // The four raw entries collapse into exactly TWO aggregated rows: one per
+    // project bucket. Scope to the table body so the filter <option>s don't count.
     const tbody = screen.getByRole('table').querySelector('tbody') as HTMLElement;
     const bodyRows = within(tbody).getAllByRole('row');
-    expect(bodyRows).toHaveLength(1);
-    expect(bodyRows[0]!.textContent?.replace(/\s/g, '')).toContain('6h');
-    expect(bodyRows[0]!.textContent).toContain('Ada Lovelace');
+    expect(bodyRows).toHaveLength(2);
+
+    // Per-bucket sums: Apollo = 6h, Borealis = 5h. Rows aren't uniquely
+    // queryable by role/name (both are "Ada Lovelace"), so match by project cell.
+    const apolloRow = bodyRows.find((r) => r.textContent?.includes('Apollo'))!;
+    const borealisRow = bodyRows.find((r) => r.textContent?.includes('Borealis'))!;
+    expect(apolloRow.textContent?.replace(/\s/g, '')).toContain('6h');
+    expect(apolloRow.textContent).toContain('Ada Lovelace');
+    expect(borealisRow.textContent?.replace(/\s/g, '')).toContain('5h');
   });
 
   it('sends project_id in the query when a project filter is selected', async () => {
@@ -113,10 +141,10 @@ describe('TimeEntriesTab', () => {
     expect(firstUrl).not.toContain('project_id');
     expect(firstUrl).toContain('date_from');
 
-    // Select the Apollo project (id 10) → refetch with project_id=10. The
-    // Project <select> is the first combobox in the filter bar.
-    const [projectSelect] = screen.getAllByRole('combobox');
-    await user.selectOptions(projectSelect!, '10');
+    // Select the Apollo project (id 10) → refetch with project_id=10. Query the
+    // Project <select> by its accessible name, not by combobox position.
+    const projectSelect = screen.getByRole('combobox', { name: /project/i });
+    await user.selectOptions(projectSelect, '10');
 
     await waitFor(() => expect(urls.some((s) => s.includes('project_id=10'))).toBe(true));
   });

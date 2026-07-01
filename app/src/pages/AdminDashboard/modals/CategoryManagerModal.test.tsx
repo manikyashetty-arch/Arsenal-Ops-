@@ -47,25 +47,16 @@ function HarnessInner() {
       admin.createCategoryMutation.isPending ||
       admin.updateCategoryMutation.isPending ||
       admin.deleteCategoryMutation.isPending,
-    // Swallow rejections in the harness: the hook's onError already toasts
-    // (asserted in the error test). Re-throwing here would surface as an
-    // unhandled rejection because the modal's handleCreate awaits without catch
-    // — production wires these through mutate(), not a bare awaited mutateAsync.
-    onCreate: (payload) =>
-      admin.createCategoryMutation.mutateAsync(payload).then(
-        () => undefined,
-        () => undefined,
-      ),
+    // Mirror production (ProjectsContainer) EXACTLY: `.then(() => undefined)`
+    // with no error callback, so a mutation rejection PROPAGATES. The hook's
+    // onError toasts, and the rejected promise flows back to the modal's
+    // awaited handleCreate — which then skips its clear-on-success step, so the
+    // form stays intact. A `.then(ok, err)` error-swallowing wrapper would
+    // resolve the rejection and let the component wrongly clear the form.
+    onCreate: (payload) => admin.createCategoryMutation.mutateAsync(payload).then(() => undefined),
     onUpdate: (id, payload) =>
-      admin.updateCategoryMutation.mutateAsync({ id, payload }).then(
-        () => undefined,
-        () => undefined,
-      ),
-    onDelete: (id) =>
-      admin.deleteCategoryMutation.mutateAsync(id).then(
-        () => undefined,
-        () => undefined,
-      ),
+      admin.updateCategoryMutation.mutateAsync({ id, payload }).then(() => undefined),
+    onDelete: (id) => admin.deleteCategoryMutation.mutateAsync(id).then(() => undefined),
   });
 }
 
@@ -173,11 +164,10 @@ describe('CategoryManagerModal', () => {
     const user = userEvent.setup();
     renderModal();
 
-    // Wait for the seeded row, then enter inline edit via its pencil button.
+    // Wait for the seeded row, then enter inline edit via its (now labelled)
+    // pencil button — queried by accessible name, scoped to the row.
     const row = (await screen.findByText('Old Name')).closest('li') as HTMLElement;
-    const buttons = within(row).getAllByRole('button');
-    // Two icon buttons: [edit, delete]. Click edit.
-    await user.click(buttons[0]!);
+    await user.click(within(row).getByRole('button', { name: /edit/i }));
 
     const nameInput = within(row).getByDisplayValue('Old Name');
     await user.clear(nameInput);
@@ -203,9 +193,9 @@ describe('CategoryManagerModal', () => {
     renderModal();
 
     const row = (await screen.findByText('Trash Me')).closest('li') as HTMLElement;
-    const buttons = within(row).getAllByRole('button');
-    // [edit, delete] → click delete, which opens the AlertDialog.
-    await user.click(buttons[1]!);
+    // Click the (now labelled) delete button by accessible name, scoped to the
+    // row — this opens the AlertDialog.
+    await user.click(within(row).getByRole('button', { name: /delete/i }));
 
     // Confirm in the alert dialog.
     const confirmBtn = await screen.findByRole('button', { name: /^Delete$/i });
@@ -225,10 +215,16 @@ describe('CategoryManagerModal', () => {
     const user = userEvent.setup();
     renderModal();
 
-    await user.type(screen.getByPlaceholderText(/Category name/i), 'Dupe');
+    const nameInput = screen.getByPlaceholderText(/Category name/i);
+    await user.type(nameInput, 'Dupe');
     await user.click(screen.getByRole('button', { name: /Add category/i }));
 
     await waitFor(() => expect(toastErrorMock).toHaveBeenCalled());
     expect(toastErrorMock.mock.calls.flat().join(' ')).toMatch(/already exists/i);
+
+    // Form-intact-on-error contract (CategoryManagerModal.tsx handleCreate):
+    // the create rejected, so the clear-on-success step must NOT have run — the
+    // typed name is still present so the admin can adjust it without retyping.
+    expect(nameInput).toHaveValue('Dupe');
   });
 });

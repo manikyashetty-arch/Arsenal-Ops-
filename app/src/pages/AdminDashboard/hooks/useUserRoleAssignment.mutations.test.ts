@@ -122,11 +122,15 @@ describe('useUserRoleAssignment — assign/remove requests', () => {
   });
 
   it('does NOT refresh own capabilities when editing a DIFFERENT user', async () => {
+    // Capture a POSITIVE settle signal: the assign request landed. Awaiting
+    // this (not a bare `.not.toHaveBeenCalled()`, which is satisfied instantly)
+    // guarantees onSettled has run before we assert the self-refresh was skipped.
+    let hit = false;
     server.use(
-      http.post(
-        `${API_BASE}/auth/admin/users/:userId/roles/:roleId`,
-        () => new HttpResponse(null, { status: 204 }),
-      ),
+      http.post(`${API_BASE}/auth/admin/users/:userId/roles/:roleId`, () => {
+        hit = true;
+        return new HttpResponse(null, { status: 204 });
+      }),
     );
 
     const { wrapper } = makeHarness();
@@ -137,9 +141,11 @@ describe('useUserRoleAssignment — assign/remove requests', () => {
       result.current.handleToggleUserRoleById(targetUser(42), role(2), true);
     });
 
-    // Give onSettled a tick to run, then assert no self-refresh.
-    await waitFor(() => expect(toastErrorMock).not.toHaveBeenCalled());
+    // Await the request landing FIRST (positive settle), then assert no
+    // self-refresh — the current user (999) did not edit their own roles.
+    await waitFor(() => expect(hit).toBe(true));
     expect(authActionMocks.refreshCapabilities).not.toHaveBeenCalled();
+    expect(toastErrorMock).not.toHaveBeenCalled();
   });
 
   it('surfaces an error toast when the assignment request fails', async () => {

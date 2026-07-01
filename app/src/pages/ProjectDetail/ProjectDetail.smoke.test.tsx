@@ -14,7 +14,7 @@
 // non-lazy chrome (header, tabs, Overview content) instead. See the note at the
 // bottom for that limitation.
 import { describe, expect, it } from 'vitest';
-import { screen, waitFor } from '@testing-library/react';
+import { screen } from '@testing-library/react';
 import { http, HttpResponse } from 'msw';
 import type {
   ProjectDetailResponse,
@@ -145,12 +145,12 @@ describe('ProjectDetail smoke', () => {
     renderProjectDetail();
 
     // Header renders the project name once the project query resolves.
-    expect(await screen.findByRole('heading', { name: 'Test Project' })).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: 'Test Project' })).toBeInTheDocument();
     // Tab strip is populated from the registry (admin sees every tab).
-    expect(screen.getByRole('button', { name: /overview/i })).toBeTruthy();
-    expect(screen.getByRole('button', { name: /project tracker/i })).toBeTruthy();
-    expect(screen.getByRole('button', { name: /timeline/i })).toBeTruthy();
-    expect(screen.getByRole('button', { name: /activity/i })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /overview/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /project tracker/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /timeline/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /activity/i })).toBeInTheDocument();
   });
 
   it('renders Overview content (PRD summary) once all hub data resolves', async () => {
@@ -159,7 +159,7 @@ describe('ProjectDetail smoke', () => {
 
     // hubLoading gates the Overview body behind ALL hub queries; once they
     // resolve the PRD summary from the seeded analysis appears.
-    expect(await screen.findByText('A seeded PRD summary for the smoke test.')).toBeTruthy();
+    expect(await screen.findByText('A seeded PRD summary for the smoke test.')).toBeInTheDocument();
   });
 
   it('shows the skeleton loading state while the project query is in flight', async () => {
@@ -180,11 +180,9 @@ describe('ProjectDetail smoke', () => {
 
     renderProjectDetail();
 
-    // The skeleton renders (animate-pulse chrome), and the header heading has
-    // not appeared yet because the project is still loading.
-    await waitFor(() => {
-      expect(document.querySelector('.animate-pulse')).toBeTruthy();
-    });
+    // The skeleton renders (role="status" loading region), and the header
+    // heading has not appeared yet because the project is still loading.
+    expect(await screen.findByRole('status', { name: /loading project/i })).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Test Project' })).toBeNull();
 
     // Release the fetch so the test doesn't leak a pending request.
@@ -209,8 +207,8 @@ describe('ProjectDetail smoke', () => {
     renderProjectDetail();
 
     // accessDenied (ApiError instanceof + status 403) branch renders the gate.
-    expect(await screen.findByText(/access denied/i)).toBeTruthy();
-    expect(screen.getByRole('button', { name: /back to projects/i })).toBeTruthy();
+    expect(await screen.findByText(/access denied/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /back to projects/i })).toBeInTheDocument();
   });
 
   it('renders an error UI (not a blank crash) when the project fetch 500s', async () => {
@@ -229,8 +227,10 @@ describe('ProjectDetail smoke', () => {
 
     // A non-403 error is not accessDenied and leaves project null → the
     // "Project not found" fallback renders instead of a blank page/crash.
-    expect(await screen.findByText(/project not found/i)).toBeTruthy();
-    expect(screen.getByRole('button', { name: /back to projects/i })).toBeTruthy();
+    expect(await screen.findByText(/project not found/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /back to projects/i })).toBeInTheDocument();
+    // A 500 is NOT the 403 Access-Denied branch — prove that gate did not render.
+    expect(screen.queryByText(/access denied/i)).toBeNull();
   });
 });
 

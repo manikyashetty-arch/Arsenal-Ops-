@@ -55,6 +55,9 @@ function makeItem(overrides: Partial<WorkItem> = {}): WorkItem {
 // The detail endpoint returns raw columns; applyWorkItemDetail overlays them.
 // Keep the description consistent with the base item so view-mode text is stable.
 function detailFor(item: WorkItem): WorkItemDetailResponse {
+  // A real, complete WorkItemDetailResponse (all required wire fields present):
+  // a backend detail-shape change now breaks this fixture at compile time,
+  // rather than being papered over by an `as unknown as` cast.
   return {
     id: Number(item.id),
     key: item.key,
@@ -63,14 +66,17 @@ function detailFor(item: WorkItem): WorkItemDetailResponse {
     type: item.type,
     status: item.status,
     priority: item.priority,
+    project_id: item.project_id ?? 0,
     story_points: item.story_points,
-    assigned_hours: item.assigned_hours,
+    estimated_hours: item.assigned_hours,
     logged_hours: item.logged_hours,
     remaining_hours: item.remaining_hours,
     assignee_id: item.assignee_id,
     due_date: null,
     tags: [],
-  } as unknown as WorkItemDetailResponse;
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-01-01T00:00:00Z',
+  };
 }
 
 /** Register the reads the compact panel makes on mount. */
