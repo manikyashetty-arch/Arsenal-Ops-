@@ -31,6 +31,22 @@ function renderAuth() {
   return renderHook(() => useAuth(), { wrapper });
 }
 
+// Assert an async action rejects, WITHOUT letting the rejection escape act().
+// Letting a promise reject out of `await act(async () => { await reject() })`
+// leaves React's act environment in a dirty state on React 19 + Node 20, which
+// prevents the NEXT test's render from committing (result.current stays null).
+// Catch the rejection inside act, then assert on the captured error.
+async function expectActionRejects(action: Promise<unknown>, message: RegExp) {
+  let caught: unknown;
+  await act(async () => {
+    await action.catch((err: unknown) => {
+      caught = err;
+    });
+  });
+  expect(caught).toBeInstanceOf(Error);
+  expect((caught as Error).message).toMatch(message);
+}
+
 // Seed localStorage as if a prior session had been restored, WITHOUT going
 // through checkAuth (used by tests that pre-hydrate before mount).
 function seedSession(token: string, user: unknown, caps: string[]) {
@@ -79,11 +95,10 @@ describe('AuthContext (real provider)', () => {
       const { result } = renderAuth();
       await waitFor(() => expect(result.current.isLoading).toBe(false));
 
-      await expect(
-        act(async () => {
-          await result.current.login('bad@arsenalai.com', 'wrong');
-        }),
-      ).rejects.toThrow('Invalid email or password');
+      await expectActionRejects(
+        result.current.login('bad@arsenalai.com', 'wrong'),
+        /Invalid email or password/,
+      );
 
       expect(result.current.isAuthenticated).toBe(false);
       expect(localStorage.getItem('token')).toBeNull();
@@ -322,11 +337,10 @@ describe('AuthContext (real provider)', () => {
         await result.current.login('test@arsenalai.com', 'pw');
       });
 
-      await expect(
-        act(async () => {
-          await result.current.changePassword('wrong', 'new');
-        }),
-      ).rejects.toThrow('Current password is incorrect');
+      await expectActionRejects(
+        result.current.changePassword('wrong', 'new'),
+        /Current password is incorrect/,
+      );
     });
   });
 
