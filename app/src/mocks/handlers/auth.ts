@@ -14,8 +14,12 @@ import { authStore } from '../data/auth';
 export const authHandlers = [
   http.get(`${API_BASE}/auth/me`, () => HttpResponse.json(authStore.getUser())),
 
-  // Static capability registry (admin role editor). Shape: [{key, description}].
-  http.get(`${API_BASE}/auth/capabilities`, () => HttpResponse.json(authStore.getCapabilities())),
+  // Static capability registry (admin role editor). Shape: [{key, description}]
+  // — NOT the effective-caps string[]. useRolesAdmin consumes this as
+  // Capability[], so it must return objects, not bare keys.
+  http.get(`${API_BASE}/auth/capabilities`, () =>
+    HttpResponse.json(authStore.getCapabilityRegistry()),
+  ),
 
   // Effective caps for the calling user. Shape: { roles, capabilities }.
   // This is the endpoint AuthContext.fetchCapabilitiesWith() calls.

@@ -40,6 +40,15 @@ function seedSession(token: string, user: unknown, caps: string[]) {
 }
 
 describe('AuthContext (real provider)', () => {
+  // Sentinel: proves we are exercising the REAL module, not the global
+  // setupTests mock. The real useAuth throws when used outside an AuthProvider;
+  // the mock's context-free hooks do not. If a future shared import re-caches
+  // AuthContext and defeats the top-of-file vi.unmock, this fails loudly instead
+  // of every test below silently passing against the stub.
+  it('sentinel: real useAuth() throws outside an AuthProvider (mock would not)', () => {
+    expect(() => renderHook(() => useAuth())).toThrow(/must be used within an AuthProvider/);
+  });
+
   describe('login(email, password)', () => {
     it('on success sets token+user, writes localStorage, and fetches capabilities', async () => {
       const { result } = renderAuth();
