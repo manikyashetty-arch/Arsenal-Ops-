@@ -24,18 +24,14 @@ export const authHandlers = [
   ),
 
   // Dev-login button visibility probe. Default: available (tests can override).
-  http.get(`${API_BASE}/auth/dev-login/available`, () =>
-    HttpResponse.json({ available: true }),
-  ),
+  http.get(`${API_BASE}/auth/dev-login/available`, () => HttpResponse.json({ available: true })),
 
   // Password login. Backend consumes form-urlencoded (OAuth2PasswordRequestForm)
   // and returns a Token. Success by default; force 401 per-test via server.use.
   http.post(`${API_BASE}/auth/login`, () => HttpResponse.json(authStore.getTokenResponse())),
 
   // Google SSO login (JSON { token }) → Token.
-  http.post(`${API_BASE}/auth/google-login`, () =>
-    HttpResponse.json(authStore.getTokenResponse()),
-  ),
+  http.post(`${API_BASE}/auth/google-login`, () => HttpResponse.json(authStore.getTokenResponse())),
 
   // Dev login → Token (200 when DEV_AUTH_BYPASS=1; 404 otherwise).
   http.post(`${API_BASE}/auth/dev-login`, () => HttpResponse.json(authStore.getTokenResponse())),
