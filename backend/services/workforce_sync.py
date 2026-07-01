@@ -69,6 +69,7 @@ from services.workforce_oauth import WorkforceOAuthError
 from services.workforce_qb_client import (
     QBApiError,
     QBRateLimitError,
+    fetch_qb_classes,
     fetch_qb_employees,
     post_time_activity,
     resolve_service_item,
@@ -418,6 +419,14 @@ def _run_inside_lock(
     # `project.workforce_client_id` which is already on the project row).
     refresh_clients_quietly(db, integration)
 
+    # 2.6) Build the QB Class map (project category → QB Class id) once.
+    #      Best-effort: omit ClassRef if Class tracking is off / lookup fails.
+    try:
+        class_map = fetch_qb_classes(db, integration)
+    except (QBApiError, WorkforceOAuthError) as e:
+        logger.warning("[workforce_sync] couldn't load QB classes; omitting Class: %s", e)
+        class_map = {}
+
     # 3) Pull eligible TimeEntries. Mirrors the Time Entries admin
     #    tab's JOIN shape (Project → WorkItem → TimeEntry → Developer)
     #    so what gets pushed matches what an admin sees there.
@@ -435,7 +444,9 @@ def _run_inside_lock(
             TimeEntry.logged_at < window_end_dt,
         )
         .options(
-            selectinload(TimeEntry.work_item).selectinload(WorkItem.project),
+            selectinload(TimeEntry.work_item)
+            .selectinload(WorkItem.project)
+            .selectinload(Project.category),
             selectinload(TimeEntry.developer),
         )
         .order_by(TimeEntry.logged_at.asc(), TimeEntry.id.asc())
@@ -474,6 +485,8 @@ def _run_inside_lock(
 
         project = entry.work_item.project if entry.work_item else None
         customer_qb_id = project.workforce_client_id if project else None
+        category = project.category if project else None
+        class_id = class_map.get((category.name or "").lower().strip()) if category else None
         if not customer_qb_id:
             # Project must have been unlinked between query time and now,
             # or the row was inserted between query plan and execute.
@@ -494,6 +507,8 @@ def _run_inside_lock(
                 hours=int(entry.hours),
                 txn_date=entry.logged_at.date(),
                 description=build_description(entry),
+                billable=bool(entry.billable),
+                class_id=class_id,
             )
             entry.workforce_entry_id = qb_id
             # Keep the (submitted_at, workforce_entry_id) state machine

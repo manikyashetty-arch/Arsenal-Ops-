@@ -3,6 +3,8 @@ import {
   AlertCircle,
   ArrowLeft,
   CheckCircle2,
+  ChevronDown,
+  ChevronRight,
   FileWarning,
   Loader2,
   Lock,
@@ -26,6 +28,7 @@ import {
   useDeleteTimesheetEntryMutation,
   useEditTimesheetEntryMutation,
   useMyTimesheetQuery,
+  useSetTimesheetBillableMutation,
   useSubmitTimesheetMutation,
 } from '@/hooks/useMyTimesheet';
 import { ApiError, apiFetch, permissionAwareError } from '@/lib/api';
@@ -69,6 +72,7 @@ interface DayClientGroup {
   projects: Array<{
     project_id: number;
     project_name: string;
+    category_name: string | null;
     entries: TimesheetEntryResponse[];
   }>;
 }
@@ -131,6 +135,7 @@ const groupByDay = (data: MyTimesheetResponse): DayGroup[] => {
           projectBucket = {
             project_id: project.project_id,
             project_name: project.project_name,
+            category_name: project.category_name,
             entries: [],
           };
           clientBucket.projects.push(projectBucket);
@@ -158,6 +163,7 @@ const ReviewSubmitView = ({ onBack, onSyncingChange }: ReviewSubmitViewProps) =>
   const editMutation = useEditTimesheetEntryMutation();
   const deleteMutation = useDeleteTimesheetEntryMutation();
   const addMutation = useAddTimesheetEntryMutation();
+  const billableMutation = useSetTimesheetBillableMutation();
   // Pull the dev's assignable tickets from the existing capacity endpoint.
   // The home card's MyCapacityCard already populates this cache, so it's
   // usually free (warm-cache hit) by the time the modal opens.
@@ -180,6 +186,24 @@ const ReviewSubmitView = ({ onBack, onSyncingChange }: ReviewSubmitViewProps) =>
     description?: string | null;
     loggedAt: string;
   }) => addMutation.mutateAsync(body);
+
+  // Toggle billable for a (client, day) group. The checkbox lives at the
+  // client level inside each day card and only affects that day's draft
+  // entries for the client. Errors surface as a toast — the cache refetch on
+  // success keeps each row's `billable` in sync.
+  const handleSetClientBillable = async (
+    qbCustomerId: string,
+    loggedAt: string,
+    billable: boolean,
+  ) => {
+    try {
+      await billableMutation.mutateAsync({ qbCustomerId, loggedAt, billable });
+    } catch (err) {
+      toast.error(
+        err instanceof ApiError && err.message ? err.message : "Couldn't update billable.",
+      );
+    }
+  };
 
   const handleDeleteEntry = async (entryId: number) => {
     const ok = await confirm({
@@ -391,6 +415,7 @@ const ReviewSubmitView = ({ onBack, onSyncingChange }: ReviewSubmitViewProps) =>
                     onDelete={handleDeleteEntry}
                     muted
                     showDay
+                    collapsible
                   />
                 ))}
               </div>
@@ -410,6 +435,7 @@ const ReviewSubmitView = ({ onBack, onSyncingChange }: ReviewSubmitViewProps) =>
               onEdit={handleEditEntry}
               onDelete={handleDeleteEntry}
               onAdd={handleAddEntry}
+              onSetClientBillable={handleSetClientBillable}
             />
           ))}
         </div>
@@ -522,6 +548,7 @@ interface DayBlockProps {
   onEdit: EditEntryHandler;
   onDelete: DeleteEntryHandler;
   onAdd: AddEntryHandler;
+  onSetClientBillable: (qbCustomerId: string, loggedAt: string, billable: boolean) => Promise<void>;
 }
 
 /** Today's date in the user's local zone, formatted as ISO YYYY-MM-DD.
@@ -540,9 +567,25 @@ const DayBlock = ({
   onEdit,
   onDelete,
   onAdd,
+  onSetClientBillable,
 }: DayBlockProps) => {
   const hasEntries = day.clients.length > 0;
+  // A day is "Submitted" once every entry logged that day has been submitted
+  // (submitted_at set — covers both submitted-pending and synced). A day with
+  // any draft entry still reads "Not submitted".
+  const dayEntries = day.clients.flatMap((c) => c.projects.flatMap((p) => p.entries));
+  const dayAllSubmitted = dayEntries.length > 0 && dayEntries.every((e) => !!e.submitted_at);
   const [addingOpen, setAddingOpen] = useState(false);
+  // Clients start collapsed — the day card shows each client + its hours,
+  // and the dev clicks a client to reveal that client's tickets.
+  const [expandedClients, setExpandedClients] = useState<Set<string>>(new Set());
+  const toggleClient = (qbCustomerId: string) =>
+    setExpandedClients((prev) => {
+      const next = new Set(prev);
+      if (next.has(qbCustomerId)) next.delete(qbCustomerId);
+      else next.add(qbCustomerId);
+      return next;
+    });
   // Only allow adding entries on today or earlier — matches the backend's
   // "logged_at can't be in the future" rule and avoids a confusing UX
   // where a Wednesday "+ Add entry" click fails with a 400 on Monday.
@@ -564,6 +607,17 @@ const DayBlock = ({
           <div className="flex items-baseline gap-2 min-w-0">
             <span className="text-sm font-semibold text-white">{weekdayName(day.iso)}</span>
             <span className="text-[11px] font-mono text-[#737373]">{dayDateLabel(day.iso)}</span>
+            {/* Per-day submitted status. */}
+            {hasEntries &&
+              (dayAllSubmitted ? (
+                <span className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-[rgba(52,211,153,0.12)] text-[#34D399] font-semibold">
+                  Submitted
+                </span>
+              ) : (
+                <span className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-[rgba(255,255,255,0.06)] text-[#a3a3a3] font-semibold">
+                  Not submitted
+                </span>
+              ))}
           </div>
           <div className="flex items-center gap-3 shrink-0">
             {/* "+ Add entry" pinned in the day header. Toggles the inline
@@ -606,45 +660,120 @@ const DayBlock = ({
 
         {hasEntries && (
           <div className="space-y-4">
-            {day.clients.map((client) => (
+            {day.clients.map((client) => {
+              // Billable is a (client, day) decision: one checkbox per client
+              // block. "Checked" means every entry that client has this day is
+              // billable. Toggling sets only this day's draft entries. If the
+              // group is already locked (submitted/synced), the checkbox is
+              // read-only — those are in QuickBooks already.
+              const clientEntries = client.projects.flatMap((p) => p.entries);
+              const allBillable =
+                clientEntries.length > 0 && clientEntries.every((e) => e.billable);
+              const allLocked =
+                clientEntries.length > 0 &&
+                clientEntries.every((e) => e.synced || !!e.submitted_at);
+              const billableId = `billable-${day.iso}-${client.qb_customer_id}`;
+              // Auto-expand a client whose entries failed to sync so the
+              // per-row errors are never hidden behind a collapsed client.
+              const clientHasFailure = clientEntries.some((e) => failedById.has(e.id));
+              const isOpen = expandedClients.has(client.qb_customer_id) || clientHasFailure;
+              // "Class" = the project category (a QuickBooks tracking
+              // dimension). A client can span projects, so show the distinct
+              // categories of its projects.
+              const clientClasses = [
+                ...new Set(
+                  client.projects.map((p) => p.category_name).filter((c): c is string => !!c),
+                ),
+              ];
+              return (
               <div key={client.qb_customer_id} className="space-y-2">
-                {/* Client (level 1) — no indent. Carries the client's
-                    total for the day on the right. */}
-                <div className="flex items-baseline gap-2 flex-wrap">
-                  <span
-                    className="w-2.5 h-2.5 rounded-sm shrink-0"
-                    style={{ backgroundColor: clientColor(client.qb_customer_id) }}
-                  />
-                  <span className="text-sm font-semibold text-white">{client.client_name}</span>
-                  <span className="text-[10px] text-[#737373] font-normal">
-                    (Client in QuickBooks)
-                  </span>
+                {/* Client (level 1) — collapsible. The row shows the client +
+                    its hours; clicking the name toggles the ticket list. The
+                    billable checkbox and hours stay visible while collapsed. */}
+                <div className="flex items-center gap-2 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={() => toggleClient(client.qb_customer_id)}
+                    aria-expanded={isOpen}
+                    className="flex items-center gap-2 min-w-0 text-left text-white hover:text-[#E0B954] transition-colors"
+                  >
+                    {isOpen ? (
+                      <ChevronDown className="w-3.5 h-3.5 shrink-0 text-[#737373]" />
+                    ) : (
+                      <ChevronRight className="w-3.5 h-3.5 shrink-0 text-[#737373]" />
+                    )}
+                    <span
+                      className="w-2.5 h-2.5 rounded-sm shrink-0"
+                      style={{ backgroundColor: clientColor(client.qb_customer_id) }}
+                    />
+                    <span className="text-sm font-semibold">{client.client_name}</span>
+                    <span className="text-[10px] text-[#737373] font-normal">
+                      (Client in QuickBooks)
+                    </span>
+                  </button>
+                  {/* Class = project category. */}
+                  {clientClasses.length > 0 && (
+                    <span
+                      className="text-[10px] text-[#a3a3a3] bg-[rgba(255,255,255,0.05)] rounded px-1.5 py-0.5"
+                      title="Class (project category)"
+                    >
+                      Class: {clientClasses.join(', ')}
+                    </span>
+                  )}
+                  {/* Per-(client, day) billable toggle. */}
+                  <label
+                    htmlFor={billableId}
+                    className={`inline-flex items-center gap-1.5 text-[11px] ${
+                      allLocked
+                        ? 'text-[#737373] cursor-not-allowed'
+                        : 'text-[#a3a3a3] cursor-pointer hover:text-white'
+                    }`}
+                    title={
+                      allLocked
+                        ? 'These hours are already submitted/synced to QuickBooks — billable is locked.'
+                        : 'Bill this client for this day’s hours. Sent to QuickBooks as the entry’s billable status on submit.'
+                    }
+                  >
+                    <input
+                      id={billableId}
+                      type="checkbox"
+                      checked={allBillable}
+                      disabled={allLocked}
+                      onChange={(e) =>
+                        void onSetClientBillable(client.qb_customer_id, day.iso, e.target.checked)
+                      }
+                      className="accent-[#E0B954] w-3.5 h-3.5 disabled:opacity-50"
+                    />
+                    Billable
+                  </label>
                   <span className="ml-auto text-sm font-mono font-semibold tabular-nums text-[#E0B954]">
                     {client.subtotal_hours}h
                   </span>
                 </div>
-                {/* Project (level 2) — indented under client. Left border
-                    acts as a visual guide line so the eye follows the
-                    client → project → entry hierarchy without counting
-                    spaces. Entry rows are indented again inside ProjectBlock. */}
-                <div className="pl-4 border-l border-[rgba(255,255,255,0.08)] ml-1 space-y-2">
-                  {client.projects.map((project) => {
-                    const subtotal = project.entries.reduce((s, e) => s + (e.hours || 0), 0);
-                    return (
-                      <ProjectBlock
-                        key={project.project_id}
-                        name={project.project_name}
-                        subtotal={subtotal}
-                        entries={project.entries}
-                        failedById={failedById}
-                        onEdit={onEdit}
-                        onDelete={onDelete}
-                      />
-                    );
-                  })}
-                </div>
+                {/* Project (level 2) — revealed when the client is expanded.
+                    Left border acts as a visual guide line so the eye follows
+                    the client → project → entry hierarchy. */}
+                {isOpen && (
+                  <div className="pl-4 border-l border-[rgba(255,255,255,0.08)] ml-1 space-y-2">
+                    {client.projects.map((project) => {
+                      const subtotal = project.entries.reduce((s, e) => s + (e.hours || 0), 0);
+                      return (
+                        <ProjectBlock
+                          key={project.project_id}
+                          name={project.project_name}
+                          subtotal={subtotal}
+                          entries={project.entries}
+                          failedById={failedById}
+                          onEdit={onEdit}
+                          onDelete={onDelete}
+                        />
+                      );
+                    })}
+                  </div>
+                )}
               </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
@@ -836,6 +965,9 @@ interface ProjectBlockProps {
   // Show a per-row day label. Used by the unlinked-projects section,
   // whose entries span the whole week rather than sitting under a day card.
   showDay?: boolean;
+  // Render the project as a collapse toggle (header shows name + hours;
+  // entries reveal on click). Used by the unlinked-projects section.
+  collapsible?: boolean;
 }
 
 const ProjectBlock = ({
@@ -847,29 +979,60 @@ const ProjectBlock = ({
   onDelete,
   muted,
   showDay,
-}: ProjectBlockProps) => (
-  <div>
-    {/* Project header (level 2). The entries (level 3) below are
-        indented one step further with a thinner guide line so the
-        hierarchy reads top-to-bottom: client → project → entries. */}
-    <div className="flex items-center justify-between mb-2">
-      <p className={`text-sm font-semibold ${muted ? 'text-[#a3a3a3]' : 'text-white'}`}>{name}</p>
-      <span className="text-sm font-mono tabular-nums text-[#E0B954]">{subtotal}h</span>
+  collapsible,
+}: ProjectBlockProps) => {
+  // Collapsible projects start collapsed; non-collapsible ones (under an
+  // already-expanded client) always show their entries.
+  const [open, setOpen] = useState(!collapsible);
+  return (
+    <div>
+      {/* Project header (level 2). The entries (level 3) below are
+          indented one step further with a thinner guide line so the
+          hierarchy reads top-to-bottom: client → project → entries. */}
+      {collapsible ? (
+        <button
+          type="button"
+          onClick={() => setOpen((o) => !o)}
+          aria-expanded={open}
+          className="w-full flex items-center justify-between mb-2 text-left"
+        >
+          <span className="flex items-center gap-1.5 min-w-0">
+            {open ? (
+              <ChevronDown className="w-3.5 h-3.5 shrink-0 text-[#737373]" />
+            ) : (
+              <ChevronRight className="w-3.5 h-3.5 shrink-0 text-[#737373]" />
+            )}
+            <span className={`text-sm font-semibold ${muted ? 'text-[#a3a3a3]' : 'text-white'}`}>
+              {name}
+            </span>
+          </span>
+          <span className="text-sm font-mono tabular-nums text-[#E0B954]">{subtotal}h</span>
+        </button>
+      ) : (
+        <div className="flex items-center justify-between mb-2">
+          <p className={`text-sm font-semibold ${muted ? 'text-[#a3a3a3]' : 'text-white'}`}>
+            {name}
+          </p>
+          <span className="text-sm font-mono tabular-nums text-[#E0B954]">{subtotal}h</span>
+        </div>
+      )}
+      {open && (
+        <ul className="space-y-1.5 pl-4 border-l border-[rgba(255,255,255,0.06)] ml-1">
+          {entries.map((entry) => (
+            <EntryRow
+              key={entry.id}
+              entry={entry}
+              failureMsg={failedById.get(entry.id)}
+              onEdit={onEdit}
+              onDelete={onDelete}
+              showDay={showDay}
+            />
+          ))}
+        </ul>
+      )}
     </div>
-    <ul className="space-y-1.5 pl-4 border-l border-[rgba(255,255,255,0.06)] ml-1">
-      {entries.map((entry) => (
-        <EntryRow
-          key={entry.id}
-          entry={entry}
-          failureMsg={failedById.get(entry.id)}
-          onEdit={onEdit}
-          onDelete={onDelete}
-          showDay={showDay}
-        />
-      ))}
-    </ul>
-  </div>
-);
+  );
+};
 
 interface EntryRowProps {
   entry: TimesheetEntryResponse;
@@ -1034,14 +1197,9 @@ const EntryRow = ({ entry, failureMsg, onEdit, onDelete, showDay }: EntryRowProp
       >
         {entry.description || entry.work_item_title || <span className="text-[#525252]">—</span>}
       </span>
-      {isSynced && (
+      {(isSynced || isSubmittedUnsynced) && (
         <span className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-[rgba(52,211,153,0.12)] text-[#34D399] font-semibold shrink-0 flex items-center gap-1">
           <CheckCircle2 className="w-3 h-3" />
-          Synced
-        </span>
-      )}
-      {isSubmittedUnsynced && !isSynced && (
-        <span className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-[rgba(245,158,11,0.12)] text-[#F59E0B] font-semibold shrink-0">
           Submitted
         </span>
       )}

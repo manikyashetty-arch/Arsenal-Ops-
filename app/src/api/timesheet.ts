@@ -56,6 +56,27 @@ export function deleteMyTimesheetEntry(entryId: number): Promise<void> {
   });
 }
 
+/**
+ * Set the billable flag for a (client, day) group of the current developer's
+ * draft entries — the Review modal's per-client "Billable" checkbox. Only
+ * that day's draft entries for the client are affected. Returns 204
+ * (normalized to undefined); submitted/synced entries are left as-is.
+ */
+export function setMyTimesheetBillable(body: {
+  qbCustomerId: string;
+  loggedAt: string;
+  billable: boolean;
+}): Promise<void> {
+  return apiFetch('/api/developers/me/timesheet/billable', {
+    method: 'PATCH',
+    body: JSON.stringify({
+      qb_customer_id: body.qbCustomerId,
+      logged_at: body.loggedAt,
+      billable: body.billable,
+    }),
+  });
+}
+
 export interface AddTimesheetEntryBody {
   /** Work item / ticket id the entry belongs to. */
   workItemId: number;

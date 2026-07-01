@@ -4292,6 +4292,17 @@
             ],
             "title": "Avatar Url"
           },
+          "client_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Name"
+          },
           "description": {
             "anyOf": [
               {
@@ -4427,6 +4438,7 @@
           "work_item_type",
           "project_id",
           "project_name",
+          "client_name",
           "developer_id",
           "developer_name",
           "developer_email",
@@ -4497,6 +4509,10 @@
       },
       "TimesheetEntryResponse": {
         "properties": {
+          "billable": {
+            "title": "Billable",
+            "type": "boolean"
+          },
           "description": {
             "anyOf": [
               {
@@ -4561,13 +4577,25 @@
           "description",
           "work_item_title",
           "submitted_at",
-          "synced"
+          "synced",
+          "billable"
         ],
         "title": "TimesheetEntryResponse",
         "type": "object"
       },
       "TimesheetProjectResponse": {
         "properties": {
+          "category_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category Name"
+          },
           "entries": {
             "items": {
               "$ref": "#/components/schemas/TimesheetEntryResponse"
@@ -4591,6 +4619,7 @@
         "required": [
           "project_id",
           "project_name",
+          "category_name",
           "subtotal_hours",
           "entries"
         ],

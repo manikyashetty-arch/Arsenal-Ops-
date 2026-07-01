@@ -4,7 +4,7 @@ import sys
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, ForeignKey, Index, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, String, Text, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 sys.path.append("..")
@@ -51,6 +51,16 @@ class TimeEntry(Base):
     # together going forward.
     submitted_at: Mapped[datetime | None] = mapped_column(DateTime, index=True)
 
+    # Whether this entry's hours are billable to the client. Controlled in
+    # the Review & Submit modal at the (client, day) level — toggling a
+    # client's "Billable" checkbox for a day sets this on every one of that
+    # client's entries logged that day. Drives `BillableStatus` on the
+    # QuickBooks push (Billable / NotBillable). Defaults to NOT billable so
+    # nothing is billed to a client without an explicit opt-in.
+    billable: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
+
     # Relationships
     work_item: Mapped["WorkItem"] = relationship("WorkItem", back_populates="time_entries")
     developer: Mapped["Developer | None"] = relationship("Developer")
@@ -71,4 +81,5 @@ class TimeEntry(Base):
             "logged_at": self.logged_at.isoformat() if self.logged_at else None,
             "workforce_entry_id": self.workforce_entry_id,
             "submitted_at": self.submitted_at.isoformat() if self.submitted_at else None,
+            "billable": self.billable,
         }

@@ -14,6 +14,7 @@ import {
   deleteMyTimesheetEntry,
   editMyTimesheetEntry,
   fetchMyTimesheet,
+  setMyTimesheetBillable,
   submitMyTimesheet,
   type AddTimesheetEntryBody,
   type EditTimesheetEntryBody,
@@ -101,6 +102,15 @@ export function useDeleteTimesheetEntryMutation() {
 
   return useMutation<void, Error, number>({
     mutationFn: (entryId) => deleteMyTimesheetEntry(entryId),
+    onSuccess: () => invalidateTimeEntryDerivedCaches(queryClient),
+  });
+}
+
+export function useSetTimesheetBillableMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation<void, Error, { qbCustomerId: string; loggedAt: string; billable: boolean }>({
+    mutationFn: (body) => setMyTimesheetBillable(body),
     onSuccess: () => invalidateTimeEntryDerivedCaches(queryClient),
   });
 }

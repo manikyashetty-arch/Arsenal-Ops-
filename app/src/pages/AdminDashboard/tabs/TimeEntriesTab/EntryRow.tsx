@@ -1,22 +1,19 @@
-import { formatLoggedAt } from './types';
-import type { AggregatedRow } from './types';
+import type { BreakdownRow } from './types';
 
 /**
- * One row in the entries table. Renders an aggregated (employee × project ×
- * day) row. Extracted so the flat-list branch and the grouped branch share the
- * same cell markup — otherwise the same four `<td>`s lived in two places and
- * could silently drift apart.
+ * One line in an employee-day's expanded breakdown — how many hours went to a
+ * given project (and the client it bills to). Rendered inside the nested
+ * breakdown table when a top-level (employee, day) row is expanded.
  */
-const EntryRow: React.FC<{ row: AggregatedRow }> = ({ row }) => (
-  <tr className="hover:bg-[rgba(255,255,255,0.025)]">
-    <td className="px-4 py-3 text-[#a3a3a3] whitespace-nowrap">{formatLoggedAt(row.logged_at)}</td>
-    <td className="px-4 py-3 text-white">
-      {row.developer_name ?? <span className="text-[#737373] italic">deleted</span>}
-    </td>
-    <td className="px-4 py-3 text-[#F4F6FF]">
+const EntryRow: React.FC<{ row: BreakdownRow }> = ({ row }) => (
+  <tr>
+    <td className="px-3 py-1.5 text-[#d4d4d4]">
       {row.project_name ?? <span className="text-[#737373] italic">—</span>}
     </td>
-    <td className="px-4 py-3 text-right font-semibold text-white">{row.hours}h</td>
+    <td className="px-3 py-1.5 text-[#a3a3a3]">
+      {row.client_name ?? <span className="text-[#737373] italic">—</span>}
+    </td>
+    <td className="px-3 py-1.5 text-right font-mono tabular-nums text-[#E0B954]">{row.hours}h</td>
   </tr>
 );
 

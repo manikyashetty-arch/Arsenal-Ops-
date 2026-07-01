@@ -977,6 +977,9 @@ class TimeEntryRow(BaseModel):
 
     project_id: int | None
     project_name: str | None
+    # QB customer the project's hours bill to (cached on the Project row).
+    # NULL when the project isn't linked to a QuickBooks customer.
+    client_name: str | None
 
     developer_id: int | None
     developer_name: str | None
@@ -1096,6 +1099,7 @@ def list_time_entries(
                 work_item_type=wi.type if wi else None,
                 project_id=proj.id if proj else None,
                 project_name=proj.name if proj else None,
+                client_name=proj.workforce_client_name if proj else None,
                 developer_id=dev.id if dev else None,
                 developer_name=dev.name if dev else None,
                 developer_email=dev.email if dev else None,

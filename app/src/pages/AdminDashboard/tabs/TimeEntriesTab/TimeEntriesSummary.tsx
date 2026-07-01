@@ -1,6 +1,5 @@
 import { AlertTriangle } from 'lucide-react';
 import { formatRangeDate } from './types';
-import type { GroupBy } from './types';
 
 interface TimeEntriesSummaryProps {
   totalHours: number;
@@ -11,11 +10,9 @@ interface TimeEntriesSummaryProps {
   truncated: boolean;
   from: string | null;
   to: string | null;
-  groupBy: GroupBy;
-  onGroupByChange: (groupBy: GroupBy) => void;
 }
 
-/** Totals strip + truncation warning + group-by view-mode toggle. */
+/** Totals strip + truncation warning. */
 const TimeEntriesSummary: React.FC<TimeEntriesSummaryProps> = ({
   totalHours,
   entriesCount,
@@ -23,8 +20,6 @@ const TimeEntriesSummary: React.FC<TimeEntriesSummaryProps> = ({
   truncated,
   from,
   to,
-  groupBy,
-  onGroupByChange,
 }) => {
   return (
     <>
@@ -57,36 +52,6 @@ const TimeEntriesSummary: React.FC<TimeEntriesSummaryProps> = ({
           older data.
         </div>
       )}
-
-      {/* Group-by toggle — sits above the table so it reads as a "view mode"
-          rather than a filter (filters change the dataset; group-by just
-          changes how that dataset is rendered). */}
-      <div className="flex items-center justify-end gap-2">
-        <span className="text-[11px] text-[#737373] mr-1">Group by</span>
-        {(
-          [
-            { id: 'none', label: 'None' },
-            { id: 'week', label: 'Week' },
-            { id: 'month', label: 'Month' },
-          ] as const
-        ).map((opt) => {
-          const active = groupBy === opt.id;
-          return (
-            <button
-              key={opt.id}
-              type="button"
-              onClick={() => onGroupByChange(opt.id)}
-              className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors ${
-                active
-                  ? 'bg-[#E0B954]/20 text-[#E0B954] border border-[#E0B954]/40'
-                  : 'bg-[rgba(255,255,255,0.03)] text-[#a3a3a3] border border-[rgba(255,255,255,0.06)] hover:bg-[rgba(255,255,255,0.06)]'
-              }`}
-            >
-              {opt.label}
-            </button>
-          );
-        })}
-      </div>
     </>
   );
 };

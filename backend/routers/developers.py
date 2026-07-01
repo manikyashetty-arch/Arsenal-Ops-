@@ -139,11 +139,16 @@ class TimesheetEntryResponse(BaseModel):
     work_item_title: str | None
     submitted_at: str | None
     synced: bool
+    billable: bool
 
 
 class TimesheetProjectResponse(BaseModel):
     project_id: int
     project_name: str
+    # The project's admin-assigned category, surfaced as "Class" in the
+    # Review modal (QuickBooks calls this dimension a Class). NULL when the
+    # project has no category.
+    category_name: str | None
     subtotal_hours: int
     entries: list[TimesheetEntryResponse]
 
@@ -282,6 +287,21 @@ class TimesheetEntryEditRequest(BaseModel):
 
     hours: int | None = None
     description: str | None = None
+
+
+class TimesheetBillableRequest(BaseModel):
+    """Set the billable flag for a (client, day) group.
+
+    The Review & Submit modal exposes one "Billable" checkbox per client
+    per day; toggling it sends this body. The backend flips `billable`
+    on every one of the caller's *draft* entries logged on `logged_at`
+    whose project bills to `qb_customer_id`. Synced/submitted entries are
+    left untouched (they're already in QuickBooks).
+    """
+
+    qb_customer_id: str
+    logged_at: str  # ISO date (YYYY-MM-DD)
+    billable: bool
 
 
 def _recompute_work_item_hours(work_item, db: Session) -> None:
@@ -456,6 +476,72 @@ def delete_my_timesheet_entry(
         _recompute_work_item_hours(work_item, db)
     else:
         db.commit()
+    return None
+
+
+@router.patch("/me/timesheet/billable", status_code=204)
+def set_my_timesheet_billable(
+    body: TimesheetBillableRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Set the billable flag for one (client, day) group of the caller's
+    own time entries — the Review modal's per-client "Billable" checkbox.
+
+    Only DRAFT entries (``submitted_at IS NULL AND workforce_entry_id IS
+    NULL``) logged on ``logged_at`` whose project bills to
+    ``qb_customer_id`` are flipped; submitted/synced entries are already in
+    the QB pipeline and left untouched. Scoped to the current Mon-Fri
+    window the modal operates on. No work-item rollup needed — billable
+    doesn't affect ``logged_hours``.
+    """
+    from datetime import date as _date
+    from datetime import datetime as _dt
+    from datetime import time as _time
+    from datetime import timedelta as _td
+
+    from models.project import Project
+    from models.time_entry import TimeEntry
+    from models.work_item import WorkItem
+    from services.workforce_sync import current_work_week_window
+
+    dev = _get_internal_developer_or_404(current_user, db)
+
+    try:
+        target_date = _date.fromisoformat(body.logged_at)
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid logged_at {body.logged_at!r}. Expected an ISO date (YYYY-MM-DD).",
+        ) from None
+
+    window_start, window_end = current_work_week_window()
+    if not (window_start <= target_date <= window_end):
+        raise HTTPException(
+            status_code=400,
+            detail="Billable can only be changed for the current week's entries.",
+        )
+
+    day_start = _dt.combine(target_date, _time.min)
+    day_end = day_start + _td(days=1)
+
+    entries = (
+        db.query(TimeEntry)
+        .join(WorkItem, TimeEntry.work_item_id == WorkItem.id)
+        .join(Project, WorkItem.project_id == Project.id)
+        .filter(
+            TimeEntry.developer_id == dev.id,
+            TimeEntry.logged_at >= day_start,
+            TimeEntry.logged_at < day_end,
+            TimeEntry.workforce_entry_id.is_(None),
+            TimeEntry.submitted_at.is_(None),
+            Project.workforce_client_id == body.qb_customer_id,
+        )
+        .all()
+    )
+    for entry in entries:
+        entry.billable = body.billable
+    db.commit()
     return None
 
 

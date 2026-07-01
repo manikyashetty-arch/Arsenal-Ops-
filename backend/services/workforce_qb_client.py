@@ -256,6 +256,37 @@ def fetch_qb_employees(db: Session, integration: WorkforceIntegration) -> dict[s
     return mapping
 
 
+def fetch_qb_classes(db: Session, integration: WorkforceIntegration) -> dict[str, str]:
+    """Return a `lowercased_class_name -> qb_class_id` map.
+
+    QuickBooks calls the project-category dimension a "Class". We resolve
+    a project's category name to its QB Class id on each TimeActivity push
+    so the entry carries a `ClassRef`. Both the leaf `Name` and the
+    `FullyQualifiedName` (e.g. "Parent:Child") are indexed so a category
+    named either way resolves; first writer wins on collision.
+
+    Inactive classes are excluded. Returns an empty map when Class
+    tracking is off or no classes exist — callers then simply omit the
+    ClassRef rather than failing the push.
+    """
+    classes = _query_all(
+        db,
+        integration,
+        entity="Class",
+        where="Active = true",
+    )
+    mapping: dict[str, str] = {}
+    for cls in classes:
+        cid = str(cls.get("Id"))
+        for raw in (cls.get("Name"), cls.get("FullyQualifiedName")):
+            if not raw:
+                continue
+            key = raw.lower().strip()
+            if key:
+                mapping.setdefault(key, cid)
+    return mapping
+
+
 def fetch_qb_customers(db: Session, integration: WorkforceIntegration) -> list[dict[str, str]]:
     """Return the active QB Customer list shaped for the frontend picker.
 
@@ -347,15 +378,25 @@ def post_time_activity(
     hours: int,
     txn_date: date,
     description: str | None = None,
+    billable: bool = False,
+    class_id: str | None = None,
 ) -> str:
     """Create a TimeActivity in QB. Returns the new TimeActivity Id.
 
-    Always posted with `BillableStatus = "Billable"` and
-    `Taxable = false` — these match how the QB Time UI creates entries
-    by default. The sync worker passes integer `hours`; we send
-    `Hours: N, Minutes: 0` because Arsenal logs hours, not finer
-    granularity. If a future change adds minutes, this is where to
-    split them.
+    The four fields Arsenal tracks per entry all flow through here:
+      - `CustomerRef`  — the Client (project's QB customer).
+      - `ItemRef`      — the Service Item (always "Hours").
+      - `BillableStatus` — driven by the caller's `billable` flag (NOT
+        hardcoded): True → "Billable", False → "NotBillable". The dev
+        sets it per client in the Review & Submit modal.
+      - `ClassRef`     — the Class (project's category), sent only when
+        the caller resolved a matching QB Class id (`class_id`); omitted
+        otherwise so a push never fails when Class tracking is off.
+
+    `Taxable = false` is left as-is. The sync worker passes integer
+    `hours`; we send `Hours: N, Minutes: 0` because Arsenal logs hours,
+    not finer granularity. If a future change adds minutes, this is
+    where to split them.
 
     The `Description` is shown in QB's TimeActivity detail view. We
     pass it through verbatim (caller is responsible for truncating /
@@ -367,11 +408,16 @@ def post_time_activity(
         "EmployeeRef": {"value": employee_qb_id},
         "CustomerRef": {"value": customer_qb_id},
         "ItemRef": {"value": service_item_id},
-        "BillableStatus": "Billable",
+        "BillableStatus": "Billable" if billable else "NotBillable",
         "Taxable": False,
         "Hours": int(hours),
         "Minutes": 0,
     }
+    # Class (the project's category). Optional — only sent when the caller
+    # resolved a matching QB Class id. QB rejects a ClassRef when Class
+    # tracking is off, so callers pass None in that case.
+    if class_id:
+        body["ClassRef"] = {"value": class_id}
     if description:
         body["Description"] = description
 

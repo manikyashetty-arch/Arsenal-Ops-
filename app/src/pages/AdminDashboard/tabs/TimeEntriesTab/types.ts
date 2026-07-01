@@ -16,21 +16,32 @@ export interface EmployeeOption {
 }
 
 /**
- * A raw row collapsed by (employee, project, local-day). The table renders
- * these — multiple log-hours entries the same employee made against the same
- * project on the same day fold into one row whose `hours` is the sum. Drops the
- * per-entry fields (ticket, description, ids) that vary within a bucket.
+ * One line in an employee-day's expandable breakdown: how many hours that
+ * employee put on a given project (and which client it bills to) that day.
+ * Raw entries are collapsed by project within the (employee, day) bucket.
  */
-export interface AggregatedRow {
-  /** Synthetic stable string for React keys + outer sort.
-   *  Shape: `YYYY-MM-DD|emp-{id|name}|proj-{id|name}`. */
+export interface BreakdownRow {
+  /** Stable React key — `${dayKey}|emp|proj`. */
   key: string;
-  /** Local-time YYYY-MM-DD; drives the outer descending sort. */
+  project_name: string | null;
+  client_name: string | null;
+  hours: number;
+}
+
+/**
+ * A top-level table row: total hours one employee logged on one local day.
+ * Click to expand `breakdown` — the per-project/client split that sums to
+ * `hours`.
+ */
+export interface EmployeeDayRow {
+  /** Stable React key + expand-state key — `${dayKey}|emp`. */
+  key: string;
+  /** Local-time YYYY-MM-DD; drives the descending sort. */
   dayKey: string;
   logged_at: string;
-  hours: number;
   developer_name: string | null;
-  project_name: string | null;
+  hours: number;
+  breakdown: BreakdownRow[];
 }
 
 export type DatePreset =
@@ -41,22 +52,6 @@ export type DatePreset =
   | 'last_month'
   | 'custom';
 
-/** Table layout — flat list, grouped by Sat→Fri week, or grouped by month. */
-export type GroupBy = 'none' | 'week' | 'month';
-
-/** A group bucket — shared shape for week + month grouping so the render
- *  branch can treat them identically. `key` is a stable YYYY-MM-DD string
- *  used for React keys and Map lookups; `label` is the already-formatted
- *  header text ("Jun 6 → Jun 12, 2026" for week, "June 2026" for month).
- */
-export interface EntryGroup {
-  key: string;
-  label: string;
-  totalHours: number;
-  entries: AggregatedRow[];
-  sortDate: Date;
-}
-
 export interface FiltersState {
   projectId: number | null;
   developerId: number | null;
@@ -64,7 +59,6 @@ export interface FiltersState {
   // Only consulted when preset === 'custom'.
   customFrom: string;
   customTo: string;
-  groupBy: GroupBy;
 }
 
 export const DATE_PRESETS: { id: DatePreset; label: string }[] = [

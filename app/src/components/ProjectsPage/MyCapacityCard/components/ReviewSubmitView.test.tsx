@@ -75,6 +75,7 @@ const baseTimesheet: MyTimesheetResponse = {
         {
           project_id: 7,
           project_name: 'Acme Mobile',
+          category_name: null,
           subtotal_hours: 12,
           entries: [
             {
@@ -85,6 +86,7 @@ const baseTimesheet: MyTimesheetResponse = {
               submitted_at: null,
               work_item_title: null,
               synced: false,
+              billable: false,
             },
             {
               id: 102,
@@ -94,6 +96,7 @@ const baseTimesheet: MyTimesheetResponse = {
               submitted_at: null,
               work_item_title: null,
               synced: false,
+              billable: false,
             },
             {
               id: 103,
@@ -103,6 +106,7 @@ const baseTimesheet: MyTimesheetResponse = {
               submitted_at: null,
               work_item_title: null,
               synced: false,
+              billable: false,
             },
           ],
         },
@@ -124,10 +128,21 @@ const seedSubmit = (response: SubmitTimesheetResponse | (() => Response)) => {
   );
 };
 
+// Clients render collapsed by default (the day card shows client + hours;
+// the dev clicks a client to reveal its tickets). Tests that assert on
+// entry-level content expand every client first. Waits for at least one
+// client toggle to appear, then clicks them all open.
+const expandAllClients = async (user: ReturnType<typeof renderWithQueryClient>['user']) => {
+  const toggles = await screen.findAllByRole('button', { name: /Client in QuickBooks/i });
+  for (const toggle of toggles) {
+    await user.click(toggle);
+  }
+};
+
 describe('<ReviewSubmitView />', () => {
   it('renders Mon-Fri day cards with the nested client → project → entry split', async () => {
     seedTimesheet(baseTimesheet);
-    renderWithQueryClient(<ReviewSubmitView onBack={onBackNoop} />);
+    const { user } = renderWithQueryClient(<ReviewSubmitView onBack={onBackNoop} />);
 
     // The fixture spans Mon (2026-06-22), Tue (06-23), Wed (06-24).
     // All five weekday cards render (empty days included).
@@ -137,10 +152,12 @@ describe('<ReviewSubmitView />', () => {
     expect(screen.getByText('Thursday')).toBeInTheDocument();
     expect(screen.getByText('Friday')).toBeInTheDocument();
 
-    // Client + project nest inside each day that has entries — Acme Co
-    // appears once per populated day (3 occurrences) PLUS once in the
-    // weekly summary legend at the top of the scroll area.
+    // Client names show while collapsed — Acme Co appears once per populated
+    // day (3 toggles) PLUS once in the weekly summary legend.
     expect(screen.getAllByText('Acme Co')).toHaveLength(4);
+
+    // Project + entry rows are hidden until the client is expanded.
+    await expandAllClients(user);
     expect(screen.getAllByText('Acme Mobile')).toHaveLength(3);
 
     // Weekly summary legend lives in the pinned area, just below the
@@ -164,6 +181,7 @@ describe('<ReviewSubmitView />', () => {
         {
           project_id: 12,
           project_name: 'Internal Tools',
+          category_name: null,
           subtotal_hours: 4,
           entries: [
             {
@@ -174,6 +192,7 @@ describe('<ReviewSubmitView />', () => {
               submitted_at: null,
               work_item_title: null,
               synced: false,
+              billable: false,
             },
           ],
         },
@@ -231,6 +250,9 @@ describe('<ReviewSubmitView />', () => {
     });
     const { user } = renderWithQueryClient(<ReviewSubmitView onBack={onBackNoop} />);
 
+    // Expand clients so the failing rows (and their inline errors) render.
+    await expandAllClients(user);
+
     const button = await screen.findByRole('button', { name: /Submit & Sync to QuickBooks/i });
     await user.click(button);
 
@@ -251,7 +273,7 @@ describe('<ReviewSubmitView />', () => {
     expect(await screen.findByText(/QuickBooks not connected/i)).toBeInTheDocument();
   });
 
-  it('renders "Synced" badge for synced entries and "Submitted" for in-flight ones', async () => {
+  it('shows a "Submitted" badge for submitted entries (synced or pending), not "Synced"', async () => {
     seedTimesheet({
       ...baseTimesheet,
       syncable_unsubmitted_count: 0,
@@ -264,6 +286,7 @@ describe('<ReviewSubmitView />', () => {
             {
               project_id: 7,
               project_name: 'Acme Mobile',
+              category_name: null,
               subtotal_hours: 8,
               entries: [
                 {
@@ -274,6 +297,7 @@ describe('<ReviewSubmitView />', () => {
                   submitted_at: '2026-06-23T09:00:00',
                   work_item_title: null,
                   synced: true,
+                  billable: false,
                 },
                 {
                   id: 202,
@@ -283,6 +307,7 @@ describe('<ReviewSubmitView />', () => {
                   submitted_at: '2026-06-23T10:00:00',
                   work_item_title: null,
                   synced: false,
+                  billable: false,
                 },
               ],
             },
@@ -290,12 +315,16 @@ describe('<ReviewSubmitView />', () => {
         },
       ],
     });
-    renderWithQueryClient(<ReviewSubmitView onBack={onBackNoop} />);
+    const { user } = renderWithQueryClient(<ReviewSubmitView onBack={onBackNoop} />);
+    await expandAllClients(user);
 
     await waitFor(() => {
-      expect(screen.getByText('Synced')).toBeInTheDocument();
-      expect(screen.getByText('Submitted')).toBeInTheDocument();
+      // Both entries — the synced one and the submitted-pending one — now read
+      // "Submitted" (the per-day "Submitted" badges add to the count too).
+      expect(screen.getAllByText('Submitted').length).toBeGreaterThanOrEqual(2);
     });
+    // The old "Synced" wording is gone.
+    expect(screen.queryByText('Synced')).not.toBeInTheDocument();
   });
 
   it('renders all five empty day cards with "Nothing logged" when the dev has no entries', async () => {
@@ -331,6 +360,7 @@ describe('<ReviewSubmitView />', () => {
             {
               project_id: 7,
               project_name: 'Acme Mobile',
+              category_name: null,
               subtotal_hours: 4,
               entries: [
                 {
@@ -341,6 +371,7 @@ describe('<ReviewSubmitView />', () => {
                   work_item_title: 'Refactor auth flow',
                   submitted_at: null,
                   synced: false,
+                  billable: false,
                 },
               ],
             },
@@ -348,7 +379,8 @@ describe('<ReviewSubmitView />', () => {
         },
       ],
     });
-    renderWithQueryClient(<ReviewSubmitView onBack={onBackNoop} />);
+    const { user } = renderWithQueryClient(<ReviewSubmitView onBack={onBackNoop} />);
+    await expandAllClients(user);
 
     // Ticket title surfaces in place of the missing description.
     expect(await screen.findByText('Refactor auth flow')).toBeInTheDocument();
@@ -526,6 +558,7 @@ describe('<ReviewSubmitView />', () => {
             {
               project_id: 7,
               project_name: 'Acme Mobile',
+              category_name: null,
               subtotal_hours: 4,
               entries: [
                 {
@@ -536,6 +569,7 @@ describe('<ReviewSubmitView />', () => {
                   work_item_title: 'Refactor auth flow',
                   submitted_at: null,
                   synced: false,
+                  billable: false,
                 },
               ],
             },
@@ -555,6 +589,7 @@ describe('<ReviewSubmitView />', () => {
 
     const { user } = renderWithQueryClient(<ReviewSubmitView onBack={onBackNoop} />);
 
+    await expandAllClients(user);
     await screen.findByText('old');
     await user.click(screen.getByRole('button', { name: /Edit entry/i }));
 
@@ -587,6 +622,7 @@ describe('<ReviewSubmitView />', () => {
             {
               project_id: 7,
               project_name: 'Acme Mobile',
+              category_name: null,
               subtotal_hours: 4,
               entries: [
                 {
@@ -597,6 +633,7 @@ describe('<ReviewSubmitView />', () => {
                   work_item_title: 'Refactor auth flow',
                   submitted_at: null,
                   synced: false,
+                  billable: false,
                 },
               ],
             },
@@ -612,6 +649,7 @@ describe('<ReviewSubmitView />', () => {
     );
 
     const { user } = renderWithQueryClient(<ReviewSubmitView onBack={onBackNoop} />);
+    await expandAllClients(user);
     await screen.findByText('old');
     await user.click(screen.getByRole('button', { name: /Edit entry/i }));
     await user.click(screen.getByRole('button', { name: /^Save$/i }));
@@ -634,6 +672,7 @@ describe('<ReviewSubmitView />', () => {
             {
               project_id: 7,
               project_name: 'Acme Mobile',
+              category_name: null,
               subtotal_hours: 8,
               entries: [
                 {
@@ -644,6 +683,7 @@ describe('<ReviewSubmitView />', () => {
                   work_item_title: null,
                   submitted_at: '2026-06-23T09:00:00',
                   synced: false,
+                  billable: false,
                 },
                 {
                   id: 502,
@@ -653,6 +693,7 @@ describe('<ReviewSubmitView />', () => {
                   work_item_title: null,
                   submitted_at: '2026-06-23T09:00:00',
                   synced: true,
+                  billable: false,
                 },
               ],
             },
@@ -662,7 +703,8 @@ describe('<ReviewSubmitView />', () => {
       unlinked_projects: [],
     });
 
-    renderWithQueryClient(<ReviewSubmitView onBack={onBackNoop} />);
+    const { user } = renderWithQueryClient(<ReviewSubmitView onBack={onBackNoop} />);
+    await expandAllClients(user);
     await screen.findByText('submitted, not synced');
 
     expect(screen.queryByRole('button', { name: /Edit entry/i })).not.toBeInTheDocument();

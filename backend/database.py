@@ -699,6 +699,10 @@ def run_migrations():
             ("projects", "workforce_client_id", "VARCHAR(64)"),
             ("projects", "workforce_client_name", "VARCHAR(255)"),
             ("time_entries", "workforce_entry_id", "VARCHAR(64)"),
+            # Per-entry billable flag, set per (client, day) in the Review &
+            # Submit modal. Defaults FALSE so existing + new entries are
+            # non-billable until a dev explicitly checks the client's box.
+            ("time_entries", "billable", "BOOLEAN NOT NULL DEFAULT FALSE"),
             ("workforce_integration", "company_name", "VARCHAR(255)"),
         ]:
             try:
@@ -1177,12 +1181,19 @@ def reconcile_internal_developers():
 
     db = SessionLocal()
     try:
-        # Pass 1: flip internal-domain Developers that were mis-flagged external.
+        # Pass 1: reconcile every Developer's `is_external` flag against its
+        # email domain — in BOTH directions:
+        #   • internal domain but flagged external  → flip to internal
+        #   • non-internal domain but flagged internal → flip to external
+        # The second direction is essential: `is_external` defaults to FALSE
+        # (the column default), so a developer whose domain is NOT in
+        # ALLOWED_EMAIL_DOMAINS would otherwise stay "internal" and wrongly
+        # appear in the Employees tab (which filters `is_external == False`).
         flipped = 0
-        externals = db.query(Developer).filter(Developer.is_external.is_(True)).all()
-        for dev in externals:
-            if is_internal(dev.email):
-                dev.is_external = False
+        for dev in db.query(Developer).all():
+            should_be_external = not is_internal(dev.email)
+            if bool(dev.is_external) != should_be_external:
+                dev.is_external = should_be_external
                 flipped += 1
 
         # Pass 2: insert missing Developer rows for internal-domain Users.
@@ -1207,8 +1218,8 @@ def reconcile_internal_developers():
             db.commit()
             if flipped:
                 print(
-                    f"[RECONCILE] Flipped {flipped} internal-domain developer(s) "
-                    "from external to internal"
+                    f"[RECONCILE] Reconciled {flipped} developer(s)' is_external flag "
+                    "to match their email domain"
                 )
             if inserted:
                 print(

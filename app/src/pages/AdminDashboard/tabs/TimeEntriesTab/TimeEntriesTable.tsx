@@ -1,28 +1,27 @@
 import { Clock, ChevronRight, ChevronDown } from 'lucide-react';
+import { Fragment } from 'react';
 import EntryRow from './EntryRow';
-import type { AggregatedRow, EntryGroup } from './types';
+import { formatLoggedAt } from './types';
+import type { EmployeeDayRow } from './types';
 
 interface TimeEntriesTableProps {
   isLoading: boolean;
   isError: boolean;
-  /** Aggregated (employee × project × day) rows — the flat list. */
-  rows: AggregatedRow[];
-  /** Non-null when group-by is active; the flat list is used otherwise. */
-  groupedRows: EntryGroup[] | null;
-  /** Keys of the groups currently expanded (groups start collapsed). */
-  expandedGroups: Set<string>;
-  onToggleGroup: (key: string) => void;
+  /** One row per (employee, day). */
+  rows: EmployeeDayRow[];
+  /** Keys of the (employee, day) rows currently expanded. */
+  expandedRows: Set<string>;
+  onToggleRow: (key: string) => void;
 }
 
-/** The entries table — loading / error / empty states, then either a flat
- *  list or one collapsible <tbody> per group (week or month). */
+/** Date · Employee · Hours table. Each row expands to the per-project/client
+ *  breakdown that sums to that day's hours for that employee. */
 const TimeEntriesTable: React.FC<TimeEntriesTableProps> = ({
   isLoading,
   isError,
   rows,
-  groupedRows,
-  expandedGroups,
-  onToggleGroup,
+  expandedRows,
+  onToggleRow,
 }) => {
   return (
     <div className="rounded-2xl border border-[rgba(255,255,255,0.07)] bg-[rgba(255,255,255,0.02)] overflow-hidden">
@@ -42,69 +41,75 @@ const TimeEntriesTable: React.FC<TimeEntriesTableProps> = ({
           <table className="w-full text-sm">
             <thead className="bg-[rgba(255,255,255,0.02)]">
               <tr className="text-left text-[11px] uppercase tracking-wider text-[#737373]">
+                <th className="px-4 py-2.5 font-medium w-8" aria-label="Expand" />
                 <th className="px-4 py-2.5 font-medium">Date</th>
                 <th className="px-4 py-2.5 font-medium">Employee</th>
-                <th className="px-4 py-2.5 font-medium">Project</th>
                 <th className="px-4 py-2.5 font-medium text-right">Hours</th>
               </tr>
             </thead>
-            {groupedRows ? (
-              // Grouped view — one <tbody> per group (week or month). The header
-              // row toggles expand/collapse; entries render only when expanded
-              // (default collapsed). Multiple <tbody>s in one <table> is valid
-              // HTML and lets us scope the row dividers per group.
-              groupedRows.map((group) => {
-                const isExpanded = expandedGroups.has(group.key);
+            <tbody className="divide-y divide-[rgba(255,255,255,0.04)]">
+              {rows.map((row) => {
+                const isExpanded = expandedRows.has(row.key);
                 return (
-                  <tbody key={group.key} className="divide-y divide-[rgba(255,255,255,0.04)]">
+                  <Fragment key={row.key}>
                     <tr
-                      className="bg-[rgba(224,185,84,0.06)] border-t border-[#E0B954]/20 cursor-pointer hover:bg-[rgba(224,185,84,0.1)] transition-colors"
-                      onClick={() => onToggleGroup(group.key)}
-                      // Keyboard a11y — the header row acts as an expand/collapse
-                      // toggle, so it needs the role + key handler a <button>
-                      // would provide for free.
+                      className="hover:bg-[rgba(255,255,255,0.025)] cursor-pointer"
+                      onClick={() => onToggleRow(row.key)}
                       role="button"
                       tabIndex={0}
                       aria-expanded={isExpanded}
+                      aria-label={`${isExpanded ? 'Collapse' : 'Expand'} breakdown for ${
+                        row.developer_name ?? 'employee'
+                      } on ${formatLoggedAt(row.logged_at)}`}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter' || e.key === ' ') {
                           e.preventDefault();
-                          onToggleGroup(group.key);
+                          onToggleRow(row.key);
                         }
                       }}
                     >
-                      <td
-                        colSpan={3}
-                        className="px-4 py-2 text-xs font-semibold text-[#E0B954] uppercase tracking-wider"
-                      >
-                        <span className="inline-flex items-center gap-1.5">
-                          {isExpanded ? (
-                            <ChevronDown className="w-3.5 h-3.5" />
-                          ) : (
-                            <ChevronRight className="w-3.5 h-3.5" />
-                          )}
-                          {group.label}
-                        </span>
-                        <span className="ml-2 text-[10px] font-normal text-[#a3a3a3]">
-                          ({group.entries.length} {group.entries.length === 1 ? 'entry' : 'entries'}
-                          )
-                        </span>
+                      <td className="px-4 py-3 text-[#737373]">
+                        {isExpanded ? (
+                          <ChevronDown className="w-4 h-4" />
+                        ) : (
+                          <ChevronRight className="w-4 h-4" />
+                        )}
                       </td>
-                      <td className="px-4 py-2 text-right text-xs font-bold text-[#E0B954]">
-                        {group.totalHours}h
+                      <td className="px-4 py-3 text-[#a3a3a3] whitespace-nowrap">
+                        {formatLoggedAt(row.logged_at)}
                       </td>
+                      <td className="px-4 py-3 text-white">
+                        {row.developer_name ?? <span className="text-[#737373] italic">deleted</span>}
+                      </td>
+                      <td className="px-4 py-3 text-right font-semibold text-white">{row.hours}h</td>
                     </tr>
-                    {isExpanded && group.entries.map((row) => <EntryRow key={row.key} row={row} />)}
-                  </tbody>
+                    {isExpanded && (
+                      <tr className="bg-[rgba(255,255,255,0.015)]">
+                        <td colSpan={4} className="px-4 pb-3 pl-12">
+                          {/* Per-project/client split that sums to the row's hours. */}
+                          <div className="rounded-lg border border-[rgba(255,255,255,0.06)] overflow-hidden">
+                            <table className="w-full text-xs">
+                              <thead className="bg-[rgba(255,255,255,0.02)]">
+                                <tr className="text-left text-[10px] uppercase tracking-wider text-[#737373]">
+                                  <th className="px-3 py-1.5 font-medium">Project</th>
+                                  <th className="px-3 py-1.5 font-medium">Client</th>
+                                  <th className="px-3 py-1.5 font-medium text-right">Hours</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-[rgba(255,255,255,0.04)]">
+                                {row.breakdown.map((b) => (
+                                  <EntryRow key={b.key} row={b} />
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
                 );
-              })
-            ) : (
-              <tbody className="divide-y divide-[rgba(255,255,255,0.04)]">
-                {rows.map((row) => (
-                  <EntryRow key={row.key} row={row} />
-                ))}
-              </tbody>
-            )}
+              })}
+            </tbody>
           </table>
         </div>
       )}

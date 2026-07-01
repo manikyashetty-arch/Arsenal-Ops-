@@ -44,6 +44,7 @@ from services.workforce_oauth import WorkforceOAuthError
 from services.workforce_qb_client import (
     QBApiError,
     QBRateLimitError,
+    fetch_qb_classes,
     fetch_qb_employees,
     post_time_activity,
     resolve_service_item,
@@ -112,7 +113,9 @@ def get_my_timesheet(
             TimeEntry.logged_at < window_end_dt,
         )
         .options(
-            selectinload(TimeEntry.work_item).selectinload(WorkItem.project),
+            selectinload(TimeEntry.work_item)
+            .selectinload(WorkItem.project)
+            .selectinload(Project.category),
         )
         .order_by(TimeEntry.logged_at.asc(), TimeEntry.id.asc())
         .all()
@@ -151,6 +154,7 @@ def get_my_timesheet(
             "work_item_title": getattr(wi, "title", None) if wi else None,
             "submitted_at": entry.submitted_at.isoformat() if entry.submitted_at else None,
             "synced": synced,
+            "billable": bool(entry.billable),
         }
 
         customer_id = project.workforce_client_id
@@ -177,6 +181,7 @@ def get_my_timesheet(
                 proj_bucket = {
                     "project_id": project.id,
                     "project_name": project.name,
+                    "category_name": project.category.name if project.category else None,
                     "subtotal_hours": 0,
                     "entries": [],
                 }
@@ -189,6 +194,7 @@ def get_my_timesheet(
                 proj_bucket = {
                     "project_id": project.id,
                     "project_name": project.name,
+                    "category_name": project.category.name if project.category else None,
                     "subtotal_hours": 0,
                     "entries": [],
                 }
@@ -390,6 +396,15 @@ def _submit_inside_lock(
         }
     employee_qb_id = employee_map[dev_email]
 
+    # 2.5) Build the QB Class map (project category → QB Class id). Best-
+    #      effort: if Class tracking is off or the lookup fails we push
+    #      without a ClassRef rather than blocking the submit.
+    try:
+        class_map = fetch_qb_classes(db, integration)
+    except (QBApiError, WorkforceOAuthError) as e:
+        logger.warning("[timesheet_submit] couldn't load QB classes; omitting Class: %s", e)
+        class_map = {}
+
     # 3) Pull eligible entries. Filter mirrors the admin sync's filter
     #    PLUS a developer scope. We pick up both (a) entries the dev has
     #    never submitted (`submitted_at IS NULL`) and (b) entries they
@@ -410,7 +425,9 @@ def _submit_inside_lock(
             TimeEntry.logged_at < window_end_dt,
         )
         .options(
-            selectinload(TimeEntry.work_item).selectinload(WorkItem.project),
+            selectinload(TimeEntry.work_item)
+            .selectinload(WorkItem.project)
+            .selectinload(Project.category),
         )
         .order_by(TimeEntry.logged_at.asc(), TimeEntry.id.asc())
         .all()
@@ -467,6 +484,10 @@ def _submit_inside_lock(
 
         project = entry.work_item.project if entry.work_item else None
         customer_qb_id = project.workforce_client_id if project else None
+        category = project.category if project else None
+        class_id = (
+            class_map.get((category.name or "").lower().strip()) if category else None
+        )
         if not customer_qb_id:
             # Project was unlinked between the eligibility query and
             # the POST. Surface it per-row so the dev knows that
@@ -492,6 +513,8 @@ def _submit_inside_lock(
                 hours=int(entry.hours or 0),
                 txn_date=entry.logged_at.date(),
                 description=build_description(entry),
+                billable=bool(entry.billable),
+                class_id=class_id,
             )
             entry.workforce_entry_id = qb_id
             synced += 1

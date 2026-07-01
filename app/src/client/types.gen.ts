@@ -2483,6 +2483,10 @@ export type TimeEntryRow = {
    */
   avatar_url: string | null;
   /**
+   * Client Name
+   */
+  client_name: string | null;
+  /**
    * Description
    */
   description: string | null;
@@ -2583,6 +2587,10 @@ export type TimesheetEntryEditRequest = {
  */
 export type TimesheetEntryResponse = {
   /**
+   * Billable
+   */
+  billable: boolean;
+  /**
    * Description
    */
   description: string | null;
@@ -2616,6 +2624,10 @@ export type TimesheetEntryResponse = {
  * TimesheetProjectResponse
  */
 export type TimesheetProjectResponse = {
+  /**
+   * Category Name
+   */
+  category_name: string | null;
   /**
    * Entries
    */
