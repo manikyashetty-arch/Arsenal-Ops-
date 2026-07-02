@@ -42,9 +42,7 @@ const ArchitectureCard = ({
           <div>
             <div className="flex items-center gap-2 mb-1">
               {isRecommended && (
-                <Badge className="bg-[#E0B954]/20 text-[#E0B954] border-0 text-xs">
-                  Recommended
-                </Badge>
+                <Badge className="bg-info/20 text-info border-0 text-xs">Recommended</Badge>
               )}
               {!isRecommended && (
                 <Badge className="bg-[rgba(255,255,255,0.05)] text-[#a3a3a3] border-0 text-xs">
@@ -83,7 +81,7 @@ const ArchitectureCard = ({
       <div className="p-4 grid grid-cols-3 gap-3 border-b border-[rgba(255,255,255,0.05)]">
         <div className="text-center">
           <div className="flex items-center justify-center gap-1 mb-1">
-            <DollarSign className="w-3.5 h-3.5 text-[#E0B954]" />
+            <DollarSign className="w-3.5 h-3.5 text-muted-foreground" />
             <span className="text-xs text-[#737373]">Cost</span>
           </div>
           <p className="text-sm font-medium text-white">{architecture.estimated_cost}</p>
@@ -99,7 +97,7 @@ const ArchitectureCard = ({
         </div>
         <div className="text-center">
           <div className="flex items-center justify-center gap-1 mb-1">
-            <Clock className="w-3.5 h-3.5 text-[#E0B954]" />
+            <Clock className="w-3.5 h-3.5 text-muted-foreground" />
             <span className="text-xs text-[#737373]">Timeline</span>
           </div>
           <p className="text-sm font-medium text-white">{architecture.time_to_implement}</p>
@@ -109,11 +107,11 @@ const ArchitectureCard = ({
       {/* Pros & Cons */}
       <div className="p-4 grid grid-cols-2 gap-4 border-b border-[rgba(255,255,255,0.05)]">
         <div>
-          <h4 className="text-xs font-medium text-[#E0B954] mb-2">Pros</h4>
+          <h4 className="text-xs font-medium text-muted-foreground mb-2">Pros</h4>
           <ul className="space-y-1">
             {architecture.pros?.slice(0, 3).map((pro, i) => (
               <li key={i} className="text-xs text-[#a3a3a3] flex items-start gap-1.5">
-                <span className="text-[#E0B954] mt-0.5">+</span>
+                <span className="text-muted-foreground mt-0.5">+</span>
                 <span className="line-clamp-1">{pro}</span>
               </li>
             ))}

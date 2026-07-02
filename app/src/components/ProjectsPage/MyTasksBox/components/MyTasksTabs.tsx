@@ -41,8 +41,7 @@ const MyTasksTabs = ({ myTasks, personalTasks, myTaskTab, onTabChange }: MyTasks
         const count = countFor(tab);
         // A count pill shows on Focus and Overdue (the "needs attention" tabs)
         // and Personal (so the badge parity with the old design is kept).
-        const showCount =
-          (tab === 'focus' || tab === 'overdue' || tab === 'personal') && count > 0;
+        const showCount = (tab === 'focus' || tab === 'overdue' || tab === 'personal') && count > 0;
         const isUrgent = tab === 'overdue' && count > 0;
         return (
           <button
@@ -50,8 +49,8 @@ const MyTasksTabs = ({ myTasks, personalTasks, myTaskTab, onTabChange }: MyTasks
             onClick={() => onTabChange(tab)}
             className={`flex items-center gap-1.5 text-[12.5px] px-3 py-2.5 border-b-2 -mb-px transition-colors ${
               active
-                ? 'font-bold border-[#E0B954] text-white'
-                : 'font-medium border-transparent text-[#8A8A8A] hover:text-[#a3a3a3]'
+                ? 'font-bold border-brand text-white'
+                : 'font-medium border-transparent text-muted-foreground hover:text-[#a3a3a3]'
             }`}
           >
             {TAB_LABELS[tab]}

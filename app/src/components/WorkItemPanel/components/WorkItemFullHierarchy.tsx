@@ -1,7 +1,7 @@
 import { Plus, Target, ClipboardList, Link2, List } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { avatarColor } from '@/lib/avatarColor';
 import { STATUS_CONFIG } from '../constants';
-import { avatarColor } from '../lib/renderContent';
 import type { WorkItem } from '../types';
 
 export interface WorkItemFullHierarchyProps {
@@ -35,7 +35,7 @@ export const WorkItemFullHierarchy = ({
   );
 
   const sectionLabel = (icon: React.ReactNode, text: string) => (
-    <div className="flex items-center gap-1.5 text-xs text-[#8A8A8A] mb-2 font-medium">
+    <div className="flex items-center gap-1.5 text-xs text-progress mb-2 font-medium">
       {icon}
       {text}
     </div>
@@ -47,8 +47,8 @@ export const WorkItemFullHierarchy = ({
     const allocated = target.assigned_hours ?? 0;
     const logged = target.logged_hours ?? 0;
     const pct = allocated > 0 ? Math.min(100, Math.round((logged / allocated) * 100)) : 0;
-    const barColor = logged >= allocated && allocated > 0 ? '#34D399' : '#E0B954';
-    const ac = avatarColor(target.assignee_id);
+    const barColor = logged >= allocated && allocated > 0 ? '#34D399' : 'var(--progress)';
+    const ac = avatarColor(target.assignee_id ?? target.assignee);
     return (
       <div
         key={target.id}
@@ -58,7 +58,7 @@ export const WorkItemFullHierarchy = ({
         {/* Assignee avatar */}
         <div
           className="w-6 h-6 rounded-full flex-shrink-0 flex items-center justify-center text-[10px] font-semibold"
-          style={{ backgroundColor: `${ac}20`, color: ac }}
+          style={{ backgroundColor: ac.bg, color: ac.fg, border: `1px solid ${ac.ring}` }}
         >
           {target.assignee ? target.assignee.charAt(0).toUpperCase() : '—'}
         </div>

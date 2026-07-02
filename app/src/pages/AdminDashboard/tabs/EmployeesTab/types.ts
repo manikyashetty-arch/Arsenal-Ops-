@@ -100,9 +100,9 @@ export const projectColor = (projectId: number) =>
   PROJECT_COLOR_PALETTE[Math.abs(projectId) % PROJECT_COLOR_PALETTE.length];
 
 export const statusBadgeColor = (status: string) => {
-  if (status === 'in_progress') return '#E0B954';
-  if (status === 'in_review') return '#A78BFA';
-  if (status === 'done') return '#34D399';
+  if (status === 'in_progress') return '#6E62E6';
+  if (status === 'in_review') return '#B667D6';
+  if (status === 'done') return '#40BE86';
   if (status === 'blocked') return '#EF4444';
   return '#737373';
 };

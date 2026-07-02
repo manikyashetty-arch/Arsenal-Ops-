@@ -38,10 +38,10 @@ export const UNCATEGORIZED_OPTION = '__uncategorized__';
 // share the same visual vocabulary. Tints (`bg`) are the hex `color` at ~12%
 // alpha for use as soft tile backgrounds.
 export const STATUS_ACCENTS: Record<StatusBucket, { color: string; bg: string; label: string }> = {
-  todo_backlog: { color: '#60A5FA', bg: 'rgba(96,165,250,0.12)', label: 'ToDo / Backlog' },
-  in_progress: { color: '#E0B954', bg: 'rgba(224,185,84,0.12)', label: 'In progress' },
-  in_review: { color: '#A78BFA', bg: 'rgba(167,139,250,0.12)', label: 'In review' },
-  done_this_week: { color: '#34D399', bg: 'rgba(52,211,153,0.14)', label: 'Done' },
+  todo_backlog: { color: '#4F9BE0', bg: 'rgba(79,155,224,0.12)', label: 'ToDo / Backlog' },
+  in_progress: { color: '#6E62E6', bg: 'rgba(110,98,230,0.12)', label: 'In progress' },
+  in_review: { color: '#B667D6', bg: 'rgba(182,103,214,0.12)', label: 'In review' },
+  done_this_week: { color: '#40BE86', bg: 'rgba(64,190,134,0.14)', label: 'Done' },
 };
 
 // Priority-accent palette for ticket rows in the expanded drill-down. Same

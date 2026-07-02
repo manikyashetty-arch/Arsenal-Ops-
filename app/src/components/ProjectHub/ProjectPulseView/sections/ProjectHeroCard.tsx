@@ -77,7 +77,7 @@ export const ProjectHeroCard: React.FC<{ pulse: PulseData }> = React.memo(({ pul
                 className="absolute top-0 left-0 h-full rounded-full"
                 style={{
                   width: `${burnedPct * 100}%`,
-                  background: 'linear-gradient(90deg,#C79E3B,#E0B954)',
+                  background: 'var(--progress)',
                 }}
               />
               <div
@@ -118,7 +118,7 @@ export const ProjectHeroCard: React.FC<{ pulse: PulseData }> = React.memo(({ pul
           >
             <div className="mt-3 h-1 rounded-full bg-[rgba(255,255,255,0.05)] overflow-hidden relative">
               <div
-                className="absolute top-0 left-0 h-full rounded-full bg-[#E0B954]"
+                className="absolute top-0 left-0 h-full rounded-full bg-progress"
                 style={{ width: `${Math.min(100, devHoursPct * 100)}%` }}
               />
             </div>
@@ -138,7 +138,7 @@ export const ProjectHeroCard: React.FC<{ pulse: PulseData }> = React.memo(({ pul
                 className="h-full"
                 style={{
                   width: `${Math.min(100, inclPct * 100)}%`,
-                  background: inclPct >= 1 ? '#FBBF24' : '#E0B954',
+                  background: inclPct >= 1 ? '#FBBF24' : 'var(--progress)',
                 }}
               />
             </div>

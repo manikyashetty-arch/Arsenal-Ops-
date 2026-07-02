@@ -40,11 +40,12 @@ const mt = (p: Partial<MyTask>): MyTask =>
   }) as MyTask;
 
 describe('priorityColor', () => {
-  it('maps priorities to canonical hex, grey fallback', () => {
-    expect(priorityColor('critical')).toBe('#EF4444');
-    expect(priorityColor('high')).toBe('#F97316');
-    expect(priorityColor('medium')).toBe('#F59E0B');
-    expect(priorityColor('low')).toBe('#737373');
+  it('maps priorities to the Style Guide 1a severity ramp, grey fallback', () => {
+    expect(priorityColor('critical')).toBe('#E5484D');
+    expect(priorityColor('high')).toBe('#EC7A3C');
+    expect(priorityColor('medium')).toBe('#94A3B8');
+    expect(priorityColor('low')).toBe('#64748B');
+    expect(priorityColor('nonsense')).toBe('#64748B');
   });
 });
 

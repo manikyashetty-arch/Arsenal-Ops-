@@ -5,7 +5,7 @@ export const fmt$k = (v: number) =>
 export const fmtPct = (v: number) => Math.round(v * 100) + '%';
 
 export const CATEGORY_COLORS = [
-  { key: 'dev', label: 'Development', color: '#E0B954' },
+  { key: 'dev', label: 'Development', color: '#A6A29C' },
   { key: 'mgmt', label: 'Mgmt', color: '#5EEAD4' },
   { key: 'ba', label: 'BA / GTM Analyst', color: '#A78BFA' },
   { key: 'ad', label: 'Ad Spend', color: '#F87171' },

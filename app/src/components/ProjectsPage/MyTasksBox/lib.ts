@@ -1,17 +1,15 @@
 import { parseLocalDate } from '@/lib/dateUtils';
+import { getPriorityColor } from '@/lib/workItemConfig';
 import type { MyTask, PersonalTask } from '../types';
 
-export const priorityColor = (priority: string): string => {
-  if (priority === 'critical') return '#EF4444';
-  if (priority === 'high') return '#F97316';
-  if (priority === 'medium') return '#F59E0B';
-  return '#737373';
-};
+// Delegates to the single source of truth (Style Guide 1a warm severity ramp)
+// so priority colors never drift from workItemConfig.
+export const priorityColor = (priority: string): string => getPriorityColor(priority);
 
 // Deterministic per-project accent for the small color dot on a task row.
 // Keyed on project_id so the same project always gets the same swatch.
 const PROJECT_DOT_PALETTE = [
-  '#E0B954',
+  '#8A8A8A',
   '#5896DE',
   '#9C82E0',
   '#40BE86',

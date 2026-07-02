@@ -3,6 +3,7 @@ import arsenalOpsLogo from '@/assets/images/arsenal-ops-logo.webp';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/contexts/AuthContext';
 import { hasAnyAdminCapability } from '@/lib/adminCaps';
+import { avatarColor } from '@/lib/avatarColor';
 
 interface AppHeaderProps {
   user: { name: string; role: string } | null;
@@ -27,14 +28,21 @@ const AppHeader = ({ user, onAdminClick, onLogout }: AppHeaderProps) => {
           decoding="async"
         />
         <div className="flex items-center gap-3">
-          {user && (
-            <div className="flex items-center gap-2 mr-2">
-              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#E0B954] to-[#B8872A] flex items-center justify-center text-[#080808] text-sm font-medium">
-                {user.name.charAt(0).toUpperCase()}
-              </div>
-              <span className="text-sm text-[#a3a3a3] hidden md:block">{user.name}</span>
-            </div>
-          )}
+          {user &&
+            (() => {
+              const c = avatarColor(user.name);
+              return (
+                <div className="flex items-center gap-2 mr-2">
+                  <div
+                    className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium"
+                    style={{ backgroundColor: c.bg, color: c.fg, border: `1px solid ${c.ring}` }}
+                  >
+                    {user.name.charAt(0).toUpperCase()}
+                  </div>
+                  <span className="text-sm text-[#a3a3a3] hidden md:block">{user.name}</span>
+                </div>
+              );
+            })()}
           {/* Admin nav link visibility uses the same admin-cap set as the
               /admin route guard (RequireAnyAdminCapability in App.tsx).
               Keeps link + route in sync via lib/adminCaps.ts. */}

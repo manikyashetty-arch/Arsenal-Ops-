@@ -6,14 +6,14 @@ import { Spinner } from '@/components/ui/spinner';
 import { useAuth } from '@/contexts/AuthContext';
 import type { Project } from './types';
 
-const ACCENT_COLORS = ['#E0B954', '#5896DE', '#9C82E0', '#40BE86', '#E8743C', '#EC4899', '#22D3EE'];
+const ACCENT_COLORS = ['#EF6461', '#5896DE', '#9C82E0', '#40BE86', '#E8743C', '#EC4899', '#22D3EE'];
 
 // Real backend project statuses → display label + accent. Falls back to a
 // title-cased label in neutral grey for any status not in the map.
 const STATUS_META: Record<string, { label: string; color: string }> = {
   ideation: { label: 'Ideation', color: '#7C879C' },
   planning: { label: 'Planning', color: '#5896DE' },
-  development: { label: 'Development', color: '#E0A23C' },
+  development: { label: 'Development', color: '#8A8A8A' },
   testing: { label: 'Testing', color: '#9C82E0' },
   launched: { label: 'Launched', color: '#40BE86' },
   archived: { label: 'Archived', color: '#7C879C' },
@@ -84,7 +84,7 @@ const ProjectsBox = ({
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
             <h2 className="text-base font-bold text-white">Projects</h2>
-            <span className="text-[11px] text-[#8A8A8A] bg-[rgba(255,255,255,0.06)] px-2 py-0.5 rounded-full">
+            <span className="text-[11px] text-muted-foreground bg-[rgba(255,255,255,0.06)] px-2 py-0.5 rounded-full">
               {filteredProjects.length}
             </span>
           </div>
@@ -107,7 +107,7 @@ const ProjectsBox = ({
             placeholder="Search projects…"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-8 w-full bg-[rgba(255,255,255,0.03)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-lg h-8 text-xs focus:border-[#E0B954]/50"
+            className="pl-8 w-full bg-[rgba(255,255,255,0.03)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-lg h-8 text-xs focus:border-[rgba(255,255,255,0.12)]"
           />
         </div>
 
@@ -118,7 +118,7 @@ const ProjectsBox = ({
             className={`text-[11.5px] px-2.5 py-1 rounded-lg border transition-colors ${
               filter === 'all'
                 ? 'font-bold text-white bg-[rgba(255,255,255,0.08)] border-[rgba(255,255,255,0.14)]'
-                : 'font-medium text-[#8A8A8A] border-[rgba(255,255,255,0.08)] hover:text-white'
+                : 'font-medium text-muted-foreground border-[rgba(255,255,255,0.08)] hover:text-white'
             }`}
           >
             All
@@ -130,8 +130,8 @@ const ProjectsBox = ({
             aria-pressed={filter === 'fav'}
             className={`flex items-center gap-1 text-[11.5px] px-2.5 py-1 rounded-lg border transition-colors ${
               filter === 'fav'
-                ? 'font-bold text-[#E0B954] bg-[rgba(224,185,84,0.12)] border-[rgba(224,185,84,0.35)]'
-                : 'font-medium text-[#8A8A8A] border-[rgba(255,255,255,0.08)] hover:text-white'
+                ? 'font-bold text-brand bg-[rgba(224,185,84,0.12)] border-[rgba(224,185,84,0.35)]'
+                : 'font-medium text-muted-foreground border-[rgba(255,255,255,0.08)] hover:text-white'
             }`}
           >
             <Star
@@ -170,7 +170,10 @@ const ProjectsBox = ({
                 >
                   {o.label}
                   {sort === o.key && (
-                    <Check className="w-3.5 h-3.5 ml-auto text-[#E0B954]" aria-hidden="true" />
+                    <Check
+                      className="w-3.5 h-3.5 ml-auto text-muted-foreground"
+                      aria-hidden="true"
+                    />
                   )}
                 </button>
               ))}
@@ -186,14 +189,14 @@ const ProjectsBox = ({
           </div>
         ) : filteredProjects.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-center">
-            <FolderKanban className="w-8 h-8 text-[#E0B954]/20 mx-auto mb-2" />
+            <FolderKanban className="w-8 h-8 text-muted-foreground/40 mx-auto mb-2" />
             <p className="text-sm text-[#737373]">
               {filter === 'fav' ? 'No favorite projects yet' : 'No projects found'}
             </p>
           </div>
         ) : (
           filteredProjects.map((project, idx) => {
-            const accent = ACCENT_COLORS[idx % ACCENT_COLORS.length] ?? '#E0B954';
+            const accent = ACCENT_COLORS[idx % ACCENT_COLORS.length] ?? '#8A8A8A';
             const meta = statusMeta(project.status);
             const isFav = !!project.is_favorite;
             return (
@@ -211,7 +214,7 @@ const ProjectsBox = ({
                   aria-label={isFav ? 'Remove from favorites' : 'Add to favorites'}
                   aria-pressed={isFav}
                   className="p-0.5 flex-shrink-0 transition-colors"
-                  style={{ color: isFav ? '#E0B954' : '#4a4a4a' }}
+                  style={{ color: isFav ? 'var(--brand)' : '#4a4a4a' }}
                 >
                   <Star className="w-[15px] h-[15px]" fill={isFav ? 'currentColor' : 'none'} />
                 </button>
@@ -229,7 +232,7 @@ const ProjectsBox = ({
                     >
                       {project.name}
                     </span>
-                    <span className="text-[11px] text-[#8A8A8A] flex-shrink-0">
+                    <span className="text-[11px] text-muted-foreground flex-shrink-0">
                       {project.work_item_stats.completion_pct}%
                     </span>
                   </div>

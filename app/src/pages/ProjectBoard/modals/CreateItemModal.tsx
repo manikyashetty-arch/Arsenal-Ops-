@@ -276,10 +276,8 @@ const CreateItemModal = ({
         )}
         {createForm.type === 'task' && (
           /* Tags section for Tasks */
-          <div className="p-3 rounded-lg bg-[rgba(224,185,84,0.08)] border border-[rgba(224,185,84,0.2)]">
-            <label className="text-xs font-medium text-[#E0B954] block mb-1.5">
-              Tags (Optional)
-            </label>
+          <div className="p-3 rounded-lg bg-[rgba(91,155,230,0.1)] border border-[rgba(91,155,230,0.2)]">
+            <label className="text-xs font-medium text-info block mb-1.5">Tags (Optional)</label>
             <p className="text-[10px] text-[#737373] mb-2">
               Organize tasks with tags. Type a new tag or select from existing ones.
             </p>
@@ -304,13 +302,13 @@ const CreateItemModal = ({
                   }
                 }}
                 placeholder="Type tag and press Enter"
-                className="flex-1 bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl h-10 px-3 placeholder:text-[#334155] focus:outline-none focus:border-[#E0B954]/50"
+                className="flex-1 bg-[rgba(255,255,255,0.025)] border border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-xl h-10 px-3 placeholder:text-[#334155] focus:outline-none focus:border-brand/50"
               />
             </div>
             {/* Suggested existing tags */}
             {existingTags.length > 0 && (
               <div className="mb-2">
-                <p className="text-[10px] text-[#E0B954] font-medium mb-1.5">
+                <p className="text-[10px] text-info font-medium mb-1.5">
                   Available Tags ({existingTags.length}):
                 </p>
                 <div className="flex flex-wrap gap-2">
@@ -325,7 +323,7 @@ const CreateItemModal = ({
                             return { ...f, tags: updated };
                           });
                         }}
-                        className="px-3 py-1 rounded-lg bg-[rgba(224,185,84,0.15)] border border-[rgba(224,185,84,0.4)] text-[#E0B954] text-xs hover:bg-[rgba(224,185,84,0.25)] transition-colors cursor-pointer font-medium"
+                        className="px-3 py-1 rounded-lg bg-[rgba(91,155,230,0.2)] border border-info text-info text-xs hover:bg-[rgba(91,155,230,0.25)] transition-colors cursor-pointer font-medium"
                       >
                         + {tag}
                       </button>
@@ -334,7 +332,7 @@ const CreateItemModal = ({
               </div>
             )}
             {existingTags.length === 0 && (
-              <div className="mb-2 p-2 rounded bg-[rgba(224,185,84,0.05)] border border-[rgba(224,185,84,0.15)]">
+              <div className="mb-2 p-2 rounded bg-[rgba(91,155,230,0.1)] border border-[rgba(91,155,230,0.2)]">
                 <p className="text-[10px] text-[#737373]">
                   No existing tags yet. Create new ones by typing and pressing Enter!
                 </p>
@@ -350,7 +348,7 @@ const CreateItemModal = ({
                   {createForm.tags.map((tag) => (
                     <div
                       key={tag}
-                      className="px-2.5 py-1 rounded-lg bg-[rgba(224,185,84,0.2)] border border-[rgba(224,185,84,0.4)] text-[#E0B954] text-xs flex items-center gap-1.5 font-medium"
+                      className="px-2.5 py-1 rounded-lg bg-[rgba(91,155,230,0.2)] border border-info text-info text-xs flex items-center gap-1.5 font-medium"
                     >
                       {tag}
                       <button
@@ -360,7 +358,7 @@ const CreateItemModal = ({
                             return { ...f, tags: updated };
                           });
                         }}
-                        className="text-[#E0B954] hover:text-white ml-0.5"
+                        className="text-info hover:text-white ml-0.5"
                       >
                         ×
                       </button>
@@ -455,7 +453,7 @@ const CreateItemModal = ({
         <Button
           onClick={handleCreateItem}
           disabled={!createForm.title.trim() || isCreatingItem}
-          className="bg-gradient-to-r from-[#E0B954] to-[#B8872A] text-white rounded-xl px-6 font-medium shadow-lg shadow-[#B8872A]/20 disabled:opacity-50"
+          className="bg-gradient-to-r from-[#E0B954] to-[#C79E3B] hover:opacity-90 text-[#080808] rounded-xl px-6 font-medium shadow-lg shadow-[#E0B954]/20 disabled:opacity-50"
           title={!createForm.title.trim() ? 'Title is required' : ''}
         >
           {isCreatingItem ? (

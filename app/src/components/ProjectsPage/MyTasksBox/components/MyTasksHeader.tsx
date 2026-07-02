@@ -28,7 +28,7 @@ const MyTasksHeader = ({
             placeholder="Search..."
             value={taskSearch}
             onChange={(e) => setTaskSearch(e.target.value)}
-            className="pl-8 w-32 bg-[rgba(255,255,255,0.03)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-lg h-7 text-xs focus:border-[#E0B954]/50"
+            className="pl-8 w-32 bg-[rgba(255,255,255,0.03)] border-[rgba(255,255,255,0.07)] text-[#F4F6FF] rounded-lg h-7 text-xs focus:border-[rgba(255,255,255,0.12)]"
           />
         </div>
         <button

@@ -60,7 +60,7 @@ const WorkItemRow = ({
             (() => {
               // Show every priority; emphasize critical/high with their color +
               // a flag, mute medium/low to grey so the loud ones still stand out.
-              const color = isLoudPriority ? priorityColor(task.priority) : '#8A8A8A';
+              const color = isLoudPriority ? priorityColor(task.priority) : 'var(--progress)';
               const bg = isLoudPriority
                 ? `${priorityColor(task.priority)}22`
                 : 'rgba(255,255,255,0.05)';
@@ -95,8 +95,8 @@ const WorkItemRow = ({
                   task.is_overdue
                     ? 'bg-red-400/5 text-red-400 hover:bg-red-400/10'
                     : task.due_date
-                      ? 'bg-[rgba(255,255,255,0.02)] text-[#a3a3a3] hover:text-[#E0B954]'
-                      : 'text-[#555] hover:bg-[#E0B954]/5 hover:text-[#E0B954]'
+                      ? 'bg-[rgba(255,255,255,0.02)] text-[#a3a3a3] hover:text-white'
+                      : 'text-[#555] hover:bg-[rgba(255,255,255,0.05)] hover:text-white'
                 }`}
               >
                 <Calendar className="w-3.5 h-3.5" />
@@ -117,7 +117,7 @@ const WorkItemRow = ({
             >
               <div className="px-4 py-3 border-b border-[rgba(255,255,255,0.05)] bg-[rgba(255,255,255,0.02)]">
                 <div className="flex items-center gap-2">
-                  <Calendar className="w-3.5 h-3.5 text-[#E0B954]" />
+                  <Calendar className="w-3.5 h-3.5 text-muted-foreground" />
                   <div className="text-xs font-semibold text-white">Due date</div>
                 </div>
                 <div className="text-[11px] text-[#737373] mt-0.5 truncate max-w-[280px]">
@@ -144,7 +144,7 @@ const WorkItemRow = ({
                     caption_label: 'text-sm font-semibold text-white',
                     nav: 'space-x-1 flex items-center',
                     nav_button:
-                      'text-[#a3a3a3] hover:text-[#E0B954] hover:bg-[rgba(224,185,84,0.1)] rounded-md p-1 transition-colors',
+                      'text-[#a3a3a3] hover:text-white hover:bg-[rgba(255,255,255,0.08)] rounded-md p-1 transition-colors',
                     nav_button_previous: 'absolute left-0',
                     nav_button_next: 'absolute right-0',
                     table: 'w-full border-collapse',
@@ -155,10 +155,10 @@ const WorkItemRow = ({
                     cell: 'relative p-0 text-center text-sm focus-within:relative focus-within:z-20',
                     day: 'h-9 w-9 p-0 font-normal',
                     day_button:
-                      'text-white hover:bg-[rgba(224,185,84,0.15)] hover:text-[#E0B954] rounded-lg h-9 w-9 transition-all',
+                      'text-white hover:bg-[rgba(255,255,255,0.08)] hover:text-white rounded-lg h-9 w-9 transition-all',
                     day_selected:
                       'bg-gradient-to-br from-[#E0B954] to-[#C79E3B] text-[#0d0d0d] hover:from-[#E0B954] hover:to-[#C79E3B] hover:text-[#0d0d0d] font-bold shadow-lg shadow-[#E0B954]/30',
-                    day_today: 'ring-1 ring-[#E0B954]/40 text-[#E0B954] font-semibold',
+                    day_today: 'ring-1 ring-info/40 text-info font-semibold',
                     day_outside: 'text-[#3a3a3a]',
                     day_disabled: 'text-[#2a2a2a] opacity-40 cursor-not-allowed',
                     day_hidden: 'invisible',
@@ -180,7 +180,7 @@ const WorkItemRow = ({
                       onQuickDueDateChange(task, `${y}-${mo}-${dy}`);
                       setOpenDateRowId(null);
                     }}
-                    className="flex-1 text-[11px] py-1.5 rounded-md bg-[rgba(255,255,255,0.04)] text-[#a3a3a3] hover:bg-[#E0B954]/15 hover:text-[#E0B954] transition-colors font-medium"
+                    className="flex-1 text-[11px] py-1.5 rounded-md bg-[rgba(255,255,255,0.04)] text-[#a3a3a3] hover:bg-[rgba(255,255,255,0.08)] hover:text-white transition-colors font-medium"
                   >
                     {label}
                   </button>

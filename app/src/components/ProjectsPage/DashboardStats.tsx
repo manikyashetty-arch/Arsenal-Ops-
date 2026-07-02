@@ -42,7 +42,7 @@ const StatCard = ({ icon: Icon, value, label, color, iconBg, loading, onClick }:
           {value}
         </span>
       )}
-      <span className="text-[12.5px] text-[#8A8A8A] mt-1.5">{label}</span>
+      <span className="text-[12.5px] text-muted-foreground mt-1.5">{label}</span>
     </span>
   </button>
 );
@@ -92,7 +92,7 @@ const DashboardStats = ({ myTasks, myTasksLoading, onTabChange }: DashboardStats
         icon={CheckCircle2}
         value={completedThisWeek}
         label="Done this week"
-        color="#40BE86"
+        color="var(--status-done)"
         iconBg="rgba(64,190,134,0.14)"
         loading={myTasksLoading}
         onClick={() => onTabChange?.('completed')}

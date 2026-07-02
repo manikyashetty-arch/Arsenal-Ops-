@@ -2,6 +2,7 @@ import { Users } from 'lucide-react';
 import React, { useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { avatarColor } from '@/lib/avatarColor';
 import type { HoursAnalytics } from '../types';
 
 interface DeveloperHoursTableProps {
@@ -26,7 +27,7 @@ export default function DeveloperHoursTable({ analytics }: DeveloperHoursTablePr
         </CardTitle>
         <p className="text-xs text-[#737373] mt-1">
           Click on a developer row to see detailed ticket breakdown.
-          <span className="text-[#C79E3B]">
+          <span className="text-muted-foreground">
             {' '}
             Hours are attributed to the person who logged them.
           </span>
@@ -52,7 +53,7 @@ export default function DeveloperHoursTable({ analytics }: DeveloperHoursTablePr
                 >
                   Total Logged
                 </th>
-                <th className="text-right py-3 px-4 text-xs font-medium text-[#C79E3B] uppercase">
+                <th className="text-right py-3 px-4 text-xs font-medium text-muted-foreground uppercase">
                   This Week
                 </th>
                 <th className="text-right py-3 px-4 text-xs font-medium text-[#737373] uppercase">
@@ -73,6 +74,7 @@ export default function DeveloperHoursTable({ analytics }: DeveloperHoursTablePr
               ) : (
                 analytics.developer_hours.map((dev) => {
                   const isExpanded = expandedDeveloper === dev.developer_id;
+                  const c = avatarColor(dev.developer_id);
 
                   return (
                     <React.Fragment key={dev.developer_id}>
@@ -82,7 +84,14 @@ export default function DeveloperHoursTable({ analytics }: DeveloperHoursTablePr
                       >
                         <td className="py-3 px-4">
                           <div className="flex items-center gap-3">
-                            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#E0B954] to-[#B8872A] flex items-center justify-center text-white text-sm font-semibold">
+                            <div
+                              className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-semibold"
+                              style={{
+                                backgroundColor: c.bg,
+                                color: c.fg,
+                                border: `1px solid ${c.ring}`,
+                              }}
+                            >
                               {dev.developer_name.charAt(0).toUpperCase()}
                             </div>
                             <div>
@@ -104,7 +113,9 @@ export default function DeveloperHoursTable({ analytics }: DeveloperHoursTablePr
                         </td>
                         <td className="py-3 px-4 text-sm text-right">
                           <span
-                            className={dev.logged_hours > 0 ? 'text-[#E0B954]' : 'text-[#737373]'}
+                            className={
+                              dev.logged_hours > 0 ? 'text-muted-foreground' : 'text-[#737373]'
+                            }
                           >
                             {dev.logged_hours}h
                           </span>
@@ -122,7 +133,7 @@ export default function DeveloperHoursTable({ analytics }: DeveloperHoursTablePr
                                     {capUsed > 0 && (
                                       <>
                                         <div
-                                          className="h-full bg-[#E0B954]"
+                                          className="h-full bg-status-in-progress"
                                           style={{
                                             width: `${Math.min(100, (inProgressH / 40) * 100)}%`,
                                           }}
@@ -146,14 +157,14 @@ export default function DeveloperHoursTable({ analytics }: DeveloperHoursTablePr
                                     )}
                                   </div>
                                   <span
-                                    className={`text-xs font-mono tabular-nums whitespace-nowrap ${capUsed > 0 ? 'text-[#C79E3B] font-semibold' : 'text-[#737373]'}`}
+                                    className={`text-xs font-mono tabular-nums whitespace-nowrap ${capUsed > 0 ? 'text-muted-foreground font-semibold' : 'text-[#737373]'}`}
                                   >
                                     {capUsed}h/40h
                                   </span>
                                 </div>
                                 <div className="text-[10px] text-[#737373] flex items-center gap-1.5 flex-wrap justify-end">
                                   <span className="flex items-center gap-1">
-                                    <span className="w-1.5 h-1.5 rounded-sm bg-[#E0B954]" />
+                                    <span className="w-1.5 h-1.5 rounded-sm bg-status-in-progress" />
                                     {inProgressH}h prog
                                   </span>
                                   <span className="text-[rgba(255,255,255,0.15)]">·</span>
@@ -181,7 +192,7 @@ export default function DeveloperHoursTable({ analytics }: DeveloperHoursTablePr
                           </span>
                         </td>
                         <td className="py-3 px-4 text-sm text-right">
-                          <Badge className="bg-[#E0B954]/20 text-[#E0B954] border-0">
+                          <Badge className="bg-[rgba(255,255,255,0.08)] text-muted-foreground border-0">
                             {dev.completed_items}/{dev.total_items}
                           </Badge>
                         </td>
@@ -211,7 +222,7 @@ export default function DeveloperHoursTable({ analytics }: DeveloperHoursTablePr
                                       }}
                                       className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
                                         active
-                                          ? 'bg-[#E0B954]/20 text-[#E0B954] border border-[#E0B954]/40'
+                                          ? 'bg-[rgba(255,255,255,0.1)] text-white border border-[rgba(255,255,255,0.2)]'
                                           : 'bg-[rgba(255,255,255,0.03)] text-[#a3a3a3] border border-[rgba(255,255,255,0.06)] hover:bg-[rgba(255,255,255,0.06)]'
                                       }`}
                                     >
@@ -239,7 +250,7 @@ export default function DeveloperHoursTable({ analytics }: DeveloperHoursTablePr
                                         <h4 className="text-xs font-semibold text-white">
                                           Logged hours per week
                                         </h4>
-                                        <span className="text-xs font-mono tabular-nums text-[#E0B954]">
+                                        <span className="text-xs font-mono tabular-nums text-muted-foreground">
                                           {dev.logged_hours}h total · {history.length}{' '}
                                           {history.length === 1 ? 'week' : 'weeks'}
                                         </span>
@@ -268,13 +279,13 @@ export default function DeveloperHoursTable({ analytics }: DeveloperHoursTablePr
                                                     day: 'numeric',
                                                   })}
                                                 </span>
-                                                <span className="text-[#E0B954] font-mono tabular-nums">
+                                                <span className="text-muted-foreground font-mono tabular-nums">
                                                   {w.hours}h
                                                 </span>
                                               </div>
                                               <div className="h-1.5 bg-[rgba(255,255,255,0.05)] rounded-full overflow-hidden">
                                                 <div
-                                                  className="h-full bg-[#E0B954] rounded-full"
+                                                  className="h-full bg-progress rounded-full"
                                                   style={{ width: `${pct}%` }}
                                                 />
                                               </div>
@@ -292,7 +303,7 @@ export default function DeveloperHoursTable({ analytics }: DeveloperHoursTablePr
                                 dev.this_week_tickets.length > 0 && (
                                   <div>
                                     <div className="flex items-center justify-between mb-2">
-                                      <h4 className="text-xs font-medium text-[#C79E3B] uppercase">
+                                      <h4 className="text-xs font-medium text-muted-foreground uppercase">
                                         This Week — by status
                                       </h4>
                                       {dev.week_start && dev.week_end && (
@@ -316,7 +327,7 @@ export default function DeveloperHoursTable({ analytics }: DeveloperHoursTablePr
                                           {
                                             key: 'in_progress',
                                             label: 'In progress',
-                                            color: '#E0B954',
+                                            color: '#6E62E6',
                                             total: dev.this_week_in_progress_hours ?? 0,
                                           },
                                           {
@@ -372,7 +383,7 @@ export default function DeveloperHoursTable({ analytics }: DeveloperHoursTablePr
                                                     key={t.id}
                                                     className="flex items-start gap-2 text-xs"
                                                   >
-                                                    <span className="font-mono text-[#E0B954] mt-0.5 flex-shrink-0">
+                                                    <span className="font-mono text-muted-foreground mt-0.5 flex-shrink-0">
                                                       {t.key}
                                                     </span>
                                                     <div className="flex-1 min-w-0">

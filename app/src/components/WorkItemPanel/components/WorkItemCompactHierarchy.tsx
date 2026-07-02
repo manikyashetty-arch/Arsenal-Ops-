@@ -42,10 +42,10 @@ export const WorkItemCompactHierarchy = ({
     if (!item.parent_key) return null;
     return (
       <div>
-        <div className="flex items-center gap-1.5 text-xs text-[#8A8A8A] mb-2 font-medium">
+        <div className="flex items-center gap-1.5 text-xs text-progress mb-2 font-medium">
           <Link2 className="w-3.5 h-3.5" /> Belongs to
         </div>
-        {renderCompactRow(item.parent_key, item.parent_id, Link2, '#E0B954')}
+        {renderCompactRow(item.parent_key, item.parent_id, Link2, '#A6A29C')}
       </div>
     );
   }
@@ -53,7 +53,7 @@ export const WorkItemCompactHierarchy = ({
   if (!item.epic_key) return null;
   return (
     <div>
-      <div className="flex items-center gap-1.5 text-xs text-[#8A8A8A] mb-2 font-medium">
+      <div className="flex items-center gap-1.5 text-xs text-progress mb-2 font-medium">
         <Target className="w-3.5 h-3.5" /> Epic
       </div>
       {renderCompactRow(item.epic_key, item.epic_id, Target, '#A78BFA')}

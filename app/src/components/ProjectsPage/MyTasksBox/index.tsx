@@ -144,7 +144,7 @@ const MyTasksBox = ({
           </div>
         ) : filteredMyTasks.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-10 text-center">
-            <CheckCircle2 className="w-8 h-8 text-[#E0B954]/30 mb-2" />
+            <CheckCircle2 className="w-8 h-8 text-muted-foreground/50 mb-2" />
             <p className="text-sm text-[#737373]">
               {myTaskTab === 'completed'
                 ? 'No completed tasks yet'
@@ -171,7 +171,7 @@ const MyTasksBox = ({
         {myTaskTab !== 'personal' && filteredMyTasks.length > 6 && (
           <button
             onClick={() => setShowAllTasks((p) => !p)}
-            className="w-full text-center text-xs text-[#737373] hover:text-[#E0B954] py-2.5 transition-colors"
+            className="w-full text-center text-xs text-[#737373] hover:text-white py-2.5 transition-colors"
           >
             {showAllTasks ? 'Show less' : `Show ${filteredMyTasks.length - 6} more`}
           </button>

@@ -9,13 +9,7 @@ interface CapacityTileProps {
   onClick: () => void;
 }
 
-const CapacityTile = ({
-  isLoading,
-  hasData,
-  statusColor,
-  used,
-  onClick,
-}: CapacityTileProps) => {
+const CapacityTile = ({ isLoading, hasData, statusColor, used, onClick }: CapacityTileProps) => {
   const pct = Math.min(100, Math.round((used / WEEKLY_CAPACITY) * 100));
   return (
     <button
@@ -26,7 +20,7 @@ const CapacityTile = ({
     >
       <span
         className="w-[42px] h-[42px] rounded-[11px] flex items-center justify-center flex-shrink-0"
-        style={{ backgroundColor: 'rgba(224,185,84,0.14)', color: '#E0B954' }}
+        style={{ backgroundColor: 'rgba(255,255,255,0.06)', color: 'var(--text-mid)' }}
       >
         <Gauge className="w-[18px] h-[18px]" />
       </span>
@@ -35,7 +29,10 @@ const CapacityTile = ({
           <span className="h-7 w-16 bg-[rgba(255,255,255,0.06)] rounded-lg animate-pulse" />
         ) : (
           <span className="flex items-baseline gap-1.5 leading-none">
-            <span className="text-[28px] font-bold tracking-[-0.02em]" style={{ color: statusColor }}>
+            <span
+              className="text-[28px] font-bold tracking-[-0.02em]"
+              style={{ color: statusColor }}
+            >
               {used}
             </span>
             <span className="text-[13px] text-[#737373] font-semibold">/ {WEEKLY_CAPACITY}h</span>
@@ -48,7 +45,7 @@ const CapacityTile = ({
               style={{ width: `${pct}%`, backgroundColor: statusColor }}
             />
           </span>
-          <span className="text-[11px] text-[#8A8A8A] flex-shrink-0">Capacity</span>
+          <span className="text-[11px] text-muted-foreground flex-shrink-0">Capacity</span>
         </span>
       </span>
     </button>

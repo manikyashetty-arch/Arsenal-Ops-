@@ -125,7 +125,7 @@ const ProjectsPage = () => {
           <h1 className="text-[23px] font-bold tracking-[-0.02em] text-white m-0">
             {greeting}, {firstName}
           </h1>
-          <span className="text-sm text-[#8A8A8A]">{dateStr}</span>
+          <span className="text-sm text-muted-foreground">{dateStr}</span>
         </div>
 
         <div className="flex-shrink-0">

@@ -24,29 +24,33 @@ export const TYPE_CONFIG = {
 } as const;
 
 // 4-status workflow (backlog is a sprint-placement state, not a workflow status).
+// Colors follow Style Guide 1a — a cool workflow ramp; gold is brand-only, so
+// in_progress is purple, not gold. Mirrors --status-* in src/index.css.
 export const STATUS_CONFIG = {
-  todo: { label: 'To Do', color: '#60A5FA', icon: Plus, gradient: 'from-[#60A5FA]/10' },
+  todo: { label: 'To Do', color: '#3B82F6', icon: Plus, gradient: 'from-[#3B82F6]/10' },
   in_progress: {
     label: 'In Progress',
-    color: '#E0B954',
+    color: '#6E62E6',
     icon: Clock,
-    gradient: 'from-[#E0B954]/10',
+    gradient: 'from-[#6E62E6]/10',
   },
   in_review: {
     label: 'In Review',
-    color: '#A78BFA',
+    color: '#D06BB0',
     icon: AlertCircle,
-    gradient: 'from-[#A78BFA]/10',
+    gradient: 'from-[#D06BB0]/10',
   },
-  done: { label: 'Done', color: '#34D399', icon: CheckCircle2, gradient: 'from-[#34D399]/10' },
-  backlog: { label: 'Backlog', color: '#555555', icon: Inbox, gradient: 'from-[#555555]/10' },
+  done: { label: 'Done', color: '#40BE86', icon: CheckCircle2, gradient: 'from-[#40BE86]/10' },
+  backlog: { label: 'Backlog', color: '#64748B', icon: Inbox, gradient: 'from-[#64748B]/10' },
 } as const;
 
+// Warm severity ramp (Style Guide 1a). Low/medium stay muted grey so only
+// high/critical draw the eye; critical shares the danger-red with Blocked.
 export const PRIORITY_COLOR: Record<string, string> = {
-  critical: '#EF4444',
-  high: '#F97316',
-  medium: '#F59E0B',
-  low: '#737373',
+  critical: '#E5484D',
+  high: '#EC7A3C',
+  medium: '#94A3B8',
+  low: '#64748B',
 };
 
 /**
@@ -63,28 +67,28 @@ export interface PriorityStyle {
 
 export const PRIORITY_STYLE: Record<string, PriorityStyle> = {
   critical: {
-    border: 'border-[#EF4444]/60',
-    text: 'text-[#EF4444]',
-    bg: 'bg-[#EF4444]/10',
-    hex: '#EF4444',
+    border: 'border-[#E5484D]/60',
+    text: 'text-[#E5484D]',
+    bg: 'bg-[#E5484D]/10',
+    hex: '#E5484D',
   },
   high: {
-    border: 'border-[#F97316]/60',
-    text: 'text-[#F97316]',
-    bg: 'bg-[#F97316]/10',
-    hex: '#F97316',
+    border: 'border-[#EC7A3C]/60',
+    text: 'text-[#EC7A3C]',
+    bg: 'bg-[#EC7A3C]/10',
+    hex: '#EC7A3C',
   },
   medium: {
-    border: 'border-[#F59E0B]/50',
-    text: 'text-[#F59E0B]',
-    bg: 'bg-[#F59E0B]/10',
-    hex: '#F59E0B',
+    border: 'border-[#94A3B8]/50',
+    text: 'text-[#94A3B8]',
+    bg: 'bg-[#94A3B8]/10',
+    hex: '#94A3B8',
   },
   low: {
-    border: 'border-[#737373]/50',
-    text: 'text-[#737373]',
-    bg: 'bg-[#737373]/10',
-    hex: '#737373',
+    border: 'border-[#64748B]/50',
+    text: 'text-[#64748B]',
+    bg: 'bg-[#64748B]/10',
+    hex: '#64748B',
   },
 };
 

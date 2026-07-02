@@ -37,7 +37,7 @@ export interface ProjectGroup {
 export const WEEKLY_CAPACITY = 40;
 
 const PROJECT_COLOR_PALETTE = [
-  '#E0B954',
+  '#8A8A8A',
   '#A78BFA',
   '#34D399',
   '#60A5FA',
@@ -53,7 +53,7 @@ export const projectColor = (projectId: number) =>
   PROJECT_COLOR_PALETTE[Math.abs(projectId) % PROJECT_COLOR_PALETTE.length];
 
 export const statusBadgeColor = (status: string) => {
-  if (status === 'in_progress') return '#E0B954';
+  if (status === 'in_progress') return '#8A8A8A';
   if (status === 'in_review') return '#A78BFA';
   if (status === 'done') return '#34D399';
   if (status === 'blocked') return '#EF4444';
