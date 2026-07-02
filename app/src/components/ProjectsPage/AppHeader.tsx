@@ -1,4 +1,4 @@
-import { Settings, LogOut } from 'lucide-react';
+import { SlidersHorizontal, LogOut } from 'lucide-react';
 import arsenalOpsLogo from '@/assets/images/arsenal-ops-logo.webp';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/contexts/AuthContext';
@@ -44,7 +44,7 @@ const AppHeader = ({ user, onAdminClick, onLogout }: AppHeaderProps) => {
               onClick={onAdminClick}
               className="text-[#737373] hover:text-white hover:bg-[rgba(244,246,255,0.05)] rounded-xl px-3"
             >
-              <Settings className="w-4 h-4 mr-2" />
+              <SlidersHorizontal className="w-4 h-4 mr-2" />
               Admin
             </Button>
           )}

@@ -7,6 +7,37 @@ export const priorityColor = (priority: string): string => {
   return '#737373';
 };
 
+// Deterministic per-project accent for the small color dot on a task row.
+// Keyed on project_id so the same project always gets the same swatch.
+const PROJECT_DOT_PALETTE = [
+  '#E0B954',
+  '#5896DE',
+  '#9C82E0',
+  '#40BE86',
+  '#E8743C',
+  '#EC4899',
+  '#22D3EE',
+  '#F5A623',
+];
+export const projectDotColor = (projectId: number | null | undefined): string => {
+  const idx = Math.abs(projectId ?? 0) % PROJECT_DOT_PALETTE.length;
+  return PROJECT_DOT_PALETTE[idx] ?? '#8A8A8A';
+};
+
+// "Focus" = what needs you first: overdue OR due today, excluding done.
+export const isDueToday = (dueDate: string | null | undefined): boolean => {
+  if (!dueDate) return false;
+  const d = new Date(dueDate);
+  const now = new Date();
+  return (
+    d.getFullYear() === now.getFullYear() &&
+    d.getMonth() === now.getMonth() &&
+    d.getDate() === now.getDate()
+  );
+};
+export const isFocusTask = (task: MyTask): boolean =>
+  task.status !== 'done' && (task.is_overdue || isDueToday(task.due_date));
+
 export const sortPersonalTasks = (a: PersonalTask, b: PersonalTask) => {
   if (a.status === 'done' && b.status !== 'done') return 1;
   if (a.status !== 'done' && b.status === 'done') return -1;
@@ -41,4 +72,4 @@ export const sortCompletedTasks = (tasks: MyTask[]) => {
   });
 };
 
-export type MyTaskTab = 'upcoming' | 'overdue' | 'completed' | 'personal';
+export type MyTaskTab = 'focus' | 'upcoming' | 'overdue' | 'completed' | 'personal';

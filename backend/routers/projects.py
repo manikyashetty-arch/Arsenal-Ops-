@@ -10,7 +10,7 @@ from typing import cast
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
-from sqlalchemy import insert, select
+from sqlalchemy import delete, insert, select
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import flag_modified
@@ -20,6 +20,7 @@ from database import get_db
 from models.architecture import Architecture
 from models.developer import Developer, project_developers
 from models.project import Project
+from models.project_favorite import project_favorites
 from models.user import User
 from routers.auth import get_current_user, require_capability
 from services.github_service import GitHubService, github_service
@@ -276,6 +277,7 @@ class ProjectDetailResponse(BaseModel):
     selected_architecture: ProjectArchitectureResponse | None = None
     category_id: int | None = None
     category_name: str | None = None
+    is_favorite: bool = False
 
 
 def _empty_stats() -> dict:
@@ -385,13 +387,22 @@ def _architectures_by_project(project_ids: list[int], db: Session) -> dict:
     return by_project
 
 
-def format_projects_batch(projects: list[Project], db: Session) -> list[dict]:
+def format_projects_batch(
+    projects: list[Project],
+    db: Session,
+    favorite_project_ids: set[int] | None = None,
+) -> list[dict]:
     """Serialize a list of projects using batched DB lookups.
 
     Total query count: 3 (stats, developers, architectures) regardless of how
     many projects are passed in. Output is identical to calling
     ``format_project`` on each project individually.
+
+    ``favorite_project_ids`` is the set of project ids the requesting user has
+    starred; pass it so each row carries the correct ``is_favorite``. When
+    ``None`` (callers that don't surface favorites), every row is ``False``.
     """
+    favorite_project_ids = favorite_project_ids or set()
     project_ids = [p.id for p in projects]
     stats_by_id = get_work_item_stats_batch(project_ids, db)
     devs_by_id = _developers_by_project(project_ids, db)
@@ -430,6 +441,7 @@ def format_projects_batch(projects: list[Project], db: Session) -> list[dict]:
                 # is already in memory and adds no extra query.
                 "category_id": project.category_id,
                 "category_name": project.category.name if project.category else None,
+                "is_favorite": project.id in favorite_project_ids,
                 # NOTE: the full `architectures` list is intentionally NOT
                 # serialized here — no client reads project.architectures (the
                 # AI planning modal loads variants from /api/prd/analyze-*, a
@@ -441,9 +453,19 @@ def format_projects_batch(projects: list[Project], db: Session) -> list[dict]:
     return out
 
 
-def format_project(project: Project, db: Session) -> dict:
+def format_project(
+    project: Project, db: Session, favorite_project_ids: set[int] | None = None
+) -> dict:
     """Single-project wrapper around ``format_projects_batch`` for backward compat."""
-    return format_projects_batch([project], db)[0]
+    return format_projects_batch([project], db, favorite_project_ids)[0]
+
+
+def _favorite_project_ids(user: User, db: Session) -> set[int]:
+    """Set of project ids the given user has starred."""
+    rows = db.execute(
+        select(project_favorites.c.project_id).where(project_favorites.c.user_id == user.id)
+    ).all()
+    return {row[0] for row in rows}
 
 
 @router.get("/categories")
@@ -640,7 +662,7 @@ def list_projects(
         query = query.filter(Project.category_id == category_id)
 
     projects = query.all()
-    return format_projects_batch(projects, db)
+    return format_projects_batch(projects, db, _favorite_project_ids(current_user, db))
 
 
 @router.get("/{project_id}", responses={200: {"model": ProjectDetailResponse}})
@@ -649,7 +671,55 @@ def get_project(
 ):
     """Get a project with work item stats (requires access)"""
     project = require_project_access(project_id, current_user, db)
-    return format_project(project, db)
+    return format_project(project, db, _favorite_project_ids(current_user, db))
+
+
+class FavoriteResponse(BaseModel):
+    """Result of toggling a project favorite for the current user."""
+
+    is_favorite: bool
+
+
+@router.post("/{project_id}/favorite", responses={200: {"model": FavoriteResponse}})
+def add_favorite(
+    project_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Star a project for the current user (idempotent).
+
+    Requires the same access as viewing the project — you can't favorite what
+    you can't see. Favorites are per-user, so this only touches the caller's
+    rows.
+    """
+    require_project_access(project_id, current_user, db)
+    exists = db.execute(
+        select(project_favorites.c.project_id).where(
+            project_favorites.c.user_id == current_user.id,
+            project_favorites.c.project_id == project_id,
+        )
+    ).first()
+    if not exists:
+        db.execute(insert(project_favorites).values(user_id=current_user.id, project_id=project_id))
+        db.commit()
+    return {"is_favorite": True}
+
+
+@router.delete("/{project_id}/favorite", responses={200: {"model": FavoriteResponse}})
+def remove_favorite(
+    project_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Unstar a project for the current user (idempotent)."""
+    db.execute(
+        delete(project_favorites).where(
+            project_favorites.c.user_id == current_user.id,
+            project_favorites.c.project_id == project_id,
+        )
+    )
+    db.commit()
+    return {"is_favorite": False}
 
 
 @router.put("/{project_id}")
