@@ -58,7 +58,7 @@ const TimelineView: React.FC<TimelineViewProps> = ({
           label: `🎯 ${m.title}`,
           start: due,
           end: due,
-          color: m.completed_at ? '#E0B954' : '#EC4899',
+          color: m.completed_at ? '#40BE86' : '#EC4899',
           type: 'milestone' as const,
           progress: m.completed_at ? 100 : 0,
         };
@@ -73,7 +73,7 @@ const TimelineView: React.FC<TimelineViewProps> = ({
           label: `⭐ ${g.title}`,
           start: due,
           end: due,
-          color: g.status === 'completed' ? '#E0B954' : '#F59E0B',
+          color: g.status === 'completed' ? '#40BE86' : '#F59E0B',
           type: 'goal' as const,
           progress: g.status === 'completed' ? 100 : g.progress || 0,
         };

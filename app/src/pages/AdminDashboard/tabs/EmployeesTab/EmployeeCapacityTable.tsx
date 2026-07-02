@@ -3,6 +3,7 @@ import React from 'react';
 import type { EmployeeResponse } from '@/client';
 import { Button } from '@/components/ui/button';
 import { Empty, EmptyDescription } from '@/components/ui/empty';
+import { avatarColor } from '@/lib/avatarColor';
 import EmployeeExpandedRow, { type ProjectGroup } from './EmployeeExpandedRow';
 import { projectColor } from './types';
 import type { DeveloperCapacity, EmployeeRow, EmployeeSort, EmployeeSortKey } from './types';
@@ -125,6 +126,7 @@ const EmployeeCapacityTable: React.FC<EmployeeCapacityTableProps> = ({
             const projectsByHours = Object.values(projectGroupsMap).sort(
               (a, b) => b.total - a.total,
             );
+            const ac = avatarColor(emp.id);
 
             return (
               <React.Fragment key={emp.id}>
@@ -137,7 +139,14 @@ const EmployeeCapacityTable: React.FC<EmployeeCapacityTableProps> = ({
                 >
                   <td className="px-5 py-4">
                     <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-full bg-[rgba(224,185,84,0.2)] flex items-center justify-center text-sm font-medium text-[#E0B954]">
+                      <div
+                        className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium"
+                        style={{
+                          backgroundColor: ac.bg,
+                          color: ac.fg,
+                          border: `1px solid ${ac.ring}`,
+                        }}
+                      >
                         {emp.name.charAt(0).toUpperCase()}
                       </div>
                       <div>
@@ -207,7 +216,7 @@ const EmployeeCapacityTable: React.FC<EmployeeCapacityTableProps> = ({
                       <span
                         className={`text-xs font-medium whitespace-nowrap ${
                           capacityStatus === 'Available'
-                            ? 'text-[#E0B954]'
+                            ? 'text-brand'
                             : capacityStatus === 'Busy'
                               ? 'text-[#F59E0B]'
                               : 'text-[#a3a3a3]'

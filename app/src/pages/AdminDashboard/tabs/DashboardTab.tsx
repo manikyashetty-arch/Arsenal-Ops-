@@ -24,23 +24,25 @@ interface DashboardTabProps {
 const DashboardTab = ({ stats, setActiveTab }: DashboardTabProps) => {
   const statusColor = (s: string) => {
     const key = s.toLowerCase();
-    if (key === 'done' || key === 'completed' || key === 'closed') return '#34D399';
-    if (key === 'in_progress' || key === 'in progress') return '#E0B954';
-    if (key === 'in_review' || key === 'in review' || key === 'review') return '#A78BFA';
-    if (key === 'blocked') return '#EF4444';
+    if (key === 'done' || key === 'completed' || key === 'closed') return '#40BE86';
+    if (key === 'in_progress' || key === 'in progress') return '#6E62E6';
+    if (key === 'in_review' || key === 'in review' || key === 'review') return '#D06BB0';
+    if (key === 'blocked') return '#E5484D';
     if (key === 'cancelled' || key === 'canceled' || key === 'wontfix') return '#525252';
     if (key === 'backlog') return '#64748B';
-    if (key === 'todo' || key === 'to_do' || key === 'to do') return '#94A3B8';
-    if (key === 'open' || key === 'new') return '#60A5FA';
+    if (key === 'todo' || key === 'to_do' || key === 'to do') return '#3B82F6';
+    if (key === 'open' || key === 'new') return '#3B82F6';
     return '#737373';
   };
+  // Style Guide 1a priority ramp (literal hexes: these feed a recharts donut,
+  // which can't read CSS vars). Kept in lockstep with PRIORITY_COLOR.
   const priorityColor = (p: string) => {
     const key = p.toLowerCase();
-    if (key === 'critical') return '#EF4444';
-    if (key === 'high') return '#F97316';
-    if (key === 'medium') return '#F59E0B';
-    if (key === 'low') return '#E0B954';
-    return '#737373';
+    if (key === 'critical') return '#E5484D';
+    if (key === 'high') return '#EC7A3C';
+    if (key === 'medium') return '#94A3B8';
+    if (key === 'low') return '#64748B';
+    return '#64748B';
   };
   const priorityOrder = ['critical', 'high', 'medium', 'low'];
   const statusData = Object.entries(stats.tickets_by_status)
@@ -78,27 +80,27 @@ const DashboardTab = ({ stats, setActiveTab }: DashboardTabProps) => {
       label: 'Total Employees',
       value: stats.total_employees,
       icon: Users,
-      color: '#E0B954',
+      color: '#A6A29C',
       tab: 'employees',
     },
     {
       label: 'Total Projects',
       value: stats.total_projects,
       icon: FolderKanban,
-      color: '#E0B954',
+      color: '#A6A29C',
       tab: 'projects',
     },
     {
       label: 'Total Tickets',
       value: stats.total_tickets,
       icon: Ticket,
-      color: '#F59E0B',
+      color: '#A6A29C',
     },
     {
       label: 'Active Sprints',
       value: stats.active_sprints,
       icon: Calendar,
-      color: '#EC4899',
+      color: '#A6A29C',
     },
   ];
 
@@ -121,7 +123,7 @@ const DashboardTab = ({ stats, setActiveTab }: DashboardTabProps) => {
                 : {})}
               className={`text-left bg-[#0d0d0d] border border-[rgba(255,255,255,0.05)] rounded-xl p-5 transition-colors ${
                 clickable
-                  ? 'cursor-pointer hover:border-[rgba(224,185,84,0.3)] hover:bg-[rgba(255,255,255,0.015)] focus:outline-none focus:ring-1 focus:ring-[#E0B954]'
+                  ? 'cursor-pointer hover:border-[rgba(255,255,255,0.12)] hover:bg-[rgba(255,255,255,0.015)] focus:outline-none focus:ring-1 focus:ring-brand'
                   : ''
               }`}
             >

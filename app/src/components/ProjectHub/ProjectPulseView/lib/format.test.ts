@@ -32,6 +32,6 @@ describe('CATEGORY_COLORS', () => {
   it('has the 5 spend categories with stable keys/colors', () => {
     expect(CATEGORY_COLORS).toHaveLength(5);
     const dev = CATEGORY_COLORS.find((c) => c.key === 'dev');
-    expect(dev?.color).toBe('#E0B954');
+    expect(dev?.color).toBe('#A6A29C');
   });
 });
