@@ -11,10 +11,10 @@ const TYPE_CONFIG = {
 };
 
 const PRIORITY_COLORS = {
-  critical: { hex: '#EF4444' },
-  high: { hex: '#F97316' },
-  medium: { hex: '#F59E0B' },
-  low: { hex: '#737373' },
+  critical: { hex: '#E5484D' },
+  high: { hex: '#EC7A3C' },
+  medium: { hex: '#94A3B8' },
+  low: { hex: '#64748B' },
 };
 
 interface GeneratedTicketCardProps {

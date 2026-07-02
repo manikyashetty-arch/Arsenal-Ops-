@@ -2,6 +2,7 @@
 // Co-located here so the orchestrator, filter bar, capacity overview, and the
 // capacity table all reference one definition (CONVENTIONS rule 6).
 import type { EmployeeResponse } from '@/client';
+import { getStatusColor } from '@/lib/workItemConfig';
 
 export interface CapacityTicket {
   id: number;
@@ -84,7 +85,7 @@ export interface EmployeeRow {
 }
 
 export const PROJECT_COLOR_PALETTE = [
-  '#E0B954',
+  '#EF6461',
   '#A78BFA',
   '#34D399',
   '#60A5FA',
@@ -99,12 +100,9 @@ export const PROJECT_COLOR_PALETTE = [
 export const projectColor = (projectId: number) =>
   PROJECT_COLOR_PALETTE[Math.abs(projectId) % PROJECT_COLOR_PALETTE.length];
 
-export const statusBadgeColor = (status: string) => {
-  if (status === 'in_progress') return '#6E62E6';
-  if (status === 'in_review') return '#B667D6';
-  if (status === 'done') return '#40BE86';
-  if (status === 'blocked') return '#EF4444';
-  return '#737373';
-};
+// Delegates to the single source (Style Guide 1a cool workflow ramp); `blocked`
+// isn't a workflow status in STATUS_CONFIG, so it keeps the danger-red here.
+export const statusBadgeColor = (status: string) =>
+  status === 'blocked' ? '#E5484D' : getStatusColor(status);
 
 export const WEEKLY_CAPACITY_HRS = 40;

@@ -23,10 +23,10 @@ export interface NewTaskForm {
 }
 
 export const PRIORITY_CONFIG: Record<string, { color: string; label: string }> = {
-  critical: { color: '#EF4444', label: 'Critical' },
-  high: { color: '#F97316', label: 'High' },
-  medium: { color: '#F59E0B', label: 'Medium' },
-  low: { color: '#737373', label: 'Low' },
+  critical: { color: '#E5484D', label: 'Critical' },
+  high: { color: '#EC7A3C', label: 'High' },
+  medium: { color: '#94A3B8', label: 'Medium' },
+  low: { color: '#64748B', label: 'Low' },
 };
 
 export const DUE_DATE_CALENDAR_CLASS_NAMES = {

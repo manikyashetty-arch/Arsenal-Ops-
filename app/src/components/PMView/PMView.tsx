@@ -88,7 +88,7 @@ export default function PMView({ projectId, token, sprints = [] }: PMViewProps) 
                             variant="outline"
                             size="sm"
                             onClick={() => setWeekFilter(weekFilter === 'all' ? 'with-activity' : 'all')}
-                            className={`border-[rgba(255,255,255,0.08)] text-xs ${weekFilter === 'with-activity' ? 'bg-[#E0B954]/20 text-[#E0B954]' : 'text-[#737373]'}`}
+                            className={`border-[rgba(255,255,255,0.08)] text-xs ${weekFilter === 'with-activity' ? 'bg-[rgba(255,255,255,0.08)] text-white' : 'text-[#737373]'}`}
                         >
                             <Filter className="w-3 h-3 mr-1" />
                             {weekFilter === 'all' ? 'Show All' : 'With Activity'}
@@ -111,7 +111,7 @@ export default function PMView({ projectId, token, sprints = [] }: PMViewProps) 
                                     .filter(week => weekFilter === 'all' || week.logged_hours > 0 || week.allocated_hours > 0 || week.items_completed > 0)
                                     .slice(0, 10)
                                     .map((week, idx) => (
-                                    <tr key={idx} className={`border-b border-[rgba(255,255,255,0.03)] hover:bg-[rgba(255,255,255,0.02)] ${week.logged_hours > 0 ? 'bg-[#E0B954]/5' : ''}`}>
+                                    <tr key={idx} className={`border-b border-[rgba(255,255,255,0.03)] hover:bg-[rgba(255,255,255,0.02)] ${week.logged_hours > 0 ? 'bg-[rgba(255,255,255,0.03)]' : ''}`}>
                                         <td className="py-3 px-4 text-sm text-white font-medium">
                                             {(() => {
                                                 const [year, month, day] = week.week.split('-');
@@ -121,7 +121,7 @@ export default function PMView({ projectId, token, sprints = [] }: PMViewProps) 
                                         </td>
                                         <td className="py-3 px-4 text-sm text-right text-white">{week.allocated_hours}h</td>
                                         <td className="py-3 px-4 text-sm text-right">
-                                            <span className={week.logged_hours > 0 ? 'text-[#E0B954] font-semibold' : 'text-[#737373]'}>
+                                            <span className={week.logged_hours > 0 ? 'text-muted-foreground font-semibold' : 'text-[#737373]'}>
                                                 {week.logged_hours}h
                                             </span>
                                         </td>

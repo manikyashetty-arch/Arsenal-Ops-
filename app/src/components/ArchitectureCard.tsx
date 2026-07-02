@@ -32,7 +32,7 @@ const ArchitectureCard = ({
     <div
       className={`bg-[rgba(255,255,255,0.02)] border rounded-2xl overflow-hidden transition-all ${
         isSelected
-          ? 'border-[#E0B954] shadow-lg shadow-[#E0B954]/20'
+          ? 'border-info shadow-lg shadow-info/20'
           : 'border-[rgba(255,255,255,0.05)] hover:border-[rgba(244,246,255,0.12)]'
       }`}
     >
@@ -53,7 +53,7 @@ const ArchitectureCard = ({
             <h3 className="text-lg font-semibold text-white">{architecture.name}</h3>
           </div>
           {isSelected && (
-            <div className="w-8 h-8 rounded-full bg-[#E0B954] flex items-center justify-center">
+            <div className="w-8 h-8 rounded-full bg-info flex items-center justify-center">
               <CheckCircle2 className="w-5 h-5 text-white" />
             </div>
           )}

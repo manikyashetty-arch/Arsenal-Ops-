@@ -24,10 +24,10 @@ const TYPE_CONFIG = {
 };
 
 const PRIORITY_COLORS = {
-  critical: { hex: '#EF4444' },
-  high: { hex: '#F97316' },
-  medium: { hex: '#F59E0B' },
-  low: { hex: '#737373' },
+  critical: { hex: '#E5484D' },
+  high: { hex: '#EC7A3C' },
+  medium: { hex: '#94A3B8' },
+  low: { hex: '#64748B' },
 };
 
 export interface KanbanCardProps {
@@ -163,7 +163,7 @@ const KanbanCard = ({
         {item.assignee &&
           item.assignee !== 'Unassigned' &&
           (() => {
-            const c = avatarColor(item.assignee);
+            const c = avatarColor(item.assignee_id ?? item.assignee);
             return (
               <div
                 className="w-6 h-6 rounded-full flex items-center justify-center"

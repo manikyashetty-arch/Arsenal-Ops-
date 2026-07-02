@@ -38,21 +38,16 @@ export const UNCATEGORIZED_OPTION = '__uncategorized__';
 // share the same visual vocabulary. Tints (`bg`) are the hex `color` at ~12%
 // alpha for use as soft tile backgrounds.
 export const STATUS_ACCENTS: Record<StatusBucket, { color: string; bg: string; label: string }> = {
-  todo_backlog: { color: '#4F9BE0', bg: 'rgba(79,155,224,0.12)', label: 'ToDo / Backlog' },
+  todo_backlog: { color: '#3B82F6', bg: 'rgba(59,130,246,0.12)', label: 'ToDo / Backlog' },
   in_progress: { color: '#6E62E6', bg: 'rgba(110,98,230,0.12)', label: 'In progress' },
-  in_review: { color: '#B667D6', bg: 'rgba(182,103,214,0.12)', label: 'In review' },
+  in_review: { color: '#D06BB0', bg: 'rgba(208,107,176,0.12)', label: 'In review' },
   done_this_week: { color: '#40BE86', bg: 'rgba(64,190,134,0.14)', label: 'Done' },
 };
 
-// Priority-accent palette for ticket rows in the expanded drill-down. Same
-// scale used by the kanban card / item detail drawer so the dot encodes a
-// familiar urgency signal at a glance.
-export const PRIORITY_COLOR: Record<string, string> = {
-  critical: '#EF4444',
-  high: '#F97316',
-  medium: '#F59E0B',
-  low: '#737373',
-};
+// Priority-accent palette for ticket rows in the expanded drill-down.
+// Re-exported from the single source of truth so the dot color never drifts
+// from the rest of the app (Style Guide 1a warm severity ramp).
+export { PRIORITY_COLOR } from '@/lib/workItemConfig';
 
 export const STATUS_BUTTONS: { id: StatusBucket; label: string }[] = [
   // ToDo/Backlog first — it's the earliest workflow status, so reading

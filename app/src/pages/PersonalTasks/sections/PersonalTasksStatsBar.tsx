@@ -12,7 +12,7 @@ const PersonalTasksStatsBar = ({ stats }: PersonalTasksStatsBarProps) => {
       {[
         { label: 'Total Tasks', value: stats.total, color: 'var(--text-mid)' },
         { label: 'Pending', value: stats.pending, color: '#F59E0B' },
-        { label: 'Completed', value: stats.completed, color: '#34D399' },
+        { label: 'Completed', value: stats.completed, color: '#40BE86' },
       ].map((stat) => (
         <div key={stat.label} className="relative group">
           <div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-[rgba(255,255,255,0.05)] to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />

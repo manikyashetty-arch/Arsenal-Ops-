@@ -206,7 +206,7 @@ const ExpandedProjectRow = ({ project }: ExpandedProjectRowProps) => {
                           className="h-full rounded-full transition-all"
                           style={{
                             width: `${progress}%`,
-                            backgroundColor: isComplete ? '#34D399' : 'var(--progress)',
+                            backgroundColor: isComplete ? 'var(--status-done)' : 'var(--progress)',
                           }}
                         />
                       </div>

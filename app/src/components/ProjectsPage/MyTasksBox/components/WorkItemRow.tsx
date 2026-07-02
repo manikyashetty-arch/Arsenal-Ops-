@@ -157,7 +157,7 @@ const WorkItemRow = ({
                     day_button:
                       'text-white hover:bg-[rgba(255,255,255,0.08)] hover:text-white rounded-lg h-9 w-9 transition-all',
                     day_selected:
-                      'bg-gradient-to-br from-[#E0B954] to-[#C79E3B] text-[#0d0d0d] hover:from-[#E0B954] hover:to-[#C79E3B] hover:text-[#0d0d0d] font-bold shadow-lg shadow-[#E0B954]/30',
+                      'bg-brand text-[#0d0d0d] hover:bg-brand hover:text-[#0d0d0d] font-bold',
                     day_today: 'ring-1 ring-info/40 text-info font-semibold',
                     day_outside: 'text-[#3a3a3a]',
                     day_disabled: 'text-[#2a2a2a] opacity-40 cursor-not-allowed',
