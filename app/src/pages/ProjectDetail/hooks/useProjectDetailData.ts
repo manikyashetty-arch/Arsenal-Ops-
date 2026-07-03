@@ -132,11 +132,13 @@ export const useProjectDetailData = (
     enabled: !!id && !overviewCovers,
   });
   const project = projectQuery.data ?? null;
-  // projectQuery is disabled while the overview covers it, and a disabled query
-  // reports `isLoading: true` (status 'pending' + not fetching). Anchor the
-  // first-paint spinner on the overview in that case so it clears once the
-  // overview seeds `['project', id]`; only fall through to projectQuery.isLoading
-  // on the overview-failed fallback path where projectQuery actually fetches.
+  // projectQuery is disabled while the overview covers it. A disabled query
+  // reports `isLoading: false` (v5: `isLoading = isPending && isFetching`, and a
+  // disabled query is not fetching) — so reading projectQuery.isLoading here
+  // would report "done" while `['project', id]` is still unseeded (project null),
+  // flashing an empty render. Anchor the first-paint spinner on the overview so
+  // it clears only once the overview resolves and seeds the cache; fall through
+  // to projectQuery.isLoading on the overview-failed path where it actually fetches.
   const isLoading = overviewCovers ? overviewQuery.isLoading : projectQuery.isLoading;
   const accessDenied =
     (projectQuery.error instanceof ApiError && projectQuery.error.status === 403) ||
@@ -238,10 +240,12 @@ export const useProjectDetailData = (
   const linksLoading = overviewCovers ? overviewQuery.isLoading : linksQuery.isLoading;
 
   // hubLoading: true until all hub sub-resources are done loading. goals /
-  // milestones / activities / analytics / prd are gated behind the overview
-  // (a disabled query reports isLoading: true), so anchor their contribution on
-  // the overview while it covers them; only consult the individual queries on
-  // the overview-failed fallback path where they actually fetch. hubWorkItems is
+  // milestones / activities / analytics / prd are gated behind the overview.
+  // A disabled query reports `isLoading: false` (v5: isLoading = isPending &&
+  // isFetching), so consulting a gated query's isLoading while the overview
+  // covers it would report a misleading "done"; anchor their contribution on the
+  // overview in that case, and consult the individual queries only on the
+  // overview-failed fallback path where they actually fetch. hubWorkItems is
   // never seeded by the overview, so it always contributes its own loading state.
   const seededHubLoading = overviewCovers
     ? overviewQuery.isLoading
