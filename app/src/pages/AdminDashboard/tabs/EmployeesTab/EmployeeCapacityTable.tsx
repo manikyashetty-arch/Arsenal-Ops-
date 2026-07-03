@@ -184,30 +184,28 @@ const EmployeeCapacityTable: React.FC<EmployeeCapacityTableProps> = ({
                             <span>No tickets this week</span>
                           ) : (
                             <>
-                              {projectsByHours.slice(0, 3).map((p, i) => (
-                                <React.Fragment key={p.projectId}>
-                                  {i > 0 && (
-                                    <span className="text-[rgba(255,255,255,0.15)]">·</span>
-                                  )}
-                                  <span className="flex items-center gap-1">
-                                    <span
-                                      className="w-1.5 h-1.5 rounded-sm"
-                                      style={{
-                                        backgroundColor: projectColor(p.projectId),
-                                      }}
-                                    />
-                                    <span className="truncate max-w-[120px]" title={p.projectName}>
-                                      {p.projectName}
-                                    </span>
-                                    <span>· {p.total}h</span>
+                              {/* Items are separated by the flex `gap-2` + the
+                                  leading color swatch, NOT by standalone `·`
+                                  spans — in a flex-wrap row a bare separator span
+                                  orphans at a line break and reads as a dangling
+                                  "20h ·". The only `·` left is glued between a
+                                  name and its hours, so it can never trail. */}
+                              {projectsByHours.slice(0, 3).map((p) => (
+                                <span key={p.projectId} className="flex items-center gap-1 min-w-0">
+                                  <span
+                                    className="w-1.5 h-1.5 rounded-sm shrink-0"
+                                    style={{
+                                      backgroundColor: projectColor(p.projectId),
+                                    }}
+                                  />
+                                  <span className="truncate max-w-[120px]" title={p.projectName}>
+                                    {p.projectName}
                                   </span>
-                                </React.Fragment>
+                                  <span className="shrink-0">· {p.total}h</span>
+                                </span>
                               ))}
                               {projectsByHours.length > 3 && (
-                                <>
-                                  <span className="text-[rgba(255,255,255,0.15)]">·</span>
-                                  <span>+{projectsByHours.length - 3} more</span>
-                                </>
+                                <span className="shrink-0">+{projectsByHours.length - 3} more</span>
                               )}
                             </>
                           )}
