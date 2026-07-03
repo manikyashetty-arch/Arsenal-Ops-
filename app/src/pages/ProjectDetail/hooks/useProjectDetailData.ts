@@ -119,15 +119,28 @@ export const useProjectDetailData = (
     queryClient.setQueryData(['project', id, 'links'], d.links);
   }, [overviewQuery.data, id, queryClient]);
 
+  // True once the overview has seeded caches, or while it's still in flight.
+  // The 8 seeded queries below only fire as a fallback if the overview
+  // definitively failed (data undefined, isLoading false) — so on cold load we
+  // issue one `/overview` request instead of racing it with ~8 per-resource ones.
+  const overviewCovers = !!overviewQuery.data || overviewQuery.isLoading;
+
   // ── react-query: project ────────────────────────────────────────────────
   const projectQuery = useQuery<ProjectDetailResponse>({
     queryKey: ['project', id],
     queryFn: () => apiFetch<ProjectDetailResponse>(`/api/projects/${id}`),
-    enabled: !!id,
+    enabled: !!id && !overviewCovers,
   });
   const project = projectQuery.data ?? null;
-  const isLoading = projectQuery.isLoading;
-  const accessDenied = projectQuery.error instanceof ApiError && projectQuery.error.status === 403;
+  // projectQuery is disabled while the overview covers it, and a disabled query
+  // reports `isLoading: true` (status 'pending' + not fetching). Anchor the
+  // first-paint spinner on the overview in that case so it clears once the
+  // overview seeds `['project', id]`; only fall through to projectQuery.isLoading
+  // on the overview-failed fallback path where projectQuery actually fetches.
+  const isLoading = overviewCovers ? overviewQuery.isLoading : projectQuery.isLoading;
+  const accessDenied =
+    (projectQuery.error instanceof ApiError && projectQuery.error.status === 403) ||
+    (overviewQuery.error instanceof ApiError && overviewQuery.error.status === 403);
 
   // ── react-query: developers (shared global query) ───────────────────────
   const developersQuery = useAllDevelopers<DeveloperResponse>();
@@ -137,7 +150,7 @@ export const useProjectDetailData = (
   const sprintsQuery = useQuery<SprintResponse[]>({
     queryKey: ['sprints', id],
     queryFn: () => apiFetch<SprintResponse[]>(`/api/workitems/projects/${id}/sprints`),
-    enabled: !!id,
+    enabled: !!id && !overviewCovers,
   });
   const sprints = sprintsQuery.data ?? [];
 
@@ -179,7 +192,7 @@ export const useProjectDetailData = (
   const goalsQuery = useQuery<GoalResponse[]>({
     queryKey: ['hubData', id, 'goals'],
     queryFn: () => apiFetch<GoalResponse[]>(`/api/projects/${id}/goals`),
-    enabled: !!id,
+    enabled: !!id && !overviewCovers,
   });
   const goals = useMemo(() => goalsQuery.data ?? [], [goalsQuery.data]);
 
@@ -187,7 +200,7 @@ export const useProjectDetailData = (
   const milestonesQuery = useQuery<MilestoneResponse[]>({
     queryKey: ['hubData', id, 'milestones'],
     queryFn: () => apiFetch<MilestoneResponse[]>(`/api/projects/${id}/milestones`),
-    enabled: !!id,
+    enabled: !!id && !overviewCovers,
   });
   const milestones = useMemo(() => milestonesQuery.data ?? [], [milestonesQuery.data]);
 
@@ -195,7 +208,7 @@ export const useProjectDetailData = (
   const activitiesQuery = useQuery<ActivityResponse[]>({
     queryKey: ['hubData', id, 'activities'],
     queryFn: () => apiFetch<ActivityResponse[]>(`/api/projects/${id}/activity`),
-    enabled: !!id,
+    enabled: !!id && !overviewCovers,
   });
   const activities = activitiesQuery.data ?? [];
 
@@ -203,7 +216,7 @@ export const useProjectDetailData = (
   const analyticsQuery = useQuery<ProjectAnalyticsResponse>({
     queryKey: ['hubData', id, 'analytics'],
     queryFn: () => apiFetch<ProjectAnalyticsResponse>(`/api/workitems/projects/${id}/analytics`),
-    enabled: !!id,
+    enabled: !!id && !overviewCovers,
   });
   const analytics = analyticsQuery.data ?? null;
 
@@ -211,7 +224,7 @@ export const useProjectDetailData = (
   const prdAnalysisQuery = useQuery<PrdAnalysisResponse>({
     queryKey: ['hubData', id, 'prd'],
     queryFn: () => apiFetch<PrdAnalysisResponse>(`/api/prd/projects/${id}/analysis`),
-    enabled: !!id,
+    enabled: !!id && !overviewCovers,
   });
   const prdAnalysis = prdAnalysisQuery.data ?? null;
 
@@ -219,19 +232,25 @@ export const useProjectDetailData = (
   const linksQuery = useQuery<ProjectLinkResponse[]>({
     queryKey: ['project', id, 'links'],
     queryFn: () => apiFetch<ProjectLinkResponse[]>(`/api/projects/${id}/links`),
-    enabled: !!id,
+    enabled: !!id && !overviewCovers,
   });
   const links = linksQuery.data ?? [];
-  const linksLoading = linksQuery.isLoading;
+  const linksLoading = overviewCovers ? overviewQuery.isLoading : linksQuery.isLoading;
 
-  // hubLoading: true until all hub sub-resources are done loading
-  const hubLoading =
-    hubWorkItemsQuery.isLoading ||
-    goalsQuery.isLoading ||
-    milestonesQuery.isLoading ||
-    activitiesQuery.isLoading ||
-    analyticsQuery.isLoading ||
-    prdAnalysisQuery.isLoading;
+  // hubLoading: true until all hub sub-resources are done loading. goals /
+  // milestones / activities / analytics / prd are gated behind the overview
+  // (a disabled query reports isLoading: true), so anchor their contribution on
+  // the overview while it covers them; only consult the individual queries on
+  // the overview-failed fallback path where they actually fetch. hubWorkItems is
+  // never seeded by the overview, so it always contributes its own loading state.
+  const seededHubLoading = overviewCovers
+    ? overviewQuery.isLoading
+    : goalsQuery.isLoading ||
+      milestonesQuery.isLoading ||
+      activitiesQuery.isLoading ||
+      analyticsQuery.isLoading ||
+      prdAnalysisQuery.isLoading;
+  const hubLoading = hubWorkItemsQuery.isLoading || seededHubLoading;
 
   // ── mutations: links ────────────────────────────────────────────────────
   const addLinkMutation = useMutation({
@@ -279,8 +298,9 @@ export const useProjectDetailData = (
       }),
     onError: toastErrorHandler('update task'),
     onSettled: () => {
+      // A work-item edit doesn't change goals/milestones/prd/links, so only the
+      // work-item-derived caches need invalidating — not the full project scope.
       invalidateWorkItemScope(queryClient, id);
-      invalidateProjectScope(queryClient, id);
     },
   });
 
